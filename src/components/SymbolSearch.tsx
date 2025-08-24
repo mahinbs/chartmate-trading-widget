@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 interface SymbolData {
   symbol: string;
@@ -128,7 +129,7 @@ export function SymbolSearch({ value, onValueChange, placeholder = "Search symbo
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-full p-0" align="start">
+      <PopoverContent className="w-full p-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border border-white/10 shadow-xl z-50" align="start">
         <Command>
           <CommandInput
             placeholder="Search stocks, crypto, forex..."
@@ -164,6 +165,11 @@ export function SymbolSearch({ value, onValueChange, placeholder = "Search symbo
                       )}
                     />
                     <div className="flex items-center gap-2 flex-1">
+                      <Avatar className="h-6 w-6">
+                        <AvatarFallback className="text-xs bg-gradient-to-br from-blue-500 to-purple-500 text-white">
+                          {symbol.symbol.charAt(0)}
+                        </AvatarFallback>
+                      </Avatar>
                       <span className="font-medium">{symbol.symbol}</span>
                       <Badge variant="outline" className={getTypeColor(symbol.type)}>
                         {symbol.type}

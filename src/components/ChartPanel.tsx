@@ -64,7 +64,7 @@ export default function ChartPanel({ defaultSymbol = "NASDAQ:AAPL", defaultInter
         </div>
       </CardHeader>
       <CardContent className="flex-1 p-0">
-        <div className="h-full bg-chart-bg">
+        <div className="h-full bg-background">
           <TradingViewWidget symbol={symbol} interval={interval} />
         </div>
       </CardContent>

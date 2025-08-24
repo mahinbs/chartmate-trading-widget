@@ -4,16 +4,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SymbolSearch } from "@/components/SymbolSearch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import TradingViewWidget from "@/components/TradingViewWidget";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, TrendingUp, TrendingDown, Minus, AlertTriangle } from "lucide-react";
+import { Loader2, TrendingUp, TrendingDown, Minus, AlertTriangle, BrainCircuit, LineChart, ChevronDown, DollarSign } from "lucide-react";
+import { ResponsiveContainer, LineChart as RechartsLineChart, Line } from "recharts";
 
 interface PredictionResult {
   symbol: string;
@@ -56,6 +59,8 @@ const PredictPage = () => {
   const [symbol, setSymbol] = useState("");
   const [investment, setInvestment] = useState("");
   const [timeframe, setTimeframe] = useState("");
+  const [chartInterval, setChartInterval] = useState("15");
+  const [resultsOpen, setResultsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<PredictionResult | null>(null);
 
@@ -84,6 +89,7 @@ const PredictPage = () => {
       }
 
       setResult(data);
+      setResultsOpen(true);
       toast.success("Analysis generated successfully!");
     } catch (error) {
       console.error("Error:", error);
@@ -122,328 +128,418 @@ const PredictPage = () => {
     return (investment * expectedPercent) / 100;
   };
 
+  const getChartIntervalMapping = (interval: string) => {
+    const mapping: Record<string, string> = {
+      "1": "1",
+      "5": "5", 
+      "15": "15",
+      "60": "60",
+      "D": "D",
+      "W": "W"
+    };
+    return mapping[interval] || "15";
+  };
+
+  const generateSparklineData = () => {
+    if (!result?.expectedMove?.percent) return [];
+    
+    const currentPrice = result.currentPrice;
+    const change = result.expectedMove.percent;
+    const steps = 8;
+    
+    return Array.from({ length: steps }, (_, i) => ({
+      x: i,
+      price: currentPrice + (currentPrice * change * i) / (100 * (steps - 1))
+    }));
+  };
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">AI Market Prediction</h1>
-          <p className="text-muted-foreground">Get AI-powered analysis and predictions for any stock symbol</p>
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
+      {/* Header */}
+      <div className="p-6 animate-fade-in">
+        <div className="text-center space-y-2">
+          <h1 className="text-4xl md:text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-purple-400 to-teal-400">
+            AI Market Prediction
+          </h1>
+          <p className="text-muted-foreground text-lg">
+            Get real-time AI-powered predictions for any stock, forex, or crypto
+          </p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Input Panel */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Prediction Parameters</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="symbol">Symbol</Label>
-              <SymbolSearch
-                value={symbol}
-                onValueChange={setSymbol}
-                placeholder="Search stocks, crypto, forex, commodities..."
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="investment">Investment Amount ($)</Label>
-              <Input
-                id="investment"
-                type="number"
-                placeholder="e.g., 1000"
-                value={investment}
-                onChange={(e) => setInvestment(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="timeframe">Prediction Timeframe</Label>
-              <Select value={timeframe} onValueChange={setTimeframe}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select timeframe" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="5m">5 Minutes</SelectItem>
-                  <SelectItem value="15m">15 Minutes</SelectItem>
-                  <SelectItem value="30m">30 Minutes</SelectItem>
-                  <SelectItem value="1h">1 Hour</SelectItem>
-                  <SelectItem value="2h">2 Hours</SelectItem>
-                  <SelectItem value="4h">4 Hours</SelectItem>
-                  <SelectItem value="1d">1 Day</SelectItem>
-                  <SelectItem value="1w">1 Week</SelectItem>
-                  <SelectItem value="1mo">1 Month</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <Button 
-              onClick={handlePredict} 
-              disabled={loading} 
-              className="w-full"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Analyzing...
-                </>
-              ) : (
-                "Generate Prediction"
-              )}
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* Chart Panel */}
-        {symbol && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Live Chart - {symbol.split(':')[1] || symbol}</CardTitle>
-            </CardHeader>
-            <CardContent className="h-[500px] p-0">
-              <TradingViewWidget symbol={symbol} interval="15" />
-            </CardContent>
-          </Card>
-        )}
-      </div>
-
-      {/* Analysis Results */}
-      {result && (
-        <div className="space-y-6 animate-fade-in">
-          {/* Decision Summary */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-3">
-                {getRecommendationIcon(result.recommendation)}
-                <span className={getRecommendationColor(result.recommendation)}>
-                  {result.recommendation?.charAt(0).toUpperCase() + result.recommendation?.slice(1) || "Analysis"} - {result.symbol}
-                </span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Current Price */}
-                <div className="text-center">
-                  <p className="text-sm text-muted-foreground">Current Price</p>
-                  <Badge 
-                    variant="outline" 
-                    className={`${getPriceChangeColor(result.changePercent)} border text-lg px-4 py-2`}
+      {/* Main Content */}
+      <div className="px-6 pb-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-7xl mx-auto">
+          {/* Left Column - Prediction Parameters */}
+          <div className="space-y-6">
+            <Card className="backdrop-blur-xl bg-gradient-to-br from-indigo-500/10 via-purple-500/10 to-teal-500/10 border-white/10 shadow-2xl rounded-2xl animate-fade-in">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-xl font-semibold">Prediction Parameters</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Symbol Input */}
+                <div className="relative">
+                  <Label 
+                    htmlFor="symbol" 
+                    className={`absolute left-3 transition-all duration-200 pointer-events-none ${
+                      symbol ? 'top-2 text-xs text-muted-foreground' : 'top-4 text-sm text-muted-foreground'
+                    }`}
                   >
-                    ${result.currentPrice.toFixed(2)}
-                  </Badge>
-                  <p className="text-sm mt-1">
-                    {result.changePercent > 0 ? '+' : ''}{result.changePercent.toFixed(2)}% today
-                  </p>
-                </div>
-
-                {/* Confidence */}
-                {result.confidence !== undefined && (
-                  <div className="text-center">
-                    <p className="text-sm text-muted-foreground mb-2">Confidence Level</p>
-                    <div className="space-y-2">
-                      <Progress value={result.confidence} className="h-3" />
-                      <Badge variant="secondary">{result.confidence}%</Badge>
-                    </div>
-                  </div>
-                )}
-
-                {/* Expected Move */}
-                {result.expectedMove && (
-                  <div className="text-center">
-                    <p className="text-sm text-muted-foreground">Expected Move ({result.timeframe})</p>
-                    <div className="flex items-center justify-center gap-2 mt-2">
-                      {result.expectedMove.direction === "up" && <TrendingUp className="h-4 w-4 text-green-600" />}
-                      {result.expectedMove.direction === "down" && <TrendingDown className="h-4 w-4 text-red-600" />}
-                      {result.expectedMove.direction === "flat" && <Minus className="h-4 w-4 text-muted-foreground" />}
-                      <span className="font-semibold">
-                        {result.expectedMove.percent ? `${result.expectedMove.percent > 0 ? '+' : ''}${result.expectedMove.percent.toFixed(1)}%` : 'TBD'}
-                      </span>
-                    </div>
-                    {result.expectedMove.priceTarget && (
-                      <div className="flex gap-2 mt-2 justify-center">
-                        <Badge variant="outline" className="text-xs">
-                          ${result.expectedMove.priceTarget.min.toFixed(2)} - ${result.expectedMove.priceTarget.max.toFixed(2)}
-                        </Badge>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Investment Impact */}
-              {result.expectedMove?.percent && (
-                <div className="bg-muted/50 rounded-lg p-4">
-                  <h4 className="font-medium mb-2">Investment Impact</h4>
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div className="flex justify-between">
-                      <span>Investment:</span>
-                      <span className="font-mono">${investment}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Est. P/L:</span>
-                      <span className={`font-mono ${calculatePnL(parseFloat(investment), result.expectedMove.percent)! >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {calculatePnL(parseFloat(investment), result.expectedMove.percent)! >= 0 ? '+' : ''}${calculatePnL(parseFloat(investment), result.expectedMove.percent)!.toFixed(2)} est.
-                      </span>
-                    </div>
+                    {symbol ? 'Symbol' : ''}
+                  </Label>
+                  <div className={`transition-all duration-200 ${symbol ? 'ring-2 ring-primary/40 shadow-lg shadow-primary/20' : 'hover:ring-2 hover:ring-primary/20'} rounded-lg`}>
+                    <SymbolSearch
+                      value={symbol}
+                      onValueChange={setSymbol}
+                      placeholder="Search stocks, crypto, forex..."
+                    />
                   </div>
                 </div>
-              )}
-            </CardContent>
-          </Card>
 
-          {/* Chart Patterns & Key Levels */}
-          {(result.patterns?.length || result.keyLevels?.support?.length || result.keyLevels?.resistance?.length) && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Chart Patterns */}
-              {result.patterns?.length && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">Chart Patterns</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex flex-wrap gap-2">
-                      {result.patterns.map((pattern, index) => (
-                        <Badge key={index} variant="secondary">
-                          {pattern}
-                        </Badge>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
+                {/* Investment Amount */}
+                <div className="relative">
+                  <Label 
+                    htmlFor="investment" 
+                    className={`absolute left-8 transition-all duration-200 pointer-events-none z-10 ${
+                      investment ? 'top-2 text-xs text-muted-foreground' : 'top-4 text-sm text-muted-foreground'
+                    }`}
+                  >
+                    {investment ? 'Investment Amount' : 'Investment Amount'}
+                  </Label>
+                  <div className="relative">
+                    <DollarSign className="absolute left-3 top-4 h-4 w-4 text-muted-foreground z-10" />
+                    <Input
+                      id="investment"
+                      type="number"
+                      placeholder=" "
+                      value={investment}
+                      onChange={(e) => setInvestment(e.target.value)}
+                      className={`pl-8 pt-6 pb-2 transition-all duration-200 ${
+                        investment ? 'ring-2 ring-primary/50 shadow-lg shadow-primary/20' : 'hover:ring-2 hover:ring-primary/20'
+                      } bg-background/50 backdrop-blur border-white/20`}
+                    />
+                  </div>
+                </div>
 
-              {/* Key Levels */}
-              {(result.keyLevels?.support?.length || result.keyLevels?.resistance?.length) && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">Key Levels</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {result.keyLevels?.support?.length && (
-                      <div>
-                        <p className="text-sm text-muted-foreground mb-2">Support Levels</p>
-                        <div className="flex flex-wrap gap-2">
-                          {result.keyLevels.support.map((level, index) => (
-                            <Badge key={index} variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                              ${level.toFixed(2)}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {result.keyLevels?.resistance?.length && (
-                      <div>
-                        <p className="text-sm text-muted-foreground mb-2">Resistance Levels</p>
-                        <div className="flex flex-wrap gap-2">
-                          {result.keyLevels.resistance.map((level, index) => (
-                            <Badge key={index} variant="outline" className="bg-red-50 text-red-700 border-red-200">
-                              ${level.toFixed(2)}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          )}
-
-          {/* Stock Data & Investment Details */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Market Data & Investment Details</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Prediction Timeframe */}
                 <div className="space-y-3">
-                  <h4 className="font-medium text-sm text-muted-foreground">Current Stock Data</h4>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span>Current Price:</span>
-                      <span className="font-mono">${result.stockData.currentPrice.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Open:</span>
-                      <span className="font-mono">${result.stockData.openPrice.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>High:</span>
-                      <span className="font-mono">${result.stockData.highPrice.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Low:</span>
-                      <span className="font-mono">${result.stockData.lowPrice.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Previous Close:</span>
-                      <span className="font-mono">${result.stockData.previousClose.toFixed(2)}</span>
-                    </div>
-                  </div>
+                  <Label className="text-sm font-medium">Prediction Timeframe</Label>
+                  <ToggleGroup 
+                    type="single" 
+                    value={timeframe} 
+                    onValueChange={setTimeframe}
+                    className="grid grid-cols-5 gap-2"
+                  >
+                    <ToggleGroupItem value="15m" className="data-[state=on]:bg-gradient-to-r data-[state=on]:from-blue-600 data-[state=on]:to-purple-600 data-[state=on]:text-white">15m</ToggleGroupItem>
+                    <ToggleGroupItem value="30m" className="data-[state=on]:bg-gradient-to-r data-[state=on]:from-blue-600 data-[state=on]:to-purple-600 data-[state=on]:text-white">30m</ToggleGroupItem>
+                    <ToggleGroupItem value="1h" className="data-[state=on]:bg-gradient-to-r data-[state=on]:from-blue-600 data-[state=on]:to-purple-600 data-[state=on]:text-white">1h</ToggleGroupItem>
+                    <ToggleGroupItem value="2h" className="data-[state=on]:bg-gradient-to-r data-[state=on]:from-blue-600 data-[state=on]:to-purple-600 data-[state=on]:text-white">2h</ToggleGroupItem>
+                    <ToggleGroupItem value="1d" className="data-[state=on]:bg-gradient-to-r data-[state=on]:from-blue-600 data-[state=on]:to-purple-600 data-[state=on]:text-white">1d</ToggleGroupItem>
+                  </ToggleGroup>
                 </div>
 
-                <div className="space-y-3">
-                  <h4 className="font-medium text-sm text-muted-foreground">Investment Details</h4>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span>Investment:</span>
-                      <span className="font-mono">${investment}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Timeframe:</span>
-                      <Badge variant="secondary">{result.timeframe}</Badge>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Shares (~):</span>
-                      <span className="font-mono">{(parseFloat(investment) / result.currentPrice).toFixed(2)}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+                {/* Generate Prediction Button */}
+                <Button 
+                  onClick={handlePredict} 
+                  disabled={loading || !symbol || !investment || !timeframe} 
+                  className="w-full h-12 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold rounded-xl transition-all duration-300 hover:scale-105 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:hover:scale-100"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                      Analyzing...
+                    </>
+                  ) : (
+                    <>
+                      <BrainCircuit className="mr-2 h-5 w-5" />
+                      Generate Prediction
+                    </>
+                  )}
+                </Button>
+              </CardContent>
+            </Card>
 
-          {/* AI Analysis */}
-          <Card>
-            <CardHeader>
-              <CardTitle>AI Analysis</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <Textarea
-                value={result.analysis}
-                readOnly
-                className="min-h-[300px] resize-none bg-muted/50"
-              />
+            {/* Prediction Results - Collapsible */}
+            {result && (
+              <Collapsible open={resultsOpen} onOpenChange={setResultsOpen}>
+                <CollapsibleTrigger asChild>
+                  <Card className="backdrop-blur-xl bg-gradient-to-br from-emerald-500/10 via-blue-500/10 to-purple-500/10 border-white/10 shadow-xl rounded-2xl cursor-pointer hover:shadow-2xl transition-all duration-300 animate-fade-in">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                          {getRecommendationIcon(result.recommendation)}
+                          <span className={getRecommendationColor(result.recommendation)}>
+                            Prediction Results
+                          </span>
+                        </CardTitle>
+                        <ChevronDown className={`h-5 w-5 transition-transform duration-200 ${resultsOpen ? 'rotate-180' : ''}`} />
+                      </div>
+                    </CardHeader>
+                  </Card>
+                </CollapsibleTrigger>
+                
+                <CollapsibleContent className="animate-fade-in">
+                  <Card className="backdrop-blur-xl bg-gradient-to-br from-emerald-500/5 via-blue-500/5 to-purple-500/5 border-white/10 shadow-xl rounded-2xl mt-4">
+                    <CardContent className="p-6 space-y-6">
+                      {/* Direction & Confidence */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="text-center space-y-2">
+                          <p className="text-sm text-muted-foreground">Direction</p>
+                          <div className="flex items-center justify-center gap-2">
+                            {getRecommendationIcon(result.recommendation)}
+                            <span className={`font-semibold ${getRecommendationColor(result.recommendation)}`}>
+                              {result.recommendation?.toUpperCase() || 'NEUTRAL'}
+                            </span>
+                          </div>
+                        </div>
+                        
+                        {result.confidence !== undefined && (
+                          <div className="text-center space-y-2">
+                            <p className="text-sm text-muted-foreground">Confidence</p>
+                            <div className="relative w-16 h-16 mx-auto">
+                              <svg className="w-16 h-16 transform -rotate-90" viewBox="0 0 36 36">
+                                <path
+                                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeDasharray={`${result.confidence}, 100`}
+                                  className="text-gradient-to-r from-blue-500 to-purple-500"
+                                />
+                              </svg>
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <span className="text-sm font-bold">{result.confidence}%</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {result.expectedMove && (
+                          <div className="text-center space-y-2">
+                            <p className="text-sm text-muted-foreground">Expected Move</p>
+                            <div className="flex items-center justify-center gap-1">
+                              {result.expectedMove.direction === "up" && <TrendingUp className="h-4 w-4 text-green-500" />}
+                              {result.expectedMove.direction === "down" && <TrendingDown className="h-4 w-4 text-red-500" />}
+                              <span className="font-bold">
+                                {result.expectedMove.percent ? `${result.expectedMove.percent > 0 ? '+' : ''}${result.expectedMove.percent.toFixed(1)}%` : 'TBD'}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Price Range & P/L */}
+                      {result.expectedMove?.priceTarget && (
+                        <div className="bg-muted/30 rounded-xl p-4 space-y-3">
+                          <h4 className="font-medium text-sm">Expected Price Range</h4>
+                          <div className="flex justify-between items-center">
+                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                              ${result.expectedMove.priceTarget.min.toFixed(2)}
+                            </Badge>
+                            <div className="flex-1 mx-3 h-2 bg-gradient-to-r from-red-200 via-yellow-200 to-green-200 rounded-full"></div>
+                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                              ${result.expectedMove.priceTarget.max.toFixed(2)}
+                            </Badge>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Investment Impact */}
+                      {result.expectedMove?.percent && (
+                        <div className="bg-muted/30 rounded-xl p-4 space-y-2">
+                          <h4 className="font-medium text-sm">Investment Impact</h4>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="flex justify-between">
+                              <span className="text-sm">Investment:</span>
+                              <span className="font-mono text-sm">${investment}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm">Est. P/L:</span>
+                              <span className={`font-mono text-sm ${calculatePnL(parseFloat(investment), result.expectedMove.percent)! >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                {calculatePnL(parseFloat(investment), result.expectedMove.percent)! >= 0 ? '+' : ''}${calculatePnL(parseFloat(investment), result.expectedMove.percent)!.toFixed(2)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Sparkline Chart */}
+                      {result.expectedMove?.percent && (
+                        <div className="space-y-2">
+                          <h4 className="font-medium text-sm">Predicted Trend</h4>
+                          <div className="h-12 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <RechartsLineChart data={generateSparklineData()}>
+                                <Line 
+                                  type="monotone" 
+                                  dataKey="price" 
+                                  stroke={result.expectedMove.direction === 'up' ? '#10b981' : '#ef4444'} 
+                                  strokeWidth={2}
+                                  dot={false}
+                                />
+                              </RechartsLineChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Analysis Tabs */}
+                      <Tabs defaultValue="explanation" className="w-full">
+                        <TabsList className="grid w-full grid-cols-2 bg-muted/50">
+                          <TabsTrigger value="explanation" className="flex items-center gap-2">
+                            <BrainCircuit className="h-4 w-4" />
+                            AI Explanation
+                          </TabsTrigger>
+                          <TabsTrigger value="indicators" className="flex items-center gap-2">
+                            <LineChart className="h-4 w-4" />
+                            Technical Indicators
+                          </TabsTrigger>
+                        </TabsList>
+                        
+                        <TabsContent value="explanation" className="mt-4">
+                          <Textarea
+                            value={result.analysis}
+                            readOnly
+                            className="min-h-[200px] resize-none bg-muted/30 backdrop-blur border-white/20 rounded-xl"
+                          />
+                        </TabsContent>
+                        
+                        <TabsContent value="indicators" className="mt-4 space-y-4">
+                          {result.patterns?.length && (
+                            <div>
+                              <h5 className="font-medium text-sm mb-2">Chart Patterns</h5>
+                              <div className="flex flex-wrap gap-2">
+                                {result.patterns.map((pattern, index) => (
+                                  <Badge key={index} variant="secondary">{pattern}</Badge>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {(result.keyLevels?.support?.length || result.keyLevels?.resistance?.length) && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {result.keyLevels?.support?.length && (
+                                <div>
+                                  <h5 className="font-medium text-sm mb-2 text-green-600">Support Levels</h5>
+                                  <div className="space-y-1">
+                                    {result.keyLevels.support.map((level, index) => (
+                                      <Badge key={index} variant="outline" className="bg-green-50 text-green-700 border-green-200 block w-fit">
+                                        ${level.toFixed(2)}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {result.keyLevels?.resistance?.length && (
+                                <div>
+                                  <h5 className="font-medium text-sm mb-2 text-red-600">Resistance Levels</h5>
+                                  <div className="space-y-1">
+                                    {result.keyLevels.resistance.map((level, index) => (
+                                      <Badge key={index} variant="outline" className="bg-red-50 text-red-700 border-red-200 block w-fit">
+                                        ${level.toFixed(2)}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          
+                          {(!result.patterns?.length && !result.keyLevels?.support?.length && !result.keyLevels?.resistance?.length) && (
+                            <p className="text-muted-foreground text-sm">
+                              Technical indicators can be analyzed on the live chart. Support and resistance levels will appear here when detected.
+                            </p>
+                          )}
+                        </TabsContent>
+                      </Tabs>
+                    </CardContent>
+                  </Card>
+                </CollapsibleContent>
+              </Collapsible>
+            )}
+          </div>
+
+          {/* Right Column - Live Chart */}
+          <div className="space-y-4">
+            <Card className="backdrop-blur-xl bg-gradient-to-br from-slate-500/10 via-gray-500/10 to-zinc-500/10 border-white/10 shadow-2xl rounded-2xl overflow-hidden animate-fade-in">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg font-semibold">
+                    Live Chart {symbol && `- ${symbol.split(':')[1] || symbol}`}
+                  </CardTitle>
+                  
+                  {/* Chart Interval Toggle */}
+                  <ToggleGroup 
+                    type="single" 
+                    value={chartInterval} 
+                    onValueChange={setChartInterval}
+                    className="flex gap-1"
+                  >
+                    <ToggleGroupItem value="1" size="sm" className="text-xs px-2 py-1">1m</ToggleGroupItem>
+                    <ToggleGroupItem value="5" size="sm" className="text-xs px-2 py-1">5m</ToggleGroupItem>
+                    <ToggleGroupItem value="15" size="sm" className="text-xs px-2 py-1">15m</ToggleGroupItem>
+                    <ToggleGroupItem value="60" size="sm" className="text-xs px-2 py-1">1h</ToggleGroupItem>
+                    <ToggleGroupItem value="D" size="sm" className="text-xs px-2 py-1">1d</ToggleGroupItem>
+                    <ToggleGroupItem value="W" size="sm" className="text-xs px-2 py-1">1w</ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
+              </CardHeader>
               
-              {/* Disclaimer */}
-              <Alert>
-                <AlertTriangle className="h-4 w-4" />
-                <AlertTitle>Important</AlertTitle>
-                <AlertDescription>
-                  This is an AI-generated analysis for informational purposes only and is not financial advice. Markets are risky; do your own research.
-                </AlertDescription>
-              </Alert>
-            </CardContent>
-          </Card>
+              <CardContent className="p-0">
+                <div className="h-[500px] lg:h-[600px] rounded-b-2xl overflow-hidden">
+                  {symbol ? (
+                    <TradingViewWidget 
+                      symbol={symbol} 
+                      interval={getChartIntervalMapping(chartInterval)} 
+                    />
+                  ) : (
+                    <div className="h-full flex items-center justify-center bg-muted/20 rounded-b-2xl">
+                      <div className="text-center space-y-2">
+                        <LineChart className="h-12 w-12 mx-auto text-muted-foreground/50" />
+                        <p className="text-muted-foreground">Select a symbol to view the live chart</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
+      
+      {/* Disclaimer */}
+      {result && (
+        <div className="px-6 pb-6">
+          <div className="max-w-7xl mx-auto">
+            <Alert className="backdrop-blur-xl bg-yellow-500/10 border-yellow-500/20 rounded-xl">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Important Disclaimer</AlertTitle>
+              <AlertDescription>
+                This is an AI-generated analysis for informational purposes only and is not financial advice. Markets are risky; do your own research.
+              </AlertDescription>
+            </Alert>
+          </div>
         </div>
       )}
-      
+
       {/* Loading Skeleton */}
       {loading && (
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <Skeleton className="h-8 w-64" />
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Skeleton className="h-20 w-full" />
-                <Skeleton className="h-20 w-full" />
-                <Skeleton className="h-20 w-full" />
-              </div>
-            </CardContent>
-          </Card>
+        <div className="px-6 pb-6">
+          <div className="max-w-7xl mx-auto space-y-6">
+            <Card className="backdrop-blur-xl bg-gradient-to-br from-indigo-500/10 via-purple-500/10 to-teal-500/10 border-white/10 shadow-2xl rounded-2xl">
+              <CardHeader>
+                <Skeleton className="h-8 w-64" />
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <Skeleton className="h-20 w-full" />
+                  <Skeleton className="h-20 w-full" />
+                  <Skeleton className="h-20 w-full" />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       )}
     </div>
