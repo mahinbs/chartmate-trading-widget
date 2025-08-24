@@ -144,25 +144,25 @@ export function AdvancedPredictLoader({ isVisible, symbol, timeframe, ready, onC
   if (!isVisible) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-md">
-      <div className="w-full max-w-2xl mx-4 p-8 bg-card/95 backdrop-blur-xl border border-border/50 rounded-3xl shadow-2xl">
+    <div className="fixed inset-x-0 top-0 bottom-0 z-50 flex items-start justify-center bg-background/80 backdrop-blur-md pt-24 sm:pt-32">
+      <div className="w-full max-w-xl mx-4 p-6 bg-card/95 backdrop-blur-xl border border-border/50 rounded-2xl shadow-2xl max-h-[70vh] overflow-y-auto">
         {/* Header */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-6">
           <div className="relative inline-block">
-            <BrainCircuit className="h-12 w-12 text-primary mx-auto mb-4 animate-pulse" />
+            <BrainCircuit className="h-10 w-10 text-primary mx-auto mb-3 animate-pulse" />
             <div className="absolute -inset-1 bg-primary/20 rounded-full blur animate-pulse"></div>
           </div>
-          <h2 className="text-2xl font-bold mb-2">AI Analysis in Progress</h2>
-          <p className="text-muted-foreground">
+          <h2 className="text-xl font-bold mb-2">AI Analysis in Progress</h2>
+          <p className="text-sm text-muted-foreground">
             Generating prediction for <span className="font-mono text-primary">{symbol}</span> • {timeframe}
           </p>
         </div>
 
         {/* Progress Ring & Bar */}
-        <div className="mb-8 space-y-4">
+        <div className="mb-6 space-y-3">
           <div className="flex items-center justify-center">
-            <div className="relative w-24 h-24">
-              <svg className="w-24 h-24 transform -rotate-90" viewBox="0 0 36 36">
+            <div className="relative w-20 h-20">
+              <svg className="w-20 h-20 transform -rotate-90" viewBox="0 0 36 36">
                 <path
                   d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                   fill="none"
@@ -181,7 +181,7 @@ export function AdvancedPredictLoader({ isVisible, symbol, timeframe, ready, onC
                 />
               </svg>
               <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-lg font-bold">{Math.round(progress)}%</span>
+                <span className="text-base font-bold">{Math.round(progress)}%</span>
               </div>
             </div>
           </div>
@@ -189,7 +189,7 @@ export function AdvancedPredictLoader({ isVisible, symbol, timeframe, ready, onC
         </div>
 
         {/* Analysis Steps */}
-        <div className="mb-8 space-y-3">
+        <div className="mb-6 space-y-2 max-h-64 overflow-y-auto">
           {ANALYSIS_STEPS.map((step, index) => {
             const Icon = step.icon;
             const isCompleted = completedSteps.has(index);
@@ -199,25 +199,25 @@ export function AdvancedPredictLoader({ isVisible, symbol, timeframe, ready, onC
             return (
               <div
                 key={step.id}
-                className={`flex items-center gap-4 p-3 rounded-xl transition-all duration-300 ${
+                className={`flex items-center gap-3 p-2.5 rounded-lg transition-all duration-300 ${
                   isCurrent ? 'bg-primary/10 border border-primary/20' : 
                   isCompleted ? 'bg-green-500/10 border border-green-500/20' :
                   'bg-muted/30'
                 }`}
               >
-                <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 ${
+                <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all duration-300 ${
                   isCompleted ? 'bg-green-500 text-white' :
                   isCurrent ? 'bg-primary text-primary-foreground animate-pulse' :
                   'bg-muted text-muted-foreground'
                 }`}>
                   {isCompleted ? (
-                    <Check className="h-4 w-4" />
+                    <Check className="h-3.5 w-3.5" />
                   ) : (
-                    <Icon className={`h-4 w-4 ${isCurrent ? 'animate-pulse' : ''}`} />
+                    <Icon className={`h-3.5 w-3.5 ${isCurrent ? 'animate-pulse' : ''}`} />
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className={`font-medium transition-colors duration-300 ${
+                  <p className={`text-sm font-medium transition-colors duration-300 ${
                     isCompleted ? 'text-green-600 dark:text-green-400' :
                     isCurrent ? 'text-primary' :
                     isPending ? 'text-muted-foreground' : 'text-foreground'
@@ -230,7 +230,7 @@ export function AdvancedPredictLoader({ isVisible, symbol, timeframe, ready, onC
                 </div>
                 {isCurrent && (
                   <div className="flex-shrink-0">
-                    <div className="w-2 h-2 bg-primary rounded-full animate-pulse"></div>
+                    <div className="w-1.5 h-1.5 bg-primary rounded-full animate-pulse"></div>
                   </div>
                 )}
               </div>
@@ -239,9 +239,9 @@ export function AdvancedPredictLoader({ isVisible, symbol, timeframe, ready, onC
         </div>
 
         {/* Live Telemetry */}
-        <div className="bg-muted/30 rounded-xl p-4">
-          <h3 className="text-sm font-medium mb-3 text-muted-foreground">Live Analysis Feed</h3>
-          <div className="space-y-1 font-mono text-xs">
+        <div className="bg-muted/30 rounded-xl p-3">
+          <h3 className="text-xs font-medium mb-2 text-muted-foreground">Live Analysis Feed</h3>
+          <div className="space-y-1 font-mono text-xs max-h-20 overflow-y-auto">
             {telemetryLines.map((line) => (
               <div
                 key={line.id}
