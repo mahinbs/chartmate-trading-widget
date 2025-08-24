@@ -6,6 +6,7 @@ interface AdvancedPredictLoaderProps {
   isVisible: boolean;
   symbol: string;
   timeframe: string;
+  ready: boolean;
   onComplete: () => void;
 }
 
@@ -14,47 +15,47 @@ const ANALYSIS_STEPS = [
     id: "data",
     label: "Fetching Market Data",
     icon: Search,
-    duration: 800,
+    duration: 1200,
     description: "Retrieving real-time price data and historical patterns"
   },
   {
     id: "patterns",
     label: "Analyzing Patterns",
     icon: BarChart3,
-    duration: 1200,
+    duration: 1800,
     description: "Identifying technical indicators and chart patterns"
   },
   {
     id: "sentiment",
     label: "Processing Sentiment",
     icon: TrendingUp,
-    duration: 900,
+    duration: 1500,
     description: "Analyzing market sentiment and news impact"
   },
   {
     id: "risk",
     label: "Risk Assessment",
     icon: Shield,
-    duration: 700,
+    duration: 1100,
     description: "Calculating risk factors and volatility metrics"
   },
   {
     id: "ai",
     label: "AI Model Processing",
     icon: BrainCircuit,
-    duration: 1100,
+    duration: 1700,
     description: "Running neural network predictions"
   },
   {
     id: "final",
     label: "Finalizing Analysis",
     icon: Sparkles,
-    duration: 600,
+    duration: 900,
     description: "Compiling comprehensive prediction report"
   }
 ];
 
-export function AdvancedPredictLoader({ isVisible, symbol, timeframe, onComplete }: AdvancedPredictLoaderProps) {
+export function AdvancedPredictLoader({ isVisible, symbol, timeframe, ready, onComplete }: AdvancedPredictLoaderProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [progress, setProgress] = useState(0);
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
@@ -76,6 +77,28 @@ export function AdvancedPredictLoader({ isVisible, symbol, timeframe, onComplete
 
     const processStep = () => {
       if (stepIndex >= ANALYSIS_STEPS.length) {
+        // Hold at 95% until ready becomes true
+        if (!ready) {
+          setProgress(95);
+          setTelemetryLines(prev => {
+            const newLines = [...prev, {
+              id: `waiting-${Date.now()}`,
+              text: `Waiting for prediction results... ${symbol}`,
+              timestamp: Date.now()
+            }];
+            return newLines.slice(-4);
+          });
+          // Check every 500ms if ready
+          setTimeout(() => {
+            if (ready) {
+              setProgress(100);
+              setTimeout(onComplete, 300);
+            } else {
+              processStep();
+            }
+          }, 500);
+          return;
+        }
         setProgress(100);
         setTimeout(onComplete, 300);
         return;
@@ -94,11 +117,13 @@ export function AdvancedPredictLoader({ isVisible, symbol, timeframe, onComplete
         return newLines.slice(-4); // Keep only last 4 lines
       });
 
-      // Animate progress for this step
+      // Animate progress for this step (stop at 95% for last step if not ready)
+      const maxProgressForStep = stepIndex === ANALYSIS_STEPS.length - 1 && !ready ? 95 : 100;
       const stepProgressInterval = setInterval(() => {
-        overallProgress += (step.duration / totalDuration) * 100 / 20; // 20 updates per step
-        setProgress(Math.min(overallProgress, 100));
-      }, step.duration / 20);
+        const stepProgress = (step.duration / totalDuration) * maxProgressForStep / 30; // 30 updates per step
+        overallProgress += stepProgress;
+        setProgress(Math.min(overallProgress, maxProgressForStep));
+      }, step.duration / 30);
 
       setTimeout(() => {
         clearInterval(stepProgressInterval);

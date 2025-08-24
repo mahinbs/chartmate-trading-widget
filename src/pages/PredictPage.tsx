@@ -63,6 +63,7 @@ const PredictPage = () => {
   const [resultsOpen, setResultsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showAdvancedLoader, setShowAdvancedLoader] = useState(false);
+  const [analysisReady, setAnalysisReady] = useState(false);
   const [result, setResult] = useState<PredictionResult | null>(null);
 
   const handlePredict = async () => {
@@ -73,6 +74,7 @@ const PredictPage = () => {
 
     setLoading(true);
     setShowAdvancedLoader(true);
+    setAnalysisReady(false);
     setResult(null);
 
     try {
@@ -92,10 +94,12 @@ const PredictPage = () => {
       }
 
       setResult(data);
-      // Don't close loader immediately, let it complete its animation
+      setAnalysisReady(true);
+      // Loader will complete when it's ready
     } catch (error) {
       console.error("Error:", error);
       setShowAdvancedLoader(false);
+      setAnalysisReady(false);
       toast.error("An error occurred while getting the prediction");
     } finally {
       setLoading(false);
@@ -580,6 +584,7 @@ const PredictPage = () => {
         isVisible={showAdvancedLoader}
         symbol={symbol.split(':')[1] || symbol}
         timeframe={timeframe}
+        ready={analysisReady}
         onComplete={handleLoaderComplete}
       />
     </div>
