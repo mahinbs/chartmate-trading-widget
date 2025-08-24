@@ -1,10 +1,18 @@
 import React, { useEffect, useRef, memo } from 'react';
 
-function TradingViewWidget() {
+interface TradingViewWidgetProps {
+  symbol?: string;
+  interval?: string;
+}
+
+function TradingViewWidget({ symbol = "NASDAQ:AAPL", interval = "D" }: TradingViewWidgetProps) {
   const container = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (container.current) {
+      // Clear previous widget
+      container.current.innerHTML = '';
+      
       const script = document.createElement("script");
       script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
       script.type = "text/javascript";
@@ -18,11 +26,11 @@ function TradingViewWidget() {
         "hide_legend": false,
         "hide_volume": false,
         "hotlist": false,
-        "interval": "D",
+        "interval": interval,
         "locale": "en",
         "save_image": true,
         "style": "1",
-        "symbol": "NASDAQ:AAPL",
+        "symbol": symbol,
         "theme": "dark",
         "timezone": "Asia/Kolkata",
         "backgroundColor": "#0F0F0F",
@@ -35,19 +43,19 @@ function TradingViewWidget() {
       });
       container.current.appendChild(script);
     }
-  }, []);
+  }, [symbol, interval]);
 
   return (
     <div className="tradingview-widget-container" ref={container} style={{ height: "100%", width: "100%" }}>
       <div className="tradingview-widget-container__widget" style={{ height: "calc(100% - 32px)", width: "100%" }}></div>
       <div className="tradingview-widget-copyright">
         <a 
-          href="https://www.tradingview.com/symbols/NASDAQ-AAPL/?exchange=NASDAQ" 
+          href={`https://www.tradingview.com/symbols/${symbol}/?exchange=${symbol.split(':')[0]}`} 
           rel="noopener nofollow" 
           target="_blank"
           className="text-primary hover:text-primary/80 text-xs"
         >
-          AAPL chart by TradingView
+          {symbol.split(':')[1] || symbol} chart by TradingView
         </a>
       </div>
     </div>
