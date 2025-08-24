@@ -113,7 +113,7 @@ export function SymbolSearch({ value, onValueChange, placeholder = "Search symbo
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className="w-full justify-between"
+          className="w-full justify-between hover:bg-background focus:bg-background data-[state=open]:bg-background data-[state=open]:ring-2 data-[state=open]:ring-primary/40"
         >
           {selectedSymbol ? (
             <div className="flex items-center gap-2">
