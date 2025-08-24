@@ -46,9 +46,9 @@ function TradingViewWidget({ symbol = "NASDAQ:AAPL", interval = "D" }: TradingVi
   }, [symbol, interval]);
 
   return (
-    <div className="tradingview-widget-container relative z-0 overflow-visible" ref={container} style={{ height: "100%", width: "100%" }}>
-      <div className="tradingview-widget-container__widget relative z-0 overflow-visible" style={{ height: "calc(100% - 32px)", width: "100%" }}></div>
-      <div className="tradingview-widget-copyright">
+    <div className="tradingview-widget-container h-full w-full relative" ref={container}>
+      <div className="tradingview-widget-container__widget h-full w-full"></div>
+      <div className="tradingview-widget-copyright absolute bottom-0 right-0 p-2">
         <a 
           href={`https://www.tradingview.com/symbols/${symbol}/?exchange=${symbol.split(':')[0]}`} 
           rel="noopener nofollow" 

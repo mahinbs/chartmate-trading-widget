@@ -195,7 +195,7 @@ const PredictPage = () => {
             <CardHeader>
               <CardTitle>Live Chart - {symbol.split(':')[1] || symbol}</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="h-[500px] p-0">
               <TradingViewWidget symbol={symbol} interval="15" />
             </CardContent>
           </Card>
