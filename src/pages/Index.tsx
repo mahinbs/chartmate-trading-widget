@@ -3,27 +3,19 @@ import ChartPanel from "@/components/ChartPanel";
 
 const Index = () => {
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">Multi-Chart Trading Dashboard</h1>
-              <p className="text-sm text-muted-foreground">Real-time market analysis across multiple assets</p>
-            </div>
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2">
-                <div className="h-2 w-2 rounded-full bg-trading-green"></div>
-                <span className="text-sm text-muted-foreground">Market Open</span>
-              </div>
-            </div>
-          </div>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-foreground">Multi-Chart Trading Dashboard</h1>
+          <p className="text-muted-foreground">Real-time market analysis across multiple assets</p>
         </div>
-      </header>
+        <div className="flex items-center space-x-2">
+          <div className="h-2 w-2 rounded-full bg-trading-green"></div>
+          <span className="text-sm text-muted-foreground">Market Open</span>
+        </div>
+      </div>
 
-      {/* Main Content */}
-      <main className="h-[calc(100vh-89px)] p-4">
+      <div className="h-[calc(100vh-200px)]">
         <ResizablePanelGroup direction="vertical" className="gap-4">
           <ResizablePanel defaultSize={50}>
             <ResizablePanelGroup direction="horizontal" className="gap-4">
@@ -49,7 +41,7 @@ const Index = () => {
             </ResizablePanelGroup>
           </ResizablePanel>
         </ResizablePanelGroup>
-      </main>
+      </div>
     </div>
   );
 };
