@@ -13,68 +13,59 @@ interface PredictionRequest {
 }
 
 interface StockData {
-  price: number;
-  volume: number;
+  currentPrice: number;
+  openPrice: number;
+  highPrice: number;
+  lowPrice: number;
+  previousClose: number;
   change: number;
   changePercent: number;
 }
 
-interface TechnicalIndicators {
-  sma: number;
-  rsi: number;
-  macd: number;
-}
-
-async function fetchStockData(symbol: string): Promise<StockData> {
-  // Using Yahoo Finance API through RapidAPI
-  const response = await fetch(
-    `https://yahoo-finance127.p.rapidapi.com/search/${symbol}`,
-    {
-      headers: {
-        'X-RapidAPI-Key': Deno.env.get('RAPIDAPI_KEY') || '',
-        'X-RapidAPI-Host': 'yahoo-finance127.p.rapidapi.com'
-      }
-    }
-  );
-
-  if (!response.ok) {
-    // Fallback to mock data for demo
-    return {
-      price: 150 + Math.random() * 50,
-      volume: Math.floor(Math.random() * 1000000),
-      change: (Math.random() - 0.5) * 10,
-      changePercent: (Math.random() - 0.5) * 5
-    };
+async function fetchRealStockData(symbol: string): Promise<StockData> {
+  const finnhubApiKey = Deno.env.get('FINNHUB_API_KEY');
+  
+  if (!finnhubApiKey) {
+    throw new Error('Finnhub API key not configured');
   }
 
-  const data = await response.json();
-  
-  // Extract relevant data (this would need to be adjusted based on actual API response)
-  return {
-    price: data.price || 150 + Math.random() * 50,
-    volume: data.volume || Math.floor(Math.random() * 1000000),
-    change: data.change || (Math.random() - 0.5) * 10,
-    changePercent: data.changePercent || (Math.random() - 0.5) * 5
-  };
+  try {
+    // Get current quote from Finnhub
+    const response = await fetch(
+      `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${finnhubApiKey}`
+    );
+
+    if (!response.ok) {
+      throw new Error(`Finnhub API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    if (!data.c) {
+      throw new Error(`No data found for symbol: ${symbol}`);
+    }
+
+    // Extract real stock data
+    return {
+      currentPrice: data.c, // Current price
+      openPrice: data.o,    // Open price
+      highPrice: data.h,    // High price
+      lowPrice: data.l,     // Low price
+      previousClose: data.pc, // Previous close
+      change: data.d,       // Change
+      changePercent: data.dp // Change percent
+    };
+  } catch (error) {
+    console.error('Error fetching real stock data:', error);
+    throw error;
+  }
 }
 
-function calculateTechnicalIndicators(stockData: StockData): TechnicalIndicators {
-  // Simplified technical indicators calculation
-  // In a real implementation, you'd need historical data
-  const price = stockData.price;
-  
-  return {
-    sma: price * (0.98 + Math.random() * 0.04), // Simple moving average approximation
-    rsi: 30 + Math.random() * 40, // RSI between 30-70
-    macd: (Math.random() - 0.5) * 2 // MACD signal
-  };
-}
-
-async function getAIAnalysis(
+async function getOpenAIAnalysis(
   symbol: string,
-  stockData: StockData,
-  technicalIndicators: TechnicalIndicators,
-  timeframe: string
+  investment: number,
+  timeframe: string,
+  stockData: StockData
 ): Promise<string> {
   const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
   
@@ -82,28 +73,27 @@ async function getAIAnalysis(
     throw new Error('OpenAI API key not configured');
   }
 
-  const prompt = `
-Analyze the following stock data for ${symbol} and provide a comprehensive trading analysis for the next ${timeframe}:
+  const prompt = `I need a stock analysis for ${symbol}.
 
-Current Stock Data:
-- Price: $${stockData.price.toFixed(2)}
-- Volume: ${stockData.volume.toLocaleString()}
-- Change: ${stockData.change.toFixed(2)} (${stockData.changePercent.toFixed(2)}%)
+Current real-time data:
+- Current Price: $${stockData.currentPrice.toFixed(2)}
+- Open: $${stockData.openPrice.toFixed(2)}
+- High: $${stockData.highPrice.toFixed(2)}
+- Low: $${stockData.lowPrice.toFixed(2)}
+- Previous Close: $${stockData.previousClose.toFixed(2)}
+- Change: $${stockData.change.toFixed(2)} (${stockData.changePercent.toFixed(2)}%)
 
-Technical Indicators:
-- SMA: $${technicalIndicators.sma.toFixed(2)}
-- RSI: ${technicalIndicators.rsi.toFixed(1)}
-- MACD: ${technicalIndicators.macd.toFixed(3)}
+Investment Amount: $${investment}
+Timeframe: ${timeframe}
 
-Please provide:
-1. Market sentiment analysis
-2. Technical analysis based on the indicators
-3. Key support and resistance levels
-4. Risk factors to consider
-5. Trading recommendation for the specified timeframe
+Please provide a comprehensive analysis including:
+1. Current market sentiment and price action analysis
+2. Technical outlook and key levels to watch
+3. Potential risks and opportunities
+4. Your recommendation (bullish/bearish/neutral) with confidence level
+5. Specific guidance for this ${timeframe} timeframe
 
-Format your response as a clear, professional analysis that a trader would find actionable.
-`;
+Give me the same quality analysis you would provide if I asked this question directly on ChatGPT.`;
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -113,23 +103,24 @@ Format your response as a clear, professional analysis that a trader would find 
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'gpt-5-2025-08-07',
         messages: [
           {
             role: 'system',
-            content: 'You are a professional financial analyst with expertise in technical analysis and market predictions. Provide clear, actionable trading insights.'
+            content: 'You are a professional financial analyst. Provide the same quality stock analysis you would give if asked directly on ChatGPT. Be thorough, insightful, and practical.'
           },
           {
             role: 'user',
             content: prompt
           }
         ],
-        max_tokens: 1000,
-        temperature: 0.7,
+        max_completion_tokens: 1500,
       }),
     });
 
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`OpenAI API error: ${response.status} - ${errorText}`);
       throw new Error(`OpenAI API error: ${response.status}`);
     }
 
@@ -137,73 +128,10 @@ Format your response as a clear, professional analysis that a trader would find 
     return data.choices[0].message.content;
   } catch (error) {
     console.error('OpenAI API error:', error);
-    // Fallback analysis
-    return `Technical Analysis for ${symbol}:
-
-Market Sentiment: Based on current price action at $${stockData.price.toFixed(2)} with ${stockData.changePercent > 0 ? 'positive' : 'negative'} momentum (${stockData.changePercent.toFixed(2)}%).
-
-Technical Outlook:
-- RSI at ${technicalIndicators.rsi.toFixed(1)} indicates ${technicalIndicators.rsi > 70 ? 'overbought' : technicalIndicators.rsi < 30 ? 'oversold' : 'neutral'} conditions
-- Price is ${stockData.price > technicalIndicators.sma ? 'above' : 'below'} the SMA of $${technicalIndicators.sma.toFixed(2)}
-- MACD signal suggests ${technicalIndicators.macd > 0 ? 'bullish' : 'bearish'} momentum
-
-Risk Assessment: Monitor volume trends and key support/resistance levels. Consider position sizing and stop-loss strategies for the ${timeframe} timeframe.`;
+    throw error;
   }
 }
 
-function generatePrediction(
-  stockData: StockData,
-  technicalIndicators: TechnicalIndicators,
-  timeframe: string
-): { prediction: "bullish" | "bearish" | "neutral"; confidence: number; priceTargets: any } {
-  // Simplified prediction algorithm
-  let bullishSignals = 0;
-  let bearishSignals = 0;
-
-  // RSI analysis
-  if (technicalIndicators.rsi < 30) bullishSignals++;
-  if (technicalIndicators.rsi > 70) bearishSignals++;
-
-  // Price vs SMA
-  if (stockData.price > technicalIndicators.sma) bullishSignals++;
-  else bearishSignals++;
-
-  // MACD
-  if (technicalIndicators.macd > 0) bullishSignals++;
-  else bearishSignals++;
-
-  // Recent price change
-  if (stockData.changePercent > 0) bullishSignals++;
-  else bearishSignals++;
-
-  let prediction: "bullish" | "bearish" | "neutral";
-  let confidence: number;
-
-  if (bullishSignals > bearishSignals) {
-    prediction = "bullish";
-    confidence = 0.6 + (bullishSignals - bearishSignals) * 0.1;
-  } else if (bearishSignals > bullishSignals) {
-    prediction = "bearish";
-    confidence = 0.6 + (bearishSignals - bullishSignals) * 0.1;
-  } else {
-    prediction = "neutral";
-    confidence = 0.5;
-  }
-
-  // Calculate price targets
-  const currentPrice = stockData.price;
-  const volatility = Math.abs(stockData.changePercent) / 100;
-  
-  const priceTargets = {
-    target: prediction === "bullish" 
-      ? currentPrice * (1 + volatility * 2)
-      : currentPrice * (1 - volatility * 2),
-    support: currentPrice * (1 - volatility),
-    resistance: currentPrice * (1 + volatility)
-  };
-
-  return { prediction, confidence: Math.min(confidence, 0.95), priceTargets };
-}
 
 serve(async (req) => {
   // Handle CORS preflight requests
@@ -214,32 +142,24 @@ serve(async (req) => {
   try {
     const { symbol, investment, timeframe }: PredictionRequest = await req.json();
 
-    console.log(`Generating prediction for ${symbol}, investment: $${investment}, timeframe: ${timeframe}`);
+    console.log(`Getting OpenAI analysis for ${symbol}, investment: $${investment}, timeframe: ${timeframe}`);
 
-    // Fetch stock data
-    const stockData = await fetchStockData(symbol);
-    console.log('Stock data fetched:', stockData);
+    // Fetch real stock data
+    const stockData = await fetchRealStockData(symbol);
+    console.log('Real stock data fetched:', stockData);
 
-    // Calculate technical indicators
-    const technicalIndicators = calculateTechnicalIndicators(stockData);
-    console.log('Technical indicators calculated:', technicalIndicators);
-
-    // Generate prediction
-    const { prediction, confidence, priceTargets } = generatePrediction(stockData, technicalIndicators, timeframe);
-    console.log('Prediction generated:', { prediction, confidence });
-
-    // Get AI analysis
-    const analysis = await getAIAnalysis(symbol, stockData, technicalIndicators, timeframe);
-    console.log('AI analysis completed');
+    // Get OpenAI analysis
+    const analysis = await getOpenAIAnalysis(symbol, investment, timeframe, stockData);
+    console.log('OpenAI analysis completed');
 
     const result = {
       symbol,
-      prediction,
-      confidence,
+      currentPrice: stockData.currentPrice,
+      change: stockData.change,
+      changePercent: stockData.changePercent,
       timeframe,
       analysis,
-      technicalIndicators,
-      priceTargets
+      stockData
     };
 
     return new Response(JSON.stringify(result), {
@@ -250,7 +170,7 @@ serve(async (req) => {
     console.error('Error in predict-movement function:', error);
     return new Response(
       JSON.stringify({ 
-        error: 'Failed to generate prediction',
+        error: 'Failed to generate analysis',
         message: error.message 
       }), 
       {

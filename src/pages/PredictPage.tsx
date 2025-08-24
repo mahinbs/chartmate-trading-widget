@@ -13,19 +13,19 @@ import { Loader2, TrendingUp, TrendingDown, Minus } from "lucide-react";
 
 interface PredictionResult {
   symbol: string;
-  prediction: "bullish" | "bearish" | "neutral";
-  confidence: number;
+  currentPrice: number;
+  change: number;
+  changePercent: number;
   timeframe: string;
   analysis: string;
-  technicalIndicators: {
-    sma: number;
-    rsi: number;
-    macd: number;
-  };
-  priceTargets: {
-    target: number;
-    support: number;
-    resistance: number;
+  stockData: {
+    currentPrice: number;
+    openPrice: number;
+    highPrice: number;
+    lowPrice: number;
+    previousClose: number;
+    change: number;
+    changePercent: number;
   };
 }
 
@@ -34,7 +34,7 @@ const PredictPage = () => {
   const [investment, setInvestment] = useState("");
   const [timeframe, setTimeframe] = useState("");
   const [loading, setLoading] = useState(false);
-  const [prediction, setPrediction] = useState<PredictionResult | null>(null);
+  const [result, setResult] = useState<PredictionResult | null>(null);
 
   const handlePredict = async () => {
     if (!symbol || !investment || !timeframe) {
@@ -43,7 +43,7 @@ const PredictPage = () => {
     }
 
     setLoading(true);
-    setPrediction(null);
+    setResult(null);
 
     try {
       const { data, error } = await supabase.functions.invoke('predict-movement', {
@@ -55,13 +55,13 @@ const PredictPage = () => {
       });
 
       if (error) {
-        console.error("Prediction error:", error);
-        toast.error("Failed to get prediction. Please try again.");
+        console.error("Analysis error:", error);
+        toast.error("Failed to get analysis. Please try again.");
         return;
       }
 
-      setPrediction(data);
-      toast.success("Prediction generated successfully!");
+      setResult(data);
+      toast.success("Analysis generated successfully!");
     } catch (error) {
       console.error("Error:", error);
       toast.error("An error occurred while getting the prediction");
@@ -70,26 +70,16 @@ const PredictPage = () => {
     }
   };
 
-  const getPredictionIcon = (prediction: string) => {
-    switch (prediction) {
-      case "bullish":
-        return <TrendingUp className="h-5 w-5 text-trading-green" />;
-      case "bearish":
-        return <TrendingDown className="h-5 w-5 text-trading-red" />;
-      default:
-        return <Minus className="h-5 w-5 text-muted-foreground" />;
-    }
+  const getPriceChangeIcon = (changePercent: number) => {
+    if (changePercent > 0) return <TrendingUp className="h-5 w-5 text-green-600" />;
+    if (changePercent < 0) return <TrendingDown className="h-5 w-5 text-red-600" />;
+    return <Minus className="h-5 w-5 text-muted-foreground" />;
   };
 
-  const getPredictionColor = (prediction: string) => {
-    switch (prediction) {
-      case "bullish":
-        return "bg-trading-green";
-      case "bearish":
-        return "bg-trading-red";
-      default:
-        return "bg-muted";
-    }
+  const getPriceChangeColor = (changePercent: number) => {
+    if (changePercent > 0) return "bg-green-100 text-green-800 border-green-200";
+    if (changePercent < 0) return "bg-red-100 text-red-800 border-red-200";
+    return "bg-yellow-100 text-yellow-800 border-yellow-200";
   };
 
   return (
@@ -173,77 +163,83 @@ const PredictPage = () => {
         )}
       </div>
 
-      {/* Prediction Results */}
-      {prediction && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                {getPredictionIcon(prediction.prediction)}
-                Prediction Summary
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center gap-2">
-                <Badge className={getPredictionColor(prediction.prediction)}>
-                  {prediction.prediction.toUpperCase()}
-                </Badge>
-                <span className="text-sm text-muted-foreground">
-                  Confidence: {(prediction.confidence * 100).toFixed(1)}%
-                </span>
-              </div>
+      {/* Analysis Results */}
+      {result && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              {getPriceChangeIcon(result.changePercent)}
+              {result.symbol} Analysis
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">{result.symbol} Analysis</h3>
+              <Badge 
+                variant="outline" 
+                className={`${getPriceChangeColor(result.changePercent)} border`}
+              >
+                {getPriceChangeIcon(result.changePercent)}
+                ${result.currentPrice.toFixed(2)} ({result.changePercent > 0 ? '+' : ''}{result.changePercent.toFixed(2)}%)
+              </Badge>
+            </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <h4 className="font-semibold">Technical Indicators</h4>
-                <div className="grid grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">SMA:</span>
-                    <div className="font-mono">${prediction.technicalIndicators.sma.toFixed(2)}</div>
+                <h4 className="font-medium text-sm text-muted-foreground">Current Stock Data</h4>
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span>Current Price:</span>
+                    <span className="font-mono">${result.stockData.currentPrice.toFixed(2)}</span>
                   </div>
-                  <div>
-                    <span className="text-muted-foreground">RSI:</span>
-                    <div className="font-mono">{prediction.technicalIndicators.rsi.toFixed(1)}</div>
+                  <div className="flex justify-between">
+                    <span>Open:</span>
+                    <span className="font-mono">${result.stockData.openPrice.toFixed(2)}</span>
                   </div>
-                  <div>
-                    <span className="text-muted-foreground">MACD:</span>
-                    <div className="font-mono">{prediction.technicalIndicators.macd.toFixed(3)}</div>
+                  <div className="flex justify-between">
+                    <span>High:</span>
+                    <span className="font-mono">${result.stockData.highPrice.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Low:</span>
+                    <span className="font-mono">${result.stockData.lowPrice.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Previous Close:</span>
+                    <span className="font-mono">${result.stockData.previousClose.toFixed(2)}</span>
                   </div>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <h4 className="font-semibold">Price Targets</h4>
-                <div className="grid grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">Target:</span>
-                    <div className="font-mono text-trading-green">${prediction.priceTargets.target.toFixed(2)}</div>
+                <h4 className="font-medium text-sm text-muted-foreground">Investment Details</h4>
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span>Investment:</span>
+                    <span className="font-mono">${investment}</span>
                   </div>
-                  <div>
-                    <span className="text-muted-foreground">Support:</span>
-                    <div className="font-mono text-trading-red">${prediction.priceTargets.support.toFixed(2)}</div>
+                  <div className="flex justify-between">
+                    <span>Timeframe:</span>
+                    <Badge variant="secondary">{result.timeframe}</Badge>
                   </div>
-                  <div>
-                    <span className="text-muted-foreground">Resistance:</span>
-                    <div className="font-mono text-trading-blue">${prediction.priceTargets.resistance.toFixed(2)}</div>
+                  <div className="flex justify-between">
+                    <span>Shares (~):</span>
+                    <span className="font-mono">{(parseFloat(investment) / result.currentPrice).toFixed(2)}</span>
                   </div>
                 </div>
               </div>
-            </CardContent>
-          </Card>
+            </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>AI Analysis</CardTitle>
-            </CardHeader>
-            <CardContent>
+            <div className="space-y-2">
+              <h4 className="font-medium text-sm text-muted-foreground">OpenAI Analysis</h4>
               <Textarea
-                value={prediction.analysis}
+                value={result.analysis}
                 readOnly
-                className="min-h-[300px] resize-none"
+                className="min-h-[300px] resize-none bg-muted/50"
               />
-            </CardContent>
-          </Card>
-        </div>
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );
