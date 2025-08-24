@@ -61,16 +61,16 @@ async function fetchRealStockData(symbol: string): Promise<StockData> {
   }
 }
 
-async function getOpenAIAnalysis(
+async function getGeminiAnalysis(
   symbol: string,
   investment: number,
   timeframe: string,
   stockData: StockData
 ): Promise<string> {
-  const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
+  const geminiApiKey = Deno.env.get('GEMINI_API_KEY');
   
-  if (!openaiApiKey) {
-    throw new Error('OpenAI API key not configured');
+  if (!geminiApiKey) {
+    throw new Error('Gemini API key not configured');
   }
 
   const prompt = `I need a stock analysis for ${symbol}.
@@ -93,41 +93,41 @@ Please provide a comprehensive analysis including:
 4. Your recommendation (bullish/bearish/neutral) with confidence level
 5. Specific guidance for this ${timeframe} timeframe
 
-Give me the same quality analysis you would provide if I asked this question directly on ChatGPT.`;
+Give me the same quality analysis you would provide if I asked this question directly.`;
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${geminiApiKey}`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${openaiApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-5-2025-08-07',
-        messages: [
+        contents: [
           {
-            role: 'system',
-            content: 'You are a professional financial analyst. Provide the same quality stock analysis you would give if asked directly on ChatGPT. Be thorough, insightful, and practical.'
-          },
-          {
-            role: 'user',
-            content: prompt
+            parts: [
+              {
+                text: `You are a professional financial analyst. Provide thorough, insightful, and practical stock analysis.\n\n${prompt}`
+              }
+            ]
           }
         ],
-        max_completion_tokens: 1500,
+        generationConfig: {
+          maxOutputTokens: 1500,
+          temperature: 0.7,
+        }
       }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`OpenAI API error: ${response.status} - ${errorText}`);
-      throw new Error(`OpenAI API error: ${response.status}`);
+      console.error(`Gemini API error: ${response.status} - ${errorText}`);
+      throw new Error(`Gemini API error: ${response.status}`);
     }
 
     const data = await response.json();
-    return data.choices[0].message.content;
+    return data.candidates[0].content.parts[0].text;
   } catch (error) {
-    console.error('OpenAI API error:', error);
+    console.error('Gemini API error:', error);
     throw error;
   }
 }
@@ -142,15 +142,15 @@ serve(async (req) => {
   try {
     const { symbol, investment, timeframe }: PredictionRequest = await req.json();
 
-    console.log(`Getting OpenAI analysis for ${symbol}, investment: $${investment}, timeframe: ${timeframe}`);
+    console.log(`Getting Gemini analysis for ${symbol}, investment: $${investment}, timeframe: ${timeframe}`);
 
     // Fetch real stock data
     const stockData = await fetchRealStockData(symbol);
     console.log('Real stock data fetched:', stockData);
 
-    // Get OpenAI analysis
-    const analysis = await getOpenAIAnalysis(symbol, investment, timeframe, stockData);
-    console.log('OpenAI analysis completed');
+    // Get Gemini analysis
+    const analysis = await getGeminiAnalysis(symbol, investment, timeframe, stockData);
+    console.log('Gemini analysis completed');
 
     const result = {
       symbol,
