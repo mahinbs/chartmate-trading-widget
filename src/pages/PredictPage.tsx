@@ -16,7 +16,6 @@ import TradingViewWidget from "@/components/TradingViewWidget";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Loader2, TrendingUp, TrendingDown, Minus, AlertTriangle, BrainCircuit, LineChart, ChevronDown, DollarSign } from "lucide-react";
-import { ResponsiveContainer, LineChart as RechartsLineChart, Line } from "recharts";
 
 interface PredictionResult {
   symbol: string;
@@ -151,6 +150,39 @@ const PredictPage = () => {
       x: i,
       price: currentPrice + (currentPrice * change * i) / (100 * (steps - 1))
     }));
+  };
+
+  const renderSparklineSVG = () => {
+    if (!result?.expectedMove?.percent) return null;
+    
+    const data = generateSparklineData();
+    const width = 200;
+    const height = 40;
+    const padding = 4;
+    
+    const prices = data.map(d => d.price);
+    const minPrice = Math.min(...prices);
+    const maxPrice = Math.max(...prices);
+    const priceRange = maxPrice - minPrice || 1;
+    
+    const points = data.map((d, i) => {
+      const x = (i / (data.length - 1)) * (width - 2 * padding) + padding;
+      const y = height - padding - ((d.price - minPrice) / priceRange) * (height - 2 * padding);
+      return `${x},${y}`;
+    }).join(' ');
+    
+    const color = result.expectedMove.direction === 'up' ? '#10b981' : '#ef4444';
+    
+    return (
+      <svg width={width} height={height} className="w-full h-full">
+        <polyline
+          fill="none"
+          stroke={color}
+          strokeWidth="2"
+          points={points}
+        />
+      </svg>
+    );
   };
 
   return (
@@ -368,17 +400,7 @@ const PredictPage = () => {
                         <div className="space-y-2">
                           <h4 className="font-medium text-sm">Predicted Trend</h4>
                           <div className="h-12 w-full">
-                            <ResponsiveContainer width="100%" height="100%">
-                              <RechartsLineChart data={generateSparklineData()}>
-                                <Line 
-                                  type="monotone" 
-                                  dataKey="price" 
-                                  stroke={result.expectedMove.direction === 'up' ? '#10b981' : '#ef4444'} 
-                                  strokeWidth={2}
-                                  dot={false}
-                                />
-                              </RechartsLineChart>
-                            </ResponsiveContainer>
+                            {renderSparklineSVG()}
                           </div>
                         </div>
                       )}
