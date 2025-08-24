@@ -35,7 +35,7 @@ export default function ChartPanel({ defaultSymbol = "NASDAQ:AAPL", defaultInter
 
   return (
     <Card className="h-full flex flex-col">
-      <CardHeader className="pb-3">
+      <CardHeader className="pb-3 relative z-10">
         <div className="flex gap-2 items-center">
           <Select value={symbol} onValueChange={setSymbol}>
             <SelectTrigger className="flex-1">
