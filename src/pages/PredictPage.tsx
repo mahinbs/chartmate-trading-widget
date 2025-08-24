@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import TradingViewWidget from "@/components/TradingViewWidget";
+import { AdvancedPredictLoader } from "@/components/AdvancedPredictLoader";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Loader2, TrendingUp, TrendingDown, Minus, AlertTriangle, BrainCircuit, LineChart, ChevronDown, DollarSign } from "lucide-react";
@@ -61,6 +62,7 @@ const PredictPage = () => {
   const [chartInterval, setChartInterval] = useState("15");
   const [resultsOpen, setResultsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showAdvancedLoader, setShowAdvancedLoader] = useState(false);
   const [result, setResult] = useState<PredictionResult | null>(null);
 
   const handlePredict = async () => {
@@ -70,6 +72,7 @@ const PredictPage = () => {
     }
 
     setLoading(true);
+    setShowAdvancedLoader(true);
     setResult(null);
 
     try {
@@ -83,19 +86,26 @@ const PredictPage = () => {
 
       if (error) {
         console.error("Analysis error:", error);
+        setShowAdvancedLoader(false);
         toast.error("Failed to get analysis. Please try again.");
         return;
       }
 
       setResult(data);
-      setResultsOpen(true);
-      toast.success("Analysis generated successfully!");
+      // Don't close loader immediately, let it complete its animation
     } catch (error) {
       console.error("Error:", error);
+      setShowAdvancedLoader(false);
       toast.error("An error occurred while getting the prediction");
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleLoaderComplete = () => {
+    setShowAdvancedLoader(false);
+    setResultsOpen(true);
+    toast.success("Analysis generated successfully!");
   };
 
   const getPriceChangeIcon = (changePercent: number) => {
@@ -564,6 +574,14 @@ const PredictPage = () => {
           </div>
         </div>
       )}
+
+      {/* Advanced Prediction Loader */}
+      <AdvancedPredictLoader
+        isVisible={showAdvancedLoader}
+        symbol={symbol.split(':')[1] || symbol}
+        timeframe={timeframe}
+        onComplete={handleLoaderComplete}
+      />
     </div>
   );
 };
