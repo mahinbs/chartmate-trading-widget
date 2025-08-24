@@ -1,4 +1,4 @@
-import { BarChart3, Brain, Settings } from "lucide-react";
+import { Brain } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 
 import {
@@ -15,9 +15,7 @@ import {
 } from "@/components/ui/sidebar";
 
 const menuItems = [
-  { title: "Dashboard", url: "/", icon: BarChart3 },
   { title: "AI Predict", url: "/predict", icon: Brain },
-  { title: "Settings", url: "/settings", icon: Settings },
 ];
 
 export function AppSidebar() {
@@ -33,11 +31,13 @@ export function AppSidebar() {
   };
 
   const getNavCls = (active: boolean) =>
-    active ? "bg-sidebar-accent text-sidebar-accent-foreground" : "hover:bg-sidebar-accent/50";
+    active 
+      ? "bg-sidebar-accent text-sidebar-accent-foreground border-l-2 border-primary/70 shadow-sm transition-colors" 
+      : "hover:bg-sidebar-accent/60 hover-scale transition-colors";
 
   return (
     <Sidebar className={state === "collapsed" ? "w-14" : "w-64"} collapsible="icon">
-      <SidebarHeader className="p-4">
+      <SidebarHeader className="p-4 animate-fade-in">
         {state !== "collapsed" && (
           <div>
             <h2 className="text-lg font-semibold text-sidebar-foreground">Trading AI</h2>
@@ -49,11 +49,11 @@ export function AppSidebar() {
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupLabel>Navigation</SidebarGroupLabel>
-          <SidebarGroupContent>
+          <SidebarGroupContent className="animate-fade-in">
             <SidebarMenu>
               {menuItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild>
+                  <SidebarMenuButton asChild tooltip={item.title}>
                     <NavLink 
                       to={item.url} 
                       end={item.url === "/"}
