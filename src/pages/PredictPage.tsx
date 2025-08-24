@@ -165,9 +165,15 @@ const PredictPage = () => {
                   <SelectValue placeholder="Select timeframe" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="5m">5 Minutes</SelectItem>
+                  <SelectItem value="15m">15 Minutes</SelectItem>
                   <SelectItem value="30m">30 Minutes</SelectItem>
                   <SelectItem value="1h">1 Hour</SelectItem>
                   <SelectItem value="2h">2 Hours</SelectItem>
+                  <SelectItem value="4h">4 Hours</SelectItem>
+                  <SelectItem value="1d">1 Day</SelectItem>
+                  <SelectItem value="1w">1 Week</SelectItem>
+                  <SelectItem value="1mo">1 Month</SelectItem>
                 </SelectContent>
               </Select>
             </div>
