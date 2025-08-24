@@ -6,10 +6,13 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
 import TradingViewWidget from "@/components/TradingViewWidget";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { Loader2, TrendingUp, TrendingDown, Minus, AlertTriangle } from "lucide-react";
 
 interface PredictionResult {
   symbol: string;
@@ -27,6 +30,25 @@ interface PredictionResult {
     change: number;
     changePercent: number;
   };
+  // New structured fields
+  recommendation?: "bullish" | "bearish" | "neutral";
+  confidence?: number;
+  expectedMove?: {
+    percent?: number;
+    direction?: "up" | "down" | "flat";
+    priceTarget?: {
+      min: number;
+      max: number;
+    };
+  };
+  patterns?: string[];
+  keyLevels?: {
+    support?: number[];
+    resistance?: number[];
+  };
+  risks?: string[];
+  opportunities?: string[];
+  rationale?: string;
 }
 
 const PredictPage = () => {
@@ -80,6 +102,23 @@ const PredictPage = () => {
     if (changePercent > 0) return "bg-green-100 text-green-800 border-green-200";
     if (changePercent < 0) return "bg-red-100 text-red-800 border-red-200";
     return "bg-yellow-100 text-yellow-800 border-yellow-200";
+  };
+
+  const getRecommendationIcon = (recommendation?: string) => {
+    if (recommendation === "bullish") return <TrendingUp className="h-6 w-6 text-green-600" />;
+    if (recommendation === "bearish") return <TrendingDown className="h-6 w-6 text-red-600" />;
+    return <Minus className="h-6 w-6 text-muted-foreground" />;
+  };
+
+  const getRecommendationColor = (recommendation?: string) => {
+    if (recommendation === "bullish") return "text-green-600";
+    if (recommendation === "bearish") return "text-red-600";
+    return "text-muted-foreground";
+  };
+
+  const calculatePnL = (investment: number, expectedPercent?: number) => {
+    if (!expectedPercent) return null;
+    return (investment * expectedPercent) / 100;
   };
 
   return (
@@ -165,81 +204,241 @@ const PredictPage = () => {
 
       {/* Analysis Results */}
       {result && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              {getPriceChangeIcon(result.changePercent)}
-              {result.symbol} Analysis
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold">{result.symbol} Analysis</h3>
-              <Badge 
-                variant="outline" 
-                className={`${getPriceChangeColor(result.changePercent)} border`}
-              >
-                {getPriceChangeIcon(result.changePercent)}
-                ${result.currentPrice.toFixed(2)} ({result.changePercent > 0 ? '+' : ''}{result.changePercent.toFixed(2)}%)
-              </Badge>
-            </div>
+        <div className="space-y-6 animate-fade-in">
+          {/* Decision Summary */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-3">
+                {getRecommendationIcon(result.recommendation)}
+                <span className={getRecommendationColor(result.recommendation)}>
+                  {result.recommendation?.charAt(0).toUpperCase() + result.recommendation?.slice(1) || "Analysis"} - {result.symbol}
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Current Price */}
+                <div className="text-center">
+                  <p className="text-sm text-muted-foreground">Current Price</p>
+                  <Badge 
+                    variant="outline" 
+                    className={`${getPriceChangeColor(result.changePercent)} border text-lg px-4 py-2`}
+                  >
+                    ${result.currentPrice.toFixed(2)}
+                  </Badge>
+                  <p className="text-sm mt-1">
+                    {result.changePercent > 0 ? '+' : ''}{result.changePercent.toFixed(2)}% today
+                  </p>
+                </div>
 
+                {/* Confidence */}
+                {result.confidence !== undefined && (
+                  <div className="text-center">
+                    <p className="text-sm text-muted-foreground mb-2">Confidence Level</p>
+                    <div className="space-y-2">
+                      <Progress value={result.confidence} className="h-3" />
+                      <Badge variant="secondary">{result.confidence}%</Badge>
+                    </div>
+                  </div>
+                )}
+
+                {/* Expected Move */}
+                {result.expectedMove && (
+                  <div className="text-center">
+                    <p className="text-sm text-muted-foreground">Expected Move ({result.timeframe})</p>
+                    <div className="flex items-center justify-center gap-2 mt-2">
+                      {result.expectedMove.direction === "up" && <TrendingUp className="h-4 w-4 text-green-600" />}
+                      {result.expectedMove.direction === "down" && <TrendingDown className="h-4 w-4 text-red-600" />}
+                      {result.expectedMove.direction === "flat" && <Minus className="h-4 w-4 text-muted-foreground" />}
+                      <span className="font-semibold">
+                        {result.expectedMove.percent ? `${result.expectedMove.percent > 0 ? '+' : ''}${result.expectedMove.percent.toFixed(1)}%` : 'TBD'}
+                      </span>
+                    </div>
+                    {result.expectedMove.priceTarget && (
+                      <div className="flex gap-2 mt-2 justify-center">
+                        <Badge variant="outline" className="text-xs">
+                          ${result.expectedMove.priceTarget.min.toFixed(2)} - ${result.expectedMove.priceTarget.max.toFixed(2)}
+                        </Badge>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Investment Impact */}
+              {result.expectedMove?.percent && (
+                <div className="bg-muted/50 rounded-lg p-4">
+                  <h4 className="font-medium mb-2">Investment Impact</h4>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div className="flex justify-between">
+                      <span>Investment:</span>
+                      <span className="font-mono">${investment}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Est. P/L:</span>
+                      <span className={`font-mono ${calculatePnL(parseFloat(investment), result.expectedMove.percent)! >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {calculatePnL(parseFloat(investment), result.expectedMove.percent)! >= 0 ? '+' : ''}${calculatePnL(parseFloat(investment), result.expectedMove.percent)!.toFixed(2)} est.
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Chart Patterns & Key Levels */}
+          {(result.patterns?.length || result.keyLevels?.support?.length || result.keyLevels?.resistance?.length) && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <h4 className="font-medium text-sm text-muted-foreground">Current Stock Data</h4>
-                <div className="space-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <span>Current Price:</span>
-                    <span className="font-mono">${result.stockData.currentPrice.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Open:</span>
-                    <span className="font-mono">${result.stockData.openPrice.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>High:</span>
-                    <span className="font-mono">${result.stockData.highPrice.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Low:</span>
-                    <span className="font-mono">${result.stockData.lowPrice.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Previous Close:</span>
-                    <span className="font-mono">${result.stockData.previousClose.toFixed(2)}</span>
-                  </div>
-                </div>
-              </div>
+              {/* Chart Patterns */}
+              {result.patterns?.length && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Chart Patterns</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-wrap gap-2">
+                      {result.patterns.map((pattern, index) => (
+                        <Badge key={index} variant="secondary">
+                          {pattern}
+                        </Badge>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
-              <div className="space-y-2">
-                <h4 className="font-medium text-sm text-muted-foreground">Investment Details</h4>
-                <div className="space-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <span>Investment:</span>
-                    <span className="font-mono">${investment}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Timeframe:</span>
-                    <Badge variant="secondary">{result.timeframe}</Badge>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Shares (~):</span>
-                    <span className="font-mono">{(parseFloat(investment) / result.currentPrice).toFixed(2)}</span>
-                  </div>
-                </div>
-              </div>
+              {/* Key Levels */}
+              {(result.keyLevels?.support?.length || result.keyLevels?.resistance?.length) && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Key Levels</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {result.keyLevels?.support?.length && (
+                      <div>
+                        <p className="text-sm text-muted-foreground mb-2">Support Levels</p>
+                        <div className="flex flex-wrap gap-2">
+                          {result.keyLevels.support.map((level, index) => (
+                            <Badge key={index} variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                              ${level.toFixed(2)}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {result.keyLevels?.resistance?.length && (
+                      <div>
+                        <p className="text-sm text-muted-foreground mb-2">Resistance Levels</p>
+                        <div className="flex flex-wrap gap-2">
+                          {result.keyLevels.resistance.map((level, index) => (
+                            <Badge key={index} variant="outline" className="bg-red-50 text-red-700 border-red-200">
+                              ${level.toFixed(2)}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
             </div>
+          )}
 
-            <div className="space-y-2">
-              <h4 className="font-medium text-sm text-muted-foreground">OpenAI Analysis</h4>
+          {/* Stock Data & Investment Details */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Market Data & Investment Details</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-3">
+                  <h4 className="font-medium text-sm text-muted-foreground">Current Stock Data</h4>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span>Current Price:</span>
+                      <span className="font-mono">${result.stockData.currentPrice.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Open:</span>
+                      <span className="font-mono">${result.stockData.openPrice.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>High:</span>
+                      <span className="font-mono">${result.stockData.highPrice.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Low:</span>
+                      <span className="font-mono">${result.stockData.lowPrice.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Previous Close:</span>
+                      <span className="font-mono">${result.stockData.previousClose.toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <h4 className="font-medium text-sm text-muted-foreground">Investment Details</h4>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span>Investment:</span>
+                      <span className="font-mono">${investment}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Timeframe:</span>
+                      <Badge variant="secondary">{result.timeframe}</Badge>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Shares (~):</span>
+                      <span className="font-mono">{(parseFloat(investment) / result.currentPrice).toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* AI Analysis */}
+          <Card>
+            <CardHeader>
+              <CardTitle>AI Analysis</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
               <Textarea
                 value={result.analysis}
                 readOnly
                 className="min-h-[300px] resize-none bg-muted/50"
               />
-            </div>
-          </CardContent>
-        </Card>
+              
+              {/* Disclaimer */}
+              <Alert>
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Important</AlertTitle>
+                <AlertDescription>
+                  This is an AI-generated analysis for informational purposes only and is not financial advice. Markets are risky; do your own research.
+                </AlertDescription>
+              </Alert>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+      
+      {/* Loading Skeleton */}
+      {loading && (
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <Skeleton className="h-8 w-64" />
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Skeleton className="h-20 w-full" />
+                <Skeleton className="h-20 w-full" />
+                <Skeleton className="h-20 w-full" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   );

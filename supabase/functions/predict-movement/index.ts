@@ -66,37 +66,71 @@ async function getGeminiAnalysis(
   investment: number,
   timeframe: string,
   stockData: StockData
-): Promise<string> {
+): Promise<{ structuredData: any; analysis: string }> {
   const geminiApiKey = Deno.env.get('GEMINI_API_KEY');
   
   if (!geminiApiKey) {
     throw new Error('Gemini API key not configured');
   }
 
-  const prompt = `I need a stock analysis for ${symbol}.
+  const structuredPrompt = `Analyze ${symbol} stock and respond with ONLY valid JSON in this exact format:
+{
+  "recommendation": "bullish" | "bearish" | "neutral",
+  "confidence": number between 0-100,
+  "expectedMove": {
+    "percent": number,
+    "direction": "up" | "down" | "flat",
+    "priceTarget": {
+      "min": number,
+      "max": number
+    }
+  },
+  "timeframe": "${timeframe}",
+  "patterns": ["array of chart patterns detected"],
+  "keyLevels": {
+    "support": [array of support price levels],
+    "resistance": [array of resistance price levels]
+  },
+  "rationale": "brief explanation of decision",
+  "risks": ["array of key risk factors"],
+  "opportunities": ["array of opportunities"]
+}
 
-Current real-time data:
-- Current Price: $${stockData.currentPrice.toFixed(2)}
-- Open: $${stockData.openPrice.toFixed(2)}
-- High: $${stockData.highPrice.toFixed(2)}
-- Low: $${stockData.lowPrice.toFixed(2)}
-- Previous Close: $${stockData.previousClose.toFixed(2)}
-- Change: $${stockData.change.toFixed(2)} (${stockData.changePercent.toFixed(2)}%)
+Current data for ${symbol}:
+- Price: $${stockData.currentPrice}
+- Open: $${stockData.openPrice} 
+- High: $${stockData.highPrice}
+- Low: $${stockData.lowPrice}
+- Previous Close: $${stockData.previousClose}
+- Change: ${stockData.changePercent}%
+- Investment: $${investment}
+- Timeframe: ${timeframe}
 
-Investment Amount: $${investment}
-Timeframe: ${timeframe}
+Respond with ONLY the JSON object, no other text.`;
 
-Please provide a comprehensive analysis including:
-1. Current market sentiment and price action analysis
-2. Technical outlook and key levels to watch
-3. Potential risks and opportunities
-4. Your recommendation (bullish/bearish/neutral) with confidence level
-5. Specific guidance for this ${timeframe} timeframe
+  const analysisPrompt = `Provide detailed stock analysis for ${symbol}:
 
-Give me the same quality analysis you would provide if I asked this question directly.`;
+Current stock data:
+- Price: $${stockData.currentPrice}
+- Open: $${stockData.openPrice}
+- High: $${stockData.highPrice}
+- Low: $${stockData.lowPrice}
+- Previous Close: $${stockData.previousClose}
+- Change: $${stockData.change} (${stockData.changePercent}%)
+
+Investment amount: $${investment}
+Analysis timeframe: ${timeframe}
+
+Provide comprehensive analysis covering:
+1. Market sentiment and technical analysis
+2. Risk assessment for this investment
+3. Your recommendation with reasoning
+4. Specific guidance for the ${timeframe} timeframe
+5. Key factors to watch`;
 
   try {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${geminiApiKey}`, {
+    // First try to get structured data
+    const structuredResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${geminiApiKey}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -106,26 +140,76 @@ Give me the same quality analysis you would provide if I asked this question dir
           {
             parts: [
               {
-                text: `You are a professional financial analyst. Provide thorough, insightful, and practical stock analysis.\n\n${prompt}`
+                text: structuredPrompt
               }
             ]
           }
         ],
         generationConfig: {
-          maxOutputTokens: 1500,
+          maxOutputTokens: 800,
+          temperature: 0.3,
+        }
+      }),
+    });
+
+    // Then get detailed analysis
+    const analysisResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${geminiApiKey}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              {
+                text: analysisPrompt
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          maxOutputTokens: 1200,
           temperature: 0.7,
         }
       }),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`Gemini API error: ${response.status} - ${errorText}`);
-      throw new Error(`Gemini API error: ${response.status}`);
+    if (!structuredResponse.ok || !analysisResponse.ok) {
+      throw new Error('API request failed');
     }
 
-    const data = await response.json();
-    return data.candidates[0].content.parts[0].text;
+    const structuredData = await structuredResponse.json();
+    const analysisData = await analysisResponse.json();
+    
+    const structuredText = structuredData.candidates[0].content.parts[0].text;
+    const analysis = analysisData.candidates[0].content.parts[0].text;
+
+    let parsedStructuredData = null;
+    try {
+      // Try to parse JSON from structured response
+      const cleanedText = structuredText.replace(/```json\n?|\n?```/g, '').trim();
+      parsedStructuredData = JSON.parse(cleanedText);
+    } catch (parseError) {
+      console.log('Failed to parse structured data, using fallback');
+      // Fallback - basic data extraction
+      parsedStructuredData = {
+        recommendation: "neutral",
+        confidence: 50,
+        timeframe: timeframe,
+        patterns: [],
+        keyLevels: { support: [], resistance: [] },
+        rationale: "Analysis available in full text",
+        risks: [],
+        opportunities: []
+      };
+    }
+
+    return {
+      structuredData: parsedStructuredData,
+      analysis: analysis
+    };
+
   } catch (error) {
     console.error('Gemini API error:', error);
     throw error;
@@ -149,7 +233,7 @@ serve(async (req) => {
     console.log('Real stock data fetched:', stockData);
 
     // Get Gemini analysis
-    const analysis = await getGeminiAnalysis(symbol, investment, timeframe, stockData);
+    const { structuredData, analysis } = await getGeminiAnalysis(symbol, investment, timeframe, stockData);
     console.log('Gemini analysis completed');
 
     const result = {
@@ -159,7 +243,8 @@ serve(async (req) => {
       changePercent: stockData.changePercent,
       timeframe,
       analysis,
-      stockData
+      stockData,
+      ...structuredData
     };
 
     return new Response(JSON.stringify(result), {
