@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SymbolSearch } from "@/components/SymbolSearch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -70,7 +71,7 @@ const PredictPage = () => {
     try {
       const { data, error } = await supabase.functions.invoke('predict-movement', {
         body: {
-          symbol: symbol.toUpperCase(),
+          symbol: symbol.split(':')[1] || symbol,
           investment: parseFloat(investment),
           timeframe
         }
@@ -138,12 +139,11 @@ const PredictPage = () => {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="symbol">Stock Symbol</Label>
-              <Input
-                id="symbol"
-                placeholder="e.g., AAPL, GOOGL, TSLA"
+              <Label htmlFor="symbol">Symbol</Label>
+              <SymbolSearch
                 value={symbol}
-                onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+                onValueChange={setSymbol}
+                placeholder="Search stocks, crypto, forex, commodities..."
               />
             </div>
 
@@ -193,10 +193,10 @@ const PredictPage = () => {
         {symbol && (
           <Card>
             <CardHeader>
-              <CardTitle>Live Chart - {symbol}</CardTitle>
+              <CardTitle>Live Chart - {symbol.split(':')[1] || symbol}</CardTitle>
             </CardHeader>
             <CardContent>
-              <TradingViewWidget symbol={`NASDAQ:${symbol}`} interval="15" />
+              <TradingViewWidget symbol={symbol} interval="15" />
             </CardContent>
           </Card>
         )}
