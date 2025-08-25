@@ -1,5 +1,4 @@
-
-import { Brain, History } from "lucide-react";
+import { Brain } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 
 import {
@@ -17,7 +16,6 @@ import {
 
 const menuItems = [
   { title: "AI Predict", url: "/predict", icon: Brain },
-  { title: "Saved Predictions", url: "/predictions", icon: History },
 ];
 
 export function AppSidebar() {
