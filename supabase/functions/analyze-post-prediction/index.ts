@@ -26,19 +26,36 @@ function detectAssetType(symbol: string) {
   return { type: 'stock', normalizedSymbol: symbol };
 }
 
-// Helper function to get Finnhub forex symbol
-function getFinnhubForexSymbol(normalizedSymbol: string) {
+// Helper function to get Finnhub forex symbols (multiple brokers)
+function getFinnhubForexSymbols(normalizedSymbol: string) {
   const [base, quote] = normalizedSymbol.split('/');
-  return `OANDA:${base}_${quote}`;
+  return [
+    `OANDA:${base}_${quote}`,
+    `FXCM:${base}/${quote}`
+  ];
 }
 
-// Helper function to determine resolution based on time span
-function getResolution(spanMinutes: number) {
-  if (spanMinutes <= 90) return '1';
-  if (spanMinutes <= 360) return '5';
-  if (spanMinutes <= 1440) return '15';
-  if (spanMinutes <= 10080) return '60';
-  return 'D';
+// Helper function to determine resolution based on time span with fallback sequence
+function getResolutionSequence(spanMinutes: number) {
+  if (spanMinutes <= 90) return ['1', '5', '15'];
+  if (spanMinutes <= 360) return ['5', '15', '60'];
+  if (spanMinutes <= 1440) return ['15', '60'];
+  if (spanMinutes <= 10080) return ['60', 'D'];
+  return ['D'];
+}
+
+// Helper to generate programmatic fallback summary
+function generateFallbackSummary(marketData: any, normalizedSymbol: string) {
+  if (!marketData) {
+    return `• ${normalizedSymbol} moved sideways with no significant percentage change within the specified timeframe due to unavailable market data.\n• No clear catalyst found during the specified timeframe.\n•  The lack of price action data prevents analysis of market reaction or broader context.`;
+  }
+
+  const priceChange = marketData.close - marketData.open;
+  const priceChangePercent = ((priceChange / marketData.open) * 100).toFixed(2);
+  const direction = priceChange >= 0 ? 'up' : 'down';
+  const sign = priceChange >= 0 ? '+' : '';
+  
+  return `• ${normalizedSymbol} moved ${direction} by ${sign}${priceChangePercent}% from ${marketData.open.toFixed(4)} to ${marketData.close.toFixed(4)}.\n• No clear catalyst found during the specified timeframe.\n• The market showed ${parseFloat(priceChangePercent) > 1 ? 'elevated' : 'modest'} volatility within the session.`;
 }
 
 serve(async (req) => {
@@ -61,6 +78,11 @@ serve(async (req) => {
       });
     }
 
+    // Sanity check on required secrets
+    if (!finnhubApiKey && !alphaVantageApiKey) {
+      console.warn('Warning: Neither FINNHUB_API_KEY nor ALPHA_VANTAGE_API_KEY is configured');
+    }
+
     const fromTime = new Date(from);
     const toTime = new Date();
     const spanMinutes = (toTime.getTime() - fromTime.getTime()) / 60000;
@@ -71,50 +93,78 @@ serve(async (req) => {
     const { type: assetType, normalizedSymbol } = detectAssetType(symbol);
     console.log(`Detected asset type: ${assetType}, normalized symbol: ${normalizedSymbol}`);
 
-    // Get appropriate resolution
-    const resolution = getResolution(spanMinutes);
-    console.log(`Using resolution: ${resolution} for span: ${spanMinutes.toFixed(1)} minutes`);
+    // Get resolution sequence for fallback
+    const resolutionSequence = getResolutionSequence(spanMinutes);
+    console.log(`Using resolution sequence: ${resolutionSequence.join(' → ')} for span: ${spanMinutes.toFixed(1)} minutes`);
 
-    // Fetch market data
+    // Time padding for better data retrieval: 5 min before, 1 min gap from now
+    const paddedFromTime = new Date(fromTime.getTime() - 5 * 60 * 1000);
+    const paddedToTime = new Date(toTime.getTime() - 60 * 1000);
+    const fromTimestamp = Math.floor(paddedFromTime.getTime() / 1000);
+    const toTimestamp = Math.floor(paddedToTime.getTime() / 1000);
+
+    // Fetch market data with enhanced fallback logic
     let marketData = null;
-    const fromTimestamp = Math.floor(fromTime.getTime() / 1000);
-    const toTimestamp = Math.floor(toTime.getTime() / 1000);
+    let dataSource = '';
+    let triedMethods: string[] = [];
 
     try {
-      // Try Finnhub first
+      // Try Finnhub first with enhanced fallback logic
       if (finnhubApiKey) {
         console.log('Fetching market data from Finnhub...');
         
-        let finnhubSymbol = symbol;
         let endpoint = 'stock/candle';
+        let symbolsToTry = [symbol];
         
         if (assetType === 'forex') {
-          finnhubSymbol = getFinnhubForexSymbol(normalizedSymbol);
           endpoint = 'forex/candle';
+          symbolsToTry = getFinnhubForexSymbols(normalizedSymbol);
         }
         
-        console.log(`Using Finnhub endpoint: ${endpoint}, symbol: ${finnhubSymbol}`);
-        
-        const finnhubResponse = await fetch(
-          `https://finnhub.io/api/v1/${endpoint}?symbol=${finnhubSymbol}&resolution=${resolution}&from=${fromTimestamp}&to=${toTimestamp}&token=${finnhubApiKey}`
-        );
-        
-        if (finnhubResponse.ok) {
-          const data = await finnhubResponse.json();
-          console.log(`Finnhub response status: ${data.s}, candles: ${data.c?.length || 0}`);
+        // Try each resolution and symbol combination
+        for (const resolution of resolutionSequence) {
+          if (marketData) break;
           
-          if (data.s === 'ok' && data.c && data.c.length > 0) {
-            marketData = {
-              source: `Finnhub ${endpoint}`,
-              open: data.o[0],
-              close: data.c[data.c.length - 1],
-              high: Math.max(...data.h),
-              low: Math.min(...data.l),
-              volume: data.v?.reduce((a, b) => a + b, 0) || 0,
-              prices: data.c,
-              candleCount: data.c.length
-            };
-            console.log('Successfully fetched data from Finnhub');
+          for (const finnhubSymbol of symbolsToTry) {
+            if (marketData) break;
+            
+            const method = `Finnhub ${endpoint} ${finnhubSymbol} (${resolution})`;
+            triedMethods.push(method);
+            console.log(`Trying: ${method}`);
+            
+            try {
+              const finnhubResponse = await fetch(
+                `https://finnhub.io/api/v1/${endpoint}?symbol=${finnhubSymbol}&resolution=${resolution}&from=${fromTimestamp}&to=${toTimestamp}&token=${finnhubApiKey}`
+              );
+              
+              if (!finnhubResponse.ok) {
+                console.log(`HTTP ${finnhubResponse.status} for ${method}`);
+                continue;
+              }
+              
+              const data = await finnhubResponse.json();
+              console.log(`${method}: status=${data.s}, candles=${data.c?.length || 0}`);
+              
+              if (data.s === 'ok' && data.c && data.c.length > 0) {
+                marketData = {
+                  source: `Finnhub ${endpoint} (${finnhubSymbol}, ${resolution})`,
+                  open: data.o[0],
+                  close: data.c[data.c.length - 1],
+                  high: Math.max(...data.h),
+                  low: Math.min(...data.l),
+                  volume: data.v?.reduce((a, b) => a + b, 0) || 0,
+                  prices: data.c,
+                  candleCount: data.c.length
+                };
+                dataSource = method;
+                console.log(`✓ Success: ${method}`);
+                break;
+              } else {
+                console.log(`${method}: ${data.s || 'no_data'}`);
+              }
+            } catch (err) {
+              console.log(`${method}: fetch error - ${err.message}`);
+            }
           }
         }
       }
@@ -123,96 +173,120 @@ serve(async (req) => {
       if (!marketData && alphaVantageApiKey) {
         console.log('Trying Alpha Vantage as fallback...');
         
-        let avFunction = 'TIME_SERIES_DAILY';
-        let avSymbol = symbol;
-        
         if (assetType === 'forex') {
-          avFunction = 'FX_INTRADAY';
           const [base, quote] = normalizedSymbol.split('/');
           
-          // Map resolution to Alpha Vantage interval
-          const interval = resolution === '1' ? '5min' : 
-                          resolution === '5' ? '5min' : 
-                          resolution === '15' ? '15min' : 
-                          resolution === '60' ? '60min' : '5min';
-          
-          const avResponse = await fetch(
-            `https://www.alphavantage.co/query?function=${avFunction}&from_symbol=${base}&to_symbol=${quote}&interval=${interval}&apikey=${alphaVantageApiKey}`
-          );
-          
-          if (avResponse.ok) {
-            const data = await avResponse.json();
-            const timeSeries = data[`Time Series FX (${interval})`];
+          for (const resolution of resolutionSequence) {
+            if (marketData) break;
             
-            if (timeSeries) {
-              const timestamps = Object.keys(timeSeries).sort();
-              const relevantTimestamps = timestamps.filter(ts => {
-                const d = new Date(ts);
-                return d >= fromTime && d <= toTime;
-              });
+            // Map resolution to Alpha Vantage interval
+            const interval = resolution === '1' ? '5min' : 
+                            resolution === '5' ? '5min' : 
+                            resolution === '15' ? '15min' : 
+                            resolution === '60' ? '60min' : '5min';
+            
+            const method = `Alpha Vantage FX ${interval}`;
+            triedMethods.push(method);
+            console.log(`Trying: ${method}`);
+            
+            try {
+              const avResponse = await fetch(
+                `https://www.alphavantage.co/query?function=FX_INTRADAY&from_symbol=${base}&to_symbol=${quote}&interval=${interval}&apikey=${alphaVantageApiKey}`
+              );
               
-              if (relevantTimestamps.length > 0) {
-                const firstTs = relevantTimestamps[0];
-                const lastTs = relevantTimestamps[relevantTimestamps.length - 1];
+              if (avResponse.ok) {
+                const data = await avResponse.json();
+                const timeSeries = data[`Time Series FX (${interval})`];
                 
-                marketData = {
-                  source: `Alpha Vantage FX ${interval}`,
-                  open: parseFloat(timeSeries[firstTs]['1. open']),
-                  close: parseFloat(timeSeries[lastTs]['4. close']),
-                  high: Math.max(...relevantTimestamps.map(ts => parseFloat(timeSeries[ts]['2. high']))),
-                  low: Math.min(...relevantTimestamps.map(ts => parseFloat(timeSeries[ts]['3. low']))),
-                  volume: 0, // Forex doesn't have volume
-                  prices: relevantTimestamps.map(ts => parseFloat(timeSeries[ts]['4. close'])),
-                  candleCount: relevantTimestamps.length
-                };
-                console.log('Successfully fetched forex data from Alpha Vantage');
+                if (timeSeries) {
+                  const timestamps = Object.keys(timeSeries).sort();
+                  const relevantTimestamps = timestamps.filter(ts => {
+                    const d = new Date(ts);
+                    return d >= fromTime && d <= toTime;
+                  });
+                  
+                  if (relevantTimestamps.length > 0) {
+                    const firstTs = relevantTimestamps[0];
+                    const lastTs = relevantTimestamps[relevantTimestamps.length - 1];
+                    
+                    marketData = {
+                      source: `Alpha Vantage FX ${interval}`,
+                      open: parseFloat(timeSeries[firstTs]['1. open']),
+                      close: parseFloat(timeSeries[lastTs]['4. close']),
+                      high: Math.max(...relevantTimestamps.map(ts => parseFloat(timeSeries[ts]['2. high']))),
+                      low: Math.min(...relevantTimestamps.map(ts => parseFloat(timeSeries[ts]['3. low']))),
+                      volume: 0, // Forex doesn't have volume
+                      prices: relevantTimestamps.map(ts => parseFloat(timeSeries[ts]['4. close'])),
+                      candleCount: relevantTimestamps.length
+                    };
+                    dataSource = method;
+                    console.log(`✓ Success: ${method}`);
+                    break;
+                  }
+                }
               }
+            } catch (err) {
+              console.log(`${method}: fetch error - ${err.message}`);
             }
           }
         } else {
           // Stock fallback
-          const interval = resolution === 'D' ? 'daily' : 
-                          resolution === '60' ? '60min' : 
-                          resolution === '15' ? '15min' : 
-                          resolution === '5' ? '5min' : '1min';
-          
-          const stockFunction = interval === 'daily' ? 'TIME_SERIES_DAILY' : 'TIME_SERIES_INTRADAY';
-          let url = `https://www.alphavantage.co/query?function=${stockFunction}&symbol=${avSymbol}&apikey=${alphaVantageApiKey}`;
-          
-          if (stockFunction === 'TIME_SERIES_INTRADAY') {
-            url += `&interval=${interval}`;
-          }
-          
-          const avResponse = await fetch(url);
-          
-          if (avResponse.ok) {
-            const data = await avResponse.json();
-            const timeSeriesKey = stockFunction === 'TIME_SERIES_DAILY' ? 'Time Series (Daily)' : `Time Series (${interval})`;
-            const timeSeries = data[timeSeriesKey];
+          for (const resolution of resolutionSequence) {
+            if (marketData) break;
             
-            if (timeSeries) {
-              const timestamps = Object.keys(timeSeries).sort();
-              const relevantTimestamps = timestamps.filter(ts => {
-                const d = new Date(ts);
-                return d >= fromTime && d <= toTime;
-              });
+            const interval = resolution === 'D' ? 'daily' : 
+                            resolution === '60' ? '60min' : 
+                            resolution === '15' ? '15min' : 
+                            resolution === '5' ? '5min' : '1min';
+            
+            const stockFunction = interval === 'daily' ? 'TIME_SERIES_DAILY' : 'TIME_SERIES_INTRADAY';
+            const method = `Alpha Vantage ${stockFunction} ${interval}`;
+            triedMethods.push(method);
+            console.log(`Trying: ${method}`);
+            
+            try {
+              let url = `https://www.alphavantage.co/query?function=${stockFunction}&symbol=${symbol}&apikey=${alphaVantageApiKey}`;
               
-              if (relevantTimestamps.length > 0) {
-                const firstTs = relevantTimestamps[0];
-                const lastTs = relevantTimestamps[relevantTimestamps.length - 1];
-                
-                marketData = {
-                  source: `Alpha Vantage ${timeSeriesKey}`,
-                  open: parseFloat(timeSeries[firstTs]['1. open']),
-                  close: parseFloat(timeSeries[lastTs]['4. close']),
-                  high: Math.max(...relevantTimestamps.map(ts => parseFloat(timeSeries[ts]['2. high']))),
-                  low: Math.min(...relevantTimestamps.map(ts => parseFloat(timeSeries[ts]['3. low']))),
-                  volume: relevantTimestamps.reduce((sum, ts) => sum + parseInt(timeSeries[ts]['5. volume'] || '0'), 0),
-                  prices: relevantTimestamps.map(ts => parseFloat(timeSeries[ts]['4. close'])),
-                  candleCount: relevantTimestamps.length
-                };
-                console.log('Successfully fetched stock data from Alpha Vantage');
+              if (stockFunction === 'TIME_SERIES_INTRADAY') {
+                url += `&interval=${interval}`;
               }
+              
+              const avResponse = await fetch(url);
+              
+              if (avResponse.ok) {
+                const data = await avResponse.json();
+                const timeSeriesKey = stockFunction === 'TIME_SERIES_DAILY' ? 'Time Series (Daily)' : `Time Series (${interval})`;
+                const timeSeries = data[timeSeriesKey];
+                
+                if (timeSeries) {
+                  const timestamps = Object.keys(timeSeries).sort();
+                  const relevantTimestamps = timestamps.filter(ts => {
+                    const d = new Date(ts);
+                    return d >= fromTime && d <= toTime;
+                  });
+                  
+                  if (relevantTimestamps.length > 0) {
+                    const firstTs = relevantTimestamps[0];
+                    const lastTs = relevantTimestamps[relevantTimestamps.length - 1];
+                    
+                    marketData = {
+                      source: `Alpha Vantage ${timeSeriesKey}`,
+                      open: parseFloat(timeSeries[firstTs]['1. open']),
+                      close: parseFloat(timeSeries[lastTs]['4. close']),
+                      high: Math.max(...relevantTimestamps.map(ts => parseFloat(timeSeries[ts]['2. high']))),
+                      low: Math.min(...relevantTimestamps.map(ts => parseFloat(timeSeries[ts]['3. low']))),
+                      volume: relevantTimestamps.reduce((sum, ts) => sum + parseInt(timeSeries[ts]['5. volume'] || '0'), 0),
+                      prices: relevantTimestamps.map(ts => parseFloat(timeSeries[ts]['4. close'])),
+                      candleCount: relevantTimestamps.length
+                    };
+                    dataSource = method;
+                    console.log(`✓ Success: ${method}`);
+                    break;
+                  }
+                }
+              }
+            } catch (err) {
+              console.log(`${method}: fetch error - ${err.message}`);
             }
           }
         }
@@ -221,8 +295,14 @@ serve(async (req) => {
       console.error('Error fetching market data:', error);
     }
 
-    // Compute metrics if we have market data
+    // Log summary of attempts
+    console.log(`Tried methods: ${triedMethods.join(', ')}`);
+    console.log(`Final data source: ${dataSource || 'none'}, candles: ${marketData?.candleCount || 0}`);
+
+    // Compute robust metrics if we have market data
     let metricsText = '';
+    let computedMetrics = null;
+    
     if (marketData) {
       const priceChange = marketData.close - marketData.open;
       const priceChangePercent = ((priceChange / marketData.open) * 100).toFixed(2);
@@ -241,6 +321,17 @@ serve(async (req) => {
         volatility = (Math.sqrt(variance) * 100).toFixed(2);
       }
 
+      computedMetrics = {
+        open: marketData.open,
+        close: marketData.close,
+        high: marketData.high,
+        low: marketData.low,
+        priceChange,
+        priceChangePercent,
+        rangePercent,
+        volatility
+      };
+
       const volumeText = marketData.volume > 0 ? `- Volume: ${marketData.volume.toLocaleString()}` : '';
       
       metricsText = `
@@ -249,22 +340,24 @@ MARKET DATA (${marketData.source}, ${marketData.candleCount} candles):
 - Range: ${marketData.low.toFixed(4)} - ${marketData.high.toFixed(4)} (${rangePercent}% range)
 - Volatility: ${volatility}%
 ${volumeText}
-Time window: ${spanMinutes.toFixed(0)} minutes (${resolution} resolution)
+Time window: ${spanMinutes.toFixed(0)} minutes
 `;
     } else {
-      metricsText = `Note: Market data unavailable for ${normalizedSymbol} during ${spanMinutes.toFixed(0)}-minute window.`;
+      metricsText = `Note: Market data unavailable for ${normalizedSymbol} during ${spanMinutes.toFixed(0)}-minute window. Tried: ${triedMethods.join(', ')}.`;
     }
 
-    // Generate AI summary using Gemini with web search and market data
+    // Generate AI summary using Gemini with enhanced prompting
     let aiSummary = '';
+    let usedProgrammaticFallback = false;
+    
     try {
-      const analysisPrompt = `Analyze ${normalizedSymbol} price action from ${fromTime.toISOString().split('T')[0]} ${fromTime.toISOString().split('T')[1].split('.')[0]} to ${toTime.toISOString().split('T')[0]} ${toTime.toISOString().split('T')[1].split('.')[0]} UTC.
+      const analysisPrompt = `You have OHLC market data above. Do not say you lack real-time data. Do not use hypotheticals. Analyze ${normalizedSymbol} price action from ${fromTime.toISOString().split('T')[0]} ${fromTime.toISOString().split('T')[1].split('.')[0]} to ${toTime.toISOString().split('T')[0]} ${toTime.toISOString().split('T')[1].split('.')[0]} UTC.
 
 ${metricsText}
 
-Use Google Search to find news/catalysts during this exact timeframe. Provide EXACTLY this format:
+Use Google Search to find news/catalysts during this exact timeframe. Output exactly three bullets and Sources line:
 
-• ${normalizedSymbol} moved ${marketData ? ((marketData.close - marketData.open) >= 0 ? 'up' : 'down') : '[direction]'} [specific % and price levels]
+• ${normalizedSymbol} moved ${marketData ? ((marketData.close - marketData.open) >= 0 ? 'up' : 'down') + ' by ' + ((marketData.close - marketData.open) >= 0 ? '+' : '') + computedMetrics?.priceChangePercent + '% from ' + marketData.open.toFixed(4) + ' to ' + marketData.close.toFixed(4) : '[specific % and price levels]'}
 • [Key news/event that drove the movement, or "No clear catalyst found"]
 • [Market reaction/flow details or broader context]
 
@@ -298,13 +391,31 @@ Each bullet must be under 25 words. Focus on factual price action and verifiable
       if (geminiData.candidates?.[0]?.content?.parts?.[0]?.text) {
         aiSummary = geminiData.candidates[0].content.parts[0].text.trim();
         
-        // Light cleanup of common disclaimer phrases
+        // Enhanced cleanup of disclaimer phrases
         aiSummary = aiSummary
+          .replace(/^I do not have access to real-time.*$/gim, '')
+          .replace(/^I cannot access real-time.*$/gim, '')
+          .replace(/^I don't have access to real-time.*$/gim, '')
           .replace(/Please note that.*?\.?\s*/gi, '')
           .replace(/It's important to.*?\.?\s*/gi, '')
           .replace(/Disclaimer:.*?\.?\s*/gi, '')
           .replace(/\*\*Disclaimer\*\*:.*?\.?\s*/gi, '')
+          .replace(/To provide an answer in your requested format.*?speculative nature\./gis, '')
+          .replace(/This is a hypothetical example.*?necessary\./gis, '')
+          .replace(/\n\s*\n/g, '\n')
           .trim();
+          
+        // Check if Gemini output is problematic and use programmatic fallback
+        if (!aiSummary || 
+            aiSummary.length < 20 || 
+            aiSummary.includes('no access to real-time') ||
+            aiSummary.includes('hypothetical') ||
+            aiSummary.includes('cannot analyze')) {
+          console.log('Gemini output problematic, using programmatic fallback');
+          aiSummary = generateFallbackSummary(marketData, normalizedSymbol);
+          aiSummary += `\n\nSources: ${marketData ? marketData.source + ' candles' : 'Market data unavailable'}`;
+          usedProgrammaticFallback = true;
+        }
           
       } else if (geminiData.error) {
         console.error('Gemini API error response:', geminiData.error);
@@ -314,12 +425,22 @@ Each bullet must be under 25 words. Focus on factual price action and verifiable
           aiSummary = `API Error: ${geminiData.error.message || 'Unknown error'}`;
         }
       } else {
-        aiSummary = 'Unable to generate analysis at this time.';
+        console.log('No valid Gemini response, using programmatic fallback');
+        aiSummary = generateFallbackSummary(marketData, normalizedSymbol);
+        aiSummary += `\n\nSources: ${marketData ? marketData.source + ' candles' : 'Market data unavailable'}`;
+        usedProgrammaticFallback = true;
       }
     } catch (error) {
       console.error('Gemini API error:', error);
-      aiSummary = 'AI analysis temporarily unavailable.';
+      console.log('Gemini error, using programmatic fallback');
+      aiSummary = generateFallbackSummary(marketData, normalizedSymbol);
+      aiSummary += `\n\nSources: ${marketData ? marketData.source + ' candles' : 'Market data unavailable'}`;
+      usedProgrammaticFallback = true;
     }
+
+    // Final logging
+    console.log(`Used programmatic fallback: ${usedProgrammaticFallback}`);
+    console.log(`Final AI summary length: ${aiSummary.length}`);
 
     const response = {
       symbol,
