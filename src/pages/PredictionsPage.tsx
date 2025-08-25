@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, TrendingUp, TrendingDown, Minus, Trash2 } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import { ArrowLeft, TrendingUp, TrendingDown, Minus, Trash2, Clock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -27,9 +28,19 @@ const PredictionsPage = () => {
   const { toast } = useToast();
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [now, setNow] = useState(new Date());
 
   useEffect(() => {
     fetchPredictions();
+  }, []);
+
+  // Update current time every second
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(new Date());
+    }, 1000);
+
+    return () => clearInterval(timer);
   }, []);
 
   const fetchPredictions = async () => {
@@ -126,6 +137,50 @@ const PredictionsPage = () => {
     
     const minutes = timeframeMinutes[timeframe] || 60;
     return new Date(startTime.getTime() + minutes * 60 * 1000);
+  };
+
+  // Countdown helper functions
+  const formatDuration = (milliseconds: number) => {
+    const totalSeconds = Math.floor(Math.abs(milliseconds) / 1000);
+    const days = Math.floor(totalSeconds / (24 * 60 * 60));
+    const hours = Math.floor((totalSeconds % (24 * 60 * 60)) / (60 * 60));
+    const minutes = Math.floor((totalSeconds % (60 * 60)) / 60);
+    const seconds = totalSeconds % 60;
+
+    if (days > 0) {
+      return `${days}d ${hours}h ${minutes}m`;
+    } else if (hours > 0) {
+      return `${hours}h ${minutes}m ${seconds}s`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds}s`;
+    } else {
+      return `${seconds}s`;
+    }
+  };
+
+  const getElapsedPercent = (startTime: Date, endTime: Date, currentTime: Date) => {
+    const totalDuration = endTime.getTime() - startTime.getTime();
+    const elapsed = currentTime.getTime() - startTime.getTime();
+    return Math.min(Math.max((elapsed / totalDuration) * 100, 0), 100);
+  };
+
+  const getStatusClasses = (timeRemaining: number) => {
+    if (timeRemaining < 0) {
+      return {
+        text: 'text-red-500',
+        progress: 'bg-red-500'
+      };
+    } else if (timeRemaining < 15 * 60 * 1000) { // Less than 15 minutes
+      return {
+        text: 'text-orange-500',
+        progress: 'bg-orange-500'
+      };
+    } else {
+      return {
+        text: 'text-green-500',
+        progress: 'bg-green-500'
+      };
+    }
   };
 
   if (loading) {
@@ -245,8 +300,32 @@ const PredictionsPage = () => {
                       </div>
                     </div>
                   )}
-                </CardContent>
-              </Card>
+
+                  {/* Countdown Timer */}
+                  {(() => {
+                    const startTime = new Date(prediction.created_at);
+                    const expectedTime = calculateExpectedTime(prediction.timeframe, startTime);
+                    const timeRemaining = expectedTime.getTime() - now.getTime();
+                    const elapsedPercent = getElapsedPercent(startTime, expectedTime, now);
+                    const statusClasses = getStatusClasses(timeRemaining);
+
+                    return (
+                      <div className="mt-4 pt-4 border-t">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Clock className="h-4 w-4 text-muted-foreground" />
+                          <span className={`text-sm font-medium ${statusClasses.text}`}>
+                            {timeRemaining < 0 ? 'Overdue by' : 'Time remaining'}: {formatDuration(timeRemaining)}
+                          </span>
+                        </div>
+                        <Progress 
+                          value={elapsedPercent} 
+                          className="h-2"
+                        />
+                      </div>
+                    );
+                  })()}
+                 </CardContent>
+               </Card>
             ))}
           </div>
         )}
