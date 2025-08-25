@@ -4,6 +4,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import PredictPage from "./pages/PredictPage";
+import AuthPage from "./pages/AuthPage";
+import { ProtectedRoute } from "./components/ProtectedRoute";
 
 const queryClient = new QueryClient();
 
@@ -16,7 +18,15 @@ const App = () => (
         <div className="min-h-screen bg-background">
           <Routes>
             <Route path="/" element={<Navigate to="/predict" replace />} />
-            <Route path="/predict" element={<PredictPage />} />
+            <Route path="/auth" element={<AuthPage />} />
+            <Route 
+              path="/predict" 
+              element={
+                <ProtectedRoute>
+                  <PredictPage />
+                </ProtectedRoute>
+              } 
+            />
             <Route path="*" element={<Navigate to="/predict" replace />} />
           </Routes>
         </div>

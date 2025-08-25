@@ -15,8 +15,9 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import TradingViewWidget from "@/components/TradingViewWidget";
 import { AdvancedPredictLoader } from "@/components/AdvancedPredictLoader";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
-import { Loader2, TrendingUp, TrendingDown, Minus, AlertTriangle, BrainCircuit, LineChart, ChevronDown, DollarSign } from "lucide-react";
+import { Loader2, TrendingUp, TrendingDown, Minus, AlertTriangle, BrainCircuit, LineChart, ChevronDown, DollarSign, LogOut } from "lucide-react";
 
 interface PredictionResult {
   symbol: string;
@@ -65,6 +66,8 @@ const PredictPage = () => {
   const [showAdvancedLoader, setShowAdvancedLoader] = useState(false);
   const [analysisReady, setAnalysisReady] = useState(false);
   const [result, setResult] = useState<PredictionResult | null>(null);
+  
+  const { signOut, user } = useAuth();
 
   const handlePredict = async () => {
     if (!symbol || !investment || !timeframe) {
@@ -203,6 +206,23 @@ const PredictPage = () => {
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
       {/* Header */}
       <div className="p-6 animate-fade-in">
+        <div className="flex justify-between items-start mb-4">
+          <div className="flex-1" />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              const { error } = await signOut();
+              if (error) {
+                toast.error("Failed to sign out");
+              }
+            }}
+            className="flex items-center gap-2"
+          >
+            <LogOut className="h-4 w-4" />
+            Sign Out
+          </Button>
+        </div>
         <div className="text-center space-y-2">
           <h1 className="text-4xl md:text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-purple-400 to-teal-400">
             AI Market Prediction
@@ -210,6 +230,11 @@ const PredictPage = () => {
           <p className="text-muted-foreground text-lg">
             Get real-time AI-powered predictions for any stock, forex, or crypto
           </p>
+          {user?.email && (
+            <p className="text-sm text-muted-foreground">
+              Welcome back, {user.email}
+            </p>
+          )}
         </div>
       </div>
 
