@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { ArrowLeft, TrendingUp, TrendingDown, Minus, Trash2, Clock } from "lucide-react";
+import { ArrowLeft, TrendingUp, TrendingDown, Minus, Trash2, Clock, BarChart3 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -21,6 +21,25 @@ interface Prediction {
   price_target_min: number | null;
   price_target_max: number | null;
   created_at: string;
+  raw_response: any;
+}
+
+interface AnalysisData {
+  from: string;
+  to: string;
+  startPrice: number;
+  endPrice: number;
+  changeAbs: number;
+  changePct: number;
+  high: number;
+  low: number;
+  upCandles: number;
+  downCandles: number;
+  hitMinTarget: boolean | null;
+  hitMaxTarget: boolean | null;
+  ai: {
+    summary: string;
+  };
 }
 
 const PredictionsPage = () => {
@@ -29,6 +48,7 @@ const PredictionsPage = () => {
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(new Date());
+  const [analysisStates, setAnalysisStates] = useState<Record<string, { loading: boolean; data: AnalysisData | null; error: string | null }>>({});
 
   useEffect(() => {
     fetchPredictions();
@@ -183,6 +203,47 @@ const PredictionsPage = () => {
     }
   };
 
+  const analyzePostPrediction = async (prediction: Prediction) => {
+    const predictionId = prediction.id;
+    
+    setAnalysisStates(prev => ({
+      ...prev,
+      [predictionId]: { loading: true, data: null, error: null }
+    }));
+
+    try {
+      const { data, error } = await supabase.functions.invoke('analyze-post-prediction', {
+        body: {
+          symbol: prediction.symbol,
+          from: prediction.created_at,
+          timeframe: prediction.timeframe,
+          priceTargetMin: prediction.price_target_min,
+          priceTargetMax: prediction.price_target_max
+        }
+      });
+
+      if (error) throw error;
+
+      setAnalysisStates(prev => ({
+        ...prev,
+        [predictionId]: { loading: false, data, error: null }
+      }));
+
+    } catch (error: any) {
+      console.error('Analysis error:', error);
+      setAnalysisStates(prev => ({
+        ...prev,
+        [predictionId]: { loading: false, data: null, error: error.message || 'Analysis failed' }
+      }));
+      
+      toast({
+        title: "Analysis Failed",
+        description: error.message || "Unable to analyze stock movement",
+        variant: "destructive",
+      });
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background">
@@ -324,6 +385,71 @@ const PredictionsPage = () => {
                       </div>
                     );
                   })()}
+
+                  {/* Analysis Button */}
+                  <div className="mt-4 pt-4 border-t">
+                    <Button
+                      onClick={() => analyzePostPrediction(prediction)}
+                      disabled={analysisStates[prediction.id]?.loading}
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                    >
+                      <BarChart3 className="h-4 w-4 mr-2" />
+                      {analysisStates[prediction.id]?.loading ? 'Analyzing...' : 'Analyze since prediction'}
+                    </Button>
+                  </div>
+
+                  {/* Analysis Results */}
+                  {analysisStates[prediction.id]?.data && (
+                    <div className="mt-4 p-3 bg-muted/50 rounded-lg">
+                      <h4 className="font-medium text-sm mb-2">Movement since prediction</h4>
+                      <div className="text-xs text-muted-foreground mb-2">
+                        From {formatDateTime(new Date(analysisStates[prediction.id]!.data!.from))} to {formatDateTime(new Date(analysisStates[prediction.id]!.data!.to))}
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <div className={`text-sm font-medium ${analysisStates[prediction.id]!.data!.changePct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          Moved {analysisStates[prediction.id]!.data!.changePct >= 0 ? '+' : ''}{analysisStates[prediction.id]!.data!.changePct.toFixed(1)}% 
+                          (from ${analysisStates[prediction.id]!.data!.startPrice.toFixed(2)} to ${analysisStates[prediction.id]!.data!.endPrice.toFixed(2)})
+                        </div>
+                        
+                        <div className="text-xs space-y-1">
+                          <div>High: ${analysisStates[prediction.id]!.data!.high.toFixed(2)} • Low: ${analysisStates[prediction.id]!.data!.low.toFixed(2)}</div>
+                          <div>{analysisStates[prediction.id]!.data!.upCandles} up candles • {analysisStates[prediction.id]!.data!.downCandles} down candles</div>
+                          {(analysisStates[prediction.id]!.data!.hitMinTarget !== null || analysisStates[prediction.id]!.data!.hitMaxTarget !== null) && (
+                            <div>
+                              {analysisStates[prediction.id]!.data!.hitMinTarget !== null && (
+                                <span className={analysisStates[prediction.id]!.data!.hitMinTarget ? 'text-green-600' : 'text-red-600'}>
+                                  Min target: {analysisStates[prediction.id]!.data!.hitMinTarget ? 'HIT' : 'Not reached'}
+                                </span>
+                              )}
+                              {analysisStates[prediction.id]!.data!.hitMinTarget !== null && analysisStates[prediction.id]!.data!.hitMaxTarget !== null && ' • '}
+                              {analysisStates[prediction.id]!.data!.hitMaxTarget !== null && (
+                                <span className={analysisStates[prediction.id]!.data!.hitMaxTarget ? 'text-green-600' : 'text-red-600'}>
+                                  Max target: {analysisStates[prediction.id]!.data!.hitMaxTarget ? 'HIT' : 'Not reached'}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        
+                        {analysisStates[prediction.id]!.data!.ai.summary && (
+                          <div className="text-xs italic text-muted-foreground mt-2 pt-2 border-t">
+                            💡 {analysisStates[prediction.id]!.data!.ai.summary}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {analysisStates[prediction.id]?.error && (
+                    <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                      <div className="text-red-600 text-sm">
+                        {analysisStates[prediction.id]!.error}
+                      </div>
+                    </div>
+                  )}
                  </CardContent>
                </Card>
             ))}
