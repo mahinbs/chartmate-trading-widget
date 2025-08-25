@@ -108,7 +108,7 @@ serve(async (req) => {
   }
 
   try {
-    const { symbol, from } = await req.json();
+    const { symbol, from, marketMeta } = await req.json();
     
     const geminiApiKey = Deno.env.get('GEMINI_API_KEY');
     const finnhubApiKey = Deno.env.get('FINNHUB_API_KEY');
@@ -132,9 +132,23 @@ serve(async (req) => {
 
     console.log(`Analyzing ${symbol} from ${fromTime.toISOString()} to ${toTime.toISOString()}`);
 
-    // Detect asset type and normalize symbol
-    const assetInfo = detectAssetType(symbol);
-    console.log(`Detected asset type: ${assetInfo.type}, normalized symbol: ${assetInfo.normalizedSymbol}`);
+    // Use marketMeta from prediction if available, otherwise detect asset type
+    let assetInfo;
+    if (marketMeta) {
+      console.log('Using market metadata from prediction:', marketMeta);
+      assetInfo = {
+        type: marketMeta.assetType,
+        normalizedSymbol: marketMeta.providerPair || symbol,
+        requestedPair: marketMeta.requestedPair,
+        providerPair: marketMeta.providerPair,
+        needsInversion: marketMeta.needsInversion
+      };
+    } else {
+      // Fallback to detection if no metadata provided
+      assetInfo = detectAssetType(symbol);
+      console.log(`Detected asset type: ${assetInfo.type}, normalized symbol: ${assetInfo.normalizedSymbol}`);
+    }
+    
     if (assetInfo.requestedPair) {
       console.log(`Requested pair: ${assetInfo.requestedPair}, Provider pair: ${assetInfo.providerPair}, Needs inversion: ${assetInfo.needsInversion}`);
     }
@@ -153,6 +167,11 @@ serve(async (req) => {
     let marketData = null;
     let dataSource = '';
     let triedMethods: string[] = [];
+    
+    // Prefer the same data source as the prediction if available
+    let preferredProvider = marketMeta?.provider || null;
+    let preferredSymbol = marketMeta?.symbol || null;
+    let preferredResolution = marketMeta?.resolution || null;
 
     try {
       // Try Finnhub first with enhanced fallback logic
@@ -167,11 +186,14 @@ serve(async (req) => {
           symbolsToTry = getFinnhubForexSymbols(assetInfo.normalizedSymbol);
         }
         
-        // Try each resolution and symbol combination
-        for (const resolution of resolutionSequence) {
+        // Try each resolution and symbol combination, preferring prediction metadata
+        const resolutionOrder = preferredResolution ? [preferredResolution, ...resolutionSequence.filter(r => r !== preferredResolution)] : resolutionSequence;
+        const symbolOrder = preferredSymbol ? [preferredSymbol, ...symbolsToTry.filter(s => s !== preferredSymbol)] : symbolsToTry;
+        
+        for (const resolution of resolutionOrder) {
           if (marketData) break;
           
-          for (const finnhubSymbol of symbolsToTry) {
+          for (const finnhubSymbol of symbolOrder) {
             if (marketData) break;
             
             const method = `Finnhub ${endpoint} ${finnhubSymbol} (${resolution})`;

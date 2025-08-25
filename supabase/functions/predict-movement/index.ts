@@ -57,27 +57,76 @@ interface TechnicalContext {
   trendDirection: string;
 }
 
-async function fetchHistoricalCandles(symbol: string, timeframe: string): Promise<Candle[]> {
+interface MarketMeta {
+  provider: string;
+  symbol: string;
+  resolution: string;
+  needsInversion: boolean;
+  assetType: string;
+  requestedPair?: string;
+  providerPair?: string;
+}
+
+async function fetchHistoricalCandles(symbol: string, timeframe: string): Promise<{ candles: Candle[]; meta: MarketMeta | null }> {
   const finnhubApiKey = Deno.env.get('FINNHUB_API_KEY');
   
   if (!finnhubApiKey) {
     console.log('Finnhub API key not configured, returning empty candles');
-    return [];
+    return { candles: [], meta: null };
   }
 
   try {
+    // Use the same symbol detection logic from analyze-post-prediction
+    function detectAssetType(symbol: string) {
+      const forexPairs = ['EUR', 'USD', 'GBP', 'JPY', 'CHF', 'CAD', 'AUD', 'NZD', 'SEK', 'NOK', 'DKK', 'PLN', 'CZK', 'HUF', 'TRY', 'ZAR', 'MXN', 'SGD', 'HKD', 'CNY', 'INR', 'KRW', 'THB', 'MYR', 'IDR', 'PHP'];
+      
+      if (symbol.includes('/')) {
+        const [base, quote] = symbol.split('/');
+        return { 
+          type: 'forex', 
+          normalizedSymbol: symbol,
+          requestedPair: symbol,
+          providerPair: symbol,
+          needsInversion: false
+        };
+      }
+      
+      if (symbol.length === 6 && /^[A-Z]{6}$/.test(symbol)) {
+        const base = symbol.slice(0, 3);
+        const quote = symbol.slice(3);
+        if (forexPairs.includes(base) && forexPairs.includes(quote)) {
+          const requestedPair = `${base}/${quote}`;
+          
+          let providerPair = requestedPair;
+          let needsInversion = false;
+          
+          if ((base === 'JPY' && quote === 'USD') || 
+              (base === 'EUR' && quote === 'USD') ||
+              (base === 'GBP' && quote === 'USD')) {
+            providerPair = `USD/${base}`;
+            needsInversion = true;
+          }
+          
+          return { 
+            type: 'forex', 
+            normalizedSymbol: providerPair,
+            requestedPair,
+            providerPair,
+            needsInversion
+          };
+        }
+      }
+      
+      return { type: 'stock', normalizedSymbol: symbol };
+    }
+
+    const assetInfo = detectAssetType(symbol);
+    
     // Map common forex symbols to Finnhub format
     let finnhubSymbol = symbol;
-    if (symbol.includes('USD') || symbol.includes('EUR') || symbol.includes('GBP') || symbol.includes('JPY')) {
-      // Handle forex pairs by converting to OANDA format
-      if (symbol === 'EURUSD') finnhubSymbol = 'OANDA:EUR_USD';
-      else if (symbol === 'GBPUSD') finnhubSymbol = 'OANDA:GBP_USD';
-      else if (symbol === 'USDJPY') finnhubSymbol = 'OANDA:USD_JPY';
-      else if (symbol === 'USDCHF') finnhubSymbol = 'OANDA:USD_CHF';
-      else if (symbol === 'AUDUSD') finnhubSymbol = 'OANDA:AUD_USD';
-      else if (symbol === 'USDCAD') finnhubSymbol = 'OANDA:USD_CAD';
-      else if (symbol === 'NZDUSD') finnhubSymbol = 'OANDA:NZD_USD';
-      // Add more forex pairs as needed
+    if (assetInfo.type === 'forex') {
+      const [base, quote] = assetInfo.normalizedSymbol.split('/');
+      finnhubSymbol = `OANDA:${base}_${quote}`;
     }
     
     // Map timeframe to resolution and calculate from/to timestamps
@@ -104,18 +153,18 @@ async function fetchHistoricalCandles(symbol: string, timeframe: string): Promis
 
     if (!response.ok) {
       console.log(`Finnhub candles API error for ${symbol}: ${response.status}`);
-      return [];
+      return { candles: [], meta: null };
     }
 
     const data = await response.json();
     
     if (data.s !== 'ok' || !data.c || data.c.length === 0) {
       console.log(`No candle data found for ${symbol}`);
-      return [];
+      return { candles: [], meta: null };
     }
 
     // Convert to candle format
-    const candles: Candle[] = [];
+    let candles: Candle[] = [];
     for (let i = 0; i < data.c.length; i++) {
       candles.push({
         timestamp: data.t[i] * 1000,
@@ -127,10 +176,32 @@ async function fetchHistoricalCandles(symbol: string, timeframe: string): Promis
       });
     }
 
-    return candles.slice(-100); // Keep last 100 candles
+    // Apply inversion if needed
+    if (assetInfo.needsInversion) {
+      candles = candles.map(c => ({
+        ...c,
+        open: 1 / c.close,
+        close: 1 / c.open,
+        high: 1 / c.low,
+        low: 1 / c.high
+      }));
+      console.log(`Inverted candle data from ${assetInfo.providerPair} to ${assetInfo.requestedPair}`);
+    }
+
+    const meta: MarketMeta = {
+      provider: 'Finnhub',
+      symbol: finnhubSymbol,
+      resolution,
+      needsInversion: assetInfo.needsInversion || false,
+      assetType: assetInfo.type,
+      requestedPair: assetInfo.requestedPair,
+      providerPair: assetInfo.providerPair
+    };
+
+    return { candles: candles.slice(-100), meta }; // Keep last 100 candles
   } catch (error) {
     console.error(`Error fetching candles for ${symbol}:`, error);
-    return [];
+    return { candles: [], meta: null };
   }
 }
 
@@ -696,7 +767,7 @@ serve(async (req) => {
     console.log(`Getting enhanced technical analysis for ${symbol}, investment: $${investment}, timeframe: ${timeframe}`);
 
     // Fetch real stock data and historical candles in parallel
-    const [stockData, candles] = await Promise.all([
+    const [stockData, { candles, meta: marketMeta }] = await Promise.all([
       fetchRealStockData(symbol),
       fetchHistoricalCandles(symbol, timeframe)
     ]);
@@ -742,6 +813,7 @@ serve(async (req) => {
         supportLevels: techContext.supportLevels,
         resistanceLevels: techContext.resistanceLevels
       },
+      marketMeta,
       ...structuredData
     };
 

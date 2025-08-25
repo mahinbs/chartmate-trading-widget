@@ -206,7 +206,8 @@ const PredictionsPage = () => {
       const { data, error } = await supabase.functions.invoke('analyze-post-prediction', {
         body: {
           symbol: prediction.symbol,
-          from: prediction.created_at
+          from: prediction.created_at,
+          marketMeta: prediction.raw_response?.marketMeta || null
         }
       });
 
