@@ -6,6 +6,41 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Helper function to detect asset type and normalize symbols
+function detectAssetType(symbol: string) {
+  const forexPairs = ['EUR', 'USD', 'GBP', 'JPY', 'CHF', 'CAD', 'AUD', 'NZD', 'SEK', 'NOK', 'DKK', 'PLN', 'CZK', 'HUF', 'TRY', 'ZAR', 'MXN', 'SGD', 'HKD', 'CNY', 'INR', 'KRW', 'THB', 'MYR', 'IDR', 'PHP'];
+  
+  // Check if it's forex (6 uppercase letters or contains /)
+  if (symbol.includes('/')) {
+    return { type: 'forex', normalizedSymbol: symbol };
+  }
+  
+  if (symbol.length === 6 && /^[A-Z]{6}$/.test(symbol)) {
+    const base = symbol.slice(0, 3);
+    const quote = symbol.slice(3);
+    if (forexPairs.includes(base) && forexPairs.includes(quote)) {
+      return { type: 'forex', normalizedSymbol: `${base}/${quote}` };
+    }
+  }
+  
+  return { type: 'stock', normalizedSymbol: symbol };
+}
+
+// Helper function to get Finnhub forex symbol
+function getFinnhubForexSymbol(normalizedSymbol: string) {
+  const [base, quote] = normalizedSymbol.split('/');
+  return `OANDA:${base}_${quote}`;
+}
+
+// Helper function to determine resolution based on time span
+function getResolution(spanMinutes: number) {
+  if (spanMinutes <= 90) return '1';
+  if (spanMinutes <= 360) return '5';
+  if (spanMinutes <= 1440) return '15';
+  if (spanMinutes <= 10080) return '60';
+  return 'D';
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -16,6 +51,8 @@ serve(async (req) => {
     const { symbol, from } = await req.json();
     
     const geminiApiKey = Deno.env.get('GEMINI_API_KEY');
+    const finnhubApiKey = Deno.env.get('FINNHUB_API_KEY');
+    const alphaVantageApiKey = Deno.env.get('ALPHA_VANTAGE_API_KEY');
 
     if (!geminiApiKey) {
       return new Response(JSON.stringify({ error: 'Gemini API key not configured' }), {
@@ -26,36 +63,56 @@ serve(async (req) => {
 
     const fromTime = new Date(from);
     const toTime = new Date();
+    const spanMinutes = (toTime.getTime() - fromTime.getTime()) / 60000;
 
     console.log(`Analyzing ${symbol} from ${fromTime.toISOString()} to ${toTime.toISOString()}`);
 
+    // Detect asset type and normalize symbol
+    const { type: assetType, normalizedSymbol } = detectAssetType(symbol);
+    console.log(`Detected asset type: ${assetType}, normalized symbol: ${normalizedSymbol}`);
+
+    // Get appropriate resolution
+    const resolution = getResolution(spanMinutes);
+    console.log(`Using resolution: ${resolution} for span: ${spanMinutes.toFixed(1)} minutes`);
+
     // Fetch market data
     let marketData = null;
-    const finnhubApiKey = Deno.env.get('FINNHUB_API_KEY');
-    const alphaVantageApiKey = Deno.env.get('ALPHA_VANTAGE_API_KEY');
+    const fromTimestamp = Math.floor(fromTime.getTime() / 1000);
+    const toTimestamp = Math.floor(toTime.getTime() / 1000);
 
     try {
       // Try Finnhub first
       if (finnhubApiKey) {
         console.log('Fetching market data from Finnhub...');
-        const fromTimestamp = Math.floor(fromTime.getTime() / 1000);
-        const toTimestamp = Math.floor(toTime.getTime() / 1000);
+        
+        let finnhubSymbol = symbol;
+        let endpoint = 'stock/candle';
+        
+        if (assetType === 'forex') {
+          finnhubSymbol = getFinnhubForexSymbol(normalizedSymbol);
+          endpoint = 'forex/candle';
+        }
+        
+        console.log(`Using Finnhub endpoint: ${endpoint}, symbol: ${finnhubSymbol}`);
         
         const finnhubResponse = await fetch(
-          `https://finnhub.io/api/v1/stock/candle?symbol=${symbol}&resolution=D&from=${fromTimestamp}&to=${toTimestamp}&token=${finnhubApiKey}`
+          `https://finnhub.io/api/v1/${endpoint}?symbol=${finnhubSymbol}&resolution=${resolution}&from=${fromTimestamp}&to=${toTimestamp}&token=${finnhubApiKey}`
         );
         
         if (finnhubResponse.ok) {
           const data = await finnhubResponse.json();
+          console.log(`Finnhub response status: ${data.s}, candles: ${data.c?.length || 0}`);
+          
           if (data.s === 'ok' && data.c && data.c.length > 0) {
             marketData = {
-              source: 'Finnhub',
+              source: `Finnhub ${endpoint}`,
               open: data.o[0],
               close: data.c[data.c.length - 1],
               high: Math.max(...data.h),
               low: Math.min(...data.l),
-              volume: data.v.reduce((a, b) => a + b, 0),
-              prices: data.c
+              volume: data.v?.reduce((a, b) => a + b, 0) || 0,
+              prices: data.c,
+              candleCount: data.c.length
             };
             console.log('Successfully fetched data from Finnhub');
           }
@@ -65,35 +122,97 @@ serve(async (req) => {
       // Fallback to Alpha Vantage if Finnhub failed
       if (!marketData && alphaVantageApiKey) {
         console.log('Trying Alpha Vantage as fallback...');
-        const avResponse = await fetch(
-          `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${symbol}&apikey=${alphaVantageApiKey}`
-        );
         
-        if (avResponse.ok) {
-          const data = await avResponse.json();
-          const timeSeries = data['Time Series (Daily)'];
+        let avFunction = 'TIME_SERIES_DAILY';
+        let avSymbol = symbol;
+        
+        if (assetType === 'forex') {
+          avFunction = 'FX_INTRADAY';
+          const [base, quote] = normalizedSymbol.split('/');
           
-          if (timeSeries) {
-            const dates = Object.keys(timeSeries).sort();
-            const relevantDates = dates.filter(date => {
-              const d = new Date(date);
-              return d >= fromTime && d <= toTime;
-            });
+          // Map resolution to Alpha Vantage interval
+          const interval = resolution === '1' ? '5min' : 
+                          resolution === '5' ? '5min' : 
+                          resolution === '15' ? '15min' : 
+                          resolution === '60' ? '60min' : '5min';
+          
+          const avResponse = await fetch(
+            `https://www.alphavantage.co/query?function=${avFunction}&from_symbol=${base}&to_symbol=${quote}&interval=${interval}&apikey=${alphaVantageApiKey}`
+          );
+          
+          if (avResponse.ok) {
+            const data = await avResponse.json();
+            const timeSeries = data[`Time Series FX (${interval})`];
             
-            if (relevantDates.length > 0) {
-              const firstDate = relevantDates[0];
-              const lastDate = relevantDates[relevantDates.length - 1];
+            if (timeSeries) {
+              const timestamps = Object.keys(timeSeries).sort();
+              const relevantTimestamps = timestamps.filter(ts => {
+                const d = new Date(ts);
+                return d >= fromTime && d <= toTime;
+              });
               
-              marketData = {
-                source: 'Alpha Vantage',
-                open: parseFloat(timeSeries[firstDate]['1. open']),
-                close: parseFloat(timeSeries[lastDate]['4. close']),
-                high: Math.max(...relevantDates.map(d => parseFloat(timeSeries[d]['2. high']))),
-                low: Math.min(...relevantDates.map(d => parseFloat(timeSeries[d]['3. low']))),
-                volume: relevantDates.reduce((sum, d) => sum + parseInt(timeSeries[d]['5. volume']), 0),
-                prices: relevantDates.map(d => parseFloat(timeSeries[d]['4. close']))
-              };
-              console.log('Successfully fetched data from Alpha Vantage');
+              if (relevantTimestamps.length > 0) {
+                const firstTs = relevantTimestamps[0];
+                const lastTs = relevantTimestamps[relevantTimestamps.length - 1];
+                
+                marketData = {
+                  source: `Alpha Vantage FX ${interval}`,
+                  open: parseFloat(timeSeries[firstTs]['1. open']),
+                  close: parseFloat(timeSeries[lastTs]['4. close']),
+                  high: Math.max(...relevantTimestamps.map(ts => parseFloat(timeSeries[ts]['2. high']))),
+                  low: Math.min(...relevantTimestamps.map(ts => parseFloat(timeSeries[ts]['3. low']))),
+                  volume: 0, // Forex doesn't have volume
+                  prices: relevantTimestamps.map(ts => parseFloat(timeSeries[ts]['4. close'])),
+                  candleCount: relevantTimestamps.length
+                };
+                console.log('Successfully fetched forex data from Alpha Vantage');
+              }
+            }
+          }
+        } else {
+          // Stock fallback
+          const interval = resolution === 'D' ? 'daily' : 
+                          resolution === '60' ? '60min' : 
+                          resolution === '15' ? '15min' : 
+                          resolution === '5' ? '5min' : '1min';
+          
+          const stockFunction = interval === 'daily' ? 'TIME_SERIES_DAILY' : 'TIME_SERIES_INTRADAY';
+          let url = `https://www.alphavantage.co/query?function=${stockFunction}&symbol=${avSymbol}&apikey=${alphaVantageApiKey}`;
+          
+          if (stockFunction === 'TIME_SERIES_INTRADAY') {
+            url += `&interval=${interval}`;
+          }
+          
+          const avResponse = await fetch(url);
+          
+          if (avResponse.ok) {
+            const data = await avResponse.json();
+            const timeSeriesKey = stockFunction === 'TIME_SERIES_DAILY' ? 'Time Series (Daily)' : `Time Series (${interval})`;
+            const timeSeries = data[timeSeriesKey];
+            
+            if (timeSeries) {
+              const timestamps = Object.keys(timeSeries).sort();
+              const relevantTimestamps = timestamps.filter(ts => {
+                const d = new Date(ts);
+                return d >= fromTime && d <= toTime;
+              });
+              
+              if (relevantTimestamps.length > 0) {
+                const firstTs = relevantTimestamps[0];
+                const lastTs = relevantTimestamps[relevantTimestamps.length - 1];
+                
+                marketData = {
+                  source: `Alpha Vantage ${timeSeriesKey}`,
+                  open: parseFloat(timeSeries[firstTs]['1. open']),
+                  close: parseFloat(timeSeries[lastTs]['4. close']),
+                  high: Math.max(...relevantTimestamps.map(ts => parseFloat(timeSeries[ts]['2. high']))),
+                  low: Math.min(...relevantTimestamps.map(ts => parseFloat(timeSeries[ts]['3. low']))),
+                  volume: relevantTimestamps.reduce((sum, ts) => sum + parseInt(timeSeries[ts]['5. volume'] || '0'), 0),
+                  prices: relevantTimestamps.map(ts => parseFloat(timeSeries[ts]['4. close'])),
+                  candleCount: relevantTimestamps.length
+                };
+                console.log('Successfully fetched stock data from Alpha Vantage');
+              }
             }
           }
         }
@@ -122,38 +241,38 @@ serve(async (req) => {
         volatility = (Math.sqrt(variance) * 100).toFixed(2);
       }
 
+      const volumeText = marketData.volume > 0 ? `- Volume: ${marketData.volume.toLocaleString()}` : '';
+      
       metricsText = `
-MARKET DATA ANALYSIS (${marketData.source}):
+MARKET DATA (${marketData.source}, ${marketData.candleCount} candles):
 - Price: ${marketData.open.toFixed(4)} → ${marketData.close.toFixed(4)} (${priceChangePercent >= 0 ? '+' : ''}${priceChangePercent}%)
 - Range: ${marketData.low.toFixed(4)} - ${marketData.high.toFixed(4)} (${rangePercent}% range)
 - Volatility: ${volatility}%
-- Volume: ${marketData.volume.toLocaleString()}
+${volumeText}
+Time window: ${spanMinutes.toFixed(0)} minutes (${resolution} resolution)
 `;
     } else {
-      metricsText = 'Note: Market data unavailable for this analysis period.';
+      metricsText = `Note: Market data unavailable for ${normalizedSymbol} during ${spanMinutes.toFixed(0)}-minute window.`;
     }
 
     // Generate AI summary using Gemini with web search and market data
     let aiSummary = '';
     try {
-      // Format symbol for better search (e.g., EURUSD -> EUR/USD)
-      const searchSymbol = symbol.length === 6 && symbol.match(/^[A-Z]{6}$/) 
-        ? `${symbol.slice(0,3)}/${symbol.slice(3)}` 
-        : symbol;
-
-      const analysisPrompt = `Analyze ${searchSymbol} (${symbol}) from ${fromTime.toISOString()} to ${toTime.toISOString()}.
+      const analysisPrompt = `Analyze ${normalizedSymbol} price action from ${fromTime.toISOString().split('T')[0]} ${fromTime.toISOString().split('T')[1].split('.')[0]} to ${toTime.toISOString().split('T')[0]} ${toTime.toISOString().split('T')[1].split('.')[0]} UTC.
 
 ${metricsText}
 
-Use Google Search to find news and catalysts that explain these movements. Provide EXACTLY this format:
+Use Google Search to find news/catalysts during this exact timeframe. Provide EXACTLY this format:
 
-• [Brief bullet about the price movement/trend with specific numbers]
-• [Brief bullet about key news/events that drove the movement]  
-• [Brief bullet about market catalysts or reactions]
+• ${normalizedSymbol} moved ${marketData ? ((marketData.close - marketData.open) >= 0 ? 'up' : 'down') : '[direction]'} [specific % and price levels]
+• [Key news/event that drove the movement, or "No clear catalyst found"]
+• [Market reaction/flow details or broader context]
 
-Sources: [Include 1-3 relevant URLs]
+Sources: [Include 1-3 credible financial news URLs]
 
-Keep each bullet under 25 words. Focus on what caused the price action.`;
+Each bullet must be under 25 words. Focus on factual price action and verifiable catalysts.${assetType === 'forex' ? ' Consider central bank comments, economic data, yield changes, risk sentiment.' : ' Consider earnings, guidance, sector news, analyst updates.'}`;
+
+      console.log('Sending analysis prompt to Gemini with Google Search enabled');
 
       const geminiResponse = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=' + geminiApiKey, {
         method: 'POST',
