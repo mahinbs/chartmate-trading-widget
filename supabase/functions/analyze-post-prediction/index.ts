@@ -13,13 +13,12 @@ serve(async (req) => {
   }
 
   try {
-    const { symbol, from, timeframe, priceTargetMin, priceTargetMax } = await req.json();
+    const { symbol, from } = await req.json();
     
-    const finnhubApiKey = Deno.env.get('FINNHUB_API_KEY');
     const geminiApiKey = Deno.env.get('GEMINI_API_KEY');
 
-    if (!finnhubApiKey) {
-      return new Response(JSON.stringify({ error: 'Finnhub API key not configured' }), {
+    if (!geminiApiKey) {
+      return new Response(JSON.stringify({ error: 'Gemini API key not configured' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -27,127 +26,39 @@ serve(async (req) => {
 
     const fromTime = new Date(from);
     const toTime = new Date();
-    
-    // Convert to Unix timestamps
-    const fromTimestamp = Math.floor(fromTime.getTime() / 1000);
-    const toTimestamp = Math.floor(toTime.getTime() / 1000);
 
-    // Determine resolution based on timeframe
-    const timeframeMins = {
-      '5m': 5, '15m': 15, '30m': 30, '1h': 60, '4h': 240, '1d': 1440, '1w': 10080
-    };
-    const minutes = timeframeMins[timeframe as keyof typeof timeframeMins] || 60;
-    const resolution = minutes <= 60 ? '5' : minutes <= 1440 ? '60' : 'D';
+    console.log(`Analyzing ${symbol} from ${fromTime.toISOString()} to ${toTime.toISOString()}`);
 
-    // Map symbol for forex if needed
-    const mappedSymbol = symbol.startsWith('EUR') || symbol.startsWith('USD') || symbol.startsWith('GBP') || symbol.startsWith('JPY')
-      ? `OANDA:${symbol}` : symbol;
-
-    console.log(`Fetching data for ${mappedSymbol} from ${fromTime.toISOString()} to ${toTime.toISOString()}`);
-
-    // Fetch candle data from Finnhub
-    const candleUrl = `https://finnhub.io/api/v1/stock/candle?symbol=${mappedSymbol}&resolution=${resolution}&from=${fromTimestamp}&to=${toTimestamp}&token=${finnhubApiKey}`;
-    
-    const candleResponse = await fetch(candleUrl);
-    const candleData = await candleResponse.json();
-
-    if (candleData.s !== 'ok' || !candleData.c || candleData.c.length === 0) {
-      return new Response(JSON.stringify({ 
-        error: 'Insufficient market data available for analysis period',
-        from: fromTime.toISOString(),
-        to: toTime.toISOString(),
-        symbol: mappedSymbol
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Calculate analytics
-    const closePrices = candleData.c;
-    const highPrices = candleData.h;
-    const lowPrices = candleData.l;
-    const openPrices = candleData.o;
-    
-    const startPrice = closePrices[0];
-    const endPrice = closePrices[closePrices.length - 1];
-    const changeAbs = endPrice - startPrice;
-    const changePct = (changeAbs / startPrice) * 100;
-    
-    const high = Math.max(...highPrices);
-    const low = Math.min(...lowPrices);
-    
-    // Count up vs down candles
-    let upCandles = 0;
-    let downCandles = 0;
-    for (let i = 0; i < closePrices.length; i++) {
-      if (closePrices[i] > openPrices[i]) upCandles++;
-      else if (closePrices[i] < openPrices[i]) downCandles++;
-    }
-
-    // Check if targets were hit
-    let hitMinTarget = null;
-    let hitMaxTarget = null;
-    if (priceTargetMin !== undefined && priceTargetMin !== null) {
-      hitMinTarget = low <= priceTargetMin;
-    }
-    if (priceTargetMax !== undefined && priceTargetMax !== null) {
-      hitMaxTarget = high >= priceTargetMax;
-    }
-
-    // Generate AI summary
+    // Generate AI summary using Gemini
     let aiSummary = '';
-    if (geminiApiKey) {
-      try {
-        const analysisPrompt = `Analyze this stock movement in 2-3 short bullet points:
-Symbol: ${symbol}
-Period: ${timeframe} prediction from ${fromTime.toLocaleDateString()}
-Price moved ${changePct > 0 ? '+' : ''}${changePct.toFixed(1)}% (${startPrice.toFixed(2)} → ${endPrice.toFixed(2)})
-High: ${high.toFixed(2)}, Low: ${low.toFixed(2)}
-${upCandles} up candles, ${downCandles} down candles
-${hitMinTarget !== null ? `Min target ${priceTargetMin}: ${hitMinTarget ? 'HIT' : 'not reached'}` : ''}
-${hitMaxTarget !== null ? `Max target ${priceTargetMax}: ${hitMaxTarget ? 'HIT' : 'not reached'}` : ''}
+    try {
+      const analysisPrompt = `What happened to ${symbol} stock from ${fromTime.toLocaleDateString()} ${fromTime.toLocaleTimeString()} to now? Give me a brief 2-3 bullet point summary of the key movements, news, or events that affected this stock during this period. Keep it concise and trader-friendly.`;
 
-Keep it concise and trader-friendly.`;
+      const geminiResponse = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=' + geminiApiKey, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{ text: analysisPrompt }]
+          }]
+        })
+      });
 
-        const geminiResponse = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=' + geminiApiKey, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [{ text: analysisPrompt }]
-            }]
-          })
-        });
-
-        const geminiData = await geminiResponse.json();
-        if (geminiData.candidates?.[0]?.content?.parts?.[0]?.text) {
-          aiSummary = geminiData.candidates[0].content.parts[0].text.trim();
-        }
-      } catch (error) {
-        console.error('Gemini API error:', error);
-        aiSummary = 'AI analysis temporarily unavailable.';
+      const geminiData = await geminiResponse.json();
+      if (geminiData.candidates?.[0]?.content?.parts?.[0]?.text) {
+        aiSummary = geminiData.candidates[0].content.parts[0].text.trim();
+      } else {
+        aiSummary = 'Unable to generate analysis at this time.';
       }
-    } else {
-      // Fallback summary without AI
-      const direction = changePct > 0 ? 'rose' : 'fell';
-      const magnitude = Math.abs(changePct) > 2 ? 'significantly' : 'modestly';
-      aiSummary = `Price ${direction} ${magnitude} by ${Math.abs(changePct).toFixed(1)}% since prediction. ${upCandles > downCandles ? 'Bullish momentum dominated.' : downCandles > upCandles ? 'Bearish pressure prevailed.' : 'Mixed price action.'}`;
+    } catch (error) {
+      console.error('Gemini API error:', error);
+      aiSummary = 'AI analysis temporarily unavailable.';
     }
 
     const response = {
+      symbol,
       from: fromTime.toISOString(),
       to: toTime.toISOString(),
-      startPrice,
-      endPrice,
-      changeAbs,
-      changePct,
-      high,
-      low,
-      upCandles,
-      downCandles,
-      hitMinTarget,
-      hitMaxTarget,
       ai: {
         summary: aiSummary
       }

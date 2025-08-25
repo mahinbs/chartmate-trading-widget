@@ -25,18 +25,9 @@ interface Prediction {
 }
 
 interface AnalysisData {
+  symbol: string;
   from: string;
   to: string;
-  startPrice: number;
-  endPrice: number;
-  changeAbs: number;
-  changePct: number;
-  high: number;
-  low: number;
-  upCandles: number;
-  downCandles: number;
-  hitMinTarget: boolean | null;
-  hitMaxTarget: boolean | null;
   ai: {
     summary: string;
   };
@@ -215,10 +206,7 @@ const PredictionsPage = () => {
       const { data, error } = await supabase.functions.invoke('analyze-post-prediction', {
         body: {
           symbol: prediction.symbol,
-          from: prediction.created_at,
-          timeframe: prediction.timeframe,
-          priceTargetMin: prediction.price_target_min,
-          priceTargetMax: prediction.price_target_max
+          from: prediction.created_at
         }
       });
 
@@ -403,42 +391,13 @@ const PredictionsPage = () => {
                   {/* Analysis Results */}
                   {analysisStates[prediction.id]?.data && (
                     <div className="mt-4 p-3 bg-muted/50 rounded-lg">
-                      <h4 className="font-medium text-sm mb-2">Movement since prediction</h4>
+                      <h4 className="font-medium text-sm mb-2">AI Analysis</h4>
                       <div className="text-xs text-muted-foreground mb-2">
-                        From {formatDateTime(new Date(analysisStates[prediction.id]!.data!.from))} to {formatDateTime(new Date(analysisStates[prediction.id]!.data!.to))}
+                        {analysisStates[prediction.id]!.data!.symbol} from {formatDateTime(new Date(analysisStates[prediction.id]!.data!.from))} to {formatDateTime(new Date(analysisStates[prediction.id]!.data!.to))}
                       </div>
                       
-                      <div className="space-y-2">
-                        <div className={`text-sm font-medium ${analysisStates[prediction.id]!.data!.changePct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          Moved {analysisStates[prediction.id]!.data!.changePct >= 0 ? '+' : ''}{analysisStates[prediction.id]!.data!.changePct.toFixed(1)}% 
-                          (from ${analysisStates[prediction.id]!.data!.startPrice.toFixed(2)} to ${analysisStates[prediction.id]!.data!.endPrice.toFixed(2)})
-                        </div>
-                        
-                        <div className="text-xs space-y-1">
-                          <div>High: ${analysisStates[prediction.id]!.data!.high.toFixed(2)} • Low: ${analysisStates[prediction.id]!.data!.low.toFixed(2)}</div>
-                          <div>{analysisStates[prediction.id]!.data!.upCandles} up candles • {analysisStates[prediction.id]!.data!.downCandles} down candles</div>
-                          {(analysisStates[prediction.id]!.data!.hitMinTarget !== null || analysisStates[prediction.id]!.data!.hitMaxTarget !== null) && (
-                            <div>
-                              {analysisStates[prediction.id]!.data!.hitMinTarget !== null && (
-                                <span className={analysisStates[prediction.id]!.data!.hitMinTarget ? 'text-green-600' : 'text-red-600'}>
-                                  Min target: {analysisStates[prediction.id]!.data!.hitMinTarget ? 'HIT' : 'Not reached'}
-                                </span>
-                              )}
-                              {analysisStates[prediction.id]!.data!.hitMinTarget !== null && analysisStates[prediction.id]!.data!.hitMaxTarget !== null && ' • '}
-                              {analysisStates[prediction.id]!.data!.hitMaxTarget !== null && (
-                                <span className={analysisStates[prediction.id]!.data!.hitMaxTarget ? 'text-green-600' : 'text-red-600'}>
-                                  Max target: {analysisStates[prediction.id]!.data!.hitMaxTarget ? 'HIT' : 'Not reached'}
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                        
-                        {analysisStates[prediction.id]!.data!.ai.summary && (
-                          <div className="text-xs italic text-muted-foreground mt-2 pt-2 border-t">
-                            💡 {analysisStates[prediction.id]!.data!.ai.summary}
-                          </div>
-                        )}
+                      <div className="text-sm leading-relaxed text-foreground whitespace-pre-wrap">
+                        {analysisStates[prediction.id]!.data!.ai.summary}
                       </div>
                     </div>
                   )}
