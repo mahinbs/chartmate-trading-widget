@@ -241,6 +241,34 @@ const PredictPage = () => {
     );
   };
 
+  // Date/Time helper functions
+  const formatDateTime = (date: Date) => {
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZoneName: 'short'
+    }).format(date);
+  };
+
+  const calculateExpectedTime = (timeframe: string, startTime: Date = new Date()) => {
+    const timeframeMinutes: Record<string, number> = {
+      '15m': 15,
+      '30m': 30,
+      '1h': 60,
+      '2h': 120,
+      '1d': 1440
+    };
+    
+    const minutes = timeframeMinutes[timeframe] || 60;
+    return new Date(startTime.getTime() + minutes * 60 * 1000);
+  };
+
+  const getCurrentPredictionTime = () => new Date();
+  const getExpectedTime = () => calculateExpectedTime(timeframe, getCurrentPredictionTime());
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
       {/* Header */}
@@ -399,17 +427,32 @@ const PredictPage = () => {
                 <CollapsibleContent className="animate-fade-in">
                   <Card className="backdrop-blur-xl bg-gradient-to-br from-emerald-500/5 via-blue-500/5 to-purple-500/5 border-white/10 shadow-xl rounded-2xl mt-4">
                     <CardContent className="p-6 space-y-6">
-                      {/* Direction & Confidence */}
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="text-center space-y-2">
-                          <p className="text-sm text-muted-foreground">Direction</p>
-                          <div className="flex items-center justify-center gap-2">
-                            {getRecommendationIcon(result.recommendation)}
-                            <span className={`font-semibold ${getRecommendationColor(result.recommendation)}`}>
-                              {result.recommendation?.toUpperCase() || 'NEUTRAL'}
-                            </span>
-                          </div>
-                        </div>
+                       {/* Prediction Timing */}
+                       <div className="bg-muted/20 rounded-xl p-4 space-y-3 mb-6">
+                         <h4 className="font-medium text-sm">Prediction Timeline</h4>
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                           <div>
+                             <p className="text-muted-foreground">Predicted at</p>
+                             <p className="font-mono text-xs">{formatDateTime(getCurrentPredictionTime())}</p>
+                           </div>
+                           <div>
+                             <p className="text-muted-foreground">Expected by</p>
+                             <p className="font-mono text-xs">{formatDateTime(getExpectedTime())}</p>
+                           </div>
+                         </div>
+                       </div>
+
+                       {/* Direction & Confidence */}
+                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                         <div className="text-center space-y-2">
+                           <p className="text-sm text-muted-foreground">Direction</p>
+                           <div className="flex items-center justify-center gap-2">
+                             {getRecommendationIcon(result.recommendation)}
+                             <span className={`font-semibold ${getRecommendationColor(result.recommendation)}`}>
+                               {result.recommendation?.toUpperCase() || 'NEUTRAL'}
+                             </span>
+                           </div>
+                         </div>
                         
                         {result.confidence !== undefined && (
                           <div className="text-center space-y-2">

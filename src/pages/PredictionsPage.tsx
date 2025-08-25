@@ -103,6 +103,31 @@ const PredictionsPage = () => {
     }
   };
 
+  // Date/Time helper functions
+  const formatDateTime = (date: Date) => {
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZoneName: 'short'
+    }).format(date);
+  };
+
+  const calculateExpectedTime = (timeframe: string, startTime: Date) => {
+    const timeframeMinutes: Record<string, number> = {
+      '15m': 15,
+      '30m': 30,
+      '1h': 60,
+      '2h': 120,
+      '1d': 1440
+    };
+    
+    const minutes = timeframeMinutes[timeframe] || 60;
+    return new Date(startTime.getTime() + minutes * 60 * 1000);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background">
@@ -157,12 +182,26 @@ const PredictionsPage = () => {
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
-                  <CardDescription>
-                    {prediction.timeframe} • {new Date(prediction.created_at).toLocaleDateString()}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                   <CardDescription>
+                     {prediction.timeframe}
+                   </CardDescription>
+                 </CardHeader>
+                 <CardContent>
+                   {/* Prediction Timeline */}
+                   <div className="bg-muted/20 rounded-lg p-3 mb-4">
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                       <div>
+                         <p className="text-muted-foreground">Predicted at</p>
+                         <p className="font-mono">{formatDateTime(new Date(prediction.created_at))}</p>
+                       </div>
+                       <div>
+                         <p className="text-muted-foreground">Expected by</p>
+                         <p className="font-mono">{formatDateTime(calculateExpectedTime(prediction.timeframe, new Date(prediction.created_at)))}</p>
+                       </div>
+                     </div>
+                   </div>
+
+                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                     <div>
                       <p className="text-muted-foreground">Investment</p>
                       <p className="font-semibold">${prediction.investment?.toLocaleString() || 'N/A'}</p>
