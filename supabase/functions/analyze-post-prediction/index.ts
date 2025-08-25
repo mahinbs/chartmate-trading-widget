@@ -6,20 +6,47 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Helper function to detect asset type and normalize symbols
+// Helper function to detect asset type and normalize symbols with inversion logic
 function detectAssetType(symbol: string) {
   const forexPairs = ['EUR', 'USD', 'GBP', 'JPY', 'CHF', 'CAD', 'AUD', 'NZD', 'SEK', 'NOK', 'DKK', 'PLN', 'CZK', 'HUF', 'TRY', 'ZAR', 'MXN', 'SGD', 'HKD', 'CNY', 'INR', 'KRW', 'THB', 'MYR', 'IDR', 'PHP'];
   
   // Check if it's forex (6 uppercase letters or contains /)
   if (symbol.includes('/')) {
-    return { type: 'forex', normalizedSymbol: symbol };
+    const [base, quote] = symbol.split('/');
+    return { 
+      type: 'forex', 
+      normalizedSymbol: symbol,
+      requestedPair: symbol,
+      providerPair: symbol,
+      needsInversion: false
+    };
   }
   
   if (symbol.length === 6 && /^[A-Z]{6}$/.test(symbol)) {
     const base = symbol.slice(0, 3);
     const quote = symbol.slice(3);
     if (forexPairs.includes(base) && forexPairs.includes(quote)) {
-      return { type: 'forex', normalizedSymbol: `${base}/${quote}` };
+      const requestedPair = `${base}/${quote}`;
+      
+      // Determine if we need to use inverted provider pair for better data availability
+      let providerPair = requestedPair;
+      let needsInversion = false;
+      
+      // Major pairs where providers typically use USD as base
+      if ((base === 'JPY' && quote === 'USD') || 
+          (base === 'EUR' && quote === 'USD') ||
+          (base === 'GBP' && quote === 'USD')) {
+        providerPair = `USD/${base}`;
+        needsInversion = true;
+      }
+      
+      return { 
+        type: 'forex', 
+        normalizedSymbol: providerPair,
+        requestedPair,
+        providerPair,
+        needsInversion
+      };
     }
   }
   
@@ -44,10 +71,24 @@ function getResolutionSequence(spanMinutes: number) {
   return ['D'];
 }
 
+// Helper function to invert OHLC data
+function invertOHLC(marketData: any) {
+  if (!marketData) return marketData;
+  
+  return {
+    ...marketData,
+    open: 1 / marketData.close,
+    close: 1 / marketData.open,
+    high: 1 / marketData.low,
+    low: 1 / marketData.high,
+    prices: marketData.prices?.map((p: number) => 1 / p).reverse() || []
+  };
+}
+
 // Helper to generate programmatic fallback summary
-function generateFallbackSummary(marketData: any, normalizedSymbol: string) {
+function generateFallbackSummary(marketData: any, displaySymbol: string, dataSourceInfo: string = '') {
   if (!marketData) {
-    return `• ${normalizedSymbol} moved sideways with no significant percentage change within the specified timeframe due to unavailable market data.\n• No clear catalyst found during the specified timeframe.\n•  The lack of price action data prevents analysis of market reaction or broader context.`;
+    return `• ${displaySymbol} moved sideways with no significant percentage change within the specified timeframe due to unavailable market data.\n• No clear catalyst found during the specified timeframe.\n•  The lack of price action data prevents analysis of market reaction or broader context.`;
   }
 
   const priceChange = marketData.close - marketData.open;
@@ -55,7 +96,9 @@ function generateFallbackSummary(marketData: any, normalizedSymbol: string) {
   const direction = priceChange >= 0 ? 'up' : 'down';
   const sign = priceChange >= 0 ? '+' : '';
   
-  return `• ${normalizedSymbol} moved ${direction} by ${sign}${priceChangePercent}% from ${marketData.open.toFixed(4)} to ${marketData.close.toFixed(4)}.\n• No clear catalyst found during the specified timeframe.\n• The market showed ${parseFloat(priceChangePercent) > 1 ? 'elevated' : 'modest'} volatility within the session.`;
+  const dataSuffix = dataSourceInfo ? `\n\nData: ${dataSourceInfo}` : '';
+  
+  return `• ${displaySymbol} moved ${direction} by ${sign}${priceChangePercent}% from ${marketData.open.toFixed(6)} to ${marketData.close.toFixed(6)}.\n• No clear catalyst found during the specified timeframe.\n• The market showed ${parseFloat(priceChangePercent) > 1 ? 'elevated' : 'modest'} volatility within the session.${dataSuffix}`;
 }
 
 serve(async (req) => {
@@ -90,8 +133,11 @@ serve(async (req) => {
     console.log(`Analyzing ${symbol} from ${fromTime.toISOString()} to ${toTime.toISOString()}`);
 
     // Detect asset type and normalize symbol
-    const { type: assetType, normalizedSymbol } = detectAssetType(symbol);
-    console.log(`Detected asset type: ${assetType}, normalized symbol: ${normalizedSymbol}`);
+    const assetInfo = detectAssetType(symbol);
+    console.log(`Detected asset type: ${assetInfo.type}, normalized symbol: ${assetInfo.normalizedSymbol}`);
+    if (assetInfo.requestedPair) {
+      console.log(`Requested pair: ${assetInfo.requestedPair}, Provider pair: ${assetInfo.providerPair}, Needs inversion: ${assetInfo.needsInversion}`);
+    }
 
     // Get resolution sequence for fallback
     const resolutionSequence = getResolutionSequence(spanMinutes);
@@ -116,9 +162,9 @@ serve(async (req) => {
         let endpoint = 'stock/candle';
         let symbolsToTry = [symbol];
         
-        if (assetType === 'forex') {
+        if (assetInfo.type === 'forex') {
           endpoint = 'forex/candle';
-          symbolsToTry = getFinnhubForexSymbols(normalizedSymbol);
+          symbolsToTry = getFinnhubForexSymbols(assetInfo.normalizedSymbol);
         }
         
         // Try each resolution and symbol combination
@@ -146,7 +192,7 @@ serve(async (req) => {
               console.log(`${method}: status=${data.s}, candles=${data.c?.length || 0}`);
               
               if (data.s === 'ok' && data.c && data.c.length > 0) {
-                marketData = {
+                let rawMarketData = {
                   source: `Finnhub ${endpoint} (${finnhubSymbol}, ${resolution})`,
                   open: data.o[0],
                   close: data.c[data.c.length - 1],
@@ -156,7 +202,15 @@ serve(async (req) => {
                   prices: data.c,
                   candleCount: data.c.length
                 };
-                dataSource = method;
+                
+                // Apply inversion if needed
+                if (assetInfo.needsInversion) {
+                  rawMarketData = invertOHLC(rawMarketData);
+                  console.log(`Inverted OHLC data from ${assetInfo.providerPair} to ${assetInfo.requestedPair}`);
+                }
+                
+                marketData = rawMarketData;
+                dataSource = `${finnhubSymbol} (${resolution})${assetInfo.needsInversion ? ' inverted' : ''}`;
                 console.log(`✓ Success: ${method}`);
                 break;
               } else {
@@ -173,8 +227,9 @@ serve(async (req) => {
       if (!marketData && alphaVantageApiKey) {
         console.log('Trying Alpha Vantage as fallback...');
         
-        if (assetType === 'forex') {
-          const [base, quote] = normalizedSymbol.split('/');
+        if (assetInfo.type === 'forex') {
+          // For Alpha Vantage, use the requested pair directly since it supports both directions
+          const [base, quote] = assetInfo.requestedPair?.split('/') || assetInfo.normalizedSymbol.split('/');
           
           for (const resolution of resolutionSequence) {
             if (marketData) break;
@@ -343,27 +398,36 @@ ${volumeText}
 Time window: ${spanMinutes.toFixed(0)} minutes
 `;
     } else {
-      metricsText = `Note: Market data unavailable for ${normalizedSymbol} during ${spanMinutes.toFixed(0)}-minute window. Tried: ${triedMethods.join(', ')}.`;
+      metricsText = `Note: Market data unavailable for ${symbol} during ${spanMinutes.toFixed(0)}-minute window. Tried: ${triedMethods.join(', ')}.`;
     }
 
     // Generate AI summary using Gemini with enhanced prompting
     let aiSummary = '';
     let usedProgrammaticFallback = false;
     
+    // Determine display symbol and units information
+    const displaySymbol = symbol;
+    const displayPair = assetInfo.requestedPair || symbol;
+    const unitsText = assetInfo.type === 'forex' && assetInfo.requestedPair
+      ? `Units: ${displayPair} (${assetInfo.requestedPair.split('/')[1]} per 1 ${assetInfo.requestedPair.split('/')[0]})`
+      : displaySymbol;
+
     try {
-      const analysisPrompt = `You have OHLC market data above. Do not say you lack real-time data. Do not use hypotheticals. Analyze ${normalizedSymbol} price action from ${fromTime.toISOString().split('T')[0]} ${fromTime.toISOString().split('T')[1].split('.')[0]} to ${toTime.toISOString().split('T')[0]} ${toTime.toISOString().split('T')[1].split('.')[0]} UTC.
+      const analysisPrompt = `You have OHLC market data above. Do not say you lack real-time data. Do not use hypotheticals. Analyze ${displaySymbol} price action from ${fromTime.toISOString().split('T')[0]} ${fromTime.toISOString().split('T')[1].split('.')[0]} to ${toTime.toISOString().split('T')[0]} ${toTime.toISOString().split('T')[1].split('.')[0]} UTC.
 
 ${metricsText}
 
+CRITICAL: Use the exact units specified: ${unitsText}. Do not convert to other quote conventions.
+
 Use Google Search to find news/catalysts during this exact timeframe. Output exactly three bullets and Sources line:
 
-• ${normalizedSymbol} moved ${marketData ? ((marketData.close - marketData.open) >= 0 ? 'up' : 'down') + ' by ' + ((marketData.close - marketData.open) >= 0 ? '+' : '') + computedMetrics?.priceChangePercent + '% from ' + marketData.open.toFixed(4) + ' to ' + marketData.close.toFixed(4) : '[specific % and price levels]'}
+• ${displaySymbol} moved ${marketData ? ((marketData.close - marketData.open) >= 0 ? 'up' : 'down') + ' by ' + ((marketData.close - marketData.open) >= 0 ? '+' : '') + computedMetrics?.priceChangePercent + '% from ' + marketData.open.toFixed(6) + ' to ' + marketData.close.toFixed(6) : '[specific % and price levels]'}
 • [Key news/event that drove the movement, or "No clear catalyst found"]
 • [Market reaction/flow details or broader context]
 
 Sources: [Include 1-3 credible financial news URLs]
 
-Each bullet must be under 25 words. Focus on factual price action and verifiable catalysts.${assetType === 'forex' ? ' Consider central bank comments, economic data, yield changes, risk sentiment.' : ' Consider earnings, guidance, sector news, analyst updates.'}`;
+Each bullet must be under 25 words. Focus on factual price action and verifiable catalysts.${assetInfo.type === 'forex' ? ' Consider central bank comments, economic data, yield changes, risk sentiment.' : ' Consider earnings, guidance, sector news, analyst updates.'}`;
 
       console.log('Sending analysis prompt to Gemini with Google Search enabled');
 
@@ -412,8 +476,8 @@ Each bullet must be under 25 words. Focus on factual price action and verifiable
             aiSummary.includes('hypothetical') ||
             aiSummary.includes('cannot analyze')) {
           console.log('Gemini output problematic, using programmatic fallback');
-          aiSummary = generateFallbackSummary(marketData, normalizedSymbol);
-          aiSummary += `\n\nSources: ${marketData ? marketData.source + ' candles' : 'Market data unavailable'}`;
+          const dataSourceInfo = dataSource ? `${dataSource} • ${marketData?.candleCount || 0} candles` : '';
+          aiSummary = generateFallbackSummary(marketData, displaySymbol, dataSourceInfo);
           usedProgrammaticFallback = true;
         }
           
@@ -426,16 +490,22 @@ Each bullet must be under 25 words. Focus on factual price action and verifiable
         }
       } else {
         console.log('No valid Gemini response, using programmatic fallback');
-        aiSummary = generateFallbackSummary(marketData, normalizedSymbol);
-        aiSummary += `\n\nSources: ${marketData ? marketData.source + ' candles' : 'Market data unavailable'}`;
+        const dataSourceInfo = dataSource ? `${dataSource} • ${marketData?.candleCount || 0} candles` : '';
+        aiSummary = generateFallbackSummary(marketData, displaySymbol, dataSourceInfo);
         usedProgrammaticFallback = true;
       }
     } catch (error) {
       console.error('Gemini API error:', error);
       console.log('Gemini error, using programmatic fallback');
-      aiSummary = generateFallbackSummary(marketData, normalizedSymbol);
-      aiSummary += `\n\nSources: ${marketData ? marketData.source + ' candles' : 'Market data unavailable'}`;
+      const dataSourceInfo = dataSource ? `${dataSource} • ${marketData?.candleCount || 0} candles` : '';
+      aiSummary = generateFallbackSummary(marketData, displaySymbol, dataSourceInfo);
       usedProgrammaticFallback = true;
+    }
+
+    // Add data source information if we have market data
+    if (marketData?.candleCount > 0) {
+      const dataSourceLine = `\nData: ${dataSource} • ${marketData.candleCount} candles • ${fromTime.toISOString().split('T')[0]} → ${toTime.toISOString().split('T')[0]}`;
+      aiSummary += dataSourceLine;
     }
 
     // Final logging
