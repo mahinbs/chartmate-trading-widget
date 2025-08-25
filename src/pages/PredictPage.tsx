@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +18,7 @@ import { AdvancedPredictLoader } from "@/components/AdvancedPredictLoader";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
-import { Loader2, TrendingUp, TrendingDown, Minus, AlertTriangle, BrainCircuit, LineChart, ChevronDown, DollarSign, LogOut } from "lucide-react";
+import { Loader2, TrendingUp, TrendingDown, Minus, AlertTriangle, BrainCircuit, LineChart, ChevronDown, DollarSign, LogOut, History } from "lucide-react";
 
 interface PredictionResult {
   symbol: string;
@@ -68,6 +69,42 @@ const PredictPage = () => {
   const [result, setResult] = useState<PredictionResult | null>(null);
   
   const { signOut, user } = useAuth();
+  const navigate = useNavigate();
+
+  // Auto-save prediction to database
+  const savePrediction = async (predictionData: PredictionResult) => {
+    try {
+      if (!user?.id) return;
+      
+      const { error } = await supabase
+        .from('predictions' as any)
+        .insert({
+          user_id: user.id,
+          symbol: predictionData.symbol,
+          timeframe,
+          investment: parseFloat(investment),
+          current_price: predictionData.currentPrice,
+          recommendation: predictionData.recommendation || null,
+          confidence: predictionData.confidence || null,
+          expected_move_direction: predictionData.expectedMove?.direction || null,
+          expected_move_percent: predictionData.expectedMove?.percent || null,
+          price_target_min: predictionData.expectedMove?.priceTarget?.min || null,
+          price_target_max: predictionData.expectedMove?.priceTarget?.max || null,
+          rationale: predictionData.rationale || null,
+          patterns: predictionData.patterns || null,
+          key_levels: predictionData.keyLevels || null,
+          risks: predictionData.risks || null,
+          opportunities: predictionData.opportunities || null,
+          raw_response: predictionData
+        });
+
+      if (error) {
+        console.error('Error saving prediction:', error);
+      }
+    } catch (error) {
+      console.error('Error saving prediction:', error);
+    }
+  };
 
   const handlePredict = async () => {
     if (!symbol || !investment || !timeframe) {
@@ -98,6 +135,8 @@ const PredictPage = () => {
 
       setResult(data);
       setAnalysisReady(true);
+      // Auto-save the prediction
+      await savePrediction(data);
       // Loader will complete when it's ready
     } catch (error) {
       console.error("Error:", error);
@@ -207,7 +246,15 @@ const PredictPage = () => {
       {/* Header */}
       <div className="p-6 animate-fade-in">
         <div className="flex justify-between items-start mb-4">
-          <div className="flex-1" />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate('/predictions')}
+            className="flex items-center gap-2"
+          >
+            <History className="h-4 w-4" />
+            My Predictions
+          </Button>
           <Button
             variant="outline"
             size="sm"

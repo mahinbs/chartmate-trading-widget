@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import PredictPage from "./pages/PredictPage";
+import PredictionsPage from "./pages/PredictionsPage";
 import AuthPage from "./pages/AuthPage";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
@@ -24,6 +25,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <PredictPage />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/predictions" 
+              element={
+                <ProtectedRoute>
+                  <PredictionsPage />
                 </ProtectedRoute>
               } 
             />
