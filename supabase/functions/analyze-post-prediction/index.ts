@@ -32,7 +32,7 @@ serve(async (req) => {
     // Generate AI summary using Gemini
     let aiSummary = '';
     try {
-      const analysisPrompt = `What happened to ${symbol} stock from ${fromTime.toLocaleDateString()} ${fromTime.toLocaleTimeString()} to now? Give me a brief 2-3 bullet point summary of the key movements, news, or events that affected this stock during this period. Keep it concise and trader-friendly.`;
+      const analysisPrompt = `What happened to ${symbol} asset from ${fromTime.toLocaleDateString()} ${fromTime.toLocaleTimeString()} to now? Give me exactly 2-3 short bullet points about key movements, news, or events that affected this asset during this period. Keep it concise and trader-friendly. No disclaimers or warnings needed.`;
 
       const geminiResponse = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=' + geminiApiKey, {
         method: 'POST',
