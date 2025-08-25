@@ -13,12 +13,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import TradingViewWidget from "@/components/TradingViewWidget";
+import ChartPanel from "@/components/ChartPanel";
 import { AdvancedPredictLoader } from "@/components/AdvancedPredictLoader";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
-import { Loader2, TrendingUp, TrendingDown, Minus, AlertTriangle, BrainCircuit, LineChart, ChevronDown, DollarSign, LogOut, History } from "lucide-react";
+import { Loader2, TrendingUp, TrendingDown, Minus, AlertTriangle, BrainCircuit, LineChart, ChevronDown, DollarSign, LogOut, History, BarChart3 } from "lucide-react";
 
 interface PredictionResult {
   symbol: string;
@@ -67,6 +67,10 @@ const PredictPage = () => {
   const [showAdvancedLoader, setShowAdvancedLoader] = useState(false);
   const [analysisReady, setAnalysisReady] = useState(false);
   const [result, setResult] = useState<PredictionResult | null>(null);
+  const [chartAnalysisLoading, setChartAnalysisLoading] = useState(false);
+  const [chartAnalysis, setChartAnalysis] = useState<string | null>(null);
+  const [chartSymbol, setChartSymbol] = useState("NASDAQ:AAPL");
+  const [chartDataSource, setChartDataSource] = useState<string | null>(null);
   
   const { signOut, user } = useAuth();
   const navigate = useNavigate();
@@ -268,6 +272,59 @@ const PredictPage = () => {
 
   const getCurrentPredictionTime = () => new Date();
   const getExpectedTime = () => calculateExpectedTime(timeframe, getCurrentPredictionTime());
+
+  // Chart analysis functionality
+  const getTimeWindowFromInterval = (interval: string) => {
+    const now = new Date();
+    const intervals: Record<string, number> = {
+      "1": 90,      // 90 minutes
+      "5": 1440,    // 24 hours  
+      "15": 4320,   // 3 days
+      "60": 14400,  // 10 days
+      "240": 43200, // 30 days
+      "D": 129600,  // 90 days
+      "W": 518400   // 360 days
+    };
+    
+    const minutes = intervals[interval] || 1440;
+    const from = new Date(now.getTime() - minutes * 60 * 1000 - 5 * 60 * 1000); // Subtract 5 minutes padding
+    const to = new Date(now.getTime() - 60 * 1000); // 1 minute ago to ensure closed candles
+    
+    return { from: from.toISOString(), to: to.toISOString() };
+  };
+
+  const handleAnalyzeChart = async (symbol: string, interval: string) => {
+    setChartAnalysisLoading(true);
+    setChartAnalysis(null);
+    setChartDataSource(null);
+    
+    try {
+      const { from, to } = getTimeWindowFromInterval(interval);
+      const cleanSymbol = symbol.includes(':') ? symbol.split(':')[1] : symbol;
+      
+      const { data, error } = await supabase.functions.invoke('analyze-post-prediction', {
+        body: {
+          symbol: cleanSymbol,
+          from
+        }
+      });
+
+      if (error) {
+        console.error("Chart analysis error:", error);
+        toast.error("Failed to analyze chart. Please try again.");
+        return;
+      }
+
+      setChartAnalysis(data.summary || "No analysis available");
+      setChartDataSource(data.dataSource || "Unknown source");
+      toast.success("Chart analysis completed!");
+    } catch (error) {
+      console.error("Error analyzing chart:", error);
+      toast.error("An error occurred while analyzing the chart");
+    } finally {
+      setChartAnalysisLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
@@ -613,48 +670,47 @@ const PredictPage = () => {
 
           {/* Right Column - Live Chart */}
           <div className="space-y-4">
-            <Card className="backdrop-blur-xl bg-gradient-to-br from-slate-500/10 via-gray-500/10 to-zinc-500/10 border-white/10 shadow-2xl rounded-2xl overflow-hidden animate-fade-in">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg font-semibold">
-                    Live Chart {symbol && `- ${symbol.split(':')[1] || symbol}`}
+            <div className="h-[500px] lg:h-[600px]">
+              <ChartPanel
+                defaultSymbol={symbol || chartSymbol}
+                defaultInterval={chartInterval}
+                onAnalyzeChart={handleAnalyzeChart}
+                isAnalyzing={chartAnalysisLoading}
+              />
+            </div>
+
+            {/* Chart Analysis Results */}
+            {chartAnalysis && (
+              <Card className="backdrop-blur-xl bg-gradient-to-br from-emerald-500/10 via-blue-500/10 to-purple-500/10 border-white/10 shadow-xl rounded-2xl animate-fade-in">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                    <BarChart3 className="h-5 w-5 text-blue-500" />
+                    Chart Analysis
                   </CardTitle>
-                  
-                  {/* Chart Interval Toggle */}
-                  <ToggleGroup 
-                    type="single" 
-                    value={chartInterval} 
-                    onValueChange={setChartInterval}
-                    className="flex gap-1"
-                  >
-                    <ToggleGroupItem value="1" size="sm" className="text-xs px-2 py-1">1m</ToggleGroupItem>
-                    <ToggleGroupItem value="5" size="sm" className="text-xs px-2 py-1">5m</ToggleGroupItem>
-                    <ToggleGroupItem value="15" size="sm" className="text-xs px-2 py-1">15m</ToggleGroupItem>
-                    <ToggleGroupItem value="60" size="sm" className="text-xs px-2 py-1">1h</ToggleGroupItem>
-                    <ToggleGroupItem value="D" size="sm" className="text-xs px-2 py-1">1d</ToggleGroupItem>
-                    <ToggleGroupItem value="W" size="sm" className="text-xs px-2 py-1">1w</ToggleGroupItem>
-                  </ToggleGroup>
-                </div>
-              </CardHeader>
-              
-              <CardContent className="p-0">
-                <div className="h-[500px] lg:h-[600px] rounded-b-2xl overflow-hidden">
-                  {symbol ? (
-                    <TradingViewWidget 
-                      symbol={symbol} 
-                      interval={getChartIntervalMapping(chartInterval)} 
-                    />
-                  ) : (
-                    <div className="h-full flex items-center justify-center bg-muted/20 rounded-b-2xl">
-                      <div className="text-center space-y-2">
-                        <LineChart className="h-12 w-12 mx-auto text-muted-foreground/50" />
-                        <p className="text-muted-foreground">Select a symbol to view the live chart</p>
-                      </div>
-                    </div>
+                  {chartDataSource && (
+                    <p className="text-xs text-muted-foreground">
+                      Data source: {chartDataSource}
+                    </p>
                   )}
-                </div>
-              </CardContent>
-            </Card>
+                </CardHeader>
+                <CardContent>
+                  <div className="prose prose-sm max-w-none text-foreground">
+                    {chartAnalysis.split('\n').map((line, index) => (
+                      <p key={index} className="mb-2 last:mb-0">
+                        {line.startsWith('•') ? (
+                          <span className="flex items-start gap-2">
+                            <span className="text-blue-500 mt-1">•</span>
+                            <span>{line.substring(1).trim()}</span>
+                          </span>
+                        ) : (
+                          line
+                        )}
+                      </p>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
         </div>
       </div>
