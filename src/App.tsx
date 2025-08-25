@@ -15,7 +15,7 @@ const App = () => (
       <BrowserRouter>
         <div className="min-h-screen bg-background">
           <Routes>
-            <Route path="/" element={<PredictPage />} />
+            <Route path="/" element={<Navigate to="/predict" replace />} />
             <Route path="/predict" element={<PredictPage />} />
             <Route path="*" element={<Navigate to="/predict" replace />} />
           </Routes>
