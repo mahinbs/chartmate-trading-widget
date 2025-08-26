@@ -21,6 +21,9 @@ const POPULAR_SYMBOLS = [
   { value: "NASDAQ:QQQ", label: "Nasdaq ETF (QQQ)" },
   { value: "BINANCE:BTCUSDT", label: "Bitcoin (BTC)" },
   { value: "BINANCE:ETHUSDT", label: "Ethereum (ETH)" },
+  { value: "OANDA:EUR_USD", label: "EUR/USD" },
+  { value: "OANDA:GBP_USD", label: "GBP/USD" },
+  { value: "OANDA:USD_JPY", label: "USD/JPY" },
 ];
 
 const INTERVALS = [
