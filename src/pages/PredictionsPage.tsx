@@ -402,11 +402,11 @@ const PredictionsPage = () => {
                     <div className="mt-4 p-3 bg-muted/50 rounded-lg">
                       <h4 className="font-medium text-sm mb-2">AI Analysis</h4>
                       <div className="text-xs text-muted-foreground mb-2">
-                        {analysisStates[prediction.id]!.data!.symbol} from {formatDateTime(new Date(analysisStates[prediction.id]!.data!.from))} to {formatDateTime(new Date(analysisStates[prediction.id]!.data!.to))}
+                        {analysisStates[prediction.id]!.data!.symbol} from {formatDateTime(analysisStates[prediction.id]!.data!.from)} to {formatDateTime(analysisStates[prediction.id]!.data!.to)}
                       </div>
                       
                       <div className="text-sm leading-relaxed text-foreground whitespace-pre-wrap">
-                        {analysisStates[prediction.id]!.data!.ai.summary}
+                        {analysisStates[prediction.id]!.data!.ai?.summary || 'Analysis summary not available'}
                       </div>
                     </div>
                   )}
