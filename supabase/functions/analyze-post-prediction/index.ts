@@ -163,7 +163,7 @@ serve(async (req) => {
   }
 
   try {
-    const { symbol, from, marketMeta } = await req.json();
+    const { symbol, from, to, expected, marketMeta } = await req.json();
 
     const geminiApiKey = Deno.env.get('GEMINI_API_KEY');
 
@@ -175,7 +175,7 @@ serve(async (req) => {
     }
 
     const fromTime = new Date(from);
-    const toTime = new Date();
+    const toTime = to ? new Date(to) : new Date();
 
     console.log(`Analyzing ${symbol} from ${fromTime.toISOString()} to ${toTime.toISOString()}`);
 
@@ -238,6 +238,76 @@ serve(async (req) => {
     // Generate summary from actual market data
     const summary = generateFallbackSummary(marketData, symbol, dataSource);
 
+    // If we have expected values, calculate evaluation
+    let evaluation = null;
+    if (expected && marketData.candles.length > 0) {
+      const candles = marketData.candles;
+      const startPrice = candles[0].close;
+      const endPrice = candles[candles.length - 1].close;
+      const actualChangePercent = ((endPrice - startPrice) / startPrice) * 100;
+      
+      // Check price targets
+      const hitTargetMax = expected.priceTargetMax ? candles.some((c: any) => c.high >= expected.priceTargetMax) : false;
+      const hitTargetMin = expected.priceTargetMin ? candles.some((c: any) => c.low <= expected.priceTargetMin) : false;
+      
+      // Determine result based on direction and move percent
+      let result: 'accurate' | 'partial' | 'failed' = 'failed';
+      let reasoning = '';
+      
+      const threshold = expected.movePercent * 0.8; // 80% of predicted move for accuracy
+      
+      if (expected.direction === 'up') {
+        if (actualChangePercent >= threshold) {
+          result = 'accurate';
+          reasoning = `Predicted upward move achieved: ${actualChangePercent.toFixed(2)}% vs target ${expected.movePercent}%`;
+        } else if (actualChangePercent > 0) {
+          result = 'partial';
+          reasoning = `Moved up ${actualChangePercent.toFixed(2)}% but fell short of ${expected.movePercent}% target`;
+        } else {
+          result = 'failed';
+          reasoning = `Moved down ${actualChangePercent.toFixed(2)}% instead of up ${expected.movePercent}%`;
+        }
+      } else if (expected.direction === 'down') {
+        if (actualChangePercent <= -threshold) {
+          result = 'accurate';
+          reasoning = `Predicted downward move achieved: ${actualChangePercent.toFixed(2)}% vs target -${expected.movePercent}%`;
+        } else if (actualChangePercent < 0) {
+          result = 'partial';
+          reasoning = `Moved down ${Math.abs(actualChangePercent).toFixed(2)}% but fell short of ${expected.movePercent}% target`;
+        } else {
+          result = 'failed';
+          reasoning = `Moved up ${actualChangePercent.toFixed(2)}% instead of down ${expected.movePercent}%`;
+        }
+      } else if (expected.direction === 'neutral') {
+        const absChange = Math.abs(actualChangePercent);
+        if (absChange <= 0.5) {
+          result = 'accurate';
+          reasoning = `Stayed neutral with minimal movement: ${actualChangePercent.toFixed(2)}%`;
+        } else if (absChange <= 1.0) {
+          result = 'partial';
+          reasoning = `Small movement of ${actualChangePercent.toFixed(2)}% close to neutral prediction`;
+        } else {
+          result = 'failed';
+          reasoning = `Significant movement of ${actualChangePercent.toFixed(2)}% exceeded neutral prediction`;
+        }
+      }
+      
+      evaluation = {
+        result,
+        startPrice,
+        endPrice,
+        actualChangePercent,
+        predictedDirection: expected.direction,
+        predictedMovePercent: expected.movePercent,
+        hitTargetMax,
+        hitTargetMin,
+        endTimeUsed: toTime.toISOString(),
+        reasoning
+      };
+      
+      console.log(`📊 Evaluation: ${result} - ${reasoning}`);
+    }
+
     return new Response(JSON.stringify({
       symbol,
       summary,
@@ -246,7 +316,10 @@ serve(async (req) => {
         candleCount: marketData.candleCount,
         source: marketData.source,
         interval: dataSource.match(/\(([^)]+)\)/)?.[1] || 'unknown'
-      }
+      },
+      from: fromTime.toISOString(),
+      to: toTime.toISOString(),
+      evaluation
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

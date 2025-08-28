@@ -32,6 +32,18 @@ interface AnalysisData {
   from?: string;
   to?: string;
   ai?: { summary?: string }; // keep optional for backward compatibility
+  evaluation?: {
+    result: 'accurate' | 'partial' | 'failed';
+    startPrice: number;
+    endPrice: number;
+    actualChangePercent: number;
+    predictedDirection?: 'up' | 'down' | 'neutral' | null;
+    predictedMovePercent?: number | null;
+    hitTargetMin?: boolean;
+    hitTargetMax?: boolean;
+    endTimeUsed?: string;
+    reasoning?: string;
+  };
 }
 
 const PredictionsPage = () => {
@@ -46,14 +58,29 @@ const PredictionsPage = () => {
     fetchPredictions();
   }, []);
 
-  // Update current time every second
+  // Update current time every second and auto-evaluate expired predictions
   useEffect(() => {
     const timer = setInterval(() => {
-      setNow(new Date());
+      const currentTime = new Date();
+      setNow(currentTime);
+      
+      // Auto-evaluate expired predictions
+      predictions.forEach(prediction => {
+        const startTime = new Date(prediction.created_at);
+        const expectedTime = calculateExpectedTime(prediction.timeframe, startTime);
+        const isExpired = currentTime >= expectedTime;
+        const hasEvaluation = analysisStates[prediction.id]?.data?.evaluation;
+        const isLoading = analysisStates[prediction.id]?.loading;
+        
+        if (isExpired && !hasEvaluation && !isLoading) {
+          console.log(`Auto-evaluating expired prediction: ${prediction.symbol}`);
+          analyzePostPrediction(prediction, expectedTime);
+        }
+      });
     }, 1000);
 
     return () => clearInterval(timer);
-  }, []);
+  }, [predictions, analysisStates]);
 
   const fetchPredictions = async () => {
     try {
@@ -203,7 +230,7 @@ const PredictionsPage = () => {
     }
   };
 
-  const analyzePostPrediction = async (prediction: Prediction) => {
+  const analyzePostPrediction = async (prediction: Prediction, toOverride?: Date) => {
     const predictionId = prediction.id;
     
     setAnalysisStates(prev => ({
@@ -212,26 +239,35 @@ const PredictionsPage = () => {
     }));
 
     try {
+      const requestBody = {
+        symbol: prediction.symbol,
+        from: prediction.created_at,
+        to: toOverride?.toISOString(),
+        expected: prediction.expected_move_direction ? {
+          direction: prediction.expected_move_direction,
+          movePercent: prediction.expected_move_percent || 0,
+          priceTargetMin: prediction.price_target_min || null,
+          priceTargetMax: prediction.price_target_max || null,
+        } : null,
+        marketMeta: prediction.raw_response?.marketMeta || null
+      };
+
       const { data, error } = await supabase.functions.invoke('analyze-post-prediction', {
-        body: {
-          symbol: prediction.symbol,
-          from: prediction.created_at,
-          marketMeta: prediction.raw_response?.marketMeta || null
-        }
+        body: requestBody
       });
 
       if (error) throw error;
 
-      // Normalize the response for UI compatibility
-      const nowIso = new Date().toISOString();
+      // Store the full response including evaluation
       const adapted: AnalysisData = {
         symbol: prediction.symbol,
         summary: data.summary,
         dataSource: data.dataSource,
         marketData: data.marketData,
-        from: prediction.created_at,
-        to: nowIso,
-        ai: { summary: data.summary }
+        from: data.from || prediction.created_at,
+        to: data.to || new Date().toISOString(),
+        ai: { summary: data.summary },
+        evaluation: data.evaluation
       };
 
       setAnalysisStates(prev => ({
@@ -372,20 +408,46 @@ const PredictionsPage = () => {
                     </div>
                   )}
 
-                  {/* Countdown Timer */}
+                  {/* Time Status */}
                   {(() => {
                     const startTime = new Date(prediction.created_at);
                     const expectedTime = calculateExpectedTime(prediction.timeframe, startTime);
                     const timeRemaining = expectedTime.getTime() - now.getTime();
                     const elapsedPercent = getElapsedPercent(startTime, expectedTime, now);
-                    const statusClasses = getStatusClasses(timeRemaining);
+                    const isExpired = timeRemaining < 0;
+                    const hasEvaluation = analysisStates[prediction.id]?.data?.evaluation;
 
+                    if (isExpired) {
+                      return (
+                        <div className="mt-4 pt-4 border-t">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <Clock className="h-4 w-4 text-muted-foreground" />
+                              <span className="text-sm font-medium text-muted-foreground">Completed</span>
+                            </div>
+                            {hasEvaluation && (
+                              <Badge className={
+                                hasEvaluation.result === 'accurate' ? 'bg-green-500/10 text-green-500 border-green-500/20' :
+                                hasEvaluation.result === 'partial' ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20' :
+                                'bg-red-500/10 text-red-500 border-red-500/20'
+                              }>
+                                {hasEvaluation.result === 'accurate' ? 'Accurate' : 
+                                 hasEvaluation.result === 'partial' ? 'Partial' : 'Failed'}
+                              </Badge>
+                            )}
+                          </div>
+                          <Progress value={100} className="h-2" />
+                        </div>
+                      );
+                    }
+
+                    const statusClasses = getStatusClasses(timeRemaining);
                     return (
                       <div className="mt-4 pt-4 border-t">
                         <div className="flex items-center gap-2 mb-3">
                           <Clock className="h-4 w-4 text-muted-foreground" />
                           <span className={`text-sm font-medium ${statusClasses.text}`}>
-                            {timeRemaining < 0 ? 'Overdue by' : 'Time remaining'}: {formatDuration(timeRemaining)}
+                            Time remaining: {formatDuration(timeRemaining)}
                           </span>
                         </div>
                         <Progress 
@@ -397,36 +459,136 @@ const PredictionsPage = () => {
                   })()}
 
                   {/* Analysis Button */}
-                  <div className="mt-4 pt-4 border-t">
-                    <Button
-                      onClick={() => analyzePostPrediction(prediction)}
-                      disabled={analysisStates[prediction.id]?.loading}
-                      variant="outline"
-                      size="sm"
-                      className="w-full"
-                    >
-                      <BarChart3 className="h-4 w-4 mr-2" />
-                      {analysisStates[prediction.id]?.loading ? 'Analyzing...' : 'Analyze since prediction'}
-                    </Button>
-                  </div>
+                  {(() => {
+                    const startTime = new Date(prediction.created_at);
+                    const expectedTime = calculateExpectedTime(prediction.timeframe, startTime);
+                    const isExpired = now >= expectedTime;
+                    const hasEvaluation = analysisStates[prediction.id]?.data?.evaluation;
+                    const isLoading = analysisStates[prediction.id]?.loading;
+
+                    // For expired predictions, only show manual analysis if no evaluation exists
+                    if (isExpired && hasEvaluation) {
+                      return null; // Evaluation results will be shown below
+                    }
+
+                    return (
+                      <div className="mt-4 pt-4 border-t">
+                        <Button
+                          onClick={() => analyzePostPrediction(prediction)}
+                          disabled={isLoading}
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                        >
+                          <BarChart3 className="h-4 w-4 mr-2" />
+                          {isLoading ? 'Analyzing...' : 
+                           isExpired ? 'Evaluate outcome' : 'Analyze since prediction'}
+                        </Button>
+                      </div>
+                    );
+                  })()}
 
                   {/* Analysis Results */}
                    {analysisStates[prediction.id]?.data && (
                      <div className="mt-4 p-3 bg-muted/50 rounded-lg">
-                       <h4 className="font-medium text-sm mb-2">AI Analysis</h4>
-                       <div className="text-xs text-muted-foreground mb-2">
-                         {analysisStates[prediction.id]!.data!.symbol} from {formatDateTime(analysisStates[prediction.id]!.data!.from || prediction.created_at)} to {formatDateTime(analysisStates[prediction.id]!.data!.to || new Date().toISOString())}
-                       </div>
-                       
-                       <div className="text-sm leading-relaxed text-foreground whitespace-pre-wrap">
-                         {analysisStates[prediction.id]!.data!.summary || analysisStates[prediction.id]!.data!.ai?.summary || 'Analysis summary not available'}
-                       </div>
-                       
-                       {analysisStates[prediction.id]!.data!.dataSource && (
-                         <div className="text-xs text-muted-foreground mt-2">
-                           Data: {analysisStates[prediction.id]!.data!.dataSource}
-                         </div>
-                       )}
+                       {(() => {
+                         const data = analysisStates[prediction.id]!.data!;
+                         const evaluation = data.evaluation;
+
+                         if (evaluation) {
+                           return (
+                             <>
+                               <div className="flex items-center justify-between mb-3">
+                                 <h4 className="font-medium text-sm">Prediction Outcome</h4>
+                                 <Badge className={
+                                   evaluation.result === 'accurate' ? 'bg-green-500/10 text-green-500 border-green-500/20' :
+                                   evaluation.result === 'partial' ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20' :
+                                   'bg-red-500/10 text-red-500 border-red-500/20'
+                                 }>
+                                   {evaluation.result === 'accurate' ? 'Accurate' : 
+                                    evaluation.result === 'partial' ? 'Partial' : 'Failed'}
+                                 </Badge>
+                               </div>
+                               
+                               <div className="text-sm space-y-2">
+                                 <div className="flex justify-between">
+                                   <span className="text-muted-foreground">Predicted:</span>
+                                   <span className={`font-medium ${
+                                     evaluation.predictedDirection === 'up' ? 'text-green-500' :
+                                     evaluation.predictedDirection === 'down' ? 'text-red-500' : 'text-yellow-500'
+                                   }`}>
+                                     {evaluation.predictedDirection} {evaluation.predictedMovePercent?.toFixed(1)}%
+                                   </span>
+                                 </div>
+                                 <div className="flex justify-between">
+                                   <span className="text-muted-foreground">Actual:</span>
+                                   <span className={`font-medium ${
+                                     evaluation.actualChangePercent >= 0 ? 'text-green-500' : 'text-red-500'
+                                   }`}>
+                                     {evaluation.actualChangePercent >= 0 ? '+' : ''}{evaluation.actualChangePercent.toFixed(2)}%
+                                   </span>
+                                 </div>
+                                 <div className="flex justify-between">
+                                   <span className="text-muted-foreground">Price range:</span>
+                                   <span className="font-medium">
+                                     ${evaluation.startPrice.toFixed(2)} → ${evaluation.endPrice.toFixed(2)}
+                                   </span>
+                                 </div>
+                                 
+                                 {(evaluation.hitTargetMax || evaluation.hitTargetMin) && (
+                                   <div className="pt-2 border-t">
+                                     <p className="text-xs text-muted-foreground mb-1">Price Targets:</p>
+                                     {evaluation.hitTargetMax && (
+                                       <span className="text-xs bg-green-500/10 text-green-500 px-2 py-1 rounded mr-2">
+                                         Hit upper target
+                                       </span>
+                                     )}
+                                     {evaluation.hitTargetMin && (
+                                       <span className="text-xs bg-green-500/10 text-green-500 px-2 py-1 rounded">
+                                         Hit lower target
+                                       </span>
+                                     )}
+                                   </div>
+                                 )}
+                                 
+                                 {evaluation.reasoning && (
+                                   <div className="pt-2 border-t">
+                                     <p className="text-xs text-muted-foreground leading-relaxed">
+                                       {evaluation.reasoning}
+                                     </p>
+                                   </div>
+                                 )}
+                               </div>
+                               
+                               {data.dataSource && (
+                                 <div className="text-xs text-muted-foreground mt-3 pt-2 border-t">
+                                   Data: {data.dataSource} • Period: {formatDateTime(data.from)} to {formatDateTime(data.to)}
+                                 </div>
+                               )}
+                             </>
+                           );
+                         }
+
+                         // Regular analysis without evaluation
+                         return (
+                           <>
+                             <h4 className="font-medium text-sm mb-2">Analysis Since Prediction</h4>
+                             <div className="text-xs text-muted-foreground mb-2">
+                               {data.symbol} from {formatDateTime(data.from || prediction.created_at)} to {formatDateTime(data.to || new Date().toISOString())}
+                             </div>
+                             
+                             <div className="text-sm leading-relaxed text-foreground whitespace-pre-wrap">
+                               {data.summary || data.ai?.summary || 'Analysis summary not available'}
+                             </div>
+                             
+                             {data.dataSource && (
+                               <div className="text-xs text-muted-foreground mt-2">
+                                 Data: {data.dataSource}
+                               </div>
+                             )}
+                           </>
+                         );
+                       })()}
                      </div>
                    )}
 
