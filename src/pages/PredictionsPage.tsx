@@ -126,7 +126,15 @@ const PredictionsPage = () => {
   };
 
   // Date/Time helper functions
-  const formatDateTime = (date: Date) => {
+  const formatDateTime = (date: Date | string | null | undefined) => {
+    if (!date) return 'Invalid Date';
+    
+    const dateObj = date instanceof Date ? date : new Date(date);
+    
+    if (isNaN(dateObj.getTime())) {
+      return 'Invalid Date';
+    }
+    
     return new Intl.DateTimeFormat('en-US', {
       month: 'short',
       day: 'numeric',
@@ -134,7 +142,7 @@ const PredictionsPage = () => {
       hour: '2-digit',
       minute: '2-digit',
       timeZoneName: 'short'
-    }).format(date);
+    }).format(dateObj);
   };
 
   const calculateExpectedTime = (timeframe: string, startTime: Date) => {
