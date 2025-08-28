@@ -10,6 +10,7 @@ import { ArrowLeft, TrendingUp, TrendingDown, Minus, Trash2, Clock, BarChart3, C
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { PredictionTimeline } from "@/components/PredictionTimeline";
+import { fmt, fmtPct, asNumber } from "@/lib/utils";
 
 interface Prediction {
   id: string;
@@ -461,17 +462,17 @@ const PredictionsPage = () => {
                                        {forecast.direction}
                                      </Badge>
                                    </TableCell>
-                                   <TableCell className="font-mono">
-                                     {forecast.expected_return_bp ? `${(forecast.expected_return_bp / 100).toFixed(2)}%` : 'N/A'}
-                                   </TableCell>
-                                   <TableCell className="font-mono">{forecast.confidence?.toFixed(1) || 'N/A'}%</TableCell>
+                                    <TableCell className="font-mono">
+                                      {forecast.expected_return_bp ? fmtPct(asNumber(forecast.expected_return_bp) / 100) : 'N/A'}
+                                    </TableCell>
+                                    <TableCell className="font-mono">{forecast.confidence ? fmtPct(asNumber(forecast.confidence)) : 'N/A'}</TableCell>
                                    <TableCell>
                                      {forecast.probabilities && (
                                        <div className="space-y-1">
                                          <div className="flex justify-between text-xs">
-                                           <span className="text-green-600">Up: {(forecast.probabilities.up * 100).toFixed(0)}%</span>
-                                           <span className="text-red-600">Down: {(forecast.probabilities.down * 100).toFixed(0)}%</span>
-                                           <span className="text-yellow-600">Side: {(forecast.probabilities.sideways * 100).toFixed(0)}%</span>
+                                            <span className="text-green-600">Up: {fmtPct(asNumber(forecast.probabilities.up) * 100, 0)}</span>
+                                            <span className="text-red-600">Down: {fmtPct(asNumber(forecast.probabilities.down) * 100, 0)}</span>
+                                            <span className="text-yellow-600">Side: {fmtPct(asNumber(forecast.probabilities.sideways) * 100, 0)}</span>
                                          </div>
                                        </div>
                                      )}
@@ -559,11 +560,12 @@ const PredictionsPage = () => {
                                  <div>
                                    <p className="text-muted-foreground mb-1">Support Levels</p>
                                    <div className="space-y-1">
-                                     {prediction.raw_response.geminiForecast.support_resistance.supports.map((level: any, index: number) => (
-                                       <p key={index} className="font-mono text-green-600">
-                                         ${typeof level === 'number' ? level.toFixed(2) : parseFloat(level || '0').toFixed(2)}
-                                       </p>
-                                     ))}
+                                      {(Array.isArray(prediction.raw_response.geminiForecast.support_resistance.supports) ? 
+                                        prediction.raw_response.geminiForecast.support_resistance.supports : []).map((level: any, index: number) => (
+                                        <p key={index} className="font-mono text-green-600">
+                                          ${fmt(level)}
+                                        </p>
+                                      ))}
                                    </div>
                                  </div>
                                )}
@@ -571,11 +573,12 @@ const PredictionsPage = () => {
                                  <div>
                                    <p className="text-muted-foreground mb-1">Resistance Levels</p>
                                    <div className="space-y-1">
-                                     {prediction.raw_response.geminiForecast.support_resistance.resistances.map((level: any, index: number) => (
-                                       <p key={index} className="font-mono text-red-600">
-                                         ${typeof level === 'number' ? level.toFixed(2) : parseFloat(level || '0').toFixed(2)}
-                                       </p>
-                                     ))}
+                                      {(Array.isArray(prediction.raw_response.geminiForecast.support_resistance.resistances) ? 
+                                        prediction.raw_response.geminiForecast.support_resistance.resistances : []).map((level: any, index: number) => (
+                                        <p key={index} className="font-mono text-red-600">
+                                          ${fmt(level)}
+                                        </p>
+                                      ))}
                                    </div>
                                  </div>
                                )}
@@ -605,42 +608,42 @@ const PredictionsPage = () => {
                       <p className="text-muted-foreground">Investment</p>
                       <p className="font-semibold">${prediction.investment?.toLocaleString() || 'N/A'}</p>
                     </div>
-                    <div>
-                      <p className="text-muted-foreground">Current Price</p>
-                      <p className="font-semibold">${prediction.current_price?.toFixed(2) || 'N/A'}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Confidence</p>
-                      <p className="font-semibold">{prediction.confidence?.toFixed(1) || 'N/A'}%</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Expected Move</p>
-                      <p className={`font-semibold ${
-                        prediction.expected_move_direction === 'up' ? 'text-green-500' : 
-                        prediction.expected_move_direction === 'down' ? 'text-red-500' : 
-                        'text-yellow-500'
-                      }`}>
-                        {prediction.expected_move_percent?.toFixed(1) || 'N/A'}%
-                      </p>
-                    </div>
+                     <div>
+                       <p className="text-muted-foreground">Current Price</p>
+                       <p className="font-semibold">${prediction.current_price ? fmt(prediction.current_price) : 'N/A'}</p>
+                     </div>
+                     <div>
+                       <p className="text-muted-foreground">Confidence</p>
+                       <p className="font-semibold">{prediction.confidence ? fmtPct(prediction.confidence) : 'N/A'}</p>
+                     </div>
+                     <div>
+                       <p className="text-muted-foreground">Expected Move</p>
+                       <p className={`font-semibold ${
+                         prediction.expected_move_direction === 'up' ? 'text-green-500' : 
+                         prediction.expected_move_direction === 'down' ? 'text-red-500' : 
+                         'text-yellow-500'
+                       }`}>
+                         {prediction.expected_move_percent ? fmtPct(prediction.expected_move_percent) : 'N/A'}
+                       </p>
+                     </div>
                   </div>
                   
                   {(prediction.price_target_min || prediction.price_target_max) && (
                     <div className="mt-4 pt-4 border-t">
                       <p className="text-sm text-muted-foreground mb-2">Price Targets</p>
                       <div className="flex gap-4 text-sm">
-                        {prediction.price_target_min && (
-                          <div>
-                            <span className="text-muted-foreground">Min: </span>
-                            <span className="font-semibold">${prediction.price_target_min.toFixed(2)}</span>
-                          </div>
-                        )}
-                        {prediction.price_target_max && (
-                          <div>
-                            <span className="text-muted-foreground">Max: </span>
-                            <span className="font-semibold">${prediction.price_target_max.toFixed(2)}</span>
-                          </div>
-                        )}
+                         {prediction.price_target_min && (
+                           <div>
+                             <span className="text-muted-foreground">Min: </span>
+                             <span className="font-semibold">${fmt(prediction.price_target_min)}</span>
+                           </div>
+                         )}
+                         {prediction.price_target_max && (
+                           <div>
+                             <span className="text-muted-foreground">Max: </span>
+                             <span className="font-semibold">${fmt(prediction.price_target_max)}</span>
+                           </div>
+                         )}
                       </div>
                     </div>
                   )}
@@ -754,7 +757,7 @@ const PredictionsPage = () => {
                                      evaluation.predictedDirection === 'up' ? 'text-green-500' :
                                      evaluation.predictedDirection === 'down' ? 'text-red-500' : 'text-yellow-500'
                                    }`}>
-                                     {evaluation.predictedDirection} {evaluation.predictedMovePercent?.toFixed(1)}%
+                                     {evaluation.predictedDirection} {evaluation.predictedMovePercent ? fmtPct(evaluation.predictedMovePercent) : 'N/A'}
                                    </span>
                                  </div>
                                  <div className="flex justify-between">
@@ -762,13 +765,13 @@ const PredictionsPage = () => {
                                    <span className={`font-medium ${
                                      evaluation.actualChangePercent >= 0 ? 'text-green-500' : 'text-red-500'
                                    }`}>
-                                     {evaluation.actualChangePercent >= 0 ? '+' : ''}{evaluation.actualChangePercent.toFixed(2)}%
+                                     {evaluation.actualChangePercent >= 0 ? '+' : ''}{fmt(evaluation.actualChangePercent)}%
                                    </span>
                                  </div>
                                  <div className="flex justify-between">
                                    <span className="text-muted-foreground">Price range:</span>
                                    <span className="font-medium">
-                                     ${evaluation.startPrice.toFixed(2)} → ${evaluation.endPrice.toFixed(2)}
+                                     ${fmt(evaluation.startPrice)} → ${fmt(evaluation.endPrice)}
                                    </span>
                                  </div>
                                  

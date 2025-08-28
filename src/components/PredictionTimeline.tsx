@@ -87,7 +87,7 @@ export function PredictionTimeline({
 
   if (!pipeline?.steps) {
     return (
-      <Card className="backdrop-blur-xl bg-gradient-to-br from-indigo-500/10 via-purple-500/10 to-teal-500/10 border-white/10">
+      <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Timer className="h-5 w-5" />
@@ -110,7 +110,7 @@ export function PredictionTimeline({
   return (
     <div className="space-y-4">
       {/* Pipeline Progress Overview */}
-      <Card className="backdrop-blur-xl bg-gradient-to-br from-indigo-500/10 via-purple-500/10 to-teal-500/10 border-white/10">
+      <Card>
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -193,7 +193,7 @@ export function PredictionTimeline({
 
       {/* Live Horizon Countdown */}
       {forecasts.length > 0 && (
-        <Card className="backdrop-blur-xl bg-gradient-to-br from-indigo-500/10 via-purple-500/10 to-teal-500/10 border-white/10">
+        <Card>
           <CardHeader className="pb-4">
             <CardTitle className="flex items-center gap-2">
               <TrendingUp className="h-5 w-5" />
@@ -251,7 +251,7 @@ export function PredictionTimeline({
       )}
 
       {/* Pipeline Stats */}
-      <Card className="backdrop-blur-xl bg-gradient-to-br from-indigo-500/10 via-purple-500/10 to-teal-500/10 border-white/10">
+      <Card>
         <CardContent className="pt-6">
           <div className="grid grid-cols-3 gap-4 text-center">
             <div>
