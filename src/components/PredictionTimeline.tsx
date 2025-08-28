@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { GlowCard } from "@/components/ui/glow-card";
+import { StatusPill } from "@/components/ui/status-pill";
+import { HorizonTile } from "@/components/ui/horizon-tile";
 import { 
   CheckCircle, 
   Clock, 
@@ -108,173 +111,171 @@ export function PredictionTimeline({
   const progressPercent = (completedSteps / totalSteps) * 100;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {/* Pipeline Progress Overview */}
-      <Card>
+      <GlowCard glowColor="primary" intensity="medium" className="sheen">
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Timer className="h-5 w-5" />
-              Pipeline Progress
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-gradient-to-br from-primary/20 to-primary/10">
+                <Timer className="h-5 w-5 text-primary" />
+              </div>
+              <span className="bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text text-transparent">
+                Pipeline Progress
+              </span>
             </div>
-            <Badge variant="outline" className="text-xs">
-              {formatDuration(pipeline.totalDuration || 0)}
-            </Badge>
+            <StatusPill 
+              status="running" 
+              label={formatDuration(pipeline.totalDuration || 0)}
+              size="sm"
+            />
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Progress Bar */}
-          <div className="space-y-2">
+        <CardContent className="space-y-6">
+          {/* Enhanced Progress Bar */}
+          <div className="space-y-3">
             <div className="flex justify-between text-sm">
-              <span>Progress</span>
-              <span>{completedSteps}/{totalSteps} steps</span>
+              <span className="font-medium">Progress</span>
+              <span className="text-primary font-mono">{completedSteps}/{totalSteps} steps</span>
             </div>
-            <Progress value={progressPercent} className="h-2" />
+            <div className="relative">
+              <Progress value={progressPercent} className="h-3 bg-muted/20" />
+              <div className="absolute inset-0 rounded-full bg-gradient-to-r from-primary/20 via-primary/10 to-transparent" />
+            </div>
           </div>
 
-          {/* Pipeline Steps */}
-          <div className="grid gap-2">
+          {/* Advanced Pipeline Steps */}
+          <div className="grid gap-3">
             {pipeline.steps.map((step, index) => {
               const Icon = stepIcons[step.name] || Clock;
               const isCompleted = step.status === 'completed';
-              const isRunning = step.status === 'running';
+              const isRunning = step.status === 'running'; 
               const isError = step.status === 'error';
 
               return (
                 <div
                   key={step.name}
                   className={cn(
-                    "flex items-center gap-3 p-3 rounded-lg transition-all duration-200",
-                    isCompleted && "bg-green-100/50 border border-green-200/50",
-                    isRunning && "bg-blue-100/50 border border-blue-200/50 animate-pulse",
-                    isError && "bg-red-100/50 border border-red-200/50",
-                    !isCompleted && !isRunning && !isError && "bg-muted/20"
+                    "group relative overflow-hidden rounded-xl border p-4 transition-all duration-300 hover:scale-[1.01]",
+                    "bg-gradient-to-r backdrop-blur-sm",
+                    isCompleted && "from-trading-green/10 to-trading-green/5 border-trading-green/30 shadow-lg shadow-trading-green/10",
+                    isRunning && "from-primary/10 to-primary/5 border-primary/30 shadow-lg shadow-primary/10 animate-pulse",
+                    isError && "from-trading-red/10 to-trading-red/5 border-trading-red/30 shadow-lg shadow-trading-red/10",
+                    !isCompleted && !isRunning && !isError && "from-muted/10 to-muted/5 border-muted/20"
                   )}
                 >
-                  <div className={cn(
-                    "flex-shrink-0 p-1.5 rounded-full",
-                    isCompleted && "bg-green-500 text-white",
-                    isRunning && "bg-blue-500 text-white",
-                    isError && "bg-red-500 text-white",
-                    !isCompleted && !isRunning && !isError && "bg-muted text-muted-foreground"
-                  )}>
-                    {isRunning ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : isError ? (
-                      <XCircle className="h-3 w-3" />
-                    ) : (
-                      <Icon className="h-3 w-3" />
-                    )}
-                  </div>
+                  {/* Glassmorphism overlay */}
+                  <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                  
+                  <div className="relative flex items-center gap-4">
+                    <StatusPill
+                      status={step.status}
+                      icon={isRunning ? Loader2 : isError ? XCircle : Icon}
+                      size="sm"
+                    />
 
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium">
-                        {stepLabels[step.name] || step.name}
-                      </span>
-                      {step.duration && (
-                        <span className="text-xs text-muted-foreground">
-                          {formatDuration(step.duration)}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-medium">
+                          {stepLabels[step.name] || step.name}
                         </span>
+                        {step.duration && (
+                          <Badge variant="outline" className="text-xs font-mono">
+                            {formatDuration(step.duration)}
+                          </Badge>
+                        )}
+                      </div>
+                      {step.details && (
+                        <p className="text-xs text-muted-foreground truncate">
+                          {step.details}
+                        </p>
                       )}
                     </div>
-                    {step.details && (
-                      <p className="text-xs text-muted-foreground mt-1 truncate">
-                        {step.details}
-                      </p>
-                    )}
                   </div>
                 </div>
               );
             })}
           </div>
         </CardContent>
-      </Card>
+      </GlowCard>
 
       {/* Live Horizon Countdown */}
       {forecasts.length > 0 && (
-        <Card>
+        <GlowCard glowColor="accent" intensity="medium" className="sheen">
           <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5" />
-              Live Horizon Countdown
+            <CardTitle className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-gradient-to-br from-accent/20 to-accent/10">
+                <TrendingUp className="h-5 w-5 text-accent" />
+              </div>
+              <span className="bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text text-transparent">
+                Live Horizon Countdown
+              </span>
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-3">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {forecasts.map((forecast) => {
                 const targetTime = calculateHorizonTime(forecast.horizon, predictedAt);
                 const timeRemaining = formatTimeRemaining(targetTime, currentTime);
                 const isExpired = targetTime.getTime() <= currentTime.getTime();
 
                 return (
-                  <div
+                  <HorizonTile
                     key={forecast.horizon}
-                    className={cn(
-                      "flex items-center justify-between p-3 rounded-lg border",
-                      isExpired ? "bg-red-50/50 border-red-200/50" : "bg-blue-50/50 border-blue-200/50"
-                    )}
-                  >
-                    <div className="flex items-center gap-3">
-                      <Badge variant={isExpired ? "destructive" : "secondary"}>
-                        {forecast.horizon}
-                      </Badge>
-                      <div className="text-sm">
-                        <div className="font-medium">
-                          {forecast.direction === 'up' ? '↗️' : forecast.direction === 'down' ? '↘️' : '↔️'} 
-                          {' '}
-                          {(forecast.expected_return_bp / 100).toFixed(2)}%
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {forecast.confidence}% confidence
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="text-right">
-                      <div className={cn(
-                        "text-sm font-mono",
-                        isExpired ? "text-red-600" : "text-blue-600"
-                      )}>
-                        {timeRemaining}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {isExpired ? "Results available" : "remaining"}
-                      </div>
-                    </div>
-                  </div>
+                    horizon={forecast.horizon}
+                    direction={forecast.direction}
+                    expectedReturn={forecast.expected_return_bp / 100}
+                    confidence={forecast.confidence}
+                    timeRemaining={timeRemaining}
+                    isExpired={isExpired}
+                  />
                 );
               })}
             </div>
           </CardContent>
-        </Card>
+        </GlowCard>
       )}
 
-      {/* Pipeline Stats */}
-      <Card>
+      {/* Advanced Pipeline Stats */}
+      <GlowCard glowColor="primary" intensity="low" className="glass-effect">
         <CardContent className="pt-6">
-          <div className="grid grid-cols-3 gap-4 text-center">
-            <div>
-              <div className="text-2xl font-bold text-green-600">
-                {pipeline.steps.filter(s => s.status === 'completed').length}
+          <div className="grid grid-cols-3 gap-6">
+            <div className="text-center space-y-2">
+              <div className="relative">
+                <div className="text-3xl font-bold bg-gradient-to-br from-trading-green to-trading-green/80 bg-clip-text text-transparent">
+                  {pipeline.steps.filter(s => s.status === 'completed').length}
+                </div>
+                <div className="absolute inset-0 bg-trading-green/10 blur-xl rounded-full scale-150 animate-pulse" />
               </div>
-              <div className="text-xs text-muted-foreground">Completed</div>
+              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Completed
+              </div>
             </div>
-            <div>
-              <div className="text-2xl font-bold text-blue-600">
-                {pipeline.steps.filter(s => s.status === 'running').length}
+            <div className="text-center space-y-2">
+              <div className="relative">
+                <div className="text-3xl font-bold bg-gradient-to-br from-primary to-primary/80 bg-clip-text text-transparent">
+                  {pipeline.steps.filter(s => s.status === 'running').length}
+                </div>
+                <div className="absolute inset-0 bg-primary/10 blur-xl rounded-full scale-150 animate-pulse" />
               </div>
-              <div className="text-xs text-muted-foreground">Running</div>
+              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Running
+              </div>
             </div>
-            <div>
-              <div className="text-2xl font-bold text-red-600">
-                {pipeline.steps.filter(s => s.status === 'error').length}
+            <div className="text-center space-y-2">
+              <div className="relative">
+                <div className="text-3xl font-bold bg-gradient-to-br from-trading-red to-trading-red/80 bg-clip-text text-transparent">
+                  {pipeline.steps.filter(s => s.status === 'error').length}
+                </div>
+                <div className="absolute inset-0 bg-trading-red/10 blur-xl rounded-full scale-150 animate-pulse" />
               </div>
-              <div className="text-xs text-muted-foreground">Errors</div>
+              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Errors
+              </div>
             </div>
           </div>
         </CardContent>
-      </Card>
+      </GlowCard>
     </div>
   );
 }

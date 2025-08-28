@@ -44,6 +44,12 @@ All colors MUST be HSL.
 
     --radius: 0.5rem;
 
+    /* Gradient definitions for vibrant effects */
+    --gradient-primary: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--primary)/0.8) 100%);
+    --gradient-success: linear-gradient(135deg, hsl(var(--trading-green)) 0%, hsl(var(--trading-green)/0.8) 100%);
+    --gradient-danger: linear-gradient(135deg, hsl(var(--trading-red)) 0%, hsl(var(--trading-red)/0.8) 100%);
+    --gradient-glass: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%);
+
     --sidebar-background: 0 0% 98%;
 
     --sidebar-foreground: 240 5.3% 26.1%;
@@ -113,5 +119,48 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer components {
+  /* Glassmorphism utility classes */
+  .glass-card {
+    @apply bg-card/50 backdrop-blur-sm border border-white/10;
+  }
+  
+  .glass-effect {
+    @apply relative overflow-hidden;
+  }
+  
+  .glass-effect::before {
+    @apply absolute inset-0 bg-gradient-to-br from-white/5 to-transparent pointer-events-none;
+    content: '';
+  }
+  
+  /* Sheen animation for advanced cards */
+  .sheen {
+    @apply relative overflow-hidden;
+  }
+  
+  .sheen::after {
+    @apply absolute inset-0 opacity-0 transition-opacity duration-300;
+    content: '';
+    background: linear-gradient(
+      45deg,
+      transparent 30%,
+      rgba(255, 255, 255, 0.1) 50%,
+      transparent 70%
+    );
+    transform: translateX(-100%);
+    animation: sheen 2s infinite;
+  }
+  
+  .sheen:hover::after {
+    @apply opacity-100;
+  }
+  
+  @keyframes sheen {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
   }
 }
