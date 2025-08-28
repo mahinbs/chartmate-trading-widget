@@ -559,8 +559,10 @@ const PredictionsPage = () => {
                                  <div>
                                    <p className="text-muted-foreground mb-1">Support Levels</p>
                                    <div className="space-y-1">
-                                     {prediction.raw_response.geminiForecast.support_resistance.supports.map((level: number, index: number) => (
-                                       <p key={index} className="font-mono text-green-600">${level.toFixed(2)}</p>
+                                     {prediction.raw_response.geminiForecast.support_resistance.supports.map((level: any, index: number) => (
+                                       <p key={index} className="font-mono text-green-600">
+                                         ${typeof level === 'number' ? level.toFixed(2) : parseFloat(level || '0').toFixed(2)}
+                                       </p>
                                      ))}
                                    </div>
                                  </div>
@@ -569,8 +571,10 @@ const PredictionsPage = () => {
                                  <div>
                                    <p className="text-muted-foreground mb-1">Resistance Levels</p>
                                    <div className="space-y-1">
-                                     {prediction.raw_response.geminiForecast.support_resistance.resistances.map((level: number, index: number) => (
-                                       <p key={index} className="font-mono text-red-600">${level.toFixed(2)}</p>
+                                     {prediction.raw_response.geminiForecast.support_resistance.resistances.map((level: any, index: number) => (
+                                       <p key={index} className="font-mono text-red-600">
+                                         ${typeof level === 'number' ? level.toFixed(2) : parseFloat(level || '0').toFixed(2)}
+                                       </p>
                                      ))}
                                    </div>
                                  </div>
