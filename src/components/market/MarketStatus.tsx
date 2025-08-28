@@ -145,16 +145,16 @@ export function MarketStatus({ symbol, displaySymbol, exchange, type }: MarketSt
 
   return (
     <Card className="bg-muted/30 border-muted">
-      <CardContent className="p-4">
-        <div className="flex items-start gap-3">
+      <CardContent className="p-3 sm:p-4">
+        <div className="flex items-start gap-2 sm:gap-3">
           {getStatusIcon(status.marketState)}
-          <div className="flex-1 space-y-2">
-            <div className="flex items-center gap-2 flex-wrap">
-              <Badge variant={getStatusVariant(status.marketState)} className="font-medium">
+          <div className="flex-1 space-y-1 sm:space-y-2">
+            <div className="flex items-center gap-1 sm:gap-2 flex-wrap">
+              <Badge variant={getStatusVariant(status.marketState)} className="font-medium text-xs">
                 {status.label}
               </Badge>
               {status.exchange && status.exchange !== 'Unknown' && (
-                <span className="text-sm text-muted-foreground">
+                <span className="text-xs sm:text-sm text-muted-foreground">
                   {status.exchange}
                 </span>
               )}
@@ -167,11 +167,11 @@ export function MarketStatus({ symbol, displaySymbol, exchange, type }: MarketSt
             
             <div className="space-y-1">
               {status.regularHours && status.regularHours !== 'Regular hours vary by venue' && (
-                <p className="text-sm text-muted-foreground">
+                <p className="text-xs sm:text-sm text-muted-foreground">
                   Regular hours: {status.regularHours}
                 </p>
               )}
-              <p className="text-sm text-muted-foreground">
+              <p className="text-xs sm:text-sm text-muted-foreground">
                 {getStatusMessage(status.marketState, status.regularHours)}
               </p>
             </div>

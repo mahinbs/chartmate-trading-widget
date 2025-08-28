@@ -162,5 +162,28 @@ All colors MUST be HSL.
   @keyframes sheen {
     0% { transform: translateX(-100%); }
     100% { transform: translateX(100%); }
+}
+}
+
+/* Mobile optimizations */
+@media (max-width: 768px) {
+  .mobile-stepper {
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* Ensure touch targets are at least 44px */
+  button, [role="button"], input, select {
+    min-height: 44px;
+  }
+  
+  /* Safe area support for mobile devices */
+  .container {
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+  }
+  
+  /* Improved touch scrolling */
+  * {
+    -webkit-overflow-scrolling: touch;
   }
 }

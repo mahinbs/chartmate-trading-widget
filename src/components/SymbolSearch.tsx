@@ -97,7 +97,7 @@ export function SymbolSearch({ value, onValueChange, onSelectSymbol, placeholder
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-full p-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border border-white/10 shadow-xl z-50" align="start">
+      <PopoverContent className="w-full max-w-[95vw] p-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border border-white/10 shadow-xl z-50" align="start">
         <Command>
           <CommandInput
             placeholder="Search stocks, crypto, forex..."
@@ -121,6 +121,7 @@ export function SymbolSearch({ value, onValueChange, onSelectSymbol, placeholder
                   <CommandItem
                     key={symbol.full_symbol}
                     value={symbol.full_symbol}
+                    className="px-4 py-3 cursor-pointer hover:bg-accent/50 data-[selected]:bg-accent"
                     onSelect={(currentValue) => {
                       onValueChange(currentValue === value ? "" : currentValue);
                       onSelectSymbol?.(symbol);

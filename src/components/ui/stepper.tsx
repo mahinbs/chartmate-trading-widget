@@ -21,7 +21,12 @@ export function Stepper({ steps, currentStep, completedSteps, className }: Stepp
 
   return (
     <div className={cn("w-full", className)}>
-      <div className="flex items-center justify-between">
+      <div className={cn(
+        "flex items-center",
+        className?.includes('mobile-stepper') 
+          ? "overflow-x-auto pb-2 gap-4" 
+          : "justify-between"
+      )}>
         {steps.map((step, index) => {
           const isCompleted = isStepCompleted(step.id)
           const isCurrent = isStepCurrent(step.id)
@@ -32,7 +37,8 @@ export function Stepper({ steps, currentStep, completedSteps, className }: Stepp
               <div className="flex flex-col items-center">
                 <div
                   className={cn(
-                    "flex items-center justify-center w-10 h-10 rounded-full border-2 transition-colors",
+                    "flex items-center justify-center rounded-full border-2 transition-colors shrink-0",
+                    className?.includes('mobile-stepper') ? "w-8 h-8" : "w-10 h-10",
                     {
                       "bg-primary border-primary text-primary-foreground": isCompleted,
                       "bg-primary/10 border-primary text-primary": isCurrent,
@@ -41,15 +47,16 @@ export function Stepper({ steps, currentStep, completedSteps, className }: Stepp
                   )}
                 >
                   {isCompleted ? (
-                    <Check className="w-5 h-5" />
+                    <Check className={cn(className?.includes('mobile-stepper') ? "w-4 h-4" : "w-5 h-5")} />
                   ) : (
-                    <span className="text-sm font-medium">{index + 1}</span>
+                    <span className={cn("font-medium", className?.includes('mobile-stepper') ? "text-xs" : "text-sm")}>{index + 1}</span>
                   )}
                 </div>
-                <div className="mt-2 text-center">
+                <div className={cn("mt-2 text-center", className?.includes('mobile-stepper') ? "min-w-16" : "")}>
                   <p
                     className={cn(
-                      "text-sm font-medium",
+                      "font-medium",
+                      className?.includes('mobile-stepper') ? "text-xs" : "text-sm",
                       {
                         "text-foreground": isCompleted || isCurrent,
                         "text-muted-foreground": isUpcoming,
@@ -58,14 +65,14 @@ export function Stepper({ steps, currentStep, completedSteps, className }: Stepp
                   >
                     {step.title}
                   </p>
-                  {step.description && (
+                  {step.description && !className?.includes('mobile-stepper') && (
                     <p className="text-xs text-muted-foreground mt-1">
                       {step.description}
                     </p>
                   )}
                 </div>
               </div>
-              {index < steps.length - 1 && (
+              {index < steps.length - 1 && !className?.includes('mobile-stepper') && (
                 <div
                   className={cn(
                     "flex-1 h-0.5 mx-4 transition-colors",

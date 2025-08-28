@@ -20,6 +20,7 @@ import { MarketStatus } from "@/components/market/MarketStatus";
 import { supabase } from "@/integrations/supabase/client";
 import type { SymbolData } from "@/components/SymbolSearch";
 import { useAuth } from "@/hooks/useAuth";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { toast } from "sonner";
 import { Loader2, AlertTriangle, BrainCircuit, BarChart3, CheckCircle, ArrowRight, DollarSign, LogOut, History } from "lucide-react";
 
@@ -124,6 +125,7 @@ const PredictPage = () => {
   
   const { signOut, user } = useAuth();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
 
   const steps = [
     { id: "choose-asset", title: "Choose Asset", description: "Select symbol" },
@@ -240,27 +242,27 @@ const PredictPage = () => {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <div className="border-b bg-card/50 backdrop-blur-sm">
-        <div className="container mx-auto px-6 py-4">
-          <div className="flex justify-between items-center mb-4">
+        <div className="container mx-auto px-3 sm:px-6 py-3 sm:py-4">
+          <div className={`flex ${isMobile ? 'flex-col gap-2' : 'justify-between items-center'} mb-4`}>
             <Button
               variant="outline"
-              size="sm"
+              size={isMobile ? "sm" : "sm"}
               onClick={() => navigate('/predictions')}
-              className="flex items-center gap-2"
+              className={`flex items-center gap-2 ${isMobile ? 'w-full justify-center' : ''}`}
             >
               <History className="h-4 w-4" />
-              My Predictions
+              {isMobile ? "History" : "My Predictions"}
             </Button>
             <Button
               variant="outline"
-              size="sm"
+              size={isMobile ? "sm" : "sm"}
               onClick={async () => {
                 const { error } = await signOut();
                 if (error) {
                   toast.error("Failed to sign out");
                 }
               }}
-              className="flex items-center gap-2"
+              className={`flex items-center gap-2 ${isMobile ? 'w-full justify-center' : ''}`}
             >
               <LogOut className="h-4 w-4" />
               Sign Out
@@ -268,33 +270,34 @@ const PredictPage = () => {
           </div>
           
           <div className="text-center space-y-2">
-            <h1 className="text-3xl md:text-4xl font-bold">
+            <h1 className={`${isMobile ? 'text-2xl' : 'text-3xl md:text-4xl'} font-bold`}>
               AI Market Prediction
             </h1>
-            <p className="text-muted-foreground">
+            <p className={`text-muted-foreground ${isMobile ? 'text-sm' : ''}`}>
               Get real-time AI-powered predictions for any stock, forex, or crypto
             </p>
             {user?.email && (
-              <p className="text-sm text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Welcome back, {user.email}
               </p>
             )}
           </div>
 
           {/* Progress Stepper */}
-          <div className="mt-8">
+          <div className={`${isMobile ? 'mt-4' : 'mt-8'}`}>
             <Stepper 
               steps={steps}
               currentStep={currentStep}
               completedSteps={completedSteps}
+              className={isMobile ? 'mobile-stepper' : ''}
             />
           </div>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="container mx-auto px-6 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-6xl mx-auto">
+      <div className="container mx-auto px-3 sm:px-6 py-4 sm:py-8">
+        <div className={`grid grid-cols-1 ${!isMobile ? 'lg:grid-cols-2' : ''} gap-4 sm:gap-8 max-w-6xl mx-auto`}>
           {/* Left Column - Step Content */}
           <div className="space-y-6">
             {/* Step 1: Choose Asset */}
@@ -592,11 +595,11 @@ const PredictPage = () => {
           </div>
 
           {/* Right Column - Live Chart */}
-          <div className="lg:sticky lg:top-8 lg:h-fit">
+          <div className={`${!isMobile ? 'lg:sticky lg:top-8 lg:h-fit' : ''}`}>
             <Card>
-              <CardHeader className="pb-4">
+              <CardHeader className={`${isMobile ? 'pb-2' : 'pb-4'}`}>
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg">Live Chart</CardTitle>
+                  <CardTitle className={`${isMobile ? 'text-base' : 'text-lg'}`}>Live Chart</CardTitle>
                   {symbol && (
                     <Badge variant="outline" className="text-xs">
                       {symbol}
@@ -605,7 +608,7 @@ const PredictPage = () => {
                 </div>
               </CardHeader>
               <CardContent className="p-0">
-                <div className="h-[600px]">
+                <div className={`${isMobile ? 'h-[300px]' : 'h-[600px]'}`}>
                   <ChartPanel />
                 </div>
               </CardContent>
@@ -613,13 +616,13 @@ const PredictPage = () => {
 
             {/* Chart Analysis */}
             {chartAnalysis && (
-              <Card className="mt-6">
-                <CardHeader>
-                  <CardTitle className="text-lg">Chart Analysis</CardTitle>
+              <Card className={`${isMobile ? 'mt-4' : 'mt-6'}`}>
+                <CardHeader className={isMobile ? 'pb-2' : ''}>
+                  <CardTitle className={`${isMobile ? 'text-base' : 'text-lg'}`}>Chart Analysis</CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className={isMobile ? 'pt-2' : ''}>
                   <div className="space-y-3">
-                    <p className="text-sm leading-relaxed">{chartAnalysis}</p>
+                    <p className={`leading-relaxed ${isMobile ? 'text-sm' : 'text-sm'}`}>{chartAnalysis}</p>
                     {chartDataSource && (
                       <p className="text-xs text-muted-foreground">
                         Data source: {chartDataSource}
@@ -635,10 +638,10 @@ const PredictPage = () => {
 
       {/* Disclaimer */}
       <div className="border-t bg-muted/30">
-        <div className="container mx-auto px-6 py-4">
+        <div className="container mx-auto px-3 sm:px-6 py-3 sm:py-4">
           <Alert>
             <AlertTriangle className="h-4 w-4" />
-            <AlertDescription className="text-sm">
+            <AlertDescription className={`${isMobile ? 'text-xs' : 'text-sm'}`}>
               This is an AI-generated prediction for educational purposes only. Not financial advice.
               Past performance does not guarantee future results. Always do your own research.
             </AlertDescription>

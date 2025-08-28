@@ -42,8 +42,8 @@ export default function ChartPanel({ defaultSymbol = "NASDAQ:AAPL", defaultInter
 
   return (
     <Card className="h-full flex flex-col">
-      <CardHeader className="pb-3 relative z-10">
-        <div className="flex gap-2 items-center mb-2">
+      <CardHeader className="pb-2 sm:pb-3 relative z-10">
+        <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center mb-2">
           <Select value={symbol} onValueChange={setSymbol}>
             <SelectTrigger className="flex-1">
               <SelectValue />
@@ -57,7 +57,7 @@ export default function ChartPanel({ defaultSymbol = "NASDAQ:AAPL", defaultInter
             </SelectContent>
           </Select>
           <Select value={interval} onValueChange={setInterval}>
-            <SelectTrigger className="w-20">
+            <SelectTrigger className="w-full sm:w-20">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
