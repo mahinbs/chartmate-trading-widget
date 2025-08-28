@@ -38,7 +38,7 @@ export function MarketStatus({ symbol, displaySymbol, exchange, type }: MarketSt
 
       try {
         const { data, error: invokeError } = await supabase.functions.invoke('get-market-status', {
-          body: { symbol }
+          body: { symbol, exchange, type }
         });
 
         if (invokeError) {
