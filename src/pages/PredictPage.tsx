@@ -316,7 +316,7 @@ const PredictPage = () => {
       }
 
       setChartAnalysis(data.summary || "No analysis available");
-      setChartDataSource(data.dataSource || "Unknown source");
+      setChartDataSource(data.dataSource || "Yahoo Finance");
       toast.success("Chart analysis completed!");
     } catch (error) {
       console.error("Error analyzing chart:", error);

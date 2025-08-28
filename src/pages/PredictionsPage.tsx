@@ -26,11 +26,12 @@ interface Prediction {
 
 interface AnalysisData {
   symbol: string;
-  from: string;
-  to: string;
-  ai: {
-    summary: string;
-  };
+  summary?: string; // top-level from function
+  dataSource?: string;
+  marketData?: { candleCount: number; source: string; interval: string };
+  from?: string;
+  to?: string;
+  ai?: { summary?: string }; // keep optional for backward compatibility
 }
 
 const PredictionsPage = () => {
@@ -221,9 +222,21 @@ const PredictionsPage = () => {
 
       if (error) throw error;
 
+      // Normalize the response for UI compatibility
+      const nowIso = new Date().toISOString();
+      const adapted: AnalysisData = {
+        symbol: prediction.symbol,
+        summary: data.summary,
+        dataSource: data.dataSource,
+        marketData: data.marketData,
+        from: prediction.created_at,
+        to: nowIso,
+        ai: { summary: data.summary }
+      };
+
       setAnalysisStates(prev => ({
         ...prev,
-        [predictionId]: { loading: false, data, error: null }
+        [predictionId]: { loading: false, data: adapted, error: null }
       }));
 
     } catch (error: any) {
@@ -398,18 +411,24 @@ const PredictionsPage = () => {
                   </div>
 
                   {/* Analysis Results */}
-                  {analysisStates[prediction.id]?.data && (
-                    <div className="mt-4 p-3 bg-muted/50 rounded-lg">
-                      <h4 className="font-medium text-sm mb-2">AI Analysis</h4>
-                      <div className="text-xs text-muted-foreground mb-2">
-                        {analysisStates[prediction.id]!.data!.symbol} from {formatDateTime(analysisStates[prediction.id]!.data!.from)} to {formatDateTime(analysisStates[prediction.id]!.data!.to)}
-                      </div>
-                      
-                      <div className="text-sm leading-relaxed text-foreground whitespace-pre-wrap">
-                        {analysisStates[prediction.id]!.data!.ai?.summary || 'Analysis summary not available'}
-                      </div>
-                    </div>
-                  )}
+                   {analysisStates[prediction.id]?.data && (
+                     <div className="mt-4 p-3 bg-muted/50 rounded-lg">
+                       <h4 className="font-medium text-sm mb-2">AI Analysis</h4>
+                       <div className="text-xs text-muted-foreground mb-2">
+                         {analysisStates[prediction.id]!.data!.symbol} from {formatDateTime(analysisStates[prediction.id]!.data!.from || prediction.created_at)} to {formatDateTime(analysisStates[prediction.id]!.data!.to || new Date().toISOString())}
+                       </div>
+                       
+                       <div className="text-sm leading-relaxed text-foreground whitespace-pre-wrap">
+                         {analysisStates[prediction.id]!.data!.summary || analysisStates[prediction.id]!.data!.ai?.summary || 'Analysis summary not available'}
+                       </div>
+                       
+                       {analysisStates[prediction.id]!.data!.dataSource && (
+                         <div className="text-xs text-muted-foreground mt-2">
+                           Data: {analysisStates[prediction.id]!.data!.dataSource}
+                         </div>
+                       )}
+                     </div>
+                   )}
 
                   {analysisStates[prediction.id]?.error && (
                     <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
