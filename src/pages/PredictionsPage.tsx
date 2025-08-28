@@ -54,7 +54,44 @@ const PredictionsPage = () => {
   const [now, setNow] = useState(new Date());
   const [analysisStates, setAnalysisStates] = useState<Record<string, { loading: boolean; data: AnalysisData | null; error: string | null }>>({});
 
+  // Cache management
+  const CACHE_KEY = 'prediction-analysis-cache';
+  
+  const loadCachedAnalysis = () => {
+    try {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const parsedCache = JSON.parse(cached);
+        setAnalysisStates(parsedCache);
+      }
+    } catch (error) {
+      console.error('Failed to load cached analysis:', error);
+    }
+  };
+
+  const saveCachedAnalysis = (states: Record<string, { loading: boolean; data: AnalysisData | null; error: string | null }>) => {
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify(states));
+    } catch (error) {
+      console.error('Failed to save cached analysis:', error);
+    }
+  };
+
+  const removeCachedAnalysis = (predictionId: string) => {
+    try {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const parsedCache = JSON.parse(cached);
+        delete parsedCache[predictionId];
+        localStorage.setItem(CACHE_KEY, JSON.stringify(parsedCache));
+      }
+    } catch (error) {
+      console.error('Failed to remove cached analysis:', error);
+    }
+  };
+
   useEffect(() => {
+    loadCachedAnalysis();
     fetchPredictions();
   }, []);
 
@@ -71,8 +108,9 @@ const PredictionsPage = () => {
         const isExpired = currentTime >= expectedTime;
         const hasEvaluation = analysisStates[prediction.id]?.data?.evaluation;
         const isLoading = analysisStates[prediction.id]?.loading;
+        const hasCachedData = analysisStates[prediction.id]?.data;
         
-        if (isExpired && !hasEvaluation && !isLoading) {
+        if (isExpired && !hasEvaluation && !isLoading && !hasCachedData) {
           console.log(`Auto-evaluating expired prediction: ${prediction.symbol}`);
           analyzePostPrediction(prediction, expectedTime);
         }
@@ -113,6 +151,14 @@ const PredictionsPage = () => {
       if (error) throw error;
       
       setPredictions(predictions.filter(p => p.id !== id));
+      removeCachedAnalysis(id);
+      
+      setAnalysisStates(prev => {
+        const newStates = { ...prev };
+        delete newStates[id];
+        return newStates;
+      });
+      
       toast({
         title: "Success",
         description: "Prediction deleted successfully"
@@ -233,6 +279,12 @@ const PredictionsPage = () => {
   const analyzePostPrediction = async (prediction: Prediction, toOverride?: Date) => {
     const predictionId = prediction.id;
     
+    // Check if analysis already exists in cache
+    if (analysisStates[predictionId]?.data) {
+      console.log(`Analysis already cached for ${prediction.symbol}`);
+      return;
+    }
+    
     setAnalysisStates(prev => ({
       ...prev,
       [predictionId]: { loading: true, data: null, error: null }
@@ -270,17 +322,23 @@ const PredictionsPage = () => {
         evaluation: data.evaluation
       };
 
-      setAnalysisStates(prev => ({
-        ...prev,
+      const newStates = {
+        ...analysisStates,
         [predictionId]: { loading: false, data: adapted, error: null }
-      }));
+      };
+      
+      setAnalysisStates(newStates);
+      saveCachedAnalysis(newStates);
 
     } catch (error: any) {
       console.error('Analysis error:', error);
-      setAnalysisStates(prev => ({
-        ...prev,
+      const newStates = {
+        ...analysisStates,
         [predictionId]: { loading: false, data: null, error: error.message || 'Analysis failed' }
-      }));
+      };
+      
+      setAnalysisStates(newStates);
+      saveCachedAnalysis(newStates);
       
       toast({
         title: "Analysis Failed",
