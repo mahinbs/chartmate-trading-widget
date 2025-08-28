@@ -15,6 +15,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import ChartPanel from "@/components/ChartPanel";
 import { AdvancedPredictLoader } from "@/components/AdvancedPredictLoader";
+import { PredictionTimeline } from "@/components/PredictionTimeline";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -44,6 +45,22 @@ interface GeminiForecast {
   };
 }
 
+interface PipelineStep {
+  name: string;
+  status: 'pending' | 'running' | 'completed' | 'error';
+  startTime?: number;
+  endTime?: number;
+  duration?: number;
+  details?: string;
+}
+
+interface PipelineMeta {
+  totalDuration: number;
+  steps: PipelineStep[];
+  startTime: number;
+  endTime: number;
+}
+
 interface PredictionResult {
   symbol: string;
   currentPrice: number;
@@ -61,6 +78,9 @@ interface PredictionResult {
     changePercent: number;
   };
   geminiForecast?: GeminiForecast;
+  meta?: {
+    pipeline?: PipelineMeta;
+  };
   // Legacy structured fields for backward compatibility
   recommendation?: "bullish" | "bearish" | "neutral";
   confidence?: number;
@@ -96,6 +116,7 @@ const PredictPage = () => {
   const [chartAnalysis, setChartAnalysis] = useState<string | null>(null);
   const [chartSymbol, setChartSymbol] = useState("NASDAQ:AAPL");
   const [chartDataSource, setChartDataSource] = useState<string | null>(null);
+  const [predictedAt, setPredictedAt] = useState<Date | null>(null);
   
   const { signOut, user } = useAuth();
   const navigate = useNavigate();
@@ -168,6 +189,7 @@ const PredictPage = () => {
 
       setResult(data);
       setAnalysisReady(true);
+      setPredictedAt(new Date()); // Capture stable timestamp
       // Auto-save the prediction
       await savePrediction(data);
       // Loader will complete when it's ready
@@ -513,20 +535,12 @@ const PredictPage = () => {
                 <CollapsibleContent className="animate-fade-in">
                   <Card className="backdrop-blur-xl bg-gradient-to-br from-emerald-500/5 via-blue-500/5 to-purple-500/5 border-white/10 shadow-xl rounded-2xl mt-4">
                     <CardContent className="p-6 space-y-6">
-                       {/* Prediction Timing */}
-                       <div className="bg-muted/20 rounded-xl p-4 space-y-3 mb-6">
-                         <h4 className="font-medium text-sm">Prediction Timeline</h4>
-                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                           <div>
-                             <p className="text-muted-foreground">Predicted at</p>
-                             <p className="font-mono text-xs">{formatDateTime(getCurrentPredictionTime())}</p>
-                           </div>
-                           <div>
-                             <p className="text-muted-foreground">Expected by</p>
-                             <p className="font-mono text-xs">{formatDateTime(getExpectedTime())}</p>
-                           </div>
-                         </div>
-                       </div>
+                        {/* Enhanced Prediction Timeline */}
+                        <PredictionTimeline 
+                          pipeline={result.meta?.pipeline}
+                          forecasts={result.geminiForecast?.forecasts}
+                          predictedAt={predictedAt || new Date()}
+                        />
 
                        {/* Direction & Confidence */}
                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

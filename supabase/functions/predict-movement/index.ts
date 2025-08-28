@@ -1463,21 +1463,216 @@ serve(async (req) => {
       })
     };
 
+// Enhanced pipeline with detailed timings
+interface PipelineStep {
+  name: string;
+  status: 'pending' | 'running' | 'completed' | 'error';
+  startTime?: number;
+  endTime?: number;
+  duration?: number;
+  details?: string;
+}
+
+interface PipelineMeta {
+  totalDuration: number;
+  steps: PipelineStep[];
+  startTime: number;
+  endTime: number;
+}
+
+// Initialize pipeline tracking
+function initializePipeline(): { pipeline: PipelineStep[]; meta: Partial<PipelineMeta> } {
+  const steps: PipelineStep[] = [
+    { name: 'symbol_validation', status: 'pending' },
+    { name: 'market_data_fetch', status: 'pending' },
+    { name: 'historical_analysis', status: 'pending' },
+    { name: 'news_sentiment', status: 'pending' },
+    { name: 'technical_indicators', status: 'pending' },
+    { name: 'ai_prediction', status: 'pending' },
+    { name: 'multi_horizon_forecast', status: 'pending' },
+    { name: 'risk_assessment', status: 'pending' }
+  ];
+  
+  return {
+    pipeline: steps,
+    meta: {
+      startTime: Date.now(),
+      steps: []
+    }
+  };
+}
+
+// Update pipeline step
+function updatePipelineStep(
+  pipeline: PipelineStep[], 
+  stepName: string, 
+  status: 'running' | 'completed' | 'error',
+  details?: string
+): void {
+  const step = pipeline.find(s => s.name === stepName);
+  if (!step) return;
+  
+  const now = Date.now();
+  
+  if (status === 'running') {
+    step.status = 'running';
+    step.startTime = now;
+  } else {
+    step.status = status;
+    step.endTime = now;
+    if (step.startTime) {
+      step.duration = step.endTime - step.startTime;
+    }
+    if (details) {
+      step.details = details;
+    }
+  }
+}
+
+// Serve the prediction endpoint  
+serve(async (req) => {
+  // Handle CORS preflight requests
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  const { pipeline, meta } = initializePipeline();
+
+  try {
+    const requestBody: PredictionRequest = await req.json();
+    const { symbol, investment, timeframe, horizons = [15, 30, 60, 1440] } = requestBody;
+
+    // Step 1: Symbol validation
+    updatePipelineStep(pipeline, 'symbol_validation', 'running');
+    if (!symbol || !investment || !timeframe) {
+      updatePipelineStep(pipeline, 'symbol_validation', 'error', 'Missing required fields');
+      return new Response(
+        JSON.stringify({ error: 'Missing required fields: symbol, investment, timeframe' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    updatePipelineStep(pipeline, 'symbol_validation', 'completed', `Validated ${symbol}`);
+
+    console.log(`Getting enhanced technical analysis for ${symbol}, investment: $${investment}, timeframe: ${timeframe}`);
+
+    // Step 2: Market data fetch
+    updatePipelineStep(pipeline, 'market_data_fetch', 'running');
+    const [stockData, historicalData] = await Promise.all([
+      fetchRealStockData(symbol),
+      fetchHistoricalCandles(symbol, timeframe)
+    ]);
+    updatePipelineStep(pipeline, 'market_data_fetch', 'completed', `Price: $${stockData.currentPrice.toFixed(2)}`);
+
+    console.log("Real stock data fetched:", stockData);
+    
+    // Step 3: Historical analysis
+    updatePipelineStep(pipeline, 'historical_analysis', 'running');
+    console.log("Historical candles fetched:", historicalData.candles.length, "candles");
+    updatePipelineStep(pipeline, 'historical_analysis', 'completed', `${historicalData.candles.length} candles analyzed`);
+
+    // Step 4: News sentiment
+    updatePipelineStep(pipeline, 'news_sentiment', 'running');
+    const newsData = await fetchNewsData(symbol);
+    console.log("News items fetched:", newsData.length, "items");
+    updatePipelineStep(pipeline, 'news_sentiment', 'completed', `${newsData.length} news items processed`);
+
+    // Step 5: Technical indicators
+    updatePipelineStep(pipeline, 'technical_indicators', 'running');
+    const technicalContext = computeEnhancedTechnicalContext(historicalData.candles, stockData);
+    console.log("Technical context computed:", {
+      patterns: technicalContext.patterns,
+      rsi: technicalContext.indicators.rsi,
+      trend: technicalContext.trendDirection,
+      volatility: technicalContext.volatilityState
+    });
+    updatePipelineStep(pipeline, 'technical_indicators', 'completed', 
+      `RSI: ${technicalContext.indicators.rsi.toFixed(1)}, Trend: ${technicalContext.trendDirection}`);
+
+    // Step 6: AI prediction
+    updatePipelineStep(pipeline, 'ai_prediction', 'running');
+    
+    // Step 7: Multi-horizon forecast
+    updatePipelineStep(pipeline, 'multi_horizon_forecast', 'running');
+    const geminiForecast = await generateEnhancedGeminiAnalysis(
+      symbol,
+      stockData,
+      technicalContext,
+      newsData,
+      investment,
+      horizons
+    );
+    updatePipelineStep(pipeline, 'ai_prediction', 'completed', 'AI analysis generated');
+    updatePipelineStep(pipeline, 'multi_horizon_forecast', 'completed', 
+      `${geminiForecast.forecasts.length} horizons analyzed`);
+
+    console.log("Enhanced Gemini analysis completed");
+
+    // Step 8: Risk assessment
+    updatePipelineStep(pipeline, 'risk_assessment', 'running');
+    const totalRiskFlags = geminiForecast.forecasts.reduce((sum, f) => sum + f.risk_flags.length, 0);
+    updatePipelineStep(pipeline, 'risk_assessment', 'completed', `${totalRiskFlags} risk factors identified`);
+
+    // Finalize pipeline meta
+    meta.endTime = Date.now();
+    meta.totalDuration = meta.endTime - (meta.startTime || 0);
+    meta.steps = pipeline;
+
+    // Build comprehensive response with backward compatibility
+    const result = {
+      symbol,
+      currentPrice: stockData.currentPrice,
+      change: stockData.change,
+      changePercent: stockData.changePercent,
+      timeframe,
+      analysis: "Enhanced multi-horizon AI analysis with real-time market data",
+      stockData,
+      geminiForecast,
+      meta: {
+        pipeline: meta
+      },
+      // Legacy fields for backward compatibility
+      recommendation: geminiForecast?.positioning_guidance?.bias === "long" ? "bullish" as const :
+                     geminiForecast?.positioning_guidance?.bias === "short" ? "bearish" as const : "neutral" as const,
+      confidence: geminiForecast?.forecasts?.[0]?.confidence || 75,
+      expectedMove: {
+        percent: geminiForecast?.forecasts?.[0]?.expected_return_bp ? geminiForecast.forecasts[0].expected_return_bp / 100 : undefined,
+        direction: geminiForecast?.forecasts?.[0]?.direction || "flat" as const,
+        priceTarget: geminiForecast?.forecasts?.[0] ? {
+          min: stockData.currentPrice * (1 + geminiForecast.forecasts[0].expected_range_bp.p10 / 10000),
+          max: stockData.currentPrice * (1 + geminiForecast.forecasts[0].expected_range_bp.p90 / 10000)
+        } : undefined
+      },
+      patterns: technicalContext.patterns,
+      keyLevels: {
+        support: geminiForecast?.support_resistance?.supports?.map(s => s.level) || [],
+        resistance: geminiForecast?.support_resistance?.resistances?.map(r => r.level) || []
+      },
+      risks: geminiForecast?.forecasts?.[0]?.risk_flags || [],
+      opportunities: geminiForecast?.forecasts?.[0]?.key_drivers || [],
+      rationale: geminiForecast?.positioning_guidance?.notes || "Enhanced multi-horizon analysis completed"
+    };
+
     return new Response(JSON.stringify(result), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
 
   } catch (error) {
-    console.error('Error in predict-movement function:', error);
-    return new Response(
-      JSON.stringify({
-        error: 'Failed to generate analysis',
-        message: error.message
-      }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    console.error('Error in predict-movement:', error);
+    
+    // Mark remaining steps as error
+    pipeline.forEach(step => {
+      if (step.status === 'pending' || step.status === 'running') {
+        updatePipelineStep(pipeline, step.name, 'error', error.message);
       }
+    });
+    
+    return new Response(
+      JSON.stringify({ 
+        error: 'Internal server error',
+        details: error.message,
+        meta: { pipeline: { steps: pipeline } }
+      }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });
