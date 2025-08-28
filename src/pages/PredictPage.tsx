@@ -16,7 +16,9 @@ import { SummaryHeader } from "@/components/prediction/SummaryHeader";
 import { ForecastTable } from "@/components/prediction/ForecastTable";
 import { KeyLevels } from "@/components/prediction/KeyLevels";
 import { Insights } from "@/components/prediction/Insights";
+import { MarketStatus } from "@/components/market/MarketStatus";
 import { supabase } from "@/integrations/supabase/client";
+import type { SymbolData } from "@/components/SymbolSearch";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { Loader2, AlertTriangle, BrainCircuit, BarChart3, CheckCircle, ArrowRight, DollarSign, LogOut, History } from "lucide-react";
@@ -104,6 +106,7 @@ interface PredictionResult {
 
 const PredictPage = () => {
   const [symbol, setSymbol] = useState("");
+  const [selectedSymbol, setSelectedSymbol] = useState<SymbolData | null>(null);
   const [investment, setInvestment] = useState("");
   const [chartInterval, setChartInterval] = useState("15");
   const timeframe = "1h"; // Default to 1 hour for better prediction accuracy
@@ -309,16 +312,28 @@ const PredictPage = () => {
                     <SymbolSearch
                       value={symbol}
                       onValueChange={setSymbol}
+                      onSelectSymbol={setSelectedSymbol}
                       placeholder="Search stocks, crypto, forex... (e.g., AAPL, BTC-USD)"
                     />
                   </div>
                   
                   {symbol && (
-                    <div className="p-4 bg-muted/30 rounded-lg border">
-                      <div className="flex items-center gap-2">
-                        <CheckCircle className="h-5 w-5 text-green-600" />
-                        <span className="font-medium">Selected: {symbol}</span>
+                    <div className="space-y-3">
+                      <div className="p-4 bg-muted/30 rounded-lg border">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle className="h-5 w-5 text-green-600" />
+                          <span className="font-medium">Selected: {selectedSymbol?.symbol || symbol}</span>
+                        </div>
                       </div>
+                      
+                      {selectedSymbol && (
+                        <MarketStatus
+                          symbol={selectedSymbol.full_symbol}
+                          displaySymbol={selectedSymbol.symbol}
+                          exchange={selectedSymbol.exchange}
+                          type={selectedSymbol.type}
+                        />
+                      )}
                     </div>
                   )}
                   
@@ -395,13 +410,22 @@ const PredictPage = () => {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="p-4 bg-muted/30 rounded-lg border">
                       <p className="text-sm text-muted-foreground">Asset</p>
-                      <p className="text-lg font-semibold">{symbol}</p>
+                      <p className="text-lg font-semibold">{selectedSymbol?.symbol || symbol}</p>
                     </div>
                     <div className="p-4 bg-muted/30 rounded-lg border">
                       <p className="text-sm text-muted-foreground">Investment</p>
                       <p className="text-lg font-semibold">${parseFloat(investment || "0").toLocaleString()}</p>
                     </div>
                   </div>
+                  
+                  {selectedSymbol && (
+                    <MarketStatus
+                      symbol={selectedSymbol.full_symbol}
+                      displaySymbol={selectedSymbol.symbol}
+                      exchange={selectedSymbol.exchange}
+                      type={selectedSymbol.type}
+                    />
+                  )}
                   
                   <div className="p-4 bg-primary/10 rounded-lg border border-primary/20">
                     <h4 className="font-medium mb-2">Analysis Details</h4>

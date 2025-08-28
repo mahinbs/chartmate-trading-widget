@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
 
-interface SymbolData {
+export interface SymbolData {
   symbol: string;
   description: string;
   exchange: string;
@@ -19,10 +19,11 @@ interface SymbolData {
 interface SymbolSearchProps {
   value: string;
   onValueChange: (value: string) => void;
+  onSelectSymbol?: (symbol: SymbolData) => void;
   placeholder?: string;
 }
 
-export function SymbolSearch({ value, onValueChange, placeholder = "Search symbols..." }: SymbolSearchProps) {
+export function SymbolSearch({ value, onValueChange, onSelectSymbol, placeholder = "Search symbols..." }: SymbolSearchProps) {
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [symbols, setSymbols] = useState<SymbolData[]>([]);
@@ -122,6 +123,7 @@ export function SymbolSearch({ value, onValueChange, placeholder = "Search symbo
                     value={symbol.full_symbol}
                     onSelect={(currentValue) => {
                       onValueChange(currentValue === value ? "" : currentValue);
+                      onSelectSymbol?.(symbol);
                       setOpen(false);
                     }}
                   >

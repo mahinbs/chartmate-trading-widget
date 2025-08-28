@@ -61,3 +61,6 @@ verify_jwt = false
 
 [functions.search-symbols]
 verify_jwt = false
+
+[functions.get-market-status]
+verify_jwt = false
