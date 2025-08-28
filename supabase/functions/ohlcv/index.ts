@@ -28,6 +28,11 @@ interface OHLCVResponse {
   provider: string;
 }
 
+// Normalize stock symbol by removing exchange prefixes
+function normalizeStockSymbol(symbol: string): string {
+  return symbol.replace(/^(NASDAQ|NYSE|NYSEARCA|AMEX|BATS|CBOE|OTC):/i, '').trim();
+}
+
 // Detect asset type from symbol
 function detectAssetType(symbol: string): 'forex' | 'crypto' | 'stock' {
   const cleanSymbol = symbol.replace(/^(NASDAQ|NYSE|OANDA|BINANCE):/i, '').trim();
@@ -85,8 +90,8 @@ function normalizeForexSymbol(symbol: string): {
   };
 }
 
-// Convert interval to different provider formats
-function getProviderInterval(interval: string): {
+// Convert interval to different provider formats with fallbacks
+function getProviderInterval(interval: string, assetType: string): {
   twelveData: string,
   finnhub: string,
   alphaVantage: string
@@ -96,12 +101,26 @@ function getProviderInterval(interval: string): {
     '5': { twelveData: '5min', finnhub: '5', alphaVantage: '5min' },
     '15': { twelveData: '15min', finnhub: '15', alphaVantage: '15min' },
     '60': { twelveData: '1h', finnhub: '60', alphaVantage: '60min' },
-    '240': { twelveData: '4h', finnhub: '240', alphaVantage: '4h' },
+    '240': { twelveData: '4h', finnhub: '240', alphaVantage: '60min' }, // Alpha Vantage fallback
     'D': { twelveData: '1day', finnhub: 'D', alphaVantage: 'daily' },
     'W': { twelveData: '1week', finnhub: 'W', alphaVantage: 'weekly' }
   };
   
-  return mapping[interval] || mapping['D'];
+  // Handle unsupported intervals with fallbacks
+  if (!mapping[interval]) {
+    console.log(`⚠️ Unsupported interval ${interval}, falling back to daily`);
+    return mapping['D'];
+  }
+  
+  // For stocks, if 1min not supported by provider, use 5min
+  if (interval === '1' && assetType === 'stock') {
+    return {
+      ...mapping[interval],
+      alphaVantage: '5min' // Alpha Vantage often limits 1min access
+    };
+  }
+  
+  return mapping[interval];
 }
 
 // Fetch from Twelve Data
@@ -154,18 +173,27 @@ async function fetchFinnhub(symbol: string, interval: string, from?: number, to?
   
   const assetType = detectAssetType(symbol);
   let querySymbol = symbol;
+  let endpoint = 'stock/candle';
   
   if (assetType === 'forex') {
     const normalized = normalizeForexSymbol(symbol);
     querySymbol = normalized.finnhub;
+    endpoint = 'forex/candle';
+  } else if (assetType === 'crypto') {
+    // Keep original symbol if it has exchange prefix like BINANCE:
+    querySymbol = symbol.includes(':') ? symbol : `BINANCE:${symbol}`;
+    endpoint = 'crypto/candle';
+  } else {
+    // Stock: normalize by removing exchange prefixes
+    querySymbol = normalizeStockSymbol(symbol);
   }
   
-  const providerInterval = getProviderInterval(interval);
+  const providerInterval = getProviderInterval(interval, assetType);
   const now = Math.floor(Date.now() / 1000);
   const fromTime = from || (now - 30 * 24 * 60 * 60); // 30 days ago if not specified
   const toTime = to || now;
   
-  const url = `https://finnhub.io/api/v1/stock/candle?symbol=${querySymbol}&resolution=${providerInterval.finnhub}&from=${fromTime}&to=${toTime}&token=${apiKey}`;
+  const url = `https://finnhub.io/api/v1/${endpoint}?symbol=${querySymbol}&resolution=${providerInterval.finnhub}&from=${fromTime}&to=${toTime}&token=${apiKey}`;
   
   console.log(`🔄 Finnhub OHLCV: ${url}`);
   
@@ -173,7 +201,7 @@ async function fetchFinnhub(symbol: string, interval: string, from?: number, to?
   const data = await response.json();
   
   if (data.s !== 'ok' || !data.t) {
-    throw new Error(`Finnhub error: ${data.s}`);
+    throw new Error(`Finnhub error: ${data.s || 'undefined'}`);
   }
   
   return data.t.map((timestamp: number, index: number) => ({
@@ -197,16 +225,46 @@ async function fetchAlphaVantage(symbol: string, interval: string): Promise<OHLC
   
   if (assetType === 'forex') {
     const normalized = normalizeForexSymbol(symbol);
-    querySymbol = normalized.alphaVantage;
+    const [base, quote] = normalized.alphaVantage.length === 6 
+      ? [normalized.alphaVantage.slice(0, 3), normalized.alphaVantage.slice(3)]
+      : [normalized.alphaVantage.split('_')[0], normalized.alphaVantage.split('_')[1]];
+    querySymbol = `${base}${quote}`;
     functionName = 'FX_DAILY';
+  } else if (assetType === 'crypto') {
+    // For crypto, extract base currency (e.g., BTC from BTCUSDT)
+    const cleanSymbol = normalizeStockSymbol(symbol);
+    if (cleanSymbol.includes('USDT')) {
+      querySymbol = cleanSymbol.replace('USDT', '');
+    } else if (cleanSymbol.includes('USD')) {
+      querySymbol = cleanSymbol.replace('USD', '');
+    } else {
+      querySymbol = cleanSymbol;
+    }
+    functionName = 'DIGITAL_CURRENCY_DAILY';
+  } else {
+    // Stock: normalize by removing exchange prefixes
+    querySymbol = normalizeStockSymbol(symbol);
   }
   
   // Map intervals to Alpha Vantage functions
-  const providerInterval = getProviderInterval(interval);
+  const providerInterval = getProviderInterval(interval, assetType);
   if (providerInterval.alphaVantage.includes('min')) {
-    functionName = assetType === 'forex' ? 'FX_INTRADAY' : 'TIME_SERIES_INTRADAY';
+    if (assetType === 'forex') {
+      functionName = 'FX_INTRADAY';
+    } else if (assetType === 'crypto') {
+      // Alpha Vantage crypto only supports daily/weekly
+      functionName = 'DIGITAL_CURRENCY_DAILY';
+    } else {
+      functionName = 'TIME_SERIES_INTRADAY';
+    }
   } else if (providerInterval.alphaVantage === 'weekly') {
-    functionName = assetType === 'forex' ? 'FX_WEEKLY' : 'TIME_SERIES_WEEKLY';
+    if (assetType === 'forex') {
+      functionName = 'FX_WEEKLY';
+    } else if (assetType === 'crypto') {
+      functionName = 'DIGITAL_CURRENCY_WEEKLY';
+    } else {
+      functionName = 'TIME_SERIES_WEEKLY';
+    }
   }
   
   let url = `https://www.alphavantage.co/query?function=${functionName}&symbol=${querySymbol}&apikey=${apiKey}`;
@@ -215,13 +273,21 @@ async function fetchAlphaVantage(symbol: string, interval: string): Promise<OHLC
     url += `&interval=${providerInterval.alphaVantage}`;
   }
   
+  if (functionName.includes('DIGITAL_CURRENCY')) {
+    url += '&market=USD';
+  }
+  
   console.log(`🔄 Alpha Vantage OHLCV: ${url}`);
   
   const response = await fetch(url);
   const data = await response.json();
   
   // Find the time series data key
-  const timeSeriesKey = Object.keys(data).find(key => key.includes('Time Series') || key.includes('FX'));
+  const timeSeriesKey = Object.keys(data).find(key => 
+    key.includes('Time Series') || 
+    key.includes('FX') || 
+    key.includes('Digital Currency')
+  );
   
   if (!timeSeriesKey || !data[timeSeriesKey]) {
     throw new Error(`Alpha Vantage error: ${data['Error Message'] || data['Information'] || 'No data'}`);
@@ -231,11 +297,11 @@ async function fetchAlphaVantage(symbol: string, interval: string): Promise<OHLC
   
   return Object.entries(timeSeries).map(([datetime, values]: [string, any]) => ({
     time: Math.floor(new Date(datetime).getTime() / 1000),
-    open: parseFloat(values['1. open'] || values['1a. open (USD)']),
-    high: parseFloat(values['2. high'] || values['2a. high (USD)']),
-    low: parseFloat(values['3. low'] || values['3a. low (USD)']),
-    close: parseFloat(values['4. close'] || values['4a. close (USD)']),
-    volume: parseFloat(values['5. volume'] || '0')
+    open: parseFloat(values['1. open'] || values['1a. open (USD)'] || values['1b. open (USD)']),
+    high: parseFloat(values['2. high'] || values['2a. high (USD)'] || values['2b. high (USD)']),
+    low: parseFloat(values['3. low'] || values['3a. low (USD)'] || values['3b. low (USD)']),
+    close: parseFloat(values['4. close'] || values['4a. close (USD)'] || values['4b. close (USD)']),
+    volume: parseFloat(values['5. volume'] || values['6. volume'] || '0')
   })).sort((a, b) => a.time - b.time); // Sort by time ascending
 }
 
@@ -258,15 +324,19 @@ serve(async (req) => {
     console.log(`📊 OHLCV Request: ${symbol}, ${interval}, from: ${from}, to: ${to}`);
     
     const assetType = detectAssetType(symbol);
-    console.log(`🔍 Asset type detected: ${assetType} for symbol ${symbol}`);
+    const normalizedSymbol = assetType === 'stock' ? normalizeStockSymbol(symbol) : symbol;
+    console.log(`🔍 Asset type detected: ${assetType} for symbol ${symbol}, normalized: ${normalizedSymbol}`);
     
     let data: OHLCVCandle[] = [];
     let provider = '';
+    const providerErrors: Array<{provider: string, message: string, url?: string}> = [];
     
     // Try providers in order based on asset type
-    const providers = assetType === 'forex' 
-      ? ['twelveData', 'alphaVantage', 'finnhub']
-      : ['finnhub', 'alphaVantage', 'twelveData'];
+    const providers = assetType === 'stock' 
+      ? ['finnhub', 'alphaVantage', 'twelveData']
+      : assetType === 'forex'
+      ? ['alphaVantage', 'finnhub', 'twelveData'] 
+      : ['finnhub', 'alphaVantage', 'twelveData']; // crypto
     
     for (const providerName of providers) {
       try {
@@ -288,15 +358,23 @@ serve(async (req) => {
           break;
         }
       } catch (error) {
-        console.log(`❌ ${providerName} failed: ${error.message}`);
+        const errorMessage = error.message;
+        console.log(`❌ ${providerName} failed: ${errorMessage}`);
+        providerErrors.push({
+          provider: providerName,
+          message: errorMessage
+        });
         continue;
       }
     }
     
     if (data.length === 0) {
       return new Response(
-        JSON.stringify({ error: 'No data available from any provider' }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ 
+          error: 'No data available from any provider',
+          providerErrors
+        }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
     

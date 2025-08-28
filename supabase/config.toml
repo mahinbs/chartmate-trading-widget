@@ -55,3 +55,6 @@ enabled = true
 
 [functions.predict-movement]
 verify_jwt = false
+
+[functions.ohlcv]
+verify_jwt = false

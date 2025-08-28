@@ -34,7 +34,10 @@ async function fetchOHLCVData(symbol: string, interval: string): Promise<OHLCVRe
   });
   
   if (error) {
-    throw new Error(error.message);
+    // Preserve provider error details in the error context
+    const enhancedError = new Error(error.message);
+    (enhancedError as any).context = error;
+    throw enhancedError;
   }
   
   return data;
@@ -188,19 +191,39 @@ export default function LightweightPriceChart({ symbol, interval, height = 400 }
   }, [ohlcvData]);
 
   if (error) {
+    // Enhanced error display with provider details
+    const errorData = (error as any)?.context;
+    const providerErrors = errorData?.providerErrors || [];
+    
     return (
       <Card className="h-full">
         <CardContent className="flex items-center justify-center h-full">
           <Alert className="max-w-md">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              Failed to load chart data: {error.message}
-              <button 
-                onClick={() => refetch()} 
-                className="ml-2 text-primary hover:underline"
-              >
-                Retry
-              </button>
+              <div className="space-y-2">
+                <p>Failed to load chart data: {error.message}</p>
+                {providerErrors.length > 0 && (
+                  <details className="text-left">
+                    <summary className="cursor-pointer text-xs hover:text-foreground">
+                      Provider Details ({providerErrors.length} errors)
+                    </summary>
+                    <div className="mt-2 text-xs space-y-1">
+                      {providerErrors.map((pe: any, i: number) => (
+                        <div key={i} className="p-2 bg-muted rounded">
+                          <strong>{pe.provider}:</strong> {pe.message}
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+                <button 
+                  onClick={() => refetch()} 
+                  className="text-primary hover:underline text-sm"
+                >
+                  Retry
+                </button>
+              </div>
             </AlertDescription>
           </Alert>
         </CardContent>
