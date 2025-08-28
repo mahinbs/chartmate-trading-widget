@@ -4,12 +4,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ArrowLeft, TrendingUp, TrendingDown, Minus, Trash2, Clock, BarChart3, ChevronDown, Target, AlertTriangle, Lightbulb } from "lucide-react";
+import { ArrowLeft, TrendingUp, TrendingDown, Minus, Clock, ChevronDown } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { PredictionTimeline } from "@/components/PredictionTimeline";
+import { SummaryHeader } from "@/components/prediction/SummaryHeader";
+import { ForecastTable } from "@/components/prediction/ForecastTable";
+import { OutcomeBadge } from "@/components/prediction/OutcomeBadge";
+import { ActionBar } from "@/components/prediction/ActionBar";
 import { fmt, fmtPct, asNumber } from "@/lib/utils";
 
 interface Prediction {
