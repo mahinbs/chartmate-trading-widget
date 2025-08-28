@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { createChart, IChartApi, LineData, Time, ColorType } from 'lightweight-charts';
+import { createChart, IChartApi, ColorType } from 'lightweight-charts';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
@@ -50,8 +50,8 @@ export default function LightweightPriceChart({ symbol, interval, height = 400 }
   const { data: ohlcvData, isLoading, error, refetch } = useQuery({
     queryKey: ['ohlcv', symbol, interval],
     queryFn: () => fetchOHLCVData(symbol, interval),
-    refetchInterval: 30000, // Refetch every 30 seconds
-    staleTime: 15000, // Consider data stale after 15 seconds
+    refetchInterval: 30000,
+    staleTime: 15000,
   });
 
   // Detect theme changes
@@ -64,7 +64,6 @@ export default function LightweightPriceChart({ symbol, interval, height = 400 }
     
     detectTheme();
     
-    // Listen for theme changes
     const observer = new MutationObserver(detectTheme);
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
     
@@ -75,90 +74,115 @@ export default function LightweightPriceChart({ symbol, interval, height = 400 }
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
-    const chart = createChart(chartContainerRef.current, {
-      layout: {
-        background: { 
-          type: ColorType.Solid,
-          color: currentTheme === 'dark' ? '#0F0F0F' : '#FFFFFF' 
+    try {
+      const chart = createChart(chartContainerRef.current, {
+        width: chartContainerRef.current.clientWidth,
+        height: height,
+        layout: {
+          background: { 
+            type: ColorType.Solid,
+            color: currentTheme === 'dark' ? '#0F0F0F' : '#FFFFFF' 
+          },
+          textColor: currentTheme === 'dark' ? '#D9D9D9' : '#191919',
+          fontSize: 12,
+          fontFamily: 'ui-sans-serif, system-ui, sans-serif',
         },
-        textColor: currentTheme === 'dark' ? '#D9D9D9' : '#191919',
-        fontSize: 12,
-        fontFamily: 'ui-sans-serif, system-ui, sans-serif',
-      },
-      grid: {
-        vertLines: {
-          color: currentTheme === 'dark' ? 'rgba(242, 242, 242, 0.06)' : 'rgba(25, 25, 25, 0.1)',
+        grid: {
+          vertLines: {
+            color: currentTheme === 'dark' ? 'rgba(242, 242, 242, 0.06)' : 'rgba(25, 25, 25, 0.1)',
+          },
+          horzLines: {
+            color: currentTheme === 'dark' ? 'rgba(242, 242, 242, 0.06)' : 'rgba(25, 25, 25, 0.1)',
+          },
         },
-        horzLines: {
-          color: currentTheme === 'dark' ? 'rgba(242, 242, 242, 0.06)' : 'rgba(25, 25, 25, 0.1)',
+        crosshair: {
+          mode: 1,
         },
-      },
-      crosshair: {
-        mode: 1,
-      },
-      rightPriceScale: {
-        borderColor: currentTheme === 'dark' ? 'rgba(242, 242, 242, 0.2)' : 'rgba(25, 25, 25, 0.2)',
-      },
-      timeScale: {
-        borderColor: currentTheme === 'dark' ? 'rgba(242, 242, 242, 0.2)' : 'rgba(25, 25, 25, 0.2)',
-        timeVisible: true,
-        secondsVisible: interval === '1' || interval === '5',
-      },
-      handleScroll: {
-        mouseWheel: true,
-        pressedMouseMove: true,
-      },
-      handleScale: {
-        axisPressedMouseMove: true,
-        mouseWheel: true,
-        pinch: true,
-      },
-    });
+        rightPriceScale: {
+          borderColor: currentTheme === 'dark' ? 'rgba(242, 242, 242, 0.2)' : 'rgba(25, 25, 25, 0.2)',
+        },
+        timeScale: {
+          borderColor: currentTheme === 'dark' ? 'rgba(242, 242, 242, 0.2)' : 'rgba(25, 25, 25, 0.2)',
+          timeVisible: true,
+          secondsVisible: interval === '1' || interval === '5',
+        },
+        handleScroll: {
+          mouseWheel: true,
+          pressedMouseMove: true,
+        },
+        handleScale: {
+          axisPressedMouseMove: true,
+          mouseWheel: true,
+          pinch: true,
+        },
+      });
 
-    // Use type assertion to bypass TypeScript issues with lightweight-charts API
-    const lineSeries = (chart as any).addLineSeries({
-      color: currentTheme === 'dark' ? '#26a69a' : '#00C851',
-      lineWidth: 2,
-    });
-
-    chartRef.current = chart;
-    seriesRef.current = lineSeries;
-
-    // Handle resize
-    const handleResize = () => {
-      if (chartContainerRef.current && chartRef.current) {
-        chartRef.current.applyOptions({
-          width: chartContainerRef.current.clientWidth,
-          height: height,
-        });
+      // Try to create a line series first to verify basic functionality
+      let series;
+      try {
+        // Check if the chart object has the methods we need
+        if (typeof (chart as any).addLineSeries === 'function') {
+          series = (chart as any).addLineSeries({
+            color: currentTheme === 'dark' ? '#26a69a' : '#00C851',
+            lineWidth: 2,
+          });
+        } else {
+          console.error('Chart methods not available');
+          return;
+        }
+      } catch (seriesError) {
+        console.error('Error creating series:', seriesError);
+        return;
       }
-    };
 
-    window.addEventListener('resize', handleResize);
-    handleResize();
+      chartRef.current = chart;
+      seriesRef.current = series;
 
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      if (chartRef.current) {
-        chartRef.current.remove();
-      }
-    };
+      // Handle resize
+      const handleResize = () => {
+        if (chartContainerRef.current && chartRef.current) {
+          chartRef.current.applyOptions({
+            width: chartContainerRef.current.clientWidth,
+            height: height,
+          });
+        }
+      };
+
+      window.addEventListener('resize', handleResize);
+
+      return () => {
+        window.removeEventListener('resize', handleResize);
+        if (chartRef.current) {
+          try {
+            chartRef.current.remove();
+          } catch (removeError) {
+            console.error('Error removing chart:', removeError);
+          }
+        }
+      };
+    } catch (chartError) {
+      console.error('Error creating chart:', chartError);
+    }
   }, [currentTheme, height]);
 
   // Update chart data
   useEffect(() => {
     if (ohlcvData?.data && seriesRef.current) {
-      // Convert OHLCV data to line data (using close prices)
-      const lineData: LineData[] = ohlcvData.data.map(candle => ({
-        time: candle.time as Time,
-        value: candle.close,
-      }));
+      try {
+        // Convert OHLCV data to line data using close prices
+        const lineData = ohlcvData.data.map(candle => ({
+          time: candle.time,
+          value: candle.close,
+        }));
 
-      seriesRef.current.setData(lineData);
-      
-      // Fit chart to content
-      if (chartRef.current) {
-        chartRef.current.timeScale().fitContent();
+        seriesRef.current.setData(lineData);
+        
+        // Fit chart to content
+        if (chartRef.current) {
+          chartRef.current.timeScale().fitContent();
+        }
+      } catch (dataError) {
+        console.error('Error setting chart data:', dataError);
       }
     }
   }, [ohlcvData]);
@@ -204,7 +228,7 @@ export default function LightweightPriceChart({ symbol, interval, height = 400 }
         
         {ohlcvData && (
           <div className="absolute bottom-2 right-2 text-xs text-muted-foreground bg-background/80 backdrop-blur-sm px-2 py-1 rounded">
-            Data by {ohlcvData.provider} • Line Chart
+            Data by {ohlcvData.provider} • Price Chart
           </div>
         )}
       </CardContent>
