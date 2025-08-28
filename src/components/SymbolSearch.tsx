@@ -6,6 +6,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { supabase } from "@/integrations/supabase/client";
 
 interface SymbolData {
   symbol: string;
@@ -27,59 +28,25 @@ export function SymbolSearch({ value, onValueChange, placeholder = "Search symbo
   const [symbols, setSymbols] = useState<SymbolData[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Mock TradingView symbol search - in reality this would call TradingView's API
+  // Search symbols using Supabase edge function for global market coverage
   const searchSymbols = async (query: string): Promise<SymbolData[]> => {
-    if (!query || query.length < 2) return [];
+    if (!query || query.length < 1) return [];
 
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 300));
+    try {
+      const { data, error } = await supabase.functions.invoke('search-symbols', {
+        body: { q: query }
+      });
 
-    // Mock data representing global symbols from TradingView
-    const mockSymbols: SymbolData[] = [
-      // Popular US Stocks
-      { symbol: "AAPL", description: "Apple Inc", exchange: "NASDAQ", type: "stock", full_symbol: "NASDAQ:AAPL" },
-      { symbol: "GOOGL", description: "Alphabet Inc", exchange: "NASDAQ", type: "stock", full_symbol: "NASDAQ:GOOGL" },
-      { symbol: "MSFT", description: "Microsoft Corporation", exchange: "NASDAQ", type: "stock", full_symbol: "NASDAQ:MSFT" },
-      { symbol: "TSLA", description: "Tesla Inc", exchange: "NASDAQ", type: "stock", full_symbol: "NASDAQ:TSLA" },
-      { symbol: "AMZN", description: "Amazon.com Inc", exchange: "NASDAQ", type: "stock", full_symbol: "NASDAQ:AMZN" },
-      { symbol: "NVDA", description: "NVIDIA Corporation", exchange: "NASDAQ", type: "stock", full_symbol: "NASDAQ:NVDA" },
-      { symbol: "META", description: "Meta Platforms Inc", exchange: "NASDAQ", type: "stock", full_symbol: "NASDAQ:META" },
+      if (error) {
+        console.error('Symbol search error:', error);
+        return [];
+      }
 
-      // Crypto
-      { symbol: "BTCUSD", description: "Bitcoin / US Dollar", exchange: "BINANCE", type: "crypto", full_symbol: "BINANCE:BTCUSDT" },
-      { symbol: "ETHUSD", description: "Ethereum / US Dollar", exchange: "BINANCE", type: "crypto", full_symbol: "BINANCE:ETHUSDT" },
-      { symbol: "SOLUSD", description: "Solana / US Dollar", exchange: "BINANCE", type: "crypto", full_symbol: "BINANCE:SOLUSDT" },
-      { symbol: "ADAUSD", description: "Cardano / US Dollar", exchange: "BINANCE", type: "crypto", full_symbol: "BINANCE:ADAUSDT" },
-
-      // Forex
-      { symbol: "EURUSD", description: "Euro / US Dollar", exchange: "OANDA", type: "forex", full_symbol: "OANDA:EUR_USD" },
-      { symbol: "GBPUSD", description: "British Pound / US Dollar", exchange: "OANDA", type: "forex", full_symbol: "OANDA:GBP_USD" },
-      { symbol: "USDJPY", description: "US Dollar / Japanese Yen", exchange: "OANDA", type: "forex", full_symbol: "OANDA:USD_JPY" },
-      { symbol: "AUDUSD", description: "Australian Dollar / US Dollar", exchange: "OANDA", type: "forex", full_symbol: "OANDA:AUD_USD" },
-
-      // International Stocks
-      { symbol: "RELIANCE", description: "Reliance Industries Ltd", exchange: "NSE", type: "stock", full_symbol: "NSE:RELIANCE" },
-      { symbol: "TCS", description: "Tata Consultancy Services", exchange: "NSE", type: "stock", full_symbol: "NSE:TCS" },
-      { symbol: "BABA", description: "Alibaba Group Holding Ltd", exchange: "NYSE", type: "stock", full_symbol: "NYSE:BABA" },
-      { symbol: "ASML", description: "ASML Holding NV", exchange: "NASDAQ", type: "stock", full_symbol: "NASDAQ:ASML" },
-      { symbol: "SAP", description: "SAP SE", exchange: "NYSE", type: "stock", full_symbol: "NYSE:SAP" },
-
-      // Commodities
-      { symbol: "GOLD", description: "Gold Futures", exchange: "COMEX", type: "commodity", full_symbol: "COMEX:GC1!" },
-      { symbol: "SILVER", description: "Silver Futures", exchange: "COMEX", type: "commodity", full_symbol: "COMEX:SI1!" },
-      { symbol: "OIL", description: "Crude Oil WTI", exchange: "NYMEX", type: "commodity", full_symbol: "NYMEX:CL1!" },
-
-      // Indices
-      { symbol: "SPX", description: "S&P 500 Index", exchange: "SP", type: "index", full_symbol: "SP:SPX" },
-      { symbol: "DJI", description: "Dow Jones Industrial Average", exchange: "DJ", type: "index", full_symbol: "DJ:DJI" },
-      { symbol: "NDQ", description: "NASDAQ 100 Index", exchange: "NASDAQ", type: "index", full_symbol: "NASDAQ:NDX" },
-    ];
-
-    // Filter symbols based on query
-    return mockSymbols.filter(s =>
-      s.symbol.toLowerCase().includes(query.toLowerCase()) ||
-      s.description.toLowerCase().includes(query.toLowerCase())
-    ).slice(0, 20);
+      return data || [];
+    } catch (error) {
+      console.error('Symbol search failed:', error);
+      return [];
+    }
   };
 
   useEffect(() => {
