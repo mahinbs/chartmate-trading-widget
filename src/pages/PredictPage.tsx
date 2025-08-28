@@ -582,10 +582,7 @@ const PredictPage = () => {
               </CardHeader>
               <CardContent className="p-0">
                 <div className="h-[600px]">
-                  <ChartPanel
-                    interval={chartInterval}
-                    onIntervalChange={setChartInterval}
-                  />
+                  <ChartPanel />
                 </div>
               </CardContent>
             </Card>

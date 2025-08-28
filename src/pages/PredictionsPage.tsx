@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ArrowLeft, TrendingUp, TrendingDown, Minus, Clock, ChevronDown } from "lucide-react";
+import { ArrowLeft, Clock, ChevronDown, Plus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { PredictionTimeline } from "@/components/PredictionTimeline";
@@ -13,6 +13,8 @@ import { SummaryHeader } from "@/components/prediction/SummaryHeader";
 import { ForecastTable } from "@/components/prediction/ForecastTable";
 import { OutcomeBadge } from "@/components/prediction/OutcomeBadge";
 import { ActionBar } from "@/components/prediction/ActionBar";
+import { KeyLevels } from "@/components/prediction/KeyLevels";
+import { Insights } from "@/components/prediction/Insights";
 import { fmt, fmtPct, asNumber } from "@/lib/utils";
 
 interface Prediction {
@@ -33,12 +35,12 @@ interface Prediction {
 
 interface AnalysisData {
   symbol: string;
-  summary?: string; // top-level from function
+  summary?: string;
   dataSource?: string;
   marketData?: { candleCount: number; source: string; interval: string };
   from?: string;
   to?: string;
-  ai?: { summary?: string }; // keep optional for backward compatibility
+  ai?: { summary?: string };
   evaluation?: {
     result: 'accurate' | 'partial' | 'failed';
     startPrice: number;
@@ -180,32 +182,6 @@ const PredictionsPage = () => {
     }
   };
 
-  const getRecommendationIcon = (recommendation: string) => {
-    switch (recommendation?.toLowerCase()) {
-      case 'buy':
-      case 'strong buy':
-        return <TrendingUp className="h-4 w-4" />;
-      case 'sell':
-      case 'strong sell':
-        return <TrendingDown className="h-4 w-4" />;
-      default:
-        return <Minus className="h-4 w-4" />;
-    }
-  };
-
-  const getRecommendationColor = (recommendation: string) => {
-    switch (recommendation?.toLowerCase()) {
-      case 'buy':
-      case 'strong buy':
-        return 'bg-green-500/10 text-green-500 border-green-500/20';
-      case 'sell':
-      case 'strong sell':
-        return 'bg-red-500/10 text-red-500 border-red-500/20';
-      default:
-        return 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20';
-    }
-  };
-
   // Date/Time helper functions
   const formatDateTime = (date: Date | string | null | undefined) => {
     if (!date) return 'Invalid Date';
@@ -262,25 +238,6 @@ const PredictionsPage = () => {
     const totalDuration = endTime.getTime() - startTime.getTime();
     const elapsed = currentTime.getTime() - startTime.getTime();
     return Math.min(Math.max((elapsed / totalDuration) * 100, 0), 100);
-  };
-
-  const getStatusClasses = (timeRemaining: number) => {
-    if (timeRemaining < 0) {
-      return {
-        text: 'text-red-500',
-        progress: 'bg-red-500'
-      };
-    } else if (timeRemaining < 15 * 60 * 1000) { // Less than 15 minutes
-      return {
-        text: 'text-orange-500',
-        progress: 'bg-orange-500'
-      };
-    } else {
-      return {
-        text: 'text-green-500',
-        progress: 'bg-green-500'
-      };
-    }
   };
 
   const analyzePostPrediction = async (prediction: Prediction, toOverride?: Date) => {
@@ -355,6 +312,19 @@ const PredictionsPage = () => {
     }
   };
 
+  const getOutcome = (prediction: Prediction): 'accurate' | 'partial' | 'failed' | 'pending' => {
+    const evaluation = analysisStates[prediction.id]?.data?.evaluation;
+    if (evaluation) {
+      return evaluation.result;
+    }
+    
+    const startTime = new Date(prediction.created_at);
+    const expectedTime = calculateExpectedTime(prediction.timeframe, startTime);
+    const isExpired = now >= expectedTime;
+    
+    return isExpired ? 'pending' : 'pending';
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background">
@@ -373,478 +343,262 @@ const PredictionsPage = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="container mx-auto p-6">
-        <div className="flex items-center gap-4 mb-8">
-          <Button variant="ghost" onClick={() => navigate('/predict')}>
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Dashboard
-          </Button>
-          <h1 className="text-3xl font-bold">My Predictions</h1>
+      {/* Header */}
+      <div className="border-b bg-card/50 backdrop-blur-sm">
+        <div className="container mx-auto px-6 py-4">
+          <div className="flex items-center justify-between mb-4">
+            <Button variant="ghost" onClick={() => navigate('/predict')}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Dashboard
+            </Button>
+            <Button onClick={() => navigate('/predict')}>
+              <Plus className="h-4 w-4 mr-2" />
+              New Prediction
+            </Button>
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold">My Predictions</h1>
+            <p className="text-muted-foreground mt-1">
+              Track your AI-powered market predictions and their outcomes
+            </p>
+          </div>
         </div>
+      </div>
 
+      {/* Main Content */}
+      <div className="container mx-auto px-6 py-8">
         {predictions.length === 0 ? (
-          <Card>
-            <CardContent className="p-8 text-center">
-              <p className="text-muted-foreground">No predictions found. Generate your first prediction on the dashboard!</p>
+          <Card className="max-w-md mx-auto text-center">
+            <CardContent className="p-8">
+              <div className="space-y-4">
+                <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto">
+                  <Plus className="h-8 w-8 text-muted-foreground" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold">No predictions yet</h3>
+                  <p className="text-muted-foreground text-sm">
+                    Create your first AI-powered market prediction to get started
+                  </p>
+                </div>
+                <Button onClick={() => navigate('/predict')} className="w-full">
+                  Generate Prediction
+                </Button>
+              </div>
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-4">
-            {predictions.map((prediction) => (
-              <Card key={prediction.id}>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <CardTitle className="text-lg">{prediction.symbol}</CardTitle>
-                      <Badge className={getRecommendationColor(prediction.recommendation)}>
-                        {getRecommendationIcon(prediction.recommendation)}
-                        {prediction.recommendation}
-                      </Badge>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => deletePrediction(prediction.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                   <CardDescription>
-                     {prediction.timeframe}
-                   </CardDescription>
-                 </CardHeader>
-                  <CardContent>
-                   {/* Pipeline Timeline */}
-                   {prediction.raw_response?.meta?.pipeline && (
-                     <div className="mb-6">
-                       <PredictionTimeline
-                         pipeline={prediction.raw_response.meta.pipeline}
-                         forecasts={prediction.raw_response?.geminiForecast?.forecasts?.map((f: any) => ({
-                           horizon: f.horizon,
-                           direction: f.direction,
-                           probabilities: f.probabilities,
-                           expected_return_bp: f.expected_return_bp,
-                           confidence: f.confidence
-                         })) || []}
-                         predictedAt={new Date(prediction.created_at)}
-                       />
-                     </div>
-                   )}
+          <div className="space-y-6 max-w-4xl mx-auto">
+            {predictions.map((prediction) => {
+              const startTime = new Date(prediction.created_at);
+              const expectedTime = calculateExpectedTime(prediction.timeframe, startTime);
+              const timeRemaining = expectedTime.getTime() - now.getTime();
+              const elapsedPercent = getElapsedPercent(startTime, expectedTime, now);
+              const isExpired = timeRemaining < 0;
+              const outcome = getOutcome(prediction);
+              const isAnalyzing = analysisStates[prediction.id]?.loading;
 
-                   {/* Multi-Horizon Forecasts */}
-                   {prediction.raw_response?.geminiForecast?.forecasts && (
-                     <Collapsible className="mb-6">
-                       <CollapsibleTrigger asChild>
-                         <Button variant="ghost" className="w-full justify-between p-0 h-auto">
-                           <h3 className="text-sm font-medium">Multi-Horizon Forecasts</h3>
-                           <ChevronDown className="h-4 w-4" />
-                         </Button>
-                       </CollapsibleTrigger>
-                       <CollapsibleContent className="mt-3">
-                         <div className="border rounded-lg">
-                           <Table>
-                             <TableHeader>
-                               <TableRow>
-                                 <TableHead>Horizon</TableHead>
-                                 <TableHead>Direction</TableHead>
-                                 <TableHead>Expected Return</TableHead>
-                                 <TableHead>Confidence</TableHead>
-                                 <TableHead>Probabilities</TableHead>
-                               </TableRow>
-                             </TableHeader>
-                             <TableBody>
-                               {prediction.raw_response.geminiForecast.forecasts.map((forecast: any, index: number) => (
-                                 <TableRow key={index}>
-                                   <TableCell className="font-mono text-xs">{forecast.horizon}</TableCell>
-                                   <TableCell>
-                                     <Badge variant="outline" className={
-                                       forecast.direction === 'up' ? 'text-green-600 border-green-600' :
-                                       forecast.direction === 'down' ? 'text-red-600 border-red-600' :
-                                       'text-yellow-600 border-yellow-600'
-                                     }>
-                                       {forecast.direction}
-                                     </Badge>
-                                   </TableCell>
-                                    <TableCell className="font-mono">
-                                      {forecast.expected_return_bp ? fmtPct(asNumber(forecast.expected_return_bp) / 100) : 'N/A'}
-                                    </TableCell>
-                                    <TableCell className="font-mono">{forecast.confidence ? fmtPct(asNumber(forecast.confidence)) : 'N/A'}</TableCell>
-                                   <TableCell>
-                                     {forecast.probabilities && (
-                                       <div className="space-y-1">
-                                         <div className="flex justify-between text-xs">
-                                            <span className="text-green-600">Up: {fmtPct(asNumber(forecast.probabilities.up) * 100, 0)}</span>
-                                            <span className="text-red-600">Down: {fmtPct(asNumber(forecast.probabilities.down) * 100, 0)}</span>
-                                            <span className="text-yellow-600">Side: {fmtPct(asNumber(forecast.probabilities.sideways) * 100, 0)}</span>
-                                         </div>
-                                       </div>
-                                     )}
-                                   </TableCell>
-                                 </TableRow>
-                               ))}
-                             </TableBody>
-                           </Table>
-                         </div>
-                       </CollapsibleContent>
-                     </Collapsible>
-                   )}
-
-                   {/* AI Insights */}
-                   {(prediction.raw_response?.rationale || 
-                     prediction.raw_response?.geminiForecast?.positioning_guidance?.notes ||
-                     prediction.raw_response?.opportunities ||
-                     prediction.raw_response?.risks ||
-                     prediction.raw_response?.geminiForecast?.support_resistance) && (
-                     <Collapsible className="mb-6">
-                       <CollapsibleTrigger asChild>
-                         <Button variant="ghost" className="w-full justify-between p-0 h-auto">
-                           <h3 className="text-sm font-medium">AI Insights & Market Context</h3>
-                           <ChevronDown className="h-4 w-4" />
-                         </Button>
-                       </CollapsibleTrigger>
-                       <CollapsibleContent className="mt-3 space-y-4">
-                         {/* Rationale */}
-                         {(prediction.raw_response?.rationale || prediction.raw_response?.geminiForecast?.positioning_guidance?.notes) && (
-                           <div className="p-3 bg-muted/30 rounded-lg">
-                             <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
-                               <Lightbulb className="h-4 w-4" />
-                               Analysis Rationale
-                             </h4>
-                             <p className="text-sm text-muted-foreground leading-relaxed">
-                               {prediction.raw_response.rationale || prediction.raw_response.geminiForecast.positioning_guidance.notes}
-                             </p>
-                           </div>
-                         )}
-
-                         {/* Opportunities & Risks */}
-                         <div className="grid md:grid-cols-2 gap-4">
-                           {prediction.raw_response?.opportunities && (
-                             <div className="p-3 bg-green-50/50 border border-green-200/50 rounded-lg">
-                               <h4 className="font-medium text-sm mb-2 flex items-center gap-2 text-green-700">
-                                 <TrendingUp className="h-4 w-4" />
-                                 Opportunities
-                               </h4>
-                               <div className="flex flex-wrap gap-1">
-                                 {prediction.raw_response.opportunities.map((opp: string, index: number) => (
-                                   <Badge key={index} variant="outline" className="text-xs text-green-700 border-green-300">
-                                     {opp}
-                                   </Badge>
-                                 ))}
-                               </div>
-                             </div>
-                           )}
-
-                           {prediction.raw_response?.risks && (
-                             <div className="p-3 bg-red-50/50 border border-red-200/50 rounded-lg">
-                               <h4 className="font-medium text-sm mb-2 flex items-center gap-2 text-red-700">
-                                 <AlertTriangle className="h-4 w-4" />
-                                 Risks
-                               </h4>
-                               <div className="flex flex-wrap gap-1">
-                                 {prediction.raw_response.risks.map((risk: string, index: number) => (
-                                   <Badge key={index} variant="outline" className="text-xs text-red-700 border-red-300">
-                                     {risk}
-                                   </Badge>
-                                 ))}
-                               </div>
-                             </div>
-                           )}
-                         </div>
-
-                         {/* Support & Resistance */}
-                         {prediction.raw_response?.geminiForecast?.support_resistance && (
-                           <div className="p-3 bg-blue-50/50 border border-blue-200/50 rounded-lg">
-                             <h4 className="font-medium text-sm mb-3 flex items-center gap-2 text-blue-700">
-                               <Target className="h-4 w-4" />
-                               Key Levels
-                             </h4>
-                             <div className="grid grid-cols-2 gap-4 text-sm">
-                               {prediction.raw_response.geminiForecast.support_resistance.supports && (
-                                 <div>
-                                   <p className="text-muted-foreground mb-1">Support Levels</p>
-                                   <div className="space-y-1">
-                                      {(Array.isArray(prediction.raw_response.geminiForecast.support_resistance.supports) ? 
-                                        prediction.raw_response.geminiForecast.support_resistance.supports : []).map((level: any, index: number) => (
-                                        <p key={index} className="font-mono text-green-600">
-                                          ${fmt(level)}
-                                        </p>
-                                      ))}
-                                   </div>
-                                 </div>
-                               )}
-                               {prediction.raw_response.geminiForecast.support_resistance.resistances && (
-                                 <div>
-                                   <p className="text-muted-foreground mb-1">Resistance Levels</p>
-                                   <div className="space-y-1">
-                                      {(Array.isArray(prediction.raw_response.geminiForecast.support_resistance.resistances) ? 
-                                        prediction.raw_response.geminiForecast.support_resistance.resistances : []).map((level: any, index: number) => (
-                                        <p key={index} className="font-mono text-red-600">
-                                          ${fmt(level)}
-                                        </p>
-                                      ))}
-                                   </div>
-                                 </div>
-                               )}
-                             </div>
-                           </div>
-                         )}
-                       </CollapsibleContent>
-                     </Collapsible>
-                   )}
-
-                   {/* Legacy Basic Info */}
-                   <div className="bg-muted/20 rounded-lg p-3 mb-4">
-                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                       <div>
-                         <p className="text-muted-foreground">Predicted at</p>
-                         <p className="font-mono">{formatDateTime(new Date(prediction.created_at))}</p>
-                       </div>
-                       <div>
-                         <p className="text-muted-foreground">Legacy timeframe</p>
-                         <p className="font-mono">{prediction.timeframe}</p>
-                       </div>
-                     </div>
-                   </div>
-
-                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div>
-                      <p className="text-muted-foreground">Investment</p>
-                      <p className="font-semibold">${prediction.investment?.toLocaleString() || 'N/A'}</p>
-                    </div>
-                     <div>
-                       <p className="text-muted-foreground">Current Price</p>
-                       <p className="font-semibold">${prediction.current_price ? fmt(prediction.current_price) : 'N/A'}</p>
-                     </div>
-                     <div>
-                       <p className="text-muted-foreground">Confidence</p>
-                       <p className="font-semibold">{prediction.confidence ? fmtPct(prediction.confidence) : 'N/A'}</p>
-                     </div>
-                     <div>
-                       <p className="text-muted-foreground">Expected Move</p>
-                       <p className={`font-semibold ${
-                         prediction.expected_move_direction === 'up' ? 'text-green-500' : 
-                         prediction.expected_move_direction === 'down' ? 'text-red-500' : 
-                         'text-yellow-500'
-                       }`}>
-                         {prediction.expected_move_percent ? fmtPct(prediction.expected_move_percent) : 'N/A'}
-                       </p>
-                     </div>
-                  </div>
-                  
-                  {(prediction.price_target_min || prediction.price_target_max) && (
-                    <div className="mt-4 pt-4 border-t">
-                      <p className="text-sm text-muted-foreground mb-2">Price Targets</p>
-                      <div className="flex gap-4 text-sm">
-                         {prediction.price_target_min && (
-                           <div>
-                             <span className="text-muted-foreground">Min: </span>
-                             <span className="font-semibold">${fmt(prediction.price_target_min)}</span>
-                           </div>
-                         )}
-                         {prediction.price_target_max && (
-                           <div>
-                             <span className="text-muted-foreground">Max: </span>
-                             <span className="font-semibold">${fmt(prediction.price_target_max)}</span>
-                           </div>
-                         )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Time Status */}
-                  {(() => {
-                    const startTime = new Date(prediction.created_at);
-                    const expectedTime = calculateExpectedTime(prediction.timeframe, startTime);
-                    const timeRemaining = expectedTime.getTime() - now.getTime();
-                    const elapsedPercent = getElapsedPercent(startTime, expectedTime, now);
-                    const isExpired = timeRemaining < 0;
-                    const hasEvaluation = analysisStates[prediction.id]?.data?.evaluation;
-
-                    if (isExpired) {
-                      return (
-                        <div className="mt-4 pt-4 border-t">
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-2">
-                              <Clock className="h-4 w-4 text-muted-foreground" />
-                              <span className="text-sm font-medium text-muted-foreground">Completed</span>
-                            </div>
-                            {hasEvaluation && (
-                              <Badge className={
-                                hasEvaluation.result === 'accurate' ? 'bg-green-500/10 text-green-500 border-green-500/20' :
-                                hasEvaluation.result === 'partial' ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20' :
-                                'bg-red-500/10 text-red-500 border-red-500/20'
-                              }>
-                                {hasEvaluation.result === 'accurate' ? 'Accurate' : 
-                                 hasEvaluation.result === 'partial' ? 'Partial' : 'Failed'}
-                              </Badge>
-                            )}
-                          </div>
-                          <Progress value={100} className="h-2" />
-                        </div>
-                      );
-                    }
-
-                    const statusClasses = getStatusClasses(timeRemaining);
-                    return (
-                      <div className="mt-4 pt-4 border-t">
-                        <div className="flex items-center gap-2 mb-3">
-                          <Clock className="h-4 w-4 text-muted-foreground" />
-                          <span className={`text-sm font-medium ${statusClasses.text}`}>
-                            Time remaining: {formatDuration(timeRemaining)}
-                          </span>
-                        </div>
-                        <Progress 
-                          value={elapsedPercent} 
-                          className="h-2"
+              return (
+                <Card key={prediction.id} className="overflow-hidden">
+                  {/* Header with Summary */}
+                  <CardHeader className="pb-4">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <SummaryHeader
+                          symbol={prediction.symbol}
+                          currentPrice={prediction.current_price || 0}
+                          change={0}
+                          changePercent={prediction.expected_move_percent || 0}
+                          recommendation={prediction.recommendation || undefined}
+                          confidence={prediction.confidence || undefined}
                         />
                       </div>
-                    );
-                  })()}
-
-                  {/* Analysis Button */}
-                  {(() => {
-                    const startTime = new Date(prediction.created_at);
-                    const expectedTime = calculateExpectedTime(prediction.timeframe, startTime);
-                    const isExpired = now >= expectedTime;
-                    const hasEvaluation = analysisStates[prediction.id]?.data?.evaluation;
-                    const isLoading = analysisStates[prediction.id]?.loading;
-
-                    // For expired predictions, only show manual analysis if no evaluation exists
-                    if (isExpired && hasEvaluation) {
-                      return null; // Evaluation results will be shown below
-                    }
-
-                    return (
-                      <div className="mt-4 pt-4 border-t">
-                        <Button
-                          onClick={() => analyzePostPrediction(prediction)}
-                          disabled={isLoading}
-                          variant="outline"
-                          size="sm"
-                          className="w-full"
-                        >
-                          <BarChart3 className="h-4 w-4 mr-2" />
-                          {isLoading ? 'Analyzing...' : 
-                           isExpired ? 'Evaluate outcome' : 'Analyze since prediction'}
-                        </Button>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Analysis Results */}
-                   {analysisStates[prediction.id]?.data && (
-                     <div className="mt-4 p-3 bg-muted/50 rounded-lg">
-                       {(() => {
-                         const data = analysisStates[prediction.id]!.data!;
-                         const evaluation = data.evaluation;
-
-                         if (evaluation) {
-                           return (
-                             <>
-                               <div className="flex items-center justify-between mb-3">
-                                 <h4 className="font-medium text-sm">Prediction Outcome</h4>
-                                 <Badge className={
-                                   evaluation.result === 'accurate' ? 'bg-green-500/10 text-green-500 border-green-500/20' :
-                                   evaluation.result === 'partial' ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20' :
-                                   'bg-red-500/10 text-red-500 border-red-500/20'
-                                 }>
-                                   {evaluation.result === 'accurate' ? 'Accurate' : 
-                                    evaluation.result === 'partial' ? 'Partial' : 'Failed'}
-                                 </Badge>
-                               </div>
-                               
-                               <div className="text-sm space-y-2">
-                                 <div className="flex justify-between">
-                                   <span className="text-muted-foreground">Predicted:</span>
-                                   <span className={`font-medium ${
-                                     evaluation.predictedDirection === 'up' ? 'text-green-500' :
-                                     evaluation.predictedDirection === 'down' ? 'text-red-500' : 'text-yellow-500'
-                                   }`}>
-                                     {evaluation.predictedDirection} {evaluation.predictedMovePercent ? fmtPct(evaluation.predictedMovePercent) : 'N/A'}
-                                   </span>
-                                 </div>
-                                 <div className="flex justify-between">
-                                   <span className="text-muted-foreground">Actual:</span>
-                                   <span className={`font-medium ${
-                                     evaluation.actualChangePercent >= 0 ? 'text-green-500' : 'text-red-500'
-                                   }`}>
-                                     {evaluation.actualChangePercent >= 0 ? '+' : ''}{fmt(evaluation.actualChangePercent)}%
-                                   </span>
-                                 </div>
-                                 <div className="flex justify-between">
-                                   <span className="text-muted-foreground">Price range:</span>
-                                   <span className="font-medium">
-                                     ${fmt(evaluation.startPrice)} → ${fmt(evaluation.endPrice)}
-                                   </span>
-                                 </div>
-                                 
-                                 {(evaluation.hitTargetMax || evaluation.hitTargetMin) && (
-                                   <div className="pt-2 border-t">
-                                     <p className="text-xs text-muted-foreground mb-1">Price Targets:</p>
-                                     {evaluation.hitTargetMax && (
-                                       <span className="text-xs bg-green-500/10 text-green-500 px-2 py-1 rounded mr-2">
-                                         Hit upper target
-                                       </span>
-                                     )}
-                                     {evaluation.hitTargetMin && (
-                                       <span className="text-xs bg-green-500/10 text-green-500 px-2 py-1 rounded">
-                                         Hit lower target
-                                       </span>
-                                     )}
-                                   </div>
-                                 )}
-                                 
-                                 {evaluation.reasoning && (
-                                   <div className="pt-2 border-t">
-                                     <p className="text-xs text-muted-foreground leading-relaxed">
-                                       {evaluation.reasoning}
-                                     </p>
-                                   </div>
-                                 )}
-                               </div>
-                               
-                               {data.dataSource && (
-                                 <div className="text-xs text-muted-foreground mt-3 pt-2 border-t">
-                                   Data: {data.dataSource} • Period: {formatDateTime(data.from)} to {formatDateTime(data.to)}
-                                 </div>
-                               )}
-                             </>
-                           );
-                         }
-
-                         // Regular analysis without evaluation
-                         return (
-                           <>
-                             <h4 className="font-medium text-sm mb-2">Analysis Since Prediction</h4>
-                             <div className="text-xs text-muted-foreground mb-2">
-                               {data.symbol} from {formatDateTime(data.from || prediction.created_at)} to {formatDateTime(data.to || new Date().toISOString())}
-                             </div>
-                             
-                             <div className="text-sm leading-relaxed text-foreground whitespace-pre-wrap">
-                               {data.summary || data.ai?.summary || 'Analysis summary not available'}
-                             </div>
-                             
-                             {data.dataSource && (
-                               <div className="text-xs text-muted-foreground mt-2">
-                                 Data: {data.dataSource}
-                               </div>
-                             )}
-                           </>
-                         );
-                       })()}
-                     </div>
-                   )}
-
-                  {analysisStates[prediction.id]?.error && (
-                    <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-                      <div className="text-red-600 text-sm">
-                        {analysisStates[prediction.id]!.error}
+                      <div className="flex items-center gap-2 ml-4">
+                        <OutcomeBadge outcome={outcome} />
+                        <ActionBar
+                          onDelete={() => deletePrediction(prediction.id)}
+                          onAnalyze={() => analyzePostPrediction(prediction)}
+                          isAnalyzing={isAnalyzing}
+                          showAnalyze={isExpired && !analysisStates[prediction.id]?.data?.evaluation}
+                        />
                       </div>
                     </div>
-                  )}
-                 </CardContent>
-               </Card>
-            ))}
+                    
+                    {/* Time Progress */}
+                    <div className="mt-4 space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-muted-foreground">
+                            {isExpired ? 'Completed' : `${formatDuration(timeRemaining)} remaining`}
+                          </span>
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          {formatDateTime(prediction.created_at)}
+                        </span>
+                      </div>
+                      <Progress value={isExpired ? 100 : elapsedPercent} className="h-2" />
+                    </div>
+                  </CardHeader>
+
+                  <CardContent className="space-y-6">
+                    {/* Investment Details */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-lg">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Investment</p>
+                        <p className="font-semibold">${prediction.investment?.toLocaleString() || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Timeframe</p>
+                        <p className="font-semibold">{prediction.timeframe}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Expected Move</p>
+                        <p className={`font-semibold ${
+                          prediction.expected_move_direction === 'up' ? 'text-green-600' : 
+                          prediction.expected_move_direction === 'down' ? 'text-red-600' : 
+                          'text-yellow-600'
+                        }`}>
+                          {prediction.expected_move_percent ? fmtPct(prediction.expected_move_percent) : 'N/A'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Price Target</p>
+                        <p className="font-semibold">
+                          {prediction.price_target_min && prediction.price_target_max ? 
+                            `$${fmt(prediction.price_target_min)} - $${fmt(prediction.price_target_max)}` : 'N/A'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Multi-Horizon Forecasts */}
+                    {prediction.raw_response?.geminiForecast?.forecasts && (
+                      <Collapsible>
+                        <CollapsibleTrigger asChild>
+                          <Button variant="ghost" className="w-full justify-between p-0 h-auto">
+                            <h3 className="text-sm font-medium">Multi-Horizon Forecasts</h3>
+                            <ChevronDown className="h-4 w-4" />
+                          </Button>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="mt-3">
+                          <ForecastTable forecasts={prediction.raw_response.geminiForecast.forecasts} />
+                        </CollapsibleContent>
+                      </Collapsible>
+                    )}
+
+                    {/* Key Levels */}
+                    {prediction.raw_response?.geminiForecast?.support_resistance && (
+                      <Collapsible>
+                        <CollapsibleTrigger asChild>
+                          <Button variant="ghost" className="w-full justify-between p-0 h-auto">
+                            <h3 className="text-sm font-medium">Key Price Levels</h3>
+                            <ChevronDown className="h-4 w-4" />
+                          </Button>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="mt-3">
+                          <KeyLevels
+                            supportLevels={prediction.raw_response.geminiForecast.support_resistance.supports}
+                            resistanceLevels={prediction.raw_response.geminiForecast.support_resistance.resistances}
+                            currentPrice={prediction.current_price || 0}
+                          />
+                        </CollapsibleContent>
+                      </Collapsible>
+                    )}
+
+                    {/* AI Insights */}
+                    <Collapsible>
+                      <CollapsibleTrigger asChild>
+                        <Button variant="ghost" className="w-full justify-between p-0 h-auto">
+                          <h3 className="text-sm font-medium">AI Insights & Analysis</h3>
+                          <ChevronDown className="h-4 w-4" />
+                        </Button>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="mt-3">
+                        <Insights
+                          keyDrivers={prediction.raw_response?.geminiForecast?.forecasts?.[0]?.key_drivers}
+                          riskFlags={prediction.raw_response?.geminiForecast?.forecasts?.[0]?.risk_flags}
+                          opportunities={prediction.raw_response?.opportunities}
+                          rationale={prediction.raw_response?.rationale}
+                          patterns={prediction.raw_response?.patterns}
+                        />
+                      </CollapsibleContent>
+                    </Collapsible>
+
+                    {/* Analysis Results */}
+                    {analysisStates[prediction.id]?.data?.evaluation && (
+                      <div className="p-4 bg-muted/30 rounded-lg border">
+                        <h4 className="font-medium text-sm mb-3">Prediction Outcome</h4>
+                        {(() => {
+                          const evaluation = analysisStates[prediction.id]!.data!.evaluation!;
+                          return (
+                            <div className="space-y-3">
+                              <div className="grid grid-cols-2 gap-4 text-sm">
+                                <div>
+                                  <p className="text-muted-foreground">Predicted</p>
+                                  <p className={`font-semibold ${
+                                    evaluation.predictedDirection === 'up' ? 'text-green-600' :
+                                    evaluation.predictedDirection === 'down' ? 'text-red-600' : 'text-yellow-600'
+                                  }`}>
+                                    {evaluation.predictedDirection} {evaluation.predictedMovePercent ? fmtPct(evaluation.predictedMovePercent) : 'N/A'}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-muted-foreground">Actual</p>
+                                  <p className={`font-semibold ${
+                                    evaluation.actualChangePercent >= 0 ? 'text-green-600' : 'text-red-600'
+                                  }`}>
+                                    {evaluation.actualChangePercent >= 0 ? '+' : ''}{fmt(evaluation.actualChangePercent)}%
+                                  </p>
+                                </div>
+                              </div>
+                              
+                              <div className="text-sm">
+                                <p className="text-muted-foreground">Price Movement</p>
+                                <p className="font-semibold">
+                                  ${fmt(evaluation.startPrice)} → ${fmt(evaluation.endPrice)}
+                                </p>
+                              </div>
+                              
+                              {evaluation.reasoning && (
+                                <div className="pt-3 border-t">
+                                  <p className="text-xs text-muted-foreground leading-relaxed">
+                                    {evaluation.reasoning}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+
+                    {/* Pipeline Timeline */}
+                    {prediction.raw_response?.meta?.pipeline && (
+                      <Collapsible>
+                        <CollapsibleTrigger asChild>
+                          <Button variant="ghost" className="w-full justify-between p-0 h-auto">
+                            <h3 className="text-sm font-medium">Analysis Timeline</h3>
+                            <ChevronDown className="h-4 w-4" />
+                          </Button>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="mt-3">
+                          <PredictionTimeline
+                            pipeline={prediction.raw_response.meta.pipeline}
+                            forecasts={prediction.raw_response?.geminiForecast?.forecasts?.map((f: any) => ({
+                              horizon: f.horizon,
+                              direction: f.direction,
+                              probabilities: f.probabilities,
+                              expected_return_bp: f.expected_return_bp,
+                              confidence: f.confidence
+                            })) || []}
+                            predictedAt={new Date(prediction.created_at)}
+                          />
+                        </CollapsibleContent>
+                      </Collapsible>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         )}
       </div>
