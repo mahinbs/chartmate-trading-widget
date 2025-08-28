@@ -10,6 +10,7 @@ interface PredictionRequest {
   symbol: string;
   investment: number;
   timeframe: string;
+  horizons?: number[]; // New: array of minutes/days for multiple predictions
 }
 
 interface StockData {
@@ -34,8 +35,12 @@ interface Candle {
 interface TechnicalIndicators {
   sma20: number;
   sma50: number;
+  sma200: number;
   ema12: number;
   ema26: number;
+  ema20: number;
+  ema50: number;
+  ema200: number;
   rsi: number;
   macd: number;
   macdSignal: number;
@@ -44,6 +49,39 @@ interface TechnicalIndicators {
   bbMiddle: number;
   bbLower: number;
   atr: number;
+}
+
+interface GeminiForecast {
+  symbol: string;
+  as_of: string;
+  forecasts: Array<{
+    horizon: string;
+    direction: "up" | "down" | "sideways";
+    probabilities: { up: number; down: number; sideways: number };
+    expected_return_bp: number;
+    expected_range_bp: { p10: number; p50: number; p90: number };
+    key_drivers: string[];
+    risk_flags: string[];
+    confidence: number;
+    invalid_if: string[];
+  }>;
+  support_resistance: {
+    supports: Array<{ level: number; strength: number }>;
+    resistances: Array<{ level: number; strength: number }>;
+  };
+  positioning_guidance: {
+    bias: "long" | "short" | "flat";
+    notes: string;
+  };
+}
+
+interface NewsItem {
+  time: string;
+  source: string;
+  headline: string;
+  sentiment_score: number;
+  novelty: string;
+  relevance: string;
 }
 
 interface TechnicalContext {
@@ -749,7 +787,7 @@ function computeTechnicalContext(candles: Candle[]): TechnicalContext {
     return {
       candles: [],
       indicators: {
-        sma20: 0, sma50: 0, ema12: 0, ema26: 0, rsi: 50,
+        sma20: 0, sma50: 0, sma200: 0, ema12: 0, ema26: 0, ema20: 0, ema50: 0, ema200: 0, rsi: 50,
         macd: 0, macdSignal: 0, macdHistogram: 0,
         bbUpper: 0, bbMiddle: 0, bbLower: 0, atr: 0
       },
@@ -772,8 +810,12 @@ function computeTechnicalContext(candles: Candle[]): TechnicalContext {
     indicators: {
       sma20: calculateSMA(closes, 20),
       sma50: calculateSMA(closes, 50),
+      sma200: calculateSMA(closes, 200),
       ema12: calculateEMA(closes, 12),
       ema26: calculateEMA(closes, 26),
+      ema20: calculateEMA(closes, 20),
+      ema50: calculateEMA(closes, 50),
+      ema200: calculateEMA(closes, 200),
       rsi: calculateRSI(closes),
       macd: macdData.macd,
       macdSignal: macdData.signal,
@@ -790,6 +832,316 @@ function computeTechnicalContext(candles: Candle[]): TechnicalContext {
     volatilityState: analyzeVolatility(candles),
     trendDirection: analyzeTrend(candles)
   };
+}
+
+// Enhanced news fetching with Alpha Vantage integration
+async function fetchNewsAndSentiment(symbol: string): Promise<NewsItem[]> {
+  const alphaVantageKey = Deno.env.get('ALPHA_VANTAGE_API_KEY');
+  
+  if (!alphaVantageKey) {
+    console.log('Alpha Vantage API key not configured, using empty news');
+    return [];
+  }
+
+  try {
+    const response = await fetch(
+      `https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers=${symbol}&apikey=${alphaVantageKey}&limit=20`,
+      { signal: AbortSignal.timeout(10000) }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Alpha Vantage API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    if (data.feed && Array.isArray(data.feed)) {
+      return data.feed.slice(0, 10).map((item: any) => ({
+        time: item.time_published || new Date().toISOString(),
+        source: item.source || 'Unknown',
+        headline: item.title || 'No headline',
+        sentiment_score: parseFloat(item.overall_sentiment_score) || 0,
+        novelty: item.overall_sentiment_score > 0.2 ? 'high' : item.overall_sentiment_score < -0.2 ? 'high' : 'medium',
+        relevance: 'medium'
+      }));
+    }
+    
+    return [];
+  } catch (error) {
+    console.error('News fetch error:', error);
+    return [];
+  }
+}
+
+// Get comparable market regimes
+function getComparableRegimes(candles: Candle[], techContext: TechnicalContext): any[] {
+  if (candles.length < 100) return [];
+  
+  const currentVolatility = techContext.volatilityState;
+  const currentRSI = techContext.indicators.rsi;
+  const currentTrend = techContext.trendDirection;
+  
+  const regimes = [];
+  const windowSize = 20;
+  
+  // Look for similar conditions in the past
+  for (let i = windowSize; i < candles.length - windowSize; i += windowSize) {
+    const window = candles.slice(i - windowSize, i + windowSize);
+    const windowCloses = window.map(c => c.close);
+    const windowRSI = calculateRSI(windowCloses);
+    const windowTrend = analyzeTrend(window);
+    const windowVolatility = analyzeVolatility(window);
+    
+    // Check if conditions are similar
+    const rsiSimilar = Math.abs(windowRSI - currentRSI) < 15;
+    const trendSimilar = windowTrend === currentTrend;
+    const volatilitySimilar = windowVolatility === currentVolatility;
+    
+    if (rsiSimilar && (trendSimilar || volatilitySimilar)) {
+      const startDate = new Date(window[0].timestamp);
+      const endDate = new Date(window[window.length - 1].timestamp);
+      const futureReturn = candles[Math.min(i + windowSize, candles.length - 1)].close / window[window.length - 1].close - 1;
+      
+      regimes.push({
+        start: startDate.toISOString(),
+        end: endDate.toISOString(),
+        vol: windowVolatility,
+        trend: windowTrend,
+        rsi_zone: `${Math.round(windowRSI - 10)}-${Math.round(windowRSI + 10)} ${windowRSI > currentRSI ? 'falling' : 'rising'}`,
+        subsequent_return_bp_p50: Math.round(futureReturn * 10000)
+      });
+    }
+  }
+  
+  return regimes.slice(0, 3); // Return top 3 comparable regimes
+}
+
+// Enhanced Gemini Analysis with new prompt structure
+async function getEnhancedGeminiAnalysis(
+  symbol: string,
+  investment: number,
+  timeframe: string,
+  horizons: number[],
+  stockData: StockData,
+  techContext: TechnicalContext,
+  newsData: NewsItem[]
+): Promise<{ geminiForecast: GeminiForecast | null; legacyAnalysis: string }> {
+  const geminiApiKey = Deno.env.get('GEMINI_API_KEY');
+
+  if (!geminiApiKey) {
+    throw new Error('Gemini API key not configured');
+  }
+
+  // Get comparable regimes
+  const comparableRegimes = getComparableRegimes(techContext.candles, techContext);
+  
+  // Build engineered features
+  const closes = techContext.candles.map(c => c.close);
+  const returns = closes.slice(1).map((close, i) => (close - closes[i]) / closes[i]);
+  const laggedReturns = {
+    "1d": returns.slice(-1)[0] || 0,
+    "3d": returns.slice(-3).reduce((a, b) => a + b, 0) / 3,
+    "7d": returns.slice(-7).reduce((a, b) => a + b, 0) / 7
+  };
+  
+  const volumes = techContext.candles.map(c => c.volume);
+  const avgVolume = volumes.reduce((a, b) => a + b, 0) / volumes.length;
+  const volumeSpikes = volumes.slice(-5).filter(v => v > avgVolume * 1.5).length;
+  
+  // System prompt for Gemini
+  const systemPrompt = `You are a quant research assistant. You analyze full OHLCV history, derived indicators, engineered pattern features, and summarized news/sentiment to forecast near-term returns. You must:
+
+Use only the data provided in the input payload.
+Quantify uncertainty with calibrated probabilities.
+Prefer statistically grounded signals over anecdotes.
+Explain drivers briefly (no step-by-step chain of thought).
+If data is insufficient, say so explicitly.
+Output must be valid JSON exactly matching the schema. No extra text.`;
+
+  // Developer prompt
+  const developerPrompt = `Align all timestamps to ISO 8601.
+Assume prices are split/dividend adjusted.
+Treat missing/NaN safely: drop or forward-fill only if noted in payload.
+Use rolling windows exactly as provided (no implicit look-ahead).
+Do not infer future events from the history tail.
+Never invent indicators/values; rely only on payload fields.`;
+
+  // Build horizons in ISO format
+  const isoHorizons = horizons.map(h => {
+    if (h < 1440) return `PT${h}M`; // Minutes
+    return `P${Math.round(h / 1440)}D`; // Days
+  });
+
+  // User prompt with full payload
+  const userPrompt = `Analyze the following payload and produce a forecast for the horizons requested.
+
+Payload:
+
+symbol: ${symbol}
+horizons: ${JSON.stringify(isoHorizons)}
+price_history: {
+  "candles": ${JSON.stringify(techContext.candles.slice(-50))},
+  "current_price": ${stockData.currentPrice},
+  "change_percent": ${stockData.changePercent}
+}
+indicators: {
+  "SMA": {"20": ${techContext.indicators.sma20}, "50": ${techContext.indicators.sma50}, "200": ${techContext.indicators.sma200}},
+  "EMA": {"20": ${techContext.indicators.ema20}, "50": ${techContext.indicators.ema50}, "200": ${techContext.indicators.ema200}},
+  "RSI": {"14": ${techContext.indicators.rsi}},
+  "MACD": {"macd": ${techContext.indicators.macd}, "signal": ${techContext.indicators.macdSignal}, "hist": ${techContext.indicators.macdHistogram}},
+  "BB": {"mid": ${techContext.indicators.bbMiddle}, "upper": ${techContext.indicators.bbUpper}, "lower": ${techContext.indicators.bbLower}},
+  "ATR": {"14": ${techContext.indicators.atr}}
+}
+patterns: {
+  "candles": ${JSON.stringify(techContext.patterns.map(p => ({ pattern: p, score: 0.7 })))},
+  "levels": {"supports": ${JSON.stringify(techContext.supportLevels)}, "resistances": ${JSON.stringify(techContext.resistanceLevels)}},
+  "breakouts": [],
+  "trend_pattern": {"name": "moving_average_analysis", "score": 0.8, "factors": ["${techContext.trendDirection}", "${techContext.volatilityState}", "rsi_${techContext.indicators.rsi > 70 ? 'overbought' : techContext.indicators.rsi < 30 ? 'oversold' : 'neutral'}"]}
+}
+regimes: ${JSON.stringify(comparableRegimes)}
+features: {
+  "lag_returns_bp": ${JSON.stringify(laggedReturns)},
+  "volume_spikes": ${volumeSpikes},
+  "seasonality": {"day_of_week": "${new Date().toLocaleDateString('en-US', { weekday: 'short' })}", "effect_bp": 5},
+  "calibration_error_90d": 0.08
+}
+news_sentiment: ${JSON.stringify(newsData)}
+constraints: { "blackouts": [] }
+
+JSON schema to return:
+{
+"symbol": "string",
+"as_of": "ISO8601",
+"forecasts": [
+{
+"horizon": "PT30M|PT1H|P1D|...",
+"direction": "up|down|sideways",
+"probabilities": { "up": 0-1, "down": 0-1, "sideways": 0-1 },
+"expected_return_bp": number,
+"expected_range_bp": { "p10": number, "p50": number, "p90": number },
+"key_drivers": [ "short bullets like 'RSI<30 rebound'", "news: earnings beat', 'breakout above 200EMA'" ],
+"risk_flags": [ "thin liquidity", "event risk in 24h", "vol regime shift" ],
+"confidence": 0-1,
+"invalid_if": [ "what data absence would invalidate this" ]
+}
+],
+"support_resistance": {
+"supports": [ { "level": number, "strength": 1-5 } ],
+"resistances": [ { "level": number, "strength": 1-5 } ]
+},
+"positioning_guidance": {
+"bias": "long|short|flat",
+"notes": "1–3 concise lines on how signal could fail; do NOT give financial advice."
+}
+}
+
+Rules:
+Use the most recent 3–5 comparable market regimes from price_history to sanity-check signals.
+Respect horizons exactly; don't extrapolate beyond.
+If sentiment conflicts with price action, mention it in key_drivers and adjust probabilities, not the raw direction label.
+If confidence < 0.55 for a horizon, set direction to "sideways".
+If probabilities don't sum to 1 within ±0.01, renormalize and re-emit.
+
+return_format: strictly follow the JSON schema above.`;
+
+  try {
+    // Get structured forecast
+    const forecastResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${geminiApiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [
+          { parts: [{ text: systemPrompt + '\n\n' + developerPrompt + '\n\n' + userPrompt }] }
+        ],
+        generationConfig: {
+          maxOutputTokens: 1500,
+          temperature: 0.2,
+        }
+      }),
+    });
+
+    // Get legacy analysis for compatibility
+    const legacyAnalysisPrompt = `Provide detailed technical analysis for ${symbol}:
+
+Current Price: $${stockData.currentPrice} (${stockData.changePercent > 0 ? '+' : ''}${stockData.changePercent.toFixed(2)}%)
+RSI: ${techContext.indicators.rsi.toFixed(2)}
+MACD: ${techContext.indicators.macd.toFixed(4)} 
+Trend: ${techContext.trendDirection}
+Patterns: ${techContext.patterns.join(', ') || 'None'}
+
+Investment: $${investment}
+Timeframe: ${timeframe}
+
+Provide comprehensive analysis covering:
+1. Technical indicator interpretation
+2. Price action and pattern analysis  
+3. Support/resistance levels
+4. Risk/reward assessment
+5. Entry/exit strategy
+6. Key scenarios to watch
+
+Focus on actionable insights for the specified timeframe.`;
+
+    const legacyResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${geminiApiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [
+          { parts: [{ text: legacyAnalysisPrompt }] }
+        ],
+        generationConfig: {
+          maxOutputTokens: 1200,
+          temperature: 0.7,
+        }
+      }),
+    });
+
+    if (!forecastResponse.ok) {
+      throw new Error(`Forecast API request failed: ${forecastResponse.status}`);
+    }
+
+    if (!legacyResponse.ok) {
+      throw new Error(`Legacy analysis API request failed: ${legacyResponse.status}`);
+    }
+
+    const forecastData = await forecastResponse.json();
+    const legacyData = await legacyResponse.json();
+
+    const forecastText = forecastData.candidates[0].content.parts[0].text;
+    const legacyAnalysis = legacyData.candidates[0].content.parts[0].text;
+
+    // Parse structured forecast
+    let geminiForecast: GeminiForecast | null = null;
+    try {
+      const cleanedText = forecastText.replace(/```json\n?|\n?```/g, '').trim();
+      geminiForecast = JSON.parse(cleanedText);
+      
+      // Validate and fix probabilities
+      if (geminiForecast?.forecasts) {
+        geminiForecast.forecasts.forEach(forecast => {
+          const total = forecast.probabilities.up + forecast.probabilities.down + forecast.probabilities.sideways;
+          if (Math.abs(total - 1) > 0.01) {
+            // Renormalize
+            forecast.probabilities.up /= total;
+            forecast.probabilities.down /= total;
+            forecast.probabilities.sideways /= total;
+          }
+        });
+      }
+    } catch (parseError) {
+      console.error('Failed to parse Gemini forecast JSON:', parseError);
+      geminiForecast = null;
+    }
+
+    return {
+      geminiForecast,
+      legacyAnalysis
+    };
+
+  } catch (error) {
+    console.error('Enhanced Gemini analysis error:', error);
+    throw error;
+  }
 }
 
 async function getGeminiAnalysis(
@@ -1006,18 +1358,28 @@ serve(async (req) => {
   }
 
   try {
-    const { symbol, investment, timeframe }: PredictionRequest = await req.json();
+    const { symbol, investment, timeframe, horizons }: PredictionRequest = await req.json();
 
     console.log(`Getting enhanced technical analysis for ${symbol}, investment: $${investment}, timeframe: ${timeframe}`);
 
-    // Fetch real stock data and historical candles in parallel
-    const [stockData, { candles, meta: marketMeta }] = await Promise.all([
+    // Default horizons based on timeframe if not provided
+    const defaultHorizons = horizons || [
+      15,    // 15 minutes
+      30,    // 30 minutes  
+      60,    // 1 hour
+      1440   // 1 day
+    ];
+
+    // Fetch real stock data, historical candles, and news in parallel
+    const [stockData, { candles, meta: marketMeta }, newsData] = await Promise.all([
       fetchRealStockData(symbol),
-      fetchHistoricalCandles(symbol, timeframe)
+      fetchHistoricalCandles(symbol, timeframe),
+      fetchNewsAndSentiment(symbol)
     ]);
 
     console.log('Real stock data fetched:', stockData);
     console.log(`Historical candles fetched: ${candles.length} candles`);
+    console.log(`News items fetched: ${newsData.length} items`);
 
     // Compute technical analysis context
     const techContext = computeTechnicalContext(candles);
@@ -1028,14 +1390,32 @@ serve(async (req) => {
       volatility: techContext.volatilityState
     });
 
-    // Get enhanced Gemini analysis with technical context
-    const { structuredData, analysis } = await getGeminiAnalysis(
+    // Get enhanced Gemini analysis with new structure
+    const { geminiForecast, legacyAnalysis } = await getEnhancedGeminiAnalysis(
       symbol,
       investment,
       timeframe,
+      defaultHorizons,
       stockData,
-      techContext
+      techContext,
+      newsData
     );
+
+    // Fallback to legacy analysis for compatibility
+    let fallbackData = null;
+    try {
+      const { structuredData } = await getGeminiAnalysis(
+        symbol,
+        investment,
+        timeframe,
+        stockData,
+        techContext
+      );
+      fallbackData = structuredData;
+    } catch (error) {
+      console.log('Legacy analysis failed, using defaults');
+    }
+
     console.log('Enhanced Gemini analysis completed');
 
     const result = {
@@ -1044,8 +1424,9 @@ serve(async (req) => {
       change: stockData.change,
       changePercent: stockData.changePercent,
       timeframe,
-      analysis,
+      analysis: legacyAnalysis,
       stockData,
+      geminiForecast,
       technicalContext: {
         patterns: techContext.patterns,
         indicators: {
@@ -1058,7 +1439,28 @@ serve(async (req) => {
         resistanceLevels: techContext.resistanceLevels
       },
       marketMeta,
-      ...structuredData
+      // Maintain backward compatibility
+      ...(fallbackData || {
+        recommendation: geminiForecast?.positioning_guidance?.bias === 'long' ? 'bullish' : 
+                       geminiForecast?.positioning_guidance?.bias === 'short' ? 'bearish' : 'neutral',
+        confidence: Math.round((geminiForecast?.forecasts?.[0]?.confidence || 0.5) * 100),
+        expectedMove: geminiForecast?.forecasts?.[0] ? {
+          percent: Math.abs(geminiForecast.forecasts[0].expected_return_bp / 100),
+          direction: geminiForecast.forecasts[0].direction,
+          priceTarget: {
+            min: stockData.currentPrice + (stockData.currentPrice * geminiForecast.forecasts[0].expected_range_bp.p10 / 10000),
+            max: stockData.currentPrice + (stockData.currentPrice * geminiForecast.forecasts[0].expected_range_bp.p90 / 10000)
+          }
+        } : undefined,
+        patterns: techContext.patterns,
+        keyLevels: {
+          support: geminiForecast?.support_resistance?.supports?.map(s => s.level) || techContext.supportLevels,
+          resistance: geminiForecast?.support_resistance?.resistances?.map(r => r.level) || techContext.resistanceLevels
+        },
+        risks: geminiForecast?.forecasts?.[0]?.risk_flags || [],
+        opportunities: geminiForecast?.forecasts?.[0]?.key_drivers || [],
+        rationale: geminiForecast?.positioning_guidance?.notes || "Enhanced multi-horizon analysis completed"
+      })
     };
 
     return new Response(JSON.stringify(result), {

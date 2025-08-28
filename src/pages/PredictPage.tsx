@@ -20,6 +20,30 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { Loader2, TrendingUp, TrendingDown, Minus, AlertTriangle, BrainCircuit, LineChart, ChevronDown, DollarSign, LogOut, History, BarChart3 } from "lucide-react";
 
+interface GeminiForecast {
+  symbol: string;
+  as_of: string;
+  forecasts: Array<{
+    horizon: string;
+    direction: "up" | "down" | "sideways";
+    probabilities: { up: number; down: number; sideways: number };
+    expected_return_bp: number;
+    expected_range_bp: { p10: number; p50: number; p90: number };
+    key_drivers: string[];
+    risk_flags: string[];
+    confidence: number;
+    invalid_if: string[];
+  }>;
+  support_resistance: {
+    supports: Array<{ level: number; strength: number }>;
+    resistances: Array<{ level: number; strength: number }>;
+  };
+  positioning_guidance: {
+    bias: "long" | "short" | "flat";
+    notes: string;
+  };
+}
+
 interface PredictionResult {
   symbol: string;
   currentPrice: number;
@@ -36,7 +60,8 @@ interface PredictionResult {
     change: number;
     changePercent: number;
   };
-  // New structured fields
+  geminiForecast?: GeminiForecast;
+  // Legacy structured fields for backward compatibility
   recommendation?: "bullish" | "bearish" | "neutral";
   confidence?: number;
   expectedMove?: {
@@ -99,7 +124,10 @@ const PredictPage = () => {
           key_levels: predictionData.keyLevels || null,
           risks: predictionData.risks || null,
           opportunities: predictionData.opportunities || null,
-          raw_response: predictionData
+          raw_response: {
+            ...predictionData,
+            geminiForecast: predictionData.geminiForecast
+          }
         });
 
       if (error) {
@@ -126,7 +154,8 @@ const PredictPage = () => {
         body: {
           symbol: symbol.split(':')[1] || symbol,
           investment: parseFloat(investment),
-          timeframe
+          timeframe,
+          horizons: [15, 30, 60, 1440] // Request multiple horizons
         }
       });
 
@@ -665,6 +694,195 @@ const PredictPage = () => {
                   </Card>
                 </CollapsibleContent>
               </Collapsible>
+            )}
+
+            {/* Enhanced Multi-Horizon Forecast */}
+            {result?.geminiForecast && (
+              <Card className="backdrop-blur-xl bg-gradient-to-br from-purple-500/10 via-pink-500/10 to-indigo-500/10 border-white/10 shadow-xl rounded-2xl animate-fade-in">
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                    <BrainCircuit className="h-5 w-5 text-purple-500" />
+                    Enhanced Multi-Horizon Forecast
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    AI-powered predictions across multiple timeframes • Generated at {new Date(result.geminiForecast.as_of).toLocaleString()}
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* Positioning Guidance */}
+                  <div className="bg-muted/30 rounded-xl p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-medium text-sm">Market Bias</h4>
+                      <Badge 
+                        variant="outline" 
+                        className={
+                          result.geminiForecast.positioning_guidance.bias === 'long' 
+                            ? 'bg-green-50 text-green-700 border-green-200'
+                            : result.geminiForecast.positioning_guidance.bias === 'short'
+                            ? 'bg-red-50 text-red-700 border-red-200'
+                            : 'bg-yellow-50 text-yellow-700 border-yellow-200'
+                        }
+                      >
+                        {result.geminiForecast.positioning_guidance.bias.toUpperCase()}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {result.geminiForecast.positioning_guidance.notes}
+                    </p>
+                  </div>
+
+                  {/* Multi-Horizon Forecasts */}
+                  <div className="space-y-4">
+                    <h4 className="font-medium text-sm">Forecasts by Time Horizon</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {result.geminiForecast.forecasts.map((forecast, index) => (
+                        <div key={index} className="bg-muted/20 rounded-xl p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <h5 className="font-medium text-sm">{
+                              forecast.horizon.startsWith('PT') 
+                                ? forecast.horizon.replace('PT', '').replace('M', ' min').replace('H', ' hour')
+                                : forecast.horizon.replace('P', '').replace('D', ' day')
+                            }</h5>
+                            <div className="flex items-center gap-2">
+                              {forecast.direction === 'up' && <TrendingUp className="h-4 w-4 text-green-500" />}
+                              {forecast.direction === 'down' && <TrendingDown className="h-4 w-4 text-red-500" />}
+                              {forecast.direction === 'sideways' && <Minus className="h-4 w-4 text-yellow-500" />}
+                              <Badge 
+                                variant="outline" 
+                                className={
+                                  forecast.direction === 'up' 
+                                    ? 'bg-green-50 text-green-700 border-green-200'
+                                    : forecast.direction === 'down'
+                                    ? 'bg-red-50 text-red-700 border-red-200'
+                                    : 'bg-yellow-50 text-yellow-700 border-yellow-200'
+                                }
+                              >
+                                {forecast.direction.toUpperCase()}
+                              </Badge>
+                            </div>
+                          </div>
+
+                          {/* Probabilities */}
+                          <div className="grid grid-cols-3 gap-2 text-xs">
+                            <div className="text-center">
+                              <div className="text-green-600 font-mono">{(forecast.probabilities.up * 100).toFixed(0)}%</div>
+                              <div className="text-muted-foreground">Up</div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-yellow-600 font-mono">{(forecast.probabilities.sideways * 100).toFixed(0)}%</div>
+                              <div className="text-muted-foreground">Flat</div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-red-600 font-mono">{(forecast.probabilities.down * 100).toFixed(0)}%</div>
+                              <div className="text-muted-foreground">Down</div>
+                            </div>
+                          </div>
+
+                          {/* Expected Return */}
+                          <div className="text-center">
+                            <div className="text-sm font-medium">
+                              Expected: {(forecast.expected_return_bp / 100).toFixed(2)}%
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              Range: {(forecast.expected_range_bp.p10 / 100).toFixed(1)}% to {(forecast.expected_range_bp.p90 / 100).toFixed(1)}%
+                            </div>
+                          </div>
+
+                          {/* Confidence */}
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-muted-foreground">Confidence</span>
+                            <span className="font-mono">{(forecast.confidence * 100).toFixed(0)}%</span>
+                          </div>
+
+                          {/* Key Drivers */}
+                          {forecast.key_drivers.length > 0 && (
+                            <div className="space-y-1">
+                              <div className="text-xs font-medium text-green-700">Key Drivers</div>
+                              <ul className="text-xs space-y-1">
+                                {forecast.key_drivers.slice(0, 2).map((driver, i) => (
+                                  <li key={i} className="flex items-start gap-1">
+                                    <span className="text-green-500 mt-0.5">•</span>
+                                    <span className="text-muted-foreground">{driver}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {/* Risk Flags */}
+                          {forecast.risk_flags.length > 0 && (
+                            <div className="space-y-1">
+                              <div className="text-xs font-medium text-red-700">Risk Flags</div>
+                              <ul className="text-xs space-y-1">
+                                {forecast.risk_flags.slice(0, 2).map((risk, i) => (
+                                  <li key={i} className="flex items-start gap-1">
+                                    <span className="text-red-500 mt-0.5">⚠</span>
+                                    <span className="text-muted-foreground">{risk}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Support & Resistance Levels */}
+                  {(result.geminiForecast.support_resistance.supports.length > 0 || result.geminiForecast.support_resistance.resistances.length > 0) && (
+                    <div className="bg-muted/20 rounded-xl p-4 space-y-3">
+                      <h4 className="font-medium text-sm">Key Levels</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {result.geminiForecast.support_resistance.supports.length > 0 && (
+                          <div>
+                            <h5 className="text-xs font-medium text-green-600 mb-2">Support Levels</h5>
+                            <div className="space-y-1">
+                              {result.geminiForecast.support_resistance.supports.map((support, index) => (
+                                <div key={index} className="flex items-center justify-between bg-green-50/50 rounded p-2">
+                                  <span className="text-sm font-mono">${support.level.toFixed(2)}</span>
+                                  <div className="flex">
+                                    {Array.from({ length: 5 }, (_, i) => (
+                                      <div 
+                                        key={i} 
+                                        className={`w-2 h-2 rounded-full mr-1 ${
+                                          i < support.strength ? 'bg-green-500' : 'bg-green-200'
+                                        }`} 
+                                      />
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {result.geminiForecast.support_resistance.resistances.length > 0 && (
+                          <div>
+                            <h5 className="text-xs font-medium text-red-600 mb-2">Resistance Levels</h5>
+                            <div className="space-y-1">
+                              {result.geminiForecast.support_resistance.resistances.map((resistance, index) => (
+                                <div key={index} className="flex items-center justify-between bg-red-50/50 rounded p-2">
+                                  <span className="text-sm font-mono">${resistance.level.toFixed(2)}</span>
+                                  <div className="flex">
+                                    {Array.from({ length: 5 }, (_, i) => (
+                                      <div 
+                                        key={i} 
+                                        className={`w-2 h-2 rounded-full mr-1 ${
+                                          i < resistance.strength ? 'bg-red-500' : 'bg-red-200'
+                                        }`} 
+                                      />
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             )}
           </div>
 
