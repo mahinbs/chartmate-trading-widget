@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { createChart, IChartApi, ISeriesApi, CandlestickData, Time } from 'lightweight-charts';
+import { createChart, IChartApi, CandlestickData, Time, ColorType } from 'lightweight-charts';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
@@ -43,7 +43,7 @@ async function fetchOHLCVData(symbol: string, interval: string): Promise<OHLCVRe
 export default function LightweightPriceChart({ symbol, interval, height = 400 }: LightweightPriceChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const seriesRef = useRef<any>(null);
   const [currentTheme, setCurrentTheme] = useState<'light' | 'dark'>('dark');
 
   // Fetch OHLCV data
@@ -77,7 +77,10 @@ export default function LightweightPriceChart({ symbol, interval, height = 400 }
 
     const chart = createChart(chartContainerRef.current, {
       layout: {
-        background: { color: currentTheme === 'dark' ? '#0F0F0F' : '#FFFFFF' },
+        background: { 
+          type: ColorType.Solid,
+          color: currentTheme === 'dark' ? '#0F0F0F' : '#FFFFFF' 
+        },
         textColor: currentTheme === 'dark' ? '#D9D9D9' : '#191919',
         fontSize: 12,
         fontFamily: 'ui-sans-serif, system-ui, sans-serif',
@@ -112,8 +115,8 @@ export default function LightweightPriceChart({ symbol, interval, height = 400 }
       },
     });
 
-    // @ts-ignore - addCandlestickSeries exists but TypeScript definition might be outdated
-    const candlestickSeries = chart.addCandlestickSeries({
+    // Use the correct API - try different approach
+    const candlestickSeries = (chart as any).addCandlestickSeries({
       upColor: currentTheme === 'dark' ? '#26a69a' : '#00C851',
       downColor: currentTheme === 'dark' ? '#ef5350' : '#FF4444',
       borderVisible: false,
