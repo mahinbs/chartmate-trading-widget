@@ -55,3 +55,6 @@ enabled = true
 
 [functions.predict-movement]
 verify_jwt = false
+
+[functions.analyze-post-prediction]
+verify_jwt = false

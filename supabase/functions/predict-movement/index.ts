@@ -61,493 +61,303 @@ interface MarketMeta {
   provider: string;
   symbol: string;
   resolution: string;
-  needsInversion: boolean;
   assetType: string;
-  requestedPair?: string;
-  providerPair?: string;
+  yahooSymbol: string;
+  yahooInterval: string;
+  yahooRange: string;
+}
+
+// Yahoo Finance symbol normalization
+function normalizeToYahooSymbol(raw: string): { yahooSymbol: string; assetType: 'stock' | 'forex' | 'crypto' | 'index' | 'commodity' } {
+  // Strip exchange prefixes
+  const cleanSymbol = raw.replace(/^(NASDAQ|NYSE|BINANCE|OANDA|SP|DJ|COMEX|NYMEX):/, '');
+  
+  // Stocks mapping
+  if (/^[A-Z]{1,5}$/.test(cleanSymbol)) {
+    // Indian stocks get .NS suffix
+    if (raw.includes('NSE:')) {
+      return { yahooSymbol: `${cleanSymbol}.NS`, assetType: 'stock' };
+    }
+    return { yahooSymbol: cleanSymbol, assetType: 'stock' };
+  }
+  
+  // Forex mapping
+  const forexPairs = ['EUR', 'USD', 'GBP', 'JPY', 'CHF', 'CAD', 'AUD', 'NZD'];
+  
+  // Handle EUR_USD, EUR/USD, EURUSD formats
+  let forexBase = '', forexQuote = '';
+  if (cleanSymbol.includes('_')) {
+    [forexBase, forexQuote] = cleanSymbol.split('_');
+  } else if (cleanSymbol.includes('/')) {
+    [forexBase, forexQuote] = cleanSymbol.split('/');
+  } else if (cleanSymbol.length === 6 && /^[A-Z]{6}$/.test(cleanSymbol)) {
+    forexBase = cleanSymbol.slice(0, 3);
+    forexQuote = cleanSymbol.slice(3);
+  }
+  
+  if (forexPairs.includes(forexBase) && forexPairs.includes(forexQuote)) {
+    return { yahooSymbol: `${forexBase}${forexQuote}=X`, assetType: 'forex' };
+  }
+  
+  // Crypto mapping
+  const cryptoMap: Record<string, string> = {
+    'BTCUSDT': 'BTC-USD',
+    'BTCUSD': 'BTC-USD',
+    'ETHUSDT': 'ETH-USD',
+    'ETHUSD': 'ETH-USD',
+    'SOLUSDT': 'SOL-USD',
+    'SOLUSD': 'SOL-USD',
+    'ADAUSDT': 'ADA-USD',
+    'ADAUSD': 'ADA-USD',
+  };
+  
+  if (cryptoMap[cleanSymbol]) {
+    return { yahooSymbol: cryptoMap[cleanSymbol], assetType: 'crypto' };
+  }
+  
+  // Index mapping
+  const indexMap: Record<string, string> = {
+    'SPX': '^GSPC',
+    'DJI': '^DJI',
+    'NDX': '^NDX',
+  };
+  
+  if (indexMap[cleanSymbol]) {
+    return { yahooSymbol: indexMap[cleanSymbol], assetType: 'index' };
+  }
+  
+  // Commodity mapping
+  const commodityMap: Record<string, string> = {
+    'GOLD': 'GC=F',
+    'GC1!': 'GC=F',
+    'SILVER': 'SI=F',
+    'SI1!': 'SI=F',
+    'OIL': 'CL=F',
+    'CL1!': 'CL=F',
+  };
+  
+  if (commodityMap[cleanSymbol]) {
+    return { yahooSymbol: commodityMap[cleanSymbol], assetType: 'commodity' };
+  }
+  
+  // Default to stock
+  return { yahooSymbol: cleanSymbol, assetType: 'stock' };
+}
+
+// Yahoo interval mapping
+function mapInterval(interval: string): { yahooInterval: string; needsAggregation?: boolean; aggregateToMinutes?: number } {
+  const mapping: Record<string, any> = {
+    '1': { yahooInterval: '1m' },
+    '5': { yahooInterval: '5m' },
+    '15': { yahooInterval: '15m' },
+    '60': { yahooInterval: '60m' },
+    '240': { yahooInterval: '60m', needsAggregation: true, aggregateToMinutes: 240 },
+    'D': { yahooInterval: '1d' },
+    'W': { yahooInterval: '1wk' }
+  };
+  
+  return mapping[interval] || { yahooInterval: '1d' };
+}
+
+// Pick range for Yahoo API based on interval
+function pickRangeForInterval(yahooInterval: string): string {
+  const rangeMap: Record<string, string> = {
+    '1m': '5d',
+    '5m': '1mo',
+    '15m': '1mo',
+    '60m': '3mo',
+    '1d': '1y',
+    '1wk': '2y'
+  };
+  
+  return rangeMap[yahooInterval] || '1y';
+}
+
+// Resample candles for aggregation (e.g., 60m to 240m)
+function resampleCandles(candles: Candle[], targetMinutes: number): Candle[] {
+  if (!candles.length) return [];
+  
+  const sourceMinutes = 60; // Source is 60m
+  const ratio = targetMinutes / sourceMinutes; // 4 for 240m
+  
+  const resampled: Candle[] = [];
+  for (let i = 0; i < candles.length; i += ratio) {
+    const group = candles.slice(i, i + ratio);
+    if (group.length === 0) continue;
+    
+    const aggregated: Candle = {
+      timestamp: group[0].timestamp,
+      open: group[0].open,
+      high: Math.max(...group.map(c => c.high)),
+      low: Math.min(...group.map(c => c.low)),
+      close: group[group.length - 1].close,
+      volume: group.reduce((sum, c) => sum + c.volume, 0)
+    };
+    
+    resampled.push(aggregated);
+  }
+  
+  return resampled;
+}
+
+// Fetch quote from Yahoo Finance
+async function fetchYahooQuote(yahooSymbol: string): Promise<StockData> {
+  console.log(`🟡 Fetching Yahoo quote for: ${yahooSymbol}`);
+  
+  const response = await fetch(
+    `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${yahooSymbol}`,
+    {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      },
+      signal: AbortSignal.timeout(15000)
+    }
+  );
+  
+  if (!response.ok) {
+    throw new Error(`Yahoo quote HTTP ${response.status}: ${await response.text()}`);
+  }
+  
+  const data = await response.json();
+  console.log(`🟡 Yahoo quote response:`, JSON.stringify(data, null, 2));
+  
+  if (!data.quoteResponse?.result?.[0]) {
+    throw new Error('No quote data found in Yahoo response');
+  }
+  
+  const quote = data.quoteResponse.result[0];
+  
+  return {
+    currentPrice: quote.regularMarketPrice || 0,
+    openPrice: quote.regularMarketOpen || 0,
+    highPrice: quote.regularMarketDayHigh || 0,
+    lowPrice: quote.regularMarketDayLow || 0,
+    previousClose: quote.regularMarketPreviousClose || 0,
+    change: quote.regularMarketChange || 0,
+    changePercent: quote.regularMarketChangePercent || 0
+  };
+}
+
+// Fetch chart data from Yahoo Finance
+async function fetchYahooChart(params: { yahooSymbol: string; interval: string; range: string }): Promise<Candle[]> {
+  const { yahooSymbol, interval, range } = params;
+  console.log(`🟡 Fetching Yahoo chart: ${yahooSymbol}, interval: ${interval}, range: ${range}`);
+  
+  const response = await fetch(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=${interval}&range=${range}`,
+    {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      },
+      signal: AbortSignal.timeout(15000)
+    }
+  );
+  
+  if (!response.ok) {
+    throw new Error(`Yahoo chart HTTP ${response.status}: ${await response.text()}`);
+  }
+  
+  const data = await response.json();
+  
+  if (!data.chart?.result?.[0]) {
+    throw new Error('No chart data found in Yahoo response');
+  }
+  
+  const result = data.chart.result[0];
+  const timestamps = result.timestamp || [];
+  const indicators = result.indicators?.quote?.[0];
+  
+  if (!indicators || !timestamps.length) {
+    throw new Error('No price data in Yahoo chart response');
+  }
+  
+  const candles: Candle[] = [];
+  for (let i = 0; i < timestamps.length; i++) {
+    if (indicators.open?.[i] !== null && indicators.close?.[i] !== null) {
+      candles.push({
+        timestamp: timestamps[i] * 1000,
+        open: indicators.open[i] || 0,
+        high: indicators.high[i] || 0,
+        low: indicators.low[i] || 0,
+        close: indicators.close[i] || 0,
+        volume: indicators.volume?.[i] || 0
+      });
+    }
+  }
+  
+  console.log(`✅ Yahoo chart success: ${candles.length} candles for ${yahooSymbol}`);
+  return candles;
 }
 
 async function fetchHistoricalCandles(symbol: string, timeframe: string): Promise<{ candles: Candle[]; meta: MarketMeta | null }> {
-  const finnhubApiKey = Deno.env.get('FINNHUB_API_KEY');
-
-  if (!finnhubApiKey) {
-    console.log('Finnhub API key not configured, returning empty candles');
-    return { candles: [], meta: null };
-  }
-
   try {
-    // Use the same symbol detection logic from analyze-post-prediction
-    function detectAssetType(symbol: string) {
-      const forexPairs = ['EUR', 'USD', 'GBP', 'JPY', 'CHF', 'CAD', 'AUD', 'NZD', 'SEK', 'NOK', 'DKK', 'PLN', 'CZK', 'HUF', 'TRY', 'ZAR', 'MXN', 'SGD', 'HKD', 'CNY', 'INR', 'KRW', 'THB', 'MYR', 'IDR', 'PHP'];
-
-      if (symbol.includes('/')) {
-        const [base, quote] = symbol.split('/');
-        return {
-          type: 'forex',
-          normalizedSymbol: symbol,
-          requestedPair: symbol,
-          providerPair: symbol,
-          needsInversion: false
-        };
-      }
-
-      if (symbol.length === 6 && /^[A-Z]{6}$/.test(symbol)) {
-        const base = symbol.slice(0, 3);
-        const quote = symbol.slice(3);
-        if (forexPairs.includes(base) && forexPairs.includes(quote)) {
-          const requestedPair = `${base}/${quote}`;
-
-          let providerPair = requestedPair;
-          let needsInversion = false;
-
-          if ((base === 'JPY' && quote === 'USD') ||
-            (base === 'EUR' && quote === 'USD') ||
-            (base === 'GBP' && quote === 'USD')) {
-            providerPair = `USD/${base}`;
-            needsInversion = true;
-          }
-
-          return {
-            type: 'forex',
-            normalizedSymbol: providerPair,
-            requestedPair,
-            providerPair,
-            needsInversion
-          };
-        }
-      }
-
-      return { type: 'stock', normalizedSymbol: symbol };
-    }
-
-    const assetInfo = detectAssetType(symbol);
-
-    // Map common forex symbols to Finnhub format
-    let finnhubSymbol = symbol;
-    if (assetInfo.type === 'forex') {
-      const [base, quote] = assetInfo.normalizedSymbol.split('/');
-      finnhubSymbol = `OANDA:${base}_${quote}`;
-    }
-
-    // Map timeframe to resolution and calculate from/to timestamps
-    const resolutionMap: { [key: string]: string } = {
-      '1h': '60',
-      '30m': '30',
-      '15m': '15',
-      '5m': '5',
-      '4h': '240',
-      '1d': 'D',
-      '1w': 'W',
-      '1m': 'M'
-    };
-
-    const resolution = resolutionMap[timeframe] || 'D';
-    const to = Math.floor(Date.now() / 1000);
-    const from = to - (100 * 24 * 60 * 60); // 100 days of data
-
-    console.log(`Fetching candles for ${symbol} (mapped to ${finnhubSymbol}) with resolution ${resolution}`);
-
-    const response = await fetch(
-      `https://finnhub.io/api/v1/stock/candle?symbol=${finnhubSymbol}&resolution=${resolution}&from=${from}&to=${to}&token=${finnhubApiKey}`
-    );
-
-    if (!response.ok) {
-      console.log(`Finnhub candles API error for ${symbol}: ${response.status}`);
-      return { candles: [], meta: null };
-    }
-
-    const data = await response.json();
-
-    if (data.s !== 'ok' || !data.c || data.c.length === 0) {
-      console.log(`No candle data found for ${symbol}`);
-      return { candles: [], meta: null };
-    }
-
-    // Convert to candle format
+    const { yahooSymbol, assetType } = normalizeToYahooSymbol(symbol);
+    const intervalMapping = mapInterval(timeframe);
+    const range = pickRangeForInterval(intervalMapping.yahooInterval);
+    
+    console.log(`Fetching Yahoo candles: ${symbol} → ${yahooSymbol} (${assetType}), interval: ${intervalMapping.yahooInterval}, range: ${range}`);
+    
+    // Try different intervals if the requested one fails
+    const intervalSequence = [intervalMapping.yahooInterval, '5m', '15m', '60m', '1d'];
     let candles: Candle[] = [];
-    for (let i = 0; i < data.c.length; i++) {
-      candles.push({
-        timestamp: data.t[i] * 1000,
-        open: data.o[i],
-        high: data.h[i],
-        low: data.l[i],
-        close: data.c[i],
-        volume: data.v[i] || 0
-      });
+    let finalInterval = intervalMapping.yahooInterval;
+    
+    for (const interval of intervalSequence) {
+      try {
+        candles = await fetchYahooChart({ yahooSymbol, interval, range });
+        finalInterval = interval;
+        break;
+      } catch (error) {
+        console.log(`Failed with interval ${interval}:`, error.message);
+        continue;
+      }
     }
-
-    // Apply inversion if needed
-    if (assetInfo.needsInversion) {
-      candles = candles.map(c => ({
-        ...c,
-        open: 1 / c.close,
-        close: 1 / c.open,
-        high: 1 / c.low,
-        low: 1 / c.high
-      }));
-      console.log(`Inverted candle data from ${assetInfo.providerPair} to ${assetInfo.requestedPair}`);
+    
+    if (!candles.length) {
+      console.log(`No candle data found for ${symbol} → ${yahooSymbol}`);
+      return { candles: [], meta: null };
     }
-
+    
+    // Apply aggregation if needed
+    if (intervalMapping.needsAggregation && intervalMapping.aggregateToMinutes) {
+      candles = resampleCandles(candles, intervalMapping.aggregateToMinutes);
+      console.log(`Resampled to ${intervalMapping.aggregateToMinutes}m: ${candles.length} candles`);
+    }
+    
     const meta: MarketMeta = {
-      provider: 'Finnhub',
-      symbol: finnhubSymbol,
-      resolution,
-      needsInversion: assetInfo.needsInversion || false,
-      assetType: assetInfo.type,
-      requestedPair: assetInfo.requestedPair,
-      providerPair: assetInfo.providerPair
+      provider: 'Yahoo Finance',
+      symbol: yahooSymbol,
+      resolution: finalInterval,
+      assetType,
+      yahooSymbol,
+      yahooInterval: finalInterval,
+      yahooRange: range
     };
-
+    
     return { candles: candles.slice(-100), meta }; // Keep last 100 candles
   } catch (error) {
-    console.error(`Error fetching candles for ${symbol}:`, error);
+    console.error(`Error fetching Yahoo candles for ${symbol}:`, error);
     return { candles: [], meta: null };
   }
 }
 
-// Asset type detection for smart provider routing
-function detectAssetType(symbol: string): { type: 'forex' | 'crypto' | 'stock'; base?: string; quote?: string } {
-  const cleanSymbol = symbol.replace(/^(NASDAQ|NYSE|BINANCE|OANDA):/, '');
-
-  // Detect forex pairs
-  const forexPairs = ['EUR', 'USD', 'GBP', 'JPY', 'CHF', 'CAD', 'AUD', 'NZD'];
-  if (cleanSymbol.length === 6 && /^[A-Z]{6}$/.test(cleanSymbol)) {
-    const base = cleanSymbol.slice(0, 3);
-    const quote = cleanSymbol.slice(3);
-    if (forexPairs.includes(base) && forexPairs.includes(quote)) {
-      return { type: 'forex', base, quote };
-    }
-  }
-
-  // Detect crypto (comprehensive crypto detection)
-  const cryptoTokens = ['BTC', 'ETH', 'ADA', 'SOL', 'DOT', 'LINK', 'UNI', 'LTC', 'XRP', 'DOGE', 'MATIC', 'AVAX'];
-  const isCrypto = cryptoTokens.some(token => cleanSymbol.includes(token)) ||
-    symbol.includes('BINANCE:') ||
-    symbol.includes('COINBASE:') ||
-    symbol.includes('KRAKEN:') ||
-    cleanSymbol.includes('USDT') ||
-    cleanSymbol.includes('USDC');
-
-  if (isCrypto) {
-    return { type: 'crypto' };
-  }
-
-  // Default to stock
-  return { type: 'stock' };
-}
-
-// Enhanced symbol mapping based on asset type and provider capabilities
-function getFinnhubSymbol(symbol: string): string[] {
-  const cleanSymbol = symbol.replace(/^(NASDAQ|NYSE|BINANCE|OANDA):/, '');
-  const assetInfo = detectAssetType(symbol);
-
-  console.log(`🔍 Asset detected: ${assetInfo.type} for symbol ${cleanSymbol}`);
-
-  // For forex, return empty array to skip Finnhub (free tier doesn't support forex well)
-  if (assetInfo.type === 'forex') {
-    console.log(`🔄 Forex detected (${cleanSymbol}). Skipping Finnhub, routing to Alpha Vantage.`);
-    return [];
-  }
-
-  // For crypto, use Finnhub's supported crypto exchanges (these work well on free tier)
-  if (assetInfo.type === 'crypto') {
-    console.log(`₿ Crypto detected (${cleanSymbol}). Using Finnhub crypto exchanges.`);
-    if (cleanSymbol.includes('BTC')) {
-      return ['BINANCE:BTCUSDT', 'COINBASE:BTC-USD', 'KRAKEN:XBTUSD'];
-    } else if (cleanSymbol.includes('ETH')) {
-      return ['BINANCE:ETHUSDT', 'COINBASE:ETH-USD', 'KRAKEN:ETHUSD'];
-    } else if (cleanSymbol.includes('ADA')) {
-      return ['BINANCE:ADAUSDT', 'COINBASE:ADA-USD', 'KRAKEN:ADAUSD'];
-    } else if (cleanSymbol.includes('SOL')) {
-      return ['BINANCE:SOLUSDT', 'COINBASE:SOL-USD', 'KRAKEN:SOLUSD'];
-    } else if (cleanSymbol.includes('DOT')) {
-      return ['BINANCE:DOTUSDT', 'COINBASE:DOT-USD', 'KRAKEN:DOTUSD'];
-    }
-    // Fallback for other crypto
-    return [cleanSymbol];
-  }
-
-  // For stocks, use multiple exchange formats (these work on free tier for quotes)
-  console.log(`📈 Stock detected (${cleanSymbol}). Using stock exchanges.`);
-  return [cleanSymbol, `NASDAQ:${cleanSymbol}`, `NYSE:${cleanSymbol}`];
-}
-
-// Enhanced Alpha Vantage implementation with rate limit handling
-async function fetchAlphaVantageData(symbol: string): Promise<StockData> {
-  const alphaVantageApiKey = Deno.env.get('ALPHA_VANTAGE_API_KEY');
-
-  if (!alphaVantageApiKey) {
-    throw new Error('Alpha Vantage API key not configured');
-  }
-
-  const cleanSymbol = symbol.replace(/^(NASDAQ|NYSE|BINANCE|OANDA):/, '');
-  console.log(`🟡 Alpha Vantage: Processing ${cleanSymbol}`);
-
+// Real-time data fetching using Yahoo Finance only
+async function fetchRealStockData(symbol: string): Promise<StockData> {
+  console.log(`Fetching REAL-TIME Yahoo Finance data for ${symbol}`);
+  
+  const { yahooSymbol, assetType } = normalizeToYahooSymbol(symbol);
+  console.log(`Mapped ${symbol} → ${yahooSymbol} (${assetType})`);
+  
   try {
-    const assetInfo = detectAssetType(symbol);
-
-    if (assetInfo.type === 'forex') {
-      const base = cleanSymbol.slice(0, 3);
-      const quote = cleanSymbol.slice(3);
-      console.log(`🟡 Alpha Vantage: Fetching forex ${base}/${quote}`);
-
-      const forexResponse = await fetch(
-        `https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&from_currency=${base}&to_currency=${quote}&apikey=${alphaVantageApiKey}`,
-        {
-          method: 'GET',
-          headers: { 'Accept': 'application/json' },
-          signal: AbortSignal.timeout(15000)
-        }
-      );
-
-      if (!forexResponse.ok) {
-        throw new Error(`HTTP ${forexResponse.status}: ${await forexResponse.text()}`);
-      }
-
-      const forexData = await forexResponse.json();
-      console.log(`🟡 Alpha Vantage Forex Response:`, JSON.stringify(forexData, null, 2));
-
-      // Check for rate limit messages
-      if (forexData.Note || forexData.Information) {
-        const msg = forexData.Note || forexData.Information;
-        console.error(`⚠️ Alpha Vantage Rate Limit: ${msg}`);
-        throw new Error(`Rate limited: ${msg}`);
-      }
-
-      if (forexData['Error Message']) {
-        console.error(`❌ Alpha Vantage Error: ${forexData['Error Message']}`);
-        throw new Error(`API error: ${forexData['Error Message']}`);
-      }
-
-      const rate = forexData['Realtime Currency Exchange Rate'];
-      if (rate && rate['5. Exchange Rate']) {
-        const currentPrice = parseFloat(rate['5. Exchange Rate']);
-        const bidPrice = parseFloat(rate['8. Bid Price'] || currentPrice);
-        const askPrice = parseFloat(rate['9. Ask Price'] || currentPrice);
-
-        console.log(`✅ Alpha Vantage Forex Success: ${base}/${quote} = ${currentPrice}`);
-
-        return {
-          currentPrice,
-          openPrice: currentPrice,
-          highPrice: askPrice,
-          lowPrice: bidPrice,
-          previousClose: currentPrice,
-          change: 0,
-          changePercent: 0
-        };
-      } else {
-        throw new Error('No exchange rate data in Alpha Vantage response');
-      }
-    } else if (assetInfo.type === 'crypto') {
-      // Handle crypto symbols - use different function for digital currencies
-      console.log(`🟡 Alpha Vantage: Fetching crypto ${cleanSymbol}`);
-
-      // Extract crypto symbol (BTC from BTCUSD, ETH from ETHUSD, etc.)
-      let cryptoSymbol = cleanSymbol;
-      if (cleanSymbol.includes('USD')) {
-        cryptoSymbol = cleanSymbol.replace('USD', '').replace('USDT', '');
-      }
-
-      const cryptoResponse = await fetch(
-        `https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&from_currency=${cryptoSymbol}&to_currency=USD&apikey=${alphaVantageApiKey}`,
-        {
-          method: 'GET',
-          headers: { 'Accept': 'application/json' },
-          signal: AbortSignal.timeout(15000)
-        }
-      );
-
-      if (!cryptoResponse.ok) {
-        throw new Error(`HTTP ${cryptoResponse.status}: ${await cryptoResponse.text()}`);
-      }
-
-      const cryptoData = await cryptoResponse.json();
-      console.log(`🟡 Alpha Vantage Crypto Response:`, JSON.stringify(cryptoData, null, 2));
-
-      // Check for rate limit messages
-      if (cryptoData.Note || cryptoData.Information) {
-        const msg = cryptoData.Note || cryptoData.Information;
-        console.error(`⚠️ Alpha Vantage Rate Limit: ${msg}`);
-        throw new Error(`Rate limited: ${msg}`);
-      }
-
-      if (cryptoData['Error Message']) {
-        console.error(`❌ Alpha Vantage Error: ${cryptoData['Error Message']}`);
-        throw new Error(`API error: ${cryptoData['Error Message']}`);
-      }
-
-      const rate = cryptoData['Realtime Currency Exchange Rate'];
-      if (rate && rate['5. Exchange Rate']) {
-        const currentPrice = parseFloat(rate['5. Exchange Rate']);
-        console.log(`✅ Alpha Vantage Crypto Success: ${cryptoSymbol}/USD = $${currentPrice}`);
-
-        return {
-          currentPrice,
-          openPrice: currentPrice,
-          highPrice: currentPrice * 1.02,
-          lowPrice: currentPrice * 0.98,
-          previousClose: currentPrice,
-          change: 0,
-          changePercent: 0
-        };
-      } else {
-        throw new Error('No crypto rate data in Alpha Vantage response');
-      }
-    } else {
-      // Handle stock symbols
-      console.log(`🟡 Alpha Vantage: Fetching stock ${cleanSymbol}`);
-
-      const stockResponse = await fetch(
-        `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${cleanSymbol}&apikey=${alphaVantageApiKey}`,
-        {
-          method: 'GET',
-          headers: { 'Accept': 'application/json' },
-          signal: AbortSignal.timeout(15000)
-        }
-      );
-
-      if (!stockResponse.ok) {
-        throw new Error(`HTTP ${stockResponse.status}: ${await stockResponse.text()}`);
-      }
-
-      const stockData = await stockResponse.json();
-      console.log(`🟡 Alpha Vantage Stock Response:`, JSON.stringify(stockData, null, 2));
-
-      // Check for rate limit messages
-      if (stockData.Note || stockData.Information) {
-        const msg = stockData.Note || stockData.Information;
-        console.error(`⚠️ Alpha Vantage Rate Limit: ${msg}`);
-        throw new Error(`Rate limited: ${msg}`);
-      }
-
-      if (stockData['Error Message']) {
-        console.error(`❌ Alpha Vantage Error: ${stockData['Error Message']}`);
-        throw new Error(`API error: ${stockData['Error Message']}`);
-      }
-
-      const quote = stockData['Global Quote'];
-      if (quote && quote['05. price']) {
-        const currentPrice = parseFloat(quote['05. price']);
-        console.log(`✅ Alpha Vantage Stock Success: ${cleanSymbol} = $${currentPrice}`);
-
-        return {
-          currentPrice,
-          openPrice: parseFloat(quote['02. open']),
-          highPrice: parseFloat(quote['03. high']),
-          lowPrice: parseFloat(quote['04. low']),
-          previousClose: parseFloat(quote['08. previous close']),
-          change: parseFloat(quote['09. change']),
-          changePercent: parseFloat(quote['10. change percent'].replace('%', ''))
-        };
-      } else {
-        throw new Error('No stock quote data in Alpha Vantage response');
-      }
-    }
+    const stockData = await fetchYahooQuote(yahooSymbol);
+    console.log(`✅ Yahoo quote success for ${yahooSymbol}:`, stockData);
+    return stockData;
   } catch (error) {
-    console.error(`❌ Alpha Vantage error for ${symbol}:`, error.message);
+    console.error(`❌ Yahoo quote failed for ${symbol} → ${yahooSymbol}:`, error);
     throw error;
   }
 }
 
-// Real-time data fetching with dual providers (Finnhub → Alpha Vantage)
-async function fetchRealStockData(symbol: string): Promise<StockData> {
-  const finnhubApiKey = Deno.env.get('FINNHUB_API_KEY');
-  const alphaVantageApiKey = Deno.env.get('ALPHA_VANTAGE_API_KEY');
-
-  if (!finnhubApiKey) {
-    throw new Error('FINNHUB_API_KEY environment variable is not configured');
-  }
-
-  console.log(`Fetching REAL-TIME data for ${symbol} - NO FALLBACKS`);
-
-  const symbolVariants = getFinnhubSymbol(symbol);
-  const errors: string[] = [];
-
-  for (const finnhubSymbol of symbolVariants) {
-    try {
-      console.log(`🔥 TRYING Finnhub API: ${finnhubSymbol}`);
-
-      const response = await fetch(
-        `https://finnhub.io/api/v1/quote?symbol=${finnhubSymbol}&token=${finnhubApiKey}`,
-        {
-          method: 'GET',
-          headers: {
-            'Accept': 'application/json',
-            'User-Agent': 'ChartMate-Trading-Widget/1.0'
-          },
-          signal: AbortSignal.timeout(15000) // 15 second timeout
-        }
-      );
-
-      console.log(`📡 Finnhub Response Status: ${response.status} for ${finnhubSymbol}`);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        const error = `HTTP ${response.status}: ${errorText}`;
-        console.error(`❌ Finnhub API Error for ${finnhubSymbol}: ${error}`);
-        errors.push(`${finnhubSymbol}: ${error}`);
-        continue;
-      }
-
-      const data = await response.json();
-      console.log(`📊 Finnhub Raw Data for ${finnhubSymbol}:`, JSON.stringify(data));
-
-      // Validate data thoroughly
-      if (!data) {
-        errors.push(`${finnhubSymbol}: No data returned`);
-        continue;
-      }
-
-      if (data.error) {
-        errors.push(`${finnhubSymbol}: API returned error: ${data.error}`);
-        continue;
-      }
-
-      if (!data.c || data.c <= 0 || isNaN(data.c)) {
-        errors.push(`${finnhubSymbol}: Invalid price data (c=${data.c})`);
-        continue;
-      }
-
-      // SUCCESS - Real-time data found
-      console.log(`✅ SUCCESS with Finnhub: ${finnhubSymbol} = $${data.c}`);
-
-      return {
-        currentPrice: data.c,
-        openPrice: data.o || data.c,
-        highPrice: data.h || data.c,
-        lowPrice: data.l || data.c,
-        previousClose: data.pc || data.c,
-        change: data.d || 0,
-        changePercent: data.dp || 0
-      };
-
-    } catch (error) {
-      const errorMsg = `Network/Parse error: ${error.message}`;
-      console.error(`❌ Finnhub Exception for ${finnhubSymbol}: ${errorMsg}`);
-      errors.push(`${finnhubSymbol}: ${errorMsg}`);
-      continue;
-    }
-  }
-
-  // If Finnhub failed completely, try Alpha Vantage for supported asset classes
-  try {
-    if (!alphaVantageApiKey) {
-      throw new Error('ALPHA_VANTAGE_API_KEY missing');
-    }
-    console.log(`🔁 Finnhub failed. Trying Alpha Vantage for ${symbol}...`);
-    const alphaData = await fetchAlphaVantageData(symbol);
-    console.log(`✓ Alpha Vantage success for ${symbol}: $${alphaData.currentPrice}`);
-    return alphaData;
-  } catch (alphaErr) {
-    errors.push(`AlphaVantage: ${alphaErr.message}`);
-  }
-
-  // If we get here, ALL providers failed
-  const fullError = `REAL-TIME DATA FETCH FAILED for ${symbol}. Tried symbols: ${symbolVariants.join(', ')}. Errors: ${errors.join(' | ')}`;
-  console.error(`🚨 ${fullError}`);
-  throw new Error(fullError);
-}
 
 // Enhanced fallback data with more realistic current market prices
 function getEnhancedFallbackData(symbol: string): StockData {
