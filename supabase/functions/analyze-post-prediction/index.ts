@@ -75,6 +75,63 @@ function detectAssetType(symbol: string) {
   return { type: 'stock', normalizedSymbol: symbol };
 }
 
+// ForexRateAPI integration for current forex data
+async function fetchForexRateAPICurrent(symbol: string): Promise<{ rate: number; success: boolean }> {
+  const forexRateApiKey = Deno.env.get('FOREXRATEAPI_API_KEY');
+  
+  if (!forexRateApiKey) {
+    console.log('ForexRateAPI key not configured');
+    return { rate: 0, success: false };
+  }
+
+  try {
+    const assetInfo = detectAssetType(symbol);
+    if (assetInfo.type !== 'forex') {
+      return { rate: 0, success: false };
+    }
+
+    const { requestedPair, providerPair, needsInversion } = assetInfo;
+    if (!requestedPair || !providerPair) {
+      return { rate: 0, success: false };
+    }
+
+    const [baseCurrency, quoteCurrency] = providerPair.split('/');
+    
+    console.log(`Fetching current forex rate from ForexRateAPI for ${requestedPair} (provider: ${providerPair}, inversion: ${needsInversion})`);
+
+    const url = `https://api.forexrateapi.com/v1/latest?api_key=${forexRateApiKey}&base=${baseCurrency}&currencies=${quoteCurrency}`;
+    
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      console.error(`ForexRateAPI error: ${response.status} ${response.statusText}`);
+      return { rate: 0, success: false };
+    }
+
+    const data = await response.json();
+    
+    if (!data.success || !data.rates || !data.rates[quoteCurrency]) {
+      console.error('ForexRateAPI: Invalid response structure', data);
+      return { rate: 0, success: false };
+    }
+
+    let rate = data.rates[quoteCurrency];
+    
+    // Apply inversion if needed
+    if (needsInversion) {
+      rate = 1 / rate;
+      console.log(`Applied inversion for ${requestedPair}: ${data.rates[quoteCurrency]} -> ${rate}`);
+    }
+
+    console.log(`ForexRateAPI: Successfully fetched current rate ${rate} for ${requestedPair}`);
+    return { rate, success: true };
+
+  } catch (error) {
+    console.error('Error fetching ForexRateAPI current data:', error);
+    return { rate: 0, success: false };
+  }
+}
+
 // Twelve Data API integration for forex data
 async function fetchTwelveDataForex(symbol: string, from: Date, to: Date, spanMinutes: number): Promise<any> {
   const twelveDataApiKey = Deno.env.get('TWELVEDATA_API_KEY');
@@ -516,13 +573,35 @@ serve(async (req) => {
       console.log(`⚠️ Skipping Finnhub (free tier limitations for ${assetInfo.type}). Going directly to Alpha Vantage.`);
     }
 
-    // For forex, try Twelve Data first, then Alpha Vantage
+    // For forex, try ForexRateAPI for current price + Twelve Data for historical, then Alpha Vantage
     if (!marketData && assetInfo.type === 'forex') {
-      const twelveDataResult = await fetchTwelveDataForex(symbol, fromTime, toTime, spanMinutes);
-      if (twelveDataResult) {
-        marketData = twelveDataResult;
-        dataSource = `${assetInfo.requestedPair || symbol} via Twelve Data${assetInfo.needsInversion ? ' (inverted)' : ''}`;
-        console.log(`✅ Successfully fetched forex data from Twelve Data`);
+      // First try to get current rate from ForexRateAPI
+      const forexRateResult = await fetchForexRateAPICurrent(symbol);
+      if (forexRateResult.success && forexRateResult.rate > 0) {
+        console.log(`Using ForexRateAPI current rate: ${forexRateResult.rate} for ${symbol}`);
+        
+        // Use current rate as close price and estimate OHLC
+        const currentRate = forexRateResult.rate;
+        marketData = {
+          source: 'ForexRateAPI + estimated range',
+          open: currentRate * 0.9995, // Small spread estimate
+          close: currentRate,
+          high: currentRate * 1.0005,
+          low: currentRate * 0.9995,
+          volume: 0,
+          prices: [currentRate * 0.9995, currentRate],
+          candleCount: 2
+        };
+        dataSource = `${assetInfo.requestedPair || symbol} via ForexRateAPI (live)${assetInfo.needsInversion ? ' (inverted)' : ''}`;
+        console.log(`✅ Successfully fetched live forex rate from ForexRateAPI`);
+      } else {
+        console.log('ForexRateAPI failed, trying Twelve Data for forex historical data');
+        const twelveDataResult = await fetchTwelveDataForex(symbol, fromTime, toTime, spanMinutes);
+        if (twelveDataResult) {
+          marketData = twelveDataResult;
+          dataSource = `${assetInfo.requestedPair || symbol} via Twelve Data${assetInfo.needsInversion ? ' (inverted)' : ''}`;
+          console.log(`✅ Successfully fetched forex data from Twelve Data`);
+        }
       }
     }
 

@@ -67,6 +67,73 @@ interface MarketMeta {
   providerPair?: string;
 }
 
+// ForexRateAPI integration for live forex data
+async function fetchForexRateAPI(symbol: string): Promise<{ rate: number; meta: MarketMeta | null }> {
+  const forexRateApiKey = Deno.env.get('FOREXRATEAPI_API_KEY');
+  
+  if (!forexRateApiKey) {
+    console.log('ForexRateAPI key not configured');
+    return { rate: 0, meta: null };
+  }
+
+  try {
+    const assetInfo = detectAssetType(symbol);
+    if (assetInfo.type !== 'forex') {
+      return { rate: 0, meta: null };
+    }
+
+    const { requestedPair, providerPair, needsInversion } = assetInfo;
+    if (!requestedPair || !providerPair) {
+      return { rate: 0, meta: null };
+    }
+
+    const [baseCurrency, quoteCurrency] = providerPair.split('/');
+    
+    console.log(`Fetching live forex rate from ForexRateAPI for ${requestedPair} (provider: ${providerPair}, inversion: ${needsInversion})`);
+
+    const url = `https://api.forexrateapi.com/v1/latest?api_key=${forexRateApiKey}&base=${baseCurrency}&currencies=${quoteCurrency}`;
+    
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      console.error(`ForexRateAPI error: ${response.status} ${response.statusText}`);
+      return { rate: 0, meta: null };
+    }
+
+    const data = await response.json();
+    
+    if (!data.success || !data.rates || !data.rates[quoteCurrency]) {
+      console.error('ForexRateAPI: Invalid response structure', data);
+      return { rate: 0, meta: null };
+    }
+
+    let rate = data.rates[quoteCurrency];
+    
+    // Apply inversion if needed
+    if (needsInversion) {
+      rate = 1 / rate;
+      console.log(`Applied inversion for ${requestedPair}: ${data.rates[quoteCurrency]} -> ${rate}`);
+    }
+
+    const meta: MarketMeta = {
+      provider: 'ForexRateAPI',
+      symbol: requestedPair,
+      resolution: 'live',
+      needsInversion,
+      assetType: 'forex',
+      requestedPair,
+      providerPair
+    };
+
+    console.log(`ForexRateAPI: Successfully fetched rate ${rate} for ${requestedPair}`);
+    return { rate, meta };
+
+  } catch (error) {
+    console.error('Error fetching ForexRateAPI data:', error);
+    return { rate: 0, meta: null };
+  }
+}
+
 async function fetchTwelveDataForex(symbol: string, timeframe: string): Promise<{ candles: Candle[]; meta: MarketMeta | null }> {
   const twelveDataApiKey = Deno.env.get('TWELVEDATA_API_KEY');
   
@@ -657,12 +724,27 @@ async function fetchTwelveDataRealTime(symbol: string): Promise<StockData | null
   }
 }
 
-// Real-time data fetching with multiple providers (Twelve Data → Finnhub → Alpha Vantage)
+// Real-time data fetching with multiple providers (ForexRateAPI → Twelve Data → Finnhub → Alpha Vantage)
 async function fetchRealStockData(symbol: string): Promise<StockData> {
   const assetInfo = detectAssetType(symbol);
   
-  // For forex, prioritize Twelve Data
+  // For forex, prioritize ForexRateAPI for live rates
   if (assetInfo.type === 'forex') {
+    const forexRateResult = await fetchForexRateAPI(symbol);
+    if (forexRateResult.rate > 0 && forexRateResult.meta) {
+      console.log(`Using ForexRateAPI live rate: ${forexRateResult.rate} for ${symbol}`);
+      return {
+        currentPrice: forexRateResult.rate,
+        openPrice: forexRateResult.rate,
+        highPrice: forexRateResult.rate * 1.001,
+        lowPrice: forexRateResult.rate * 0.999,
+        previousClose: forexRateResult.rate,
+        change: 0,
+        changePercent: 0
+      };
+    }
+    console.log('ForexRateAPI failed, trying Twelve Data for forex real-time');
+    
     const twelveDataResult = await fetchTwelveDataRealTime(symbol);
     if (twelveDataResult) {
       return twelveDataResult;
