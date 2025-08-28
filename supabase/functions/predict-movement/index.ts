@@ -67,7 +67,106 @@ interface MarketMeta {
   providerPair?: string;
 }
 
+async function fetchTwelveDataForex(symbol: string, timeframe: string): Promise<{ candles: Candle[]; meta: MarketMeta | null }> {
+  const twelveDataApiKey = Deno.env.get('TWELVEDATA_API_KEY');
+  
+  if (!twelveDataApiKey) {
+    console.log('Twelve Data API key not configured for forex');
+    return { candles: [], meta: null };
+  }
+
+  try {
+    const assetInfo = detectAssetType(symbol);
+    if (assetInfo.type !== 'forex') {
+      return { candles: [], meta: null };
+    }
+
+    // Map timeframe to Twelve Data interval
+    const intervalMap: { [key: string]: string } = {
+      '1h': '1h',
+      '30m': '30min',
+      '15m': '15min',
+      '5m': '5min',
+      '4h': '4h',
+      '1d': '1day',
+      '1w': '1week',
+      '1m': '1month'
+    };
+
+    const interval = intervalMap[timeframe] || '1h';
+    const outputsize = '100'; // Get 100 data points
+
+    console.log(`Fetching forex data from Twelve Data for ${symbol} with interval ${interval}`);
+
+    const response = await fetch(
+      `https://api.twelvedata.com/time_series?symbol=${assetInfo.normalizedSymbol}&interval=${interval}&outputsize=${outputsize}&apikey=${twelveDataApiKey}`
+    );
+
+    if (!response.ok) {
+      console.log(`Twelve Data API error for ${symbol}: ${response.status}`);
+      return { candles: [], meta: null };
+    }
+
+    const data = await response.json();
+
+    if (!data.values || data.values.length === 0) {
+      console.log(`No forex data found for ${symbol} from Twelve Data`);
+      return { candles: [], meta: null };
+    }
+
+    // Convert to candle format
+    let candles: Candle[] = data.values.map((item: any) => ({
+      timestamp: new Date(item.datetime).getTime(),
+      open: parseFloat(item.open),
+      high: parseFloat(item.high),
+      low: parseFloat(item.low),
+      close: parseFloat(item.close),
+      volume: parseFloat(item.volume) || 0
+    }));
+
+    // Apply inversion if needed
+    if (assetInfo.needsInversion) {
+      candles = candles.map(c => ({
+        ...c,
+        open: 1 / c.close,
+        close: 1 / c.open,
+        high: 1 / c.low,
+        low: 1 / c.high
+      }));
+      console.log(`Inverted forex data from ${assetInfo.providerPair} to ${assetInfo.requestedPair}`);
+    }
+
+    const meta: MarketMeta = {
+      provider: 'Twelve Data',
+      symbol: assetInfo.normalizedSymbol,
+      resolution: interval,
+      needsInversion: assetInfo.needsInversion || false,
+      assetType: assetInfo.type,
+      requestedPair: assetInfo.requestedPair,
+      providerPair: assetInfo.providerPair
+    };
+
+    console.log(`Successfully fetched ${candles.length} forex candles from Twelve Data`);
+    return { candles, meta };
+
+  } catch (error) {
+    console.error('Error fetching forex data from Twelve Data:', error);
+    return { candles: [], meta: null };
+  }
+}
+
 async function fetchHistoricalCandles(symbol: string, timeframe: string): Promise<{ candles: Candle[]; meta: MarketMeta | null }> {
+  const assetInfo = detectAssetType(symbol);
+  
+  // For forex, prioritize Twelve Data
+  if (assetInfo.type === 'forex') {
+    const result = await fetchTwelveDataForex(symbol, timeframe);
+    if (result.candles.length > 0) {
+      return result;
+    }
+    console.log('Twelve Data failed for forex, falling back to Finnhub');
+  }
+
   const finnhubApiKey = Deno.env.get('FINNHUB_API_KEY');
 
   if (!finnhubApiKey) {
@@ -450,8 +549,127 @@ async function fetchAlphaVantageData(symbol: string): Promise<StockData> {
   }
 }
 
-// Real-time data fetching with dual providers (Finnhub → Alpha Vantage)
+// Twelve Data real-time data fetching for forex
+async function fetchTwelveDataRealTime(symbol: string): Promise<StockData | null> {
+  const twelveDataApiKey = Deno.env.get('TWELVEDATA_API_KEY');
+  
+  if (!twelveDataApiKey) {
+    return null;
+  }
+
+  try {
+    // Use the main detectAssetType function
+    function detectAssetTypeLocal(symbol: string) {
+      const forexPairs = ['EUR', 'USD', 'GBP', 'JPY', 'CHF', 'CAD', 'AUD', 'NZD', 'SEK', 'NOK', 'DKK', 'PLN', 'CZK', 'HUF', 'TRY', 'ZAR', 'MXN', 'SGD', 'HKD', 'CNY', 'INR', 'KRW', 'THB', 'MYR', 'IDR', 'PHP'];
+
+      if (symbol.includes('/')) {
+        const [base, quote] = symbol.split('/');
+        return {
+          type: 'forex',
+          normalizedSymbol: symbol,
+          requestedPair: symbol,
+          providerPair: symbol,
+          needsInversion: false
+        };
+      }
+
+      if (symbol.length === 6 && /^[A-Z]{6}$/.test(symbol)) {
+        const base = symbol.slice(0, 3);
+        const quote = symbol.slice(3);
+        if (forexPairs.includes(base) && forexPairs.includes(quote)) {
+          const requestedPair = `${base}/${quote}`;
+
+          let providerPair = requestedPair;
+          let needsInversion = false;
+
+          if ((base === 'JPY' && quote === 'USD') ||
+            (base === 'EUR' && quote === 'USD') ||
+            (base === 'GBP' && quote === 'USD')) {
+            providerPair = `USD/${base}`;
+            needsInversion = true;
+          }
+
+          return {
+            type: 'forex',
+            normalizedSymbol: providerPair,
+            requestedPair,
+            providerPair,
+            needsInversion
+          };
+        }
+      }
+
+      return { type: 'stock', normalizedSymbol: symbol };
+    }
+
+    const assetInfo = detectAssetTypeLocal(symbol);
+    if (assetInfo.type !== 'forex') {
+      return null;
+    }
+
+    console.log(`Fetching real-time forex data from Twelve Data for ${symbol}`);
+
+    const response = await fetch(
+      `https://api.twelvedata.com/quote?symbol=${assetInfo.normalizedSymbol}&apikey=${twelveDataApiKey}`
+    );
+
+    if (!response.ok) {
+      console.log(`Twelve Data real-time API error for ${symbol}: ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json();
+
+    if (!data.close) {
+      console.log(`No real-time forex data found for ${symbol} from Twelve Data`);
+      return null;
+    }
+
+    let stockData = {
+      currentPrice: parseFloat(data.close),
+      openPrice: parseFloat(data.open),
+      highPrice: parseFloat(data.high),
+      lowPrice: parseFloat(data.low),
+      previousClose: parseFloat(data.previous_close),
+      change: parseFloat(data.change),
+      changePercent: parseFloat(data.percent_change)
+    };
+
+    // Apply inversion if needed
+    if (assetInfo.needsInversion) {
+      stockData = {
+        currentPrice: 1 / stockData.currentPrice,
+        openPrice: 1 / stockData.openPrice,
+        highPrice: 1 / stockData.lowPrice,
+        lowPrice: 1 / stockData.highPrice,
+        previousClose: 1 / stockData.previousClose,
+        change: -stockData.change / (stockData.currentPrice * stockData.currentPrice),
+        changePercent: -stockData.changePercent
+      };
+    }
+
+    console.log(`Successfully fetched real-time forex data from Twelve Data`);
+    return stockData;
+
+  } catch (error) {
+    console.error('Error fetching real-time forex data from Twelve Data:', error);
+    return null;
+  }
+}
+
+// Real-time data fetching with multiple providers (Twelve Data → Finnhub → Alpha Vantage)
 async function fetchRealStockData(symbol: string): Promise<StockData> {
+  const assetInfo = detectAssetType(symbol);
+  
+  // For forex, prioritize Twelve Data
+  if (assetInfo.type === 'forex') {
+    const twelveDataResult = await fetchTwelveDataRealTime(symbol);
+    if (twelveDataResult) {
+      return twelveDataResult;
+    }
+    console.log('Twelve Data failed for forex real-time, falling back to other providers');
+  }
+
   const finnhubApiKey = Deno.env.get('FINNHUB_API_KEY');
   const alphaVantageApiKey = Deno.env.get('ALPHA_VANTAGE_API_KEY');
 
@@ -459,7 +677,7 @@ async function fetchRealStockData(symbol: string): Promise<StockData> {
     throw new Error('FINNHUB_API_KEY environment variable is not configured');
   }
 
-  console.log(`Fetching REAL-TIME data for ${symbol} - NO FALLBACKS`);
+  console.log(`Fetching REAL-TIME data for ${symbol} - Multiple providers fallback`);
 
   const symbolVariants = getFinnhubSymbol(symbol);
   const errors: string[] = [];

@@ -75,6 +75,90 @@ function detectAssetType(symbol: string) {
   return { type: 'stock', normalizedSymbol: symbol };
 }
 
+// Twelve Data API integration for forex data
+async function fetchTwelveDataForex(symbol: string, from: Date, to: Date, spanMinutes: number): Promise<any> {
+  const twelveDataApiKey = Deno.env.get('TWELVEDATA_API_KEY');
+  
+  if (!twelveDataApiKey) {
+    console.log('Twelve Data API key not configured for forex');
+    return null;
+  }
+
+  try {
+    const assetInfo = detectAssetType(symbol);
+    if (assetInfo.type !== 'forex') {
+      return null;
+    }
+
+    // Determine appropriate interval based on time span
+    let interval = '1h';
+    if (spanMinutes <= 60) interval = '5min';
+    else if (spanMinutes <= 240) interval = '15min';
+    else if (spanMinutes <= 1440) interval = '1h';
+    else if (spanMinutes <= 10080) interval = '1day';
+    else interval = '1week';
+
+    console.log(`🔄 Fetching forex data from Twelve Data for ${symbol} with interval ${interval}`);
+
+    const response = await fetch(
+      `https://api.twelvedata.com/time_series?symbol=${assetInfo.normalizedSymbol}&interval=${interval}&outputsize=100&apikey=${twelveDataApiKey}`
+    );
+
+    if (!response.ok) {
+      console.log(`Twelve Data API error for ${symbol}: ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json();
+
+    if (!data.values || data.values.length === 0) {
+      console.log(`No forex data found for ${symbol} from Twelve Data`);
+      return null;
+    }
+
+    // Filter data within time range and convert to our format
+    const fromTime = from.getTime();
+    const toTime = to.getTime();
+    
+    const filteredValues = data.values.filter((item: any) => {
+      const itemTime = new Date(item.datetime).getTime();
+      return itemTime >= fromTime && itemTime <= toTime;
+    });
+
+    if (filteredValues.length === 0) {
+      console.log('No forex data within time range from Twelve Data');
+      return null;
+    }
+
+    const prices = filteredValues.map((item: any) => parseFloat(item.close));
+    const volumes = filteredValues.map((item: any) => parseFloat(item.volume) || 0);
+    
+    let marketData = {
+      source: 'Twelve Data Forex API',
+      open: parseFloat(filteredValues[filteredValues.length - 1].open),
+      close: parseFloat(filteredValues[0].close),
+      high: Math.max(...filteredValues.map((item: any) => parseFloat(item.high))),
+      low: Math.min(...filteredValues.map((item: any) => parseFloat(item.low))),
+      volume: volumes.reduce((sum, vol) => sum + vol, 0),
+      prices: prices,
+      candleCount: filteredValues.length
+    };
+
+    // Apply inversion if needed
+    if (assetInfo.needsInversion) {
+      marketData = invertOHLC(marketData);
+      console.log(`Inverted forex data from ${assetInfo.providerPair} to ${assetInfo.requestedPair}`);
+    }
+
+    console.log(`✅ Successfully fetched ${filteredValues.length} forex data points from Twelve Data`);
+    return marketData;
+
+  } catch (error) {
+    console.error('Error fetching forex data from Twelve Data:', error);
+    return null;
+  }
+}
+
 // Helper function to get Finnhub forex symbols (multiple brokers)
 function getFinnhubForexSymbols(normalizedSymbol: string) {
   // Skip Finnhub for forex on free tier - return empty array to trigger Alpha Vantage
@@ -432,6 +516,16 @@ serve(async (req) => {
       console.log(`⚠️ Skipping Finnhub (free tier limitations for ${assetInfo.type}). Going directly to Alpha Vantage.`);
     }
 
+    // For forex, try Twelve Data first, then Alpha Vantage
+    if (!marketData && assetInfo.type === 'forex') {
+      const twelveDataResult = await fetchTwelveDataForex(symbol, fromTime, toTime, spanMinutes);
+      if (twelveDataResult) {
+        marketData = twelveDataResult;
+        dataSource = `${assetInfo.requestedPair || symbol} via Twelve Data${assetInfo.needsInversion ? ' (inverted)' : ''}`;
+        console.log(`✅ Successfully fetched forex data from Twelve Data`);
+      }
+    }
+
     // If we get here without marketData, try Alpha Vantage as secondary provider
     if (!marketData) {
       try {
@@ -439,7 +533,7 @@ serve(async (req) => {
           throw new Error('ALPHA_VANTAGE_API_KEY missing');
         }
 
-        console.log('🔁 Finnhub failed. Trying Alpha Vantage for analysis...');
+        console.log('🔁 Finnhub/Twelve Data failed. Trying Alpha Vantage for analysis...');
 
         if (assetInfo.type === 'forex') {
           let base, quote;
