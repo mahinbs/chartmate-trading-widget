@@ -154,7 +154,7 @@ export function AdvancedPredictLoader({ isVisible, symbol, timeframe, ready, onC
           </div>
           <h2 className="text-xl font-bold mb-2">AI Analysis in Progress</h2>
           <p className="text-sm text-muted-foreground">
-            Generating prediction for <span className="font-mono text-primary">{symbol}</span> • {timeframe}
+            Generating multi-horizon prediction for <span className="font-mono text-primary">{symbol}</span>
           </p>
         </div>
 

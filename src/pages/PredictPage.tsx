@@ -105,8 +105,8 @@ interface PredictionResult {
 const PredictPage = () => {
   const [symbol, setSymbol] = useState("");
   const [investment, setInvestment] = useState("");
-  const [timeframe, setTimeframe] = useState("");
   const [chartInterval, setChartInterval] = useState("15");
+  const timeframe = "1h"; // Default to 1 hour for better prediction accuracy
   const [resultsOpen, setResultsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showAdvancedLoader, setShowAdvancedLoader] = useState(false);
@@ -160,7 +160,7 @@ const PredictPage = () => {
   };
 
   const handlePredict = async () => {
-    if (!symbol || !investment || !timeframe) {
+    if (!symbol || !investment) {
       toast.error("Please fill in all fields");
       return;
     }
@@ -176,7 +176,7 @@ const PredictPage = () => {
           symbol: symbol.split(':')[1] || symbol,
           investment: parseFloat(investment),
           timeframe,
-          horizons: [15, 30, 60, 1440] // Request multiple horizons
+          horizons: [60, 240, 1440, 10080] // Request multiple horizons: 1h, 4h, 1d, 1w
         }
       });
 
@@ -475,27 +475,19 @@ const PredictPage = () => {
                   </div>
                 </div>
 
-                {/* Prediction Timeframe */}
+                {/* Note about prediction timeframe */}
                 <div className="space-y-3">
-                  <Label className="text-sm font-medium">Prediction Timeframe</Label>
-                  <ToggleGroup 
-                    type="single" 
-                    value={timeframe} 
-                    onValueChange={setTimeframe}
-                    className="grid grid-cols-5 gap-2"
-                  >
-                    <ToggleGroupItem value="15m" className="data-[state=on]:bg-gradient-to-r data-[state=on]:from-blue-600 data-[state=on]:to-purple-600 data-[state=on]:text-white">15m</ToggleGroupItem>
-                    <ToggleGroupItem value="30m" className="data-[state=on]:bg-gradient-to-r data-[state=on]:from-blue-600 data-[state=on]:to-purple-600 data-[state=on]:text-white">30m</ToggleGroupItem>
-                    <ToggleGroupItem value="1h" className="data-[state=on]:bg-gradient-to-r data-[state=on]:from-blue-600 data-[state=on]:to-purple-600 data-[state=on]:text-white">1h</ToggleGroupItem>
-                    <ToggleGroupItem value="2h" className="data-[state=on]:bg-gradient-to-r data-[state=on]:from-blue-600 data-[state=on]:to-purple-600 data-[state=on]:text-white">2h</ToggleGroupItem>
-                    <ToggleGroupItem value="1d" className="data-[state=on]:bg-gradient-to-r data-[state=on]:from-blue-600 data-[state=on]:to-purple-600 data-[state=on]:text-white">1d</ToggleGroupItem>
-                  </ToggleGroup>
+                  <div className="p-3 bg-muted/30 rounded-lg border border-border/50">
+                    <p className="text-sm text-muted-foreground">
+                      <span className="font-medium text-foreground">Prediction Horizon:</span> Multi-timeframe analysis (1h, 4h, 1d, 1w) for enhanced accuracy
+                    </p>
+                  </div>
                 </div>
 
                 {/* Generate Prediction Button */}
                 <Button 
                   onClick={handlePredict} 
-                  disabled={loading || !symbol || !investment || !timeframe} 
+                  disabled={loading || !symbol || !investment} 
                   className="w-full h-12 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold rounded-xl transition-all duration-300 hover:scale-105 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:hover:scale-100"
                 >
                   {loading ? (

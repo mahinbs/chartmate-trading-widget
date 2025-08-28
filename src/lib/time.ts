@@ -26,13 +26,13 @@ export function parseISO8601Duration(duration: string): number {
   const match = duration.match(/^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
   if (!match) return 0;
   
-  const [, days, hours, minutes, seconds] = match.map(Number);
+  const [, days, hours, minutes, seconds] = match.map(val => val ? parseInt(val) : 0);
   
   return (
-    (days || 0) * 24 * 60 * 60 * 1000 +
-    (hours || 0) * 60 * 60 * 1000 +
-    (minutes || 0) * 60 * 1000 +
-    (seconds || 0) * 1000
+    days * 24 * 60 * 60 * 1000 +
+    hours * 60 * 60 * 1000 +
+    minutes * 60 * 1000 +
+    seconds * 1000
   );
 }
 
