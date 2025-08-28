@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { createChart, IChartApi, CandlestickData, Time, ColorType } from 'lightweight-charts';
+import { createChart, IChartApi, LineData, Time, ColorType } from 'lightweight-charts';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
@@ -115,17 +115,14 @@ export default function LightweightPriceChart({ symbol, interval, height = 400 }
       },
     });
 
-    // Use the correct API - try different approach
-    const candlestickSeries = (chart as any).addCandlestickSeries({
-      upColor: currentTheme === 'dark' ? '#26a69a' : '#00C851',
-      downColor: currentTheme === 'dark' ? '#ef5350' : '#FF4444',
-      borderVisible: false,
-      wickUpColor: currentTheme === 'dark' ? '#26a69a' : '#00C851',
-      wickDownColor: currentTheme === 'dark' ? '#ef5350' : '#FF4444',
+    // Use type assertion to bypass TypeScript issues with lightweight-charts API
+    const lineSeries = (chart as any).addLineSeries({
+      color: currentTheme === 'dark' ? '#26a69a' : '#00C851',
+      lineWidth: 2,
     });
 
     chartRef.current = chart;
-    seriesRef.current = candlestickSeries;
+    seriesRef.current = lineSeries;
 
     // Handle resize
     const handleResize = () => {
@@ -151,15 +148,13 @@ export default function LightweightPriceChart({ symbol, interval, height = 400 }
   // Update chart data
   useEffect(() => {
     if (ohlcvData?.data && seriesRef.current) {
-      const candlestickData: CandlestickData[] = ohlcvData.data.map(candle => ({
+      // Convert OHLCV data to line data (using close prices)
+      const lineData: LineData[] = ohlcvData.data.map(candle => ({
         time: candle.time as Time,
-        open: candle.open,
-        high: candle.high,
-        low: candle.low,
-        close: candle.close,
+        value: candle.close,
       }));
 
-      seriesRef.current.setData(candlestickData);
+      seriesRef.current.setData(lineData);
       
       // Fit chart to content
       if (chartRef.current) {
@@ -209,7 +204,7 @@ export default function LightweightPriceChart({ symbol, interval, height = 400 }
         
         {ohlcvData && (
           <div className="absolute bottom-2 right-2 text-xs text-muted-foreground bg-background/80 backdrop-blur-sm px-2 py-1 rounded">
-            Data by {ohlcvData.provider}
+            Data by {ohlcvData.provider} • Line Chart
           </div>
         )}
       </CardContent>
