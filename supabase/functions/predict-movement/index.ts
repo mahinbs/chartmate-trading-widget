@@ -200,42 +200,65 @@ function resampleCandles(candles: Candle[], targetMinutes: number): Candle[] {
   return resampled;
 }
 
-// Fetch quote from Yahoo Finance
-async function fetchYahooQuote(yahooSymbol: string): Promise<StockData> {
-  console.log(`🟡 Fetching Yahoo quote for: ${yahooSymbol}`);
-  
-  const response = await fetch(
-    `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${yahooSymbol}`,
-    {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      },
-      signal: AbortSignal.timeout(15000)
-    }
-  );
-  
-  if (!response.ok) {
-    throw new Error(`Yahoo quote HTTP ${response.status}: ${await response.text()}`);
+// Derive stock data from candles (replaces Yahoo quote API)
+function deriveStockDataFromCandles(candles: Candle[]): StockData {
+  if (!candles.length) {
+    throw new Error('No candles available to derive stock data');
   }
   
-  const data = await response.json();
-  console.log(`🟡 Yahoo quote response:`, JSON.stringify(data, null, 2));
+  // Sort by timestamp to ensure proper order
+  const sortedCandles = [...candles].sort((a, b) => a.timestamp - b.timestamp);
+  const latestCandle = sortedCandles[sortedCandles.length - 1];
+  const previousCandle = sortedCandles.length > 1 ? sortedCandles[sortedCandles.length - 2] : latestCandle;
   
-  if (!data.quoteResponse?.result?.[0]) {
-    throw new Error('No quote data found in Yahoo response');
-  }
-  
-  const quote = data.quoteResponse.result[0];
+  const currentPrice = latestCandle.close;
+  const previousClose = previousCandle.close;
+  const change = currentPrice - previousClose;
+  const changePercent = previousClose !== 0 ? (change / previousClose) * 100 : 0;
   
   return {
-    currentPrice: quote.regularMarketPrice || 0,
-    openPrice: quote.regularMarketOpen || 0,
-    highPrice: quote.regularMarketDayHigh || 0,
-    lowPrice: quote.regularMarketDayLow || 0,
-    previousClose: quote.regularMarketPreviousClose || 0,
-    change: quote.regularMarketChange || 0,
-    changePercent: quote.regularMarketChangePercent || 0
+    currentPrice,
+    openPrice: latestCandle.open,
+    highPrice: latestCandle.high,
+    lowPrice: latestCandle.low,
+    previousClose,
+    change,
+    changePercent
   };
+}
+
+// Fetch intraday candles for real-time quote data
+async function fetchIntradayCandlesForQuote(yahooSymbol: string): Promise<Candle[]> {
+  const intervals = ['1m', '5m', '15m', '60m']; // Try intraday first
+  const range = '1d'; // Just today's data for quote
+  
+  for (const interval of intervals) {
+    try {
+      console.log(`🟡 Trying ${interval} candles for quote data: ${yahooSymbol}`);
+      const candles = await fetchYahooChart({ yahooSymbol, interval, range });
+      if (candles.length > 0) {
+        console.log(`✅ Got ${candles.length} ${interval} candles for ${yahooSymbol}`);
+        return candles;
+      }
+    } catch (error) {
+      console.log(`❌ Failed ${interval} for ${yahooSymbol}:`, error.message);
+      continue;
+    }
+  }
+  
+  // Fallback to daily if intraday fails
+  try {
+    console.log(`🟡 Fallback to daily candles for quote: ${yahooSymbol}`);
+    const candles = await fetchYahooChart({ yahooSymbol, interval: '1d', range: '5d' });
+    if (candles.length > 0) {
+      console.log(`✅ Got ${candles.length} daily candles for ${yahooSymbol}`);
+      return candles;
+    }
+  } catch (error) {
+    console.log(`❌ Daily candles also failed for ${yahooSymbol}:`, error.message);
+  }
+  
+  throw new Error(`Unable to fetch any candle data for ${yahooSymbol}`);
 }
 
 // Fetch chart data from Yahoo Finance
@@ -341,7 +364,7 @@ async function fetchHistoricalCandles(symbol: string, timeframe: string): Promis
   }
 }
 
-// Real-time data fetching using Yahoo Finance only
+// Real-time data fetching using Yahoo Finance candles only (no quote API)
 async function fetchRealStockData(symbol: string): Promise<StockData> {
   console.log(`Fetching REAL-TIME Yahoo Finance data for ${symbol}`);
   
@@ -349,12 +372,17 @@ async function fetchRealStockData(symbol: string): Promise<StockData> {
   console.log(`Mapped ${symbol} → ${yahooSymbol} (${assetType})`);
   
   try {
-    const stockData = await fetchYahooQuote(yahooSymbol);
-    console.log(`✅ Yahoo quote success for ${yahooSymbol}:`, stockData);
+    // Get candles for quote data (replaces Yahoo quote API)
+    const candles = await fetchIntradayCandlesForQuote(yahooSymbol);
+    const stockData = deriveStockDataFromCandles(candles);
+    console.log(`✅ Derived stock data from ${candles.length} candles for ${yahooSymbol}:`, stockData);
     return stockData;
   } catch (error) {
-    console.error(`❌ Yahoo quote failed for ${symbol} → ${yahooSymbol}:`, error);
-    throw error;
+    console.error(`❌ Yahoo candle-based quote failed for ${symbol} → ${yahooSymbol}:`, error);
+    
+    // Use enhanced fallback if candles fail
+    console.log(`🟡 Using enhanced fallback data for ${symbol}`);
+    return getEnhancedFallbackData(symbol);
   }
 }
 
