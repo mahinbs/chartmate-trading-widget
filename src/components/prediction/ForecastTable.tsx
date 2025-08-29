@@ -1,8 +1,10 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
+import { Card, CardContent } from "@/components/ui/card"
 import { fmt, fmtPct, asNumber } from "@/lib/utils"
 import { calculateHorizonTime, formatTargetTime, getShortHorizonLabel } from "@/lib/time"
+import { useIsMobile } from "@/hooks/use-mobile"
 
 interface Forecast {
   horizon: string
@@ -21,6 +23,8 @@ interface ForecastTableProps {
 }
 
 export function ForecastTable({ forecasts, predictedAt, marketTimeZone }: ForecastTableProps) {
+  const isMobile = useIsMobile()
+
   const getDirectionColor = (direction: string) => {
     switch (direction) {
       case 'up': return 'bg-green-500/10 text-green-600 border-green-500/20'
@@ -37,6 +41,86 @@ export function ForecastTable({ forecasts, predictedAt, marketTimeZone }: Foreca
     return `${Math.round(minutes / 10080)}w`
   }
 
+  // Mobile card layout
+  if (isMobile) {
+    return (
+      <div className="space-y-4">
+        {forecasts.map((forecast, index) => (
+          <Card key={index} className="w-full">
+            <CardContent className="p-4 space-y-4">
+              {/* Header with timeframe and direction */}
+              <div className="flex items-center justify-between">
+                <div className="font-mono font-medium">
+                  {predictedAt ? (
+                    <div className="space-y-1">
+                      <div className="font-semibold text-sm">
+                        {formatTargetTime(calculateHorizonTime(forecast.horizon, predictedAt), marketTimeZone)}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {getShortHorizonLabel(forecast.horizon)}
+                      </div>
+                    </div>
+                  ) : (
+                    getHorizonLabel(forecast.horizon)
+                  )}
+                </div>
+                <Badge className={getDirectionColor(forecast.direction)}>
+                  {forecast.direction.toUpperCase()}
+                </Badge>
+              </div>
+
+              {/* Metrics row */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <div className="text-xs text-muted-foreground">Expected Return</div>
+                  <div className={`font-mono text-sm ${forecast.expected_return_bp > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {fmtPct(asNumber(forecast.expected_return_bp) / 100)}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <div className="text-xs text-muted-foreground">Confidence</div>
+                  <div className="flex items-center gap-2">
+                    <Progress value={asNumber(forecast.confidence)} className="flex-1 h-2" />
+                    <span className="text-xs font-mono">{fmtPct(asNumber(forecast.confidence))}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Probability distribution */}
+              <div className="space-y-2">
+                <div className="text-xs text-muted-foreground">Probability Distribution</div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-green-600 w-8">↑ Up</span>
+                    <Progress value={asNumber(forecast.probabilities.up) * 100} className="flex-1 h-2" />
+                    <span className="text-green-600 font-mono w-10">
+                      {fmtPct(asNumber(forecast.probabilities.up) * 100, 0)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-red-600 w-8">↓ Down</span>
+                    <Progress value={asNumber(forecast.probabilities.down) * 100} className="flex-1 h-2" />
+                    <span className="text-red-600 font-mono w-10">
+                      {fmtPct(asNumber(forecast.probabilities.down) * 100, 0)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-yellow-600 w-8">→ Side</span>
+                    <Progress value={asNumber(forecast.probabilities.sideways) * 100} className="flex-1 h-2" />
+                    <span className="text-yellow-600 font-mono w-10">
+                      {fmtPct(asNumber(forecast.probabilities.sideways) * 100, 0)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    )
+  }
+
+  // Desktop table layout
   return (
     <div className="border rounded-lg overflow-hidden">
       <Table>
