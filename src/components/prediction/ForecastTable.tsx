@@ -133,10 +133,10 @@ export function ForecastTable({ forecasts, predictedAt, marketTimeZone }: Foreca
         <TableBody>
           {forecasts.map((forecast, index) => (
             <TableRow key={index} className="hover:bg-muted/30">
-              <TableCell className="font-mono font-medium min-w-0 whitespace-normal break-words">
+              <TableCell className="min-w-[250px] max-w-[260px]">
                 {predictedAt ? (
-                  <div className="space-y-1 min-w-0">
-                    <div className="font-semibold text-sm break-words leading-tight">
+                  <div className="space-y-1">
+                    <div className="font-semibold text-sm leading-tight break-normal">
                       {formatDateTime(calculateHorizonTime(forecast.horizon, predictedAt), marketTimeZone)}
                     </div>
                     <div className="text-xs text-muted-foreground">

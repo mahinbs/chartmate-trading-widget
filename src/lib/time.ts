@@ -93,6 +93,13 @@ export function getShortHorizonLabel(horizon: string | number): string {
     return `+${Math.round(minutes / 10080)}w`;
   }
   
+  // Parse string horizons like "15m", "1h", "7d"
+  const match = horizon.match(/^(\d+)([mhd])$/);
+  if (match) {
+    const [, value, unit] = match;
+    return `+${value}${unit}`;
+  }
+  
   return `+${horizon}`;
 }
 
@@ -102,7 +109,20 @@ export function horizonToMilliseconds(horizon: string | number): number {
     return horizon * 60 * 1000; // Convert minutes to milliseconds
   }
   
-  // Convert horizon format (e.g., "15m", "1h", "1d") to milliseconds
+  // Parse string horizons like "15m", "1h", "7d"
+  const match = horizon.match(/^(\d+)([mhd])$/);
+  if (match) {
+    const [, value, unit] = match;
+    const num = parseInt(value);
+    switch (unit) {
+      case 'm': return num * 60 * 1000;
+      case 'h': return num * 60 * 60 * 1000;
+      case 'd': return num * 24 * 60 * 60 * 1000;
+      default: return num * 60 * 60 * 1000;
+    }
+  }
+  
+  // Fallback to predefined timeframes
   const timeframeMs: Record<string, number> = {
     '15m': 15 * 60 * 1000,
     '30m': 30 * 60 * 1000,
@@ -113,7 +133,7 @@ export function horizonToMilliseconds(horizon: string | number): number {
     '1w': 7 * 24 * 60 * 60 * 1000
   };
   
-  return timeframeMs[horizon] || parseInt(horizon) * 60 * 1000 || 60 * 60 * 1000;
+  return timeframeMs[horizon] || 60 * 60 * 1000;
 }
 
 export function calculateHorizonTime(
