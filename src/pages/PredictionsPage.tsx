@@ -474,44 +474,45 @@ export default function PredictionsPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {predictions.map((prediction) => {
-              const startTime = new Date(prediction.created_at);
-              const marketStatus = marketStatuses[prediction.symbol];
-              const expectedTime = calculateExpectedTime(prediction.created_at, prediction.timeframe, marketStatus);
-              const timeRemaining = expectedTime.getTime() - Date.now();
-              const elapsedPercent = getElapsedPercent(startTime, expectedTime, new Date());
-              const isExpired = timeRemaining < 0;
-              const outcome = getOutcome(prediction);
-              const isAnalyzing = analysisStates[prediction.id]?.loading;
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {predictions.map((prediction) => {
+                const startTime = new Date(prediction.created_at);
+                const marketStatus = marketStatuses[prediction.symbol];
+                const expectedTime = calculateExpectedTime(prediction.created_at, prediction.timeframe, marketStatus);
+                const timeRemaining = expectedTime.getTime() - Date.now();
+                const elapsedPercent = getElapsedPercent(startTime, expectedTime, new Date());
+                const isExpired = timeRemaining < 0;
+                const outcome = getOutcome(prediction);
+                const isAnalyzing = analysisStates[prediction.id]?.loading;
 
-              return (
-                <PredictionTile
-                  key={prediction.id}
-                  prediction={prediction}
-                  timeRemaining={timeRemaining}
-                  isExpired={isExpired}
-                  outcome={outcome}
-                  isAnalyzing={isAnalyzing}
-                  onViewDetails={() => {
-                    // Toggle detailed view for this prediction
-                    setExpandedPredictions(prev => 
-                      prev.includes(prediction.id) 
-                        ? prev.filter(id => id !== prediction.id)
-                        : [...prev, prediction.id]
-                    );
-                  }}
-                  onAnalyze={isExpired && outcome === 'pending' ? 
-                    () => analyzePostPrediction(prediction, expectedTime) : 
-                    undefined
-                  }
-                />
-              );
-            })}
-          </div>
+                return (
+                  <PredictionTile
+                    key={prediction.id}
+                    prediction={prediction}
+                    timeRemaining={timeRemaining}
+                    isExpired={isExpired}
+                    outcome={outcome}
+                    isAnalyzing={isAnalyzing}
+                    onViewDetails={() => {
+                      // Toggle detailed view for this prediction
+                      setExpandedPredictions(prev => 
+                        prev.includes(prediction.id) 
+                          ? prev.filter(id => id !== prediction.id)
+                          : [...prev, prediction.id]
+                      );
+                    }}
+                    onAnalyze={isExpired && outcome === 'pending' ? 
+                      () => analyzePostPrediction(prediction, expectedTime) : 
+                      undefined
+                    }
+                  />
+                );
+              })}
+            </div>
 
-          {/* Detailed View Modal/Collapsible */}
-          {expandedPredictions.map((predictionId) => {
+            {/* Detailed View */}
+            {expandedPredictions.map((predictionId) => {
             const prediction = predictions.find(p => p.id === predictionId);
             if (!prediction) return null;
 
@@ -717,6 +718,7 @@ export default function PredictionsPage() {
               </div>
             );
            })}
+          </>
         )}
       </Container>
     </div>
