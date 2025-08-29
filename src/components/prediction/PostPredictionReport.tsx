@@ -1,17 +1,17 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { OutcomeBadge } from "./OutcomeBadge";
-import { TrendingUp, TrendingDown, Minus, BarChart3, Brain, Target } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, BarChart3, Brain, Target, AlertCircle } from "lucide-react";
 
 interface PostPredictionReportProps {
   symbol: string;
   timeframe?: string;
   evaluation?: {
-    result: 'accurate' | 'partial' | 'failed';
+    result: 'accurate' | 'partial' | 'failed' | 'inconclusive';
     startPrice: number;
     endPrice: number;
     actualChangePercent: number;
-    predictedDirection?: 'up' | 'down' | 'neutral' | null;
+    predictedDirection?: 'up' | 'down' | 'neutral' | 'sideways' | null;
     predictedMovePercent?: number | null;
     reasoning?: string;
   };
@@ -68,6 +68,22 @@ export function PostPredictionReport({
 
   return (
     <div className="space-y-6">
+      {/* Data Caveat for Inconclusive Results */}
+      {evaluation?.result === 'inconclusive' && (
+        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+            <div>
+              <h4 className="font-semibold text-yellow-800 mb-1">Limited Data Available</h4>
+              <p className="text-sm text-yellow-700">
+                This prediction could not be properly evaluated due to insufficient market data during the specified timeframe. 
+                The analysis may not be reliable for this particular trading period.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       {ai?.report && (
         <Card>

@@ -58,11 +58,11 @@ interface AnalysisData {
     rawText?: string;
   };
   evaluation?: {
-    result: 'accurate' | 'partial' | 'failed';
+    result: 'accurate' | 'partial' | 'failed' | 'inconclusive';
     startPrice: number;
     endPrice: number;
     actualChangePercent: number;
-    predictedDirection?: 'up' | 'down' | 'neutral' | null;
+    predictedDirection?: 'up' | 'down' | 'neutral' | 'sideways' | null;
     predictedMovePercent?: number | null;
     hitTargetMin?: boolean;
     hitTargetMax?: boolean;
@@ -290,6 +290,31 @@ const PredictionsPage = () => {
 
       if (error) throw error;
 
+      // Handle "no_data" responses gracefully
+      if (data.status === 'no_data') {
+        const adapted: AnalysisData = {
+          symbol: prediction.symbol,
+          summary: data.summary,
+          dataSource: data.dataSource,
+          evaluation: {
+            result: 'inconclusive',
+            startPrice: 0,
+            endPrice: 0,
+            actualChangePercent: 0,
+            reasoning: 'No market data available for this timeframe'
+          }
+        };
+
+        const newStates = {
+          ...analysisStates,
+          [predictionId]: { loading: false, data: adapted, error: null }
+        };
+        
+        setAnalysisStates(newStates);
+        saveCachedAnalysis(newStates);
+        return;
+      }
+
       // Store the full response including evaluation
       const adapted: AnalysisData = {
         symbol: prediction.symbol,
@@ -320,18 +345,21 @@ const PredictionsPage = () => {
       setAnalysisStates(newStates);
       saveCachedAnalysis(newStates);
       
-      toast({
-        title: "Analysis Failed",
-        description: error.message || "Unable to analyze stock movement",
-        variant: "destructive",
-      });
+      // Only show error toast for actual errors, not data availability issues
+      if (!error.message?.includes('No market data') && !error.message?.includes('no_data')) {
+        toast({
+          title: "Analysis Failed",
+          description: error.message || "Unable to analyze stock movement",
+          variant: "destructive",
+        });
+      }
     }
   };
 
-  const getOutcome = (prediction: Prediction): 'accurate' | 'partial' | 'failed' | 'pending' => {
+  const getOutcome = (prediction: Prediction): 'accurate' | 'partial' | 'failed' | 'pending' | 'inconclusive' => {
     const evaluation = analysisStates[prediction.id]?.data?.evaluation;
     if (evaluation) {
-      return evaluation.result;
+      return evaluation.result as any;
     }
     
     const startTime = new Date(prediction.created_at);

@@ -317,13 +317,40 @@ serve(async (req) => {
 
     if (!marketData) {
       console.log(`⚠️ No data found for ${symbol} → ${yahooSymbol}. Tried: ${triedIntervals.join(', ')}`);
+      
+      // Try daily data as fallback
+      try {
+        console.log('🔄 Trying daily data fallback (5d, 1d)');
+        const fallbackCandles = await fetchYahooChartWithPeriod({ 
+          yahooSymbol, 
+          period1: Math.floor((fromTime.getTime() - 5 * 24 * 60 * 60 * 1000) / 1000), // 5 days before
+          period2: Math.floor(toTime.getTime() / 1000),
+          interval: '1d'
+        });
+        
+        if (fallbackCandles.length > 0) {
+          marketData = {
+            source: `Yahoo Finance ${yahooSymbol} (1d fallback)`,
+            candles: fallbackCandles,
+            candleCount: fallbackCandles.length,
+            isInconclusive: true // Mark as inconclusive for intraday predictions
+          };
+          dataSource = 'Yahoo Finance (1d fallback)';
+          console.log(`✅ Fallback success: ${fallbackCandles.length} daily candles`);
+        }
+      } catch (fallbackError) {
+        console.log('❌ Daily fallback also failed:', fallbackError.message);
+      }
+    }
+    
+    if (!marketData) {
       return new Response(JSON.stringify({ 
-        error: 'No market data available',
-        tried: triedIntervals,
-        summary: `No data available for ${symbol} in the specified timeframe.`,
-        dataSource: 'Yahoo Finance (no data)'
+        status: 'no_data',
+        summary: `No market data available for ${symbol} in the specified timeframe.`,
+        dataSource: 'Yahoo Finance (no data)',
+        tried: triedIntervals
       }), {
-        status: 502,
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -335,6 +362,8 @@ serve(async (req) => {
     let evaluation = null;
     let aiReport = null;
     if (expected && marketData.candles.length > 0) {
+      // Check if we have sufficient data for evaluation
+      const isInsufficientData = marketData.candles.length < 2 || marketData.isInconclusive;
       const candles = marketData.candles;
       const startPrice = candles[0].close;
       const endPrice = candles[candles.length - 1].close;
@@ -345,10 +374,15 @@ serve(async (req) => {
       const hitTargetMin = expected.priceTargetMin ? candles.some((c: any) => c.low <= expected.priceTargetMin) : false;
       
       // Determine result based on direction and move percent
-      let result: 'accurate' | 'partial' | 'failed' = 'failed';
+      let result: 'accurate' | 'partial' | 'failed' | 'inconclusive' = 'failed';
       let reasoning = '';
       
-      const threshold = expected.movePercent * 0.8; // 80% of predicted move for accuracy
+      // If insufficient data, mark as inconclusive
+      if (isInsufficientData) {
+        result = 'inconclusive';
+        reasoning = `Insufficient market data for reliable evaluation (${marketData.candleCount} candles, ${dataSource})`;
+      } else {
+        const threshold = expected.movePercent * 0.8; // 80% of predicted move for accuracy
       
       if (expected.direction === 'up') {
         if (actualChangePercent >= threshold) {
@@ -372,18 +406,19 @@ serve(async (req) => {
           result = 'failed';
           reasoning = `Moved up ${actualChangePercent.toFixed(2)}% instead of down ${expected.movePercent}%`;
         }
-      } else if (expected.direction === 'neutral') {
+      } else if (expected.direction === 'neutral' || expected.direction === 'sideways') {
         const absChange = Math.abs(actualChangePercent);
-        if (absChange <= 0.5) {
+        if (absChange <= 1.0) {
           result = 'accurate';
-          reasoning = `Stayed neutral with minimal movement: ${actualChangePercent.toFixed(2)}%`;
-        } else if (absChange <= 1.0) {
+          reasoning = `Stayed ${expected.direction} with minimal movement: ${actualChangePercent.toFixed(2)}%`;
+        } else if (absChange <= 2.0) {
           result = 'partial';
-          reasoning = `Small movement of ${actualChangePercent.toFixed(2)}% close to neutral prediction`;
+          reasoning = `Small movement of ${actualChangePercent.toFixed(2)}% close to ${expected.direction} prediction`;
         } else {
           result = 'failed';
-          reasoning = `Significant movement of ${actualChangePercent.toFixed(2)}% exceeded neutral prediction`;
+          reasoning = `Significant movement of ${actualChangePercent.toFixed(2)}% exceeded ${expected.direction} prediction`;
         }
+      }
       }
       
       evaluation = {
