@@ -17,7 +17,7 @@ import {
   AlertTriangle,
   Timer
 } from "lucide-react";
-import { formatTimeRemaining, formatDuration, getRelativeTime, calculateHorizonTime, formatTargetTime, getShortHorizonLabel } from "@/lib/time";
+import { formatTimeRemaining, formatDuration, getRelativeTime, calculateHorizonTime, formatDateTime, getShortHorizonLabel } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 interface PipelineStep {
@@ -224,7 +224,7 @@ export function PredictionTimeline({
                 return (
                   <HorizonTile
                     key={forecast.horizon}
-                    horizon={formatTargetTime(targetTime, marketTimeZone)}
+                    horizon={formatDateTime(targetTime, marketTimeZone)}
                     shortHorizon={getShortHorizonLabel(forecast.horizon)}
                     direction={forecast.direction}
                     expectedReturn={forecast.expected_return_bp / 100}

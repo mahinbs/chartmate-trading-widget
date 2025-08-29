@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Card, CardContent } from "@/components/ui/card"
 import { fmt, fmtPct, asNumber } from "@/lib/utils"
-import { calculateHorizonTime, formatTargetTime, getShortHorizonLabel } from "@/lib/time"
+import { calculateHorizonTime, formatDateTime, getShortHorizonLabel } from "@/lib/time"
 import { useIsMobile } from "@/hooks/use-mobile"
 
 interface Forecast {
@@ -53,8 +53,8 @@ export function ForecastTable({ forecasts, predictedAt, marketTimeZone }: Foreca
                 <div className="font-mono font-medium">
                   {predictedAt ? (
                     <div className="space-y-1">
-                      <div className="font-semibold text-sm">
-                        {formatTargetTime(calculateHorizonTime(forecast.horizon, predictedAt), marketTimeZone)}
+                      <div className="font-semibold text-sm leading-tight">
+                        {formatDateTime(calculateHorizonTime(forecast.horizon, predictedAt), marketTimeZone)}
                       </div>
                       <div className="text-xs text-muted-foreground">
                         {getShortHorizonLabel(forecast.horizon)}
@@ -136,8 +136,8 @@ export function ForecastTable({ forecasts, predictedAt, marketTimeZone }: Foreca
               <TableCell className="font-mono font-medium min-w-0 whitespace-normal break-words">
                 {predictedAt ? (
                   <div className="space-y-1 min-w-0">
-                    <div className="font-semibold text-sm break-words">
-                      {formatTargetTime(calculateHorizonTime(forecast.horizon, predictedAt), marketTimeZone)}
+                    <div className="font-semibold text-sm break-words leading-tight">
+                      {formatDateTime(calculateHorizonTime(forecast.horizon, predictedAt), marketTimeZone)}
                     </div>
                     <div className="text-xs text-muted-foreground">
                       {getShortHorizonLabel(forecast.horizon)}
