@@ -12,6 +12,7 @@ interface HorizonTileProps {
   phase: 'waiting' | 'active' | 'expired'
   primaryLabel: string
   secondaryLabel?: string
+  className?: string
 }
 
 export function HorizonTile({
@@ -22,7 +23,8 @@ export function HorizonTile({
   confidence,
   phase,
   primaryLabel,
-  secondaryLabel
+  secondaryLabel,
+  className
 }: HorizonTileProps) {
   const directionConfig = {
     up: {
@@ -57,7 +59,8 @@ export function HorizonTile({
       "bg-gradient-to-br backdrop-blur-sm",
       phase === 'expired' ? "from-muted/20 to-muted/5 border-muted/20" : config.gradient,
       phase === 'expired' ? "" : config.border,
-      phase === 'expired' ? "" : config.glow
+      phase === 'expired' ? "" : config.glow,
+      className
     )}>
       {/* Animated background gradient overlay */}
       <div className="absolute inset-0 bg-gradient-to-br from-white/[0.03] via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />

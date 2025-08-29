@@ -19,6 +19,7 @@ import { PostPredictionReport } from "@/components/prediction/PostPredictionRepo
 import { fmt, fmtPct, asNumber } from "@/lib/utils";
 import { Container } from "@/components/layout/Container";
 import { getEffectiveStart, getEffectiveTarget } from "@/lib/market-hours";
+import { HorizonTile } from "@/components/ui/horizon-tile";
 
 interface Prediction {
   id: string;
@@ -509,20 +510,30 @@ export default function PredictionsPage() {
                       </div>
                     </div>
                     
-                    {/* Time Progress */}
-                    <div className="mt-4 space-y-2">
-                      <div className="flex items-center justify-between text-sm">
-                        <div className="flex items-center gap-2">
-                          <Clock className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-muted-foreground">
-                            {isExpired ? 'Completed' : `${formatDuration(timeRemaining)} remaining`}
-                          </span>
+                    {/* Time Progress - Square HorizonTile */}
+                    <div className="mt-4">
+                      <div className="aspect-square max-w-xs">
+                        <div className="h-full">
+                          <HorizonTile
+                            className="h-full"
+                            horizon={formatDateTime(expectedTime)}
+                            shortHorizon={prediction.timeframe}
+                            direction={prediction.expected_move_direction === 'up' ? 'up' : 
+                                     prediction.expected_move_direction === 'down' ? 'down' : 'sideways'}
+                            expectedReturn={prediction.expected_move_percent || 0}
+                            confidence={prediction.confidence || 50}
+                            phase={isExpired ? 'expired' : 
+                                   (!marketStatus || new Date() < getEffectiveStart(new Date(prediction.created_at), marketStatus)) ? 'waiting' : 'active'}
+                            primaryLabel={isExpired ? 'Completed' : 
+                                        (!marketStatus || new Date() < getEffectiveStart(new Date(prediction.created_at), marketStatus)) ? 
+                                        `Completes in ${formatDuration(timeRemaining)}` : 
+                                        `${formatDuration(timeRemaining)} remaining`}
+                            secondaryLabel={!isExpired && (!marketStatus || new Date() < getEffectiveStart(new Date(prediction.created_at), marketStatus)) ? 
+                                          `Opens in ${formatDuration(getEffectiveStart(new Date(prediction.created_at), marketStatus).getTime() - Date.now())}` : 
+                                          undefined}
+                          />
                         </div>
-                        <span className="text-xs text-muted-foreground">
-                          {formatDateTime(prediction.created_at)}
-                        </span>
                       </div>
-                      <Progress value={isExpired ? 100 : elapsedPercent} className="h-2" />
                     </div>
                   </CardHeader>
 
