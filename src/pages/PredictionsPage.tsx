@@ -18,6 +18,7 @@ import { Insights } from "@/components/prediction/Insights";
 import { PostPredictionReport } from "@/components/prediction/PostPredictionReport";
 import { fmt, fmtPct, asNumber } from "@/lib/utils";
 import { Container } from "@/components/layout/Container";
+import { getEffectiveStart, getEffectiveTarget } from "@/lib/market-hours";
 
 interface Prediction {
   id: string;
@@ -71,13 +72,86 @@ interface AnalysisData {
   };
 }
 
-const PredictionsPage = () => {
-  const navigate = useNavigate();
-  const { toast } = useToast();
+export default function PredictionsPage() {
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [loading, setLoading] = useState(true);
-  const [now, setNow] = useState(new Date());
-  const [analysisStates, setAnalysisStates] = useState<Record<string, { loading: boolean; data: AnalysisData | null; error: string | null }>>({});
+  const [analysisStates, setAnalysisStates] = useState<Record<string, {
+    loading: boolean;
+    data: AnalysisData | null;
+    error: string | null;
+  }>>({});
+  const [marketStatuses, setMarketStatuses] = useState<Record<string, any>>({});
+  const { toast } = useToast();
+  const navigate = useNavigate();
+
+  // Fetch market status for a symbol
+  const fetchMarketStatus = async (symbol: string) => {
+    if (marketStatuses[symbol]) return marketStatuses[symbol];
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('get-market-status', {
+        body: { symbol }
+      });
+      if (!error && data) {
+        setMarketStatuses(prev => ({ ...prev, [symbol]: data }));
+        return data;
+      }
+    } catch (error) {
+      console.error('Failed to fetch market status for', symbol, error);
+    }
+    return null;
+  };
+
+  // Calculate expected completion time for prediction windows using market hours
+  const calculateExpectedTime = (createdAt: string, timeframe: string, marketStatus?: any): Date => {
+    const baseTime = new Date(createdAt);
+    const timeframeMinutes = {
+      '15m': 15,
+      '30m': 30,
+      '1h': 60,
+      '4h': 240,
+      '1d': 1440,
+      '1w': 10080
+    };
+    const minutes = timeframeMinutes[timeframe as keyof typeof timeframeMinutes] || 60;
+    
+    if (marketStatus) {
+      const effectiveStart = getEffectiveStart(baseTime, marketStatus);
+      return getEffectiveTarget(minutes, effectiveStart);
+    }
+    
+    return new Date(baseTime.getTime() + minutes * 60 * 1000);
+  };
+
+  useEffect(() => {
+    fetchPredictions();
+    
+    // Fetch market statuses for unique symbols
+    const fetchMarketStatuses = async () => {
+      const uniqueSymbols = [...new Set(predictions.map(p => p.symbol))];
+      await Promise.all(uniqueSymbols.map(symbol => fetchMarketStatus(symbol)));
+    };
+    
+    if (predictions.length > 0) {
+      fetchMarketStatuses();
+    }
+    
+    // Auto-analyze predictions that have expired
+    const interval = setInterval(() => {
+      predictions.forEach(async (prediction) => {
+        if (!analysisStates[prediction.id]?.data && !analysisStates[prediction.id]?.loading) {
+          const marketStatus = marketStatuses[prediction.symbol];
+          const expectedTime = calculateExpectedTime(prediction.created_at, prediction.timeframe, marketStatus);
+          const now = new Date();
+          if (now >= expectedTime) {
+            await analyzePostPrediction(prediction, expectedTime);
+          }
+        }
+      });
+    }, 30000); // Check every 30 seconds
+
+    return () => clearInterval(interval);
+  }, [predictions.length, analysisStates, marketStatuses]);
 
   // Cache management
   const CACHE_KEY = 'prediction-analysis-cache';
@@ -119,31 +193,6 @@ const PredictionsPage = () => {
     loadCachedAnalysis();
     fetchPredictions();
   }, []);
-
-  // Update current time every second and auto-evaluate expired predictions
-  useEffect(() => {
-    const timer = setInterval(() => {
-      const currentTime = new Date();
-      setNow(currentTime);
-      
-      // Auto-evaluate expired predictions
-      predictions.forEach(prediction => {
-        const startTime = new Date(prediction.created_at);
-        const expectedTime = calculateExpectedTime(prediction.timeframe, startTime);
-        const isExpired = currentTime >= expectedTime;
-        const hasEvaluation = analysisStates[prediction.id]?.data?.evaluation;
-        const isLoading = analysisStates[prediction.id]?.loading;
-        const hasCachedData = analysisStates[prediction.id]?.data;
-        
-        if (isExpired && !hasEvaluation && !isLoading && !hasCachedData) {
-          console.log(`Auto-evaluating expired prediction: ${prediction.symbol}`);
-          analyzePostPrediction(prediction, expectedTime);
-        }
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [predictions, analysisStates]);
 
   const fetchPredictions = async () => {
     try {
@@ -218,19 +267,6 @@ const PredictionsPage = () => {
     }).format(dateObj);
   };
 
-  const calculateExpectedTime = (timeframe: string, startTime: Date) => {
-    const timeframeMinutes: Record<string, number> = {
-      '15m': 15,
-      '30m': 30,
-      '1h': 60,
-      '2h': 120,
-      '1d': 1440
-    };
-    
-    const minutes = timeframeMinutes[timeframe] || 60;
-    return new Date(startTime.getTime() + minutes * 60 * 1000);
-  };
-
   // Countdown helper functions
   const formatDuration = (milliseconds: number) => {
     const totalSeconds = Math.floor(Math.abs(milliseconds) / 1000);
@@ -271,10 +307,14 @@ const PredictionsPage = () => {
     }));
 
     try {
+      const marketStatus = marketStatuses[prediction.symbol];
+      const effectiveStart = getEffectiveStart(new Date(prediction.created_at), marketStatus);
+      const effectiveEnd = toOverride || getEffectiveTarget(prediction.timeframe, effectiveStart);
+
       const requestBody = {
         symbol: prediction.symbol,
-        from: prediction.created_at,
-        to: toOverride?.toISOString(),
+        from: effectiveStart.toISOString(),
+        to: effectiveEnd.toISOString(),
         expected: prediction.expected_move_direction ? {
           direction: prediction.expected_move_direction,
           movePercent: prediction.expected_move_percent || 0,
@@ -362,8 +402,9 @@ const PredictionsPage = () => {
       return evaluation.result as any;
     }
     
-    const startTime = new Date(prediction.created_at);
-    const expectedTime = calculateExpectedTime(prediction.timeframe, startTime);
+    const marketStatus = marketStatuses[prediction.symbol];
+    const expectedTime = calculateExpectedTime(prediction.created_at, prediction.timeframe, marketStatus);
+    const now = new Date();
     const isExpired = now >= expectedTime;
     
     return isExpired ? 'pending' : 'pending';
@@ -434,9 +475,10 @@ const PredictionsPage = () => {
           <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
             {predictions.map((prediction) => {
               const startTime = new Date(prediction.created_at);
-              const expectedTime = calculateExpectedTime(prediction.timeframe, startTime);
-              const timeRemaining = expectedTime.getTime() - now.getTime();
-              const elapsedPercent = getElapsedPercent(startTime, expectedTime, now);
+              const marketStatus = marketStatuses[prediction.symbol];
+              const expectedTime = calculateExpectedTime(prediction.created_at, prediction.timeframe, marketStatus);
+              const timeRemaining = expectedTime.getTime() - Date.now();
+              const elapsedPercent = getElapsedPercent(startTime, expectedTime, new Date());
               const isExpired = timeRemaining < 0;
               const outcome = getOutcome(prediction);
               const isAnalyzing = analysisStates[prediction.id]?.loading;
@@ -524,7 +566,11 @@ const PredictionsPage = () => {
                           </Button>
                         </CollapsibleTrigger>
                         <CollapsibleContent className="mt-3">
-                          <ForecastTable forecasts={prediction.raw_response.geminiForecast.forecasts} />
+                          <ForecastTable 
+                            forecasts={prediction.raw_response.geminiForecast.forecasts} 
+                            predictedAt={new Date(prediction.created_at)}
+                            marketStatus={marketStatus}
+                          />
                         </CollapsibleContent>
                       </Collapsible>
                     )}
@@ -610,6 +656,7 @@ const PredictionsPage = () => {
                             })) || []}
                             predictedAt={new Date(prediction.created_at)}
                             symbol={prediction.symbol}
+                            marketStatus={marketStatus}
                           />
                         </CollapsibleContent>
                       </Collapsible>
@@ -624,5 +671,3 @@ const PredictionsPage = () => {
     </div>
   );
 };
-
-export default PredictionsPage;

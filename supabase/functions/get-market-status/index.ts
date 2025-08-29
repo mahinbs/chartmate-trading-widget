@@ -24,6 +24,65 @@ serve(async (req) => {
 
     console.log(`Getting market status for symbol: ${symbol}, exchange: ${exchange}, type: ${type}`);
 
+    // Function to calculate market hours and status
+    const calculateMarketHours = (exchange: string, timezone: string, quoteType: string) => {
+      const now = new Date();
+      
+      // Market open/close times in 24h format [hour, minute]
+      const marketHours: Record<string, { open: [number, number]; close: [number, number] }> = {
+        'NYSE': { open: [9, 30], close: [16, 0] },
+        'NMS': { open: [9, 30], close: [16, 0] }, // NASDAQ
+        'LSE': { open: [8, 0], close: [16, 30] },
+        'NSE': { open: [9, 15], close: [15, 30] },
+        'BSE': { open: [9, 15], close: [15, 30] },
+        'HKEX': { open: [9, 30], close: [16, 0] },
+        'TSE': { open: [9, 0], close: [15, 0] },
+        'JPX': { open: [9, 0], close: [15, 0] },
+      };
+
+      const hours = marketHours[exchange] || marketHours['NYSE']; // Default to NYSE
+
+      // For timezone-aware calculations, we'll use simplified logic
+      // In production, you'd want a proper timezone library
+      const timezoneOffsets: Record<string, number> = {
+        'America/New_York': -5, // EST (adjust for DST as needed)
+        'Europe/London': 0, // GMT
+        'Asia/Kolkata': 5.5,
+        'Asia/Hong_Kong': 8,
+        'Asia/Tokyo': 9,
+      };
+
+      const offset = timezoneOffsets[timezone] || timezoneOffsets['America/New_York'];
+      
+      // Create today's market open/close times in UTC
+      const todayUTC = new Date(now.toISOString().split('T')[0] + 'T00:00:00.000Z');
+      const todayOpen = new Date(todayUTC.getTime() + (hours.open[0] - offset) * 60 * 60 * 1000 + hours.open[1] * 60 * 1000);
+      const todayClose = new Date(todayUTC.getTime() + (hours.close[0] - offset) * 60 * 60 * 1000 + hours.close[1] * 60 * 1000);
+
+      // Check if market is currently open (simplified - doesn't account for holidays)
+      const isRegularOpen = now >= todayOpen && now <= todayClose;
+
+      // Calculate next regular open
+      let nextRegularOpen = todayOpen;
+      if (now >= todayClose) {
+        // Market closed for today, next open is tomorrow
+        nextRegularOpen = new Date(todayOpen.getTime() + 24 * 60 * 60 * 1000);
+      } else if (now < todayOpen) {
+        // Market hasn't opened today yet
+        nextRegularOpen = todayOpen;
+      } else {
+        // Market is currently open, next open is tomorrow
+        nextRegularOpen = new Date(todayOpen.getTime() + 24 * 60 * 60 * 1000);
+      }
+
+      return {
+        isRegularOpen,
+        nextRegularOpen: nextRegularOpen.toISOString(),
+        todayRegularOpen: todayOpen.toISOString(),
+        todayRegularClose: todayClose.toISOString(),
+      };
+    };
+
     // Function to create fallback status based on asset type and exchange
     const createFallbackStatus = (symbol: string, exchange?: string, type?: string) => {
       const exchangeHours: Record<string, string> = {
@@ -47,6 +106,10 @@ serve(async (req) => {
           quoteType: 'CRYPTOCURRENCY',
           label: 'Live 24/7',
           regularHours: 'Always trading',
+          isRegularOpen: true,
+          nextRegularOpen: new Date().toISOString(),
+          todayRegularOpen: new Date().toISOString(),
+          todayRegularClose: new Date().toISOString(),
           timestamp: new Date().toISOString()
         };
       }
@@ -61,12 +124,15 @@ serve(async (req) => {
           quoteType: 'CURRENCY',
           label: 'Live 24/5',
           regularHours: 'Sunday 5 PM – Friday 5 PM ET',
+          isRegularOpen: true,
+          nextRegularOpen: new Date().toISOString(),
+          todayRegularOpen: new Date().toISOString(),
+          todayRegularClose: new Date().toISOString(),
           timestamp: new Date().toISOString()
         };
       }
 
       // Handle stocks - determine market status based on current time and exchange
-      const now = new Date();
       const exchangeTimezone = exchange === 'LSE' ? 'Europe/London' : 
                               exchange === 'NSE' || exchange === 'BSE' ? 'Asia/Kolkata' :
                               exchange === 'HKEX' ? 'Asia/Hong_Kong' :
@@ -74,16 +140,17 @@ serve(async (req) => {
                               'America/New_York'; // Default to US
 
       const regularHours = exchangeHours[exchange || 'NYSE'] || 'Regular hours vary by venue';
+      const marketHours = calculateMarketHours(exchange || 'NYSE', exchangeTimezone, 'EQUITY');
       
-      // Simple fallback - assume market is closed for safety
       return {
         symbol,
         exchange: exchange || 'Unknown',
         exchangeTimezoneName: exchangeTimezone,
-        marketState: 'CLOSED',
+        marketState: marketHours.isRegularOpen ? 'REGULAR' : 'CLOSED',
         quoteType: 'EQUITY',
-        label: 'Market is closed',
+        label: marketHours.isRegularOpen ? 'Market is open' : 'Market is closed',
         regularHours,
+        ...marketHours,
         timestamp: new Date().toISOString()
       };
     };
@@ -127,19 +194,33 @@ serve(async (req) => {
           let status: string;
           let label: string;
           let regularHours: string;
+          let marketHours: any = {};
 
           if (quoteType === 'CRYPTOCURRENCY') {
             status = 'LIVE_24_7';
             label = 'Live 24/7';
             regularHours = 'Always trading';
+            marketHours = {
+              isRegularOpen: true,
+              nextRegularOpen: new Date().toISOString(),
+              todayRegularOpen: new Date().toISOString(),
+              todayRegularClose: new Date().toISOString(),
+            };
           } else if (quoteType === 'CURRENCY' || quoteType === 'FOREX') {
             status = 'LIVE_24_5';
             label = 'Live 24/5';
             regularHours = 'Sunday 5 PM – Friday 5 PM ET';
+            marketHours = {
+              isRegularOpen: true,
+              nextRegularOpen: new Date().toISOString(),
+              todayRegularOpen: new Date().toISOString(),
+              todayRegularClose: new Date().toISOString(),
+            };
           } else {
             // Stock/equity
             status = marketState;
             regularHours = exchangeHours[yahooExchange] || 'Regular hours vary by venue';
+            marketHours = calculateMarketHours(yahooExchange, exchangeTimezoneName, quoteType);
             
             switch (marketState) {
               case 'REGULAR':
@@ -167,6 +248,7 @@ serve(async (req) => {
             quoteType,
             label,
             regularHours,
+            ...marketHours,
             timestamp: new Date().toISOString()
           };
         } else {

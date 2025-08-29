@@ -124,6 +124,7 @@ const PredictPage = () => {
   const [chartDataSource, setChartDataSource] = useState<string | null>(null);
   const [predictedAt, setPredictedAt] = useState<Date | null>(null);
   const [marketTimeZone, setMarketTimeZone] = useState<string | null>(null);
+  const [marketStatus, setMarketStatus] = useState<any>(null);
   
   const { signOut, user } = useAuth();
   const navigate = useNavigate();
@@ -220,6 +221,10 @@ const PredictPage = () => {
       setResult(data);
       setAnalysisReady(true);
       setPredictedAt(new Date()); // Capture stable timestamp
+      
+      // Fetch market status for the symbol
+      await fetchMarketStatus(symbol.split(':')[1] || symbol, selectedSymbol?.exchange, selectedSymbol?.type);
+      
       // Auto-save the prediction
       await savePrediction(data);
       // Loader will complete when it's ready
@@ -230,6 +235,20 @@ const PredictPage = () => {
       toast.error("An error occurred while getting the prediction");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchMarketStatus = async (symbol: string, exchange?: string, type?: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('get-market-status', {
+        body: { symbol, exchange, type }
+      });
+      if (!error && data) {
+        setMarketStatus(data);
+        setMarketTimeZone(data.exchangeTimezoneName);
+      }
+    } catch (error) {
+      console.error('Failed to fetch market status:', error);
     }
   };
 
@@ -515,6 +534,7 @@ const PredictPage = () => {
                         forecasts={result.geminiForecast.forecasts} 
                         predictedAt={predictedAt}
                         marketTimeZone={marketTimeZone}
+                        marketStatus={marketStatus}
                       />
                     </CardContent>
                   </Card>
@@ -570,6 +590,7 @@ const PredictPage = () => {
                         })) || []}
                         predictedAt={predictedAt || new Date()}
                         marketTimeZone={marketTimeZone}
+                        marketStatus={marketStatus}
                       />
                     </CardContent>
                   </Card>

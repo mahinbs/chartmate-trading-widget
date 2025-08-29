@@ -17,7 +17,8 @@ import {
   AlertTriangle,
   Timer
 } from "lucide-react";
-import { formatTimeRemaining, formatDuration, getRelativeTime, calculateHorizonTime, formatDateTime, getShortHorizonLabel } from "@/lib/time";
+import { formatTimeRemaining, formatDuration, getRelativeTime, formatDateTime, getShortHorizonLabel } from "@/lib/time";
+import { getEffectiveStart, getEffectiveTarget, shouldStartTiming } from "@/lib/market-hours";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,7 @@ interface PredictionTimelineProps {
   predictedAt?: Date;
   marketTimeZone?: string | null;
   symbol?: string;
+  marketStatus?: any;
 }
 
 const stepIcons: Record<string, any> = {
@@ -84,7 +86,8 @@ export function PredictionTimeline({
   forecasts = [],
   predictedAt = new Date(),
   marketTimeZone,
-  symbol = ''
+  symbol = '',
+  marketStatus
 }: PredictionTimelineProps) {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [reportData, setReportData] = useState<any>(null);
@@ -105,12 +108,13 @@ export function PredictionTimeline({
     
     setReportLoading(true);
     try {
-      const targetTime = calculateHorizonTime(forecast.horizon, predictedAt);
+      const effectiveStart = getEffectiveStart(predictedAt, marketStatus);
+      const targetTime = getEffectiveTarget(forecast.horizon, effectiveStart);
       
       const { data, error } = await supabase.functions.invoke('analyze-post-prediction', {
         body: {
           symbol,
-          from: predictedAt.toISOString(),
+          from: effectiveStart.toISOString(),
           to: targetTime.toISOString(),
           expected: {
             direction: forecast.direction,
@@ -269,9 +273,21 @@ export function PredictionTimeline({
           <CardContent>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {forecasts.map((forecast) => {
-                const targetTime = calculateHorizonTime(forecast.horizon, predictedAt);
-                const timeRemaining = formatTimeRemaining(targetTime, currentTime);
-                const isExpired = targetTime.getTime() <= currentTime.getTime();
+                const effectiveStart = getEffectiveStart(predictedAt, marketStatus);
+                const targetTime = getEffectiveTarget(forecast.horizon, effectiveStart);
+                const timingStarted = shouldStartTiming(predictedAt, marketStatus);
+                
+                let timeLabel: string;
+                let isExpired: boolean;
+                
+                if (!timingStarted) {
+                  const timeToStart = formatTimeRemaining(effectiveStart, currentTime);
+                  timeLabel = timeToStart === 'Expired' ? 'Starting...' : `Starts in ${timeToStart}`;
+                  isExpired = false;
+                } else {
+                  timeLabel = formatTimeRemaining(targetTime, currentTime);
+                  isExpired = targetTime.getTime() <= currentTime.getTime();
+                }
 
                 return (
                   <div key={forecast.horizon} className="space-y-2">
@@ -281,7 +297,7 @@ export function PredictionTimeline({
                       direction={forecast.direction}
                       expectedReturn={forecast.expected_return_bp / 100}
                       confidence={forecast.confidence}
-                      timeRemaining={timeRemaining}
+                      timeRemaining={timeLabel}
                       isExpired={isExpired}
                     />
                     {isExpired && symbol && (

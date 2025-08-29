@@ -3,7 +3,8 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Card, CardContent } from "@/components/ui/card"
 import { fmt, fmtPct, asNumber } from "@/lib/utils"
-import { calculateHorizonTime, formatDateTime, getShortHorizonLabel } from "@/lib/time"
+import { formatDateTime, getShortHorizonLabel } from "@/lib/time"
+import { getEffectiveStart, getEffectiveTarget } from "@/lib/market-hours"
 import { useIsMobile } from "@/hooks/use-mobile"
 
 interface Forecast {
@@ -20,9 +21,10 @@ interface ForecastTableProps {
   forecasts: Forecast[]
   predictedAt?: Date | null
   marketTimeZone?: string | null
+  marketStatus?: any
 }
 
-export function ForecastTable({ forecasts, predictedAt, marketTimeZone }: ForecastTableProps) {
+export function ForecastTable({ forecasts, predictedAt, marketTimeZone, marketStatus }: ForecastTableProps) {
   const isMobile = useIsMobile()
 
   const getDirectionColor = (direction: string) => {
@@ -55,7 +57,7 @@ export function ForecastTable({ forecasts, predictedAt, marketTimeZone }: Foreca
                   {predictedAt ? (
                     <div className="space-y-1">
                       <div className="font-semibold text-sm leading-tight">
-                        {formatDateTime(calculateHorizonTime(forecast.horizon, predictedAt), marketTimeZone)}
+                        {formatDateTime(getEffectiveTarget(forecast.horizon, getEffectiveStart(predictedAt, marketStatus)), marketTimeZone)}
                       </div>
                       <div className="text-xs text-muted-foreground">
                         {getShortHorizonLabel(forecast.horizon)}
@@ -138,7 +140,7 @@ export function ForecastTable({ forecasts, predictedAt, marketTimeZone }: Foreca
                 {predictedAt ? (
                   <div className="space-y-1">
                     <div className="font-semibold text-sm leading-tight break-normal">
-                      {formatDateTime(calculateHorizonTime(forecast.horizon, predictedAt), marketTimeZone)}
+                      {formatDateTime(getEffectiveTarget(forecast.horizon, getEffectiveStart(predictedAt, marketStatus)), marketTimeZone)}
                     </div>
                     <div className="text-xs text-muted-foreground">
                       {getShortHorizonLabel(forecast.horizon)}
