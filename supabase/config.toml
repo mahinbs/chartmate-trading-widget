@@ -64,3 +64,6 @@ verify_jwt = false
 
 [functions.get-market-status]
 verify_jwt = false
+
+[functions.analyze-news-google]
+verify_jwt = false

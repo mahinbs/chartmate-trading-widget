@@ -16,6 +16,7 @@ import { SummaryHeader } from "@/components/prediction/SummaryHeader";
 import { ForecastTable } from "@/components/prediction/ForecastTable";
 import { KeyLevels } from "@/components/prediction/KeyLevels";
 import { Insights } from "@/components/prediction/Insights";
+import { NewsAnalysis } from "@/components/news/NewsAnalysis";
 import { MarketStatus } from "@/components/market/MarketStatus";
 import { supabase } from "@/integrations/supabase/client";
 import type { SymbolData } from "@/components/SymbolSearch";
@@ -571,6 +572,12 @@ const PredictPage = () => {
                     />
                   </CardContent>
                 </Card>
+
+                {/* News & AI Sentiment */}
+                <NewsAnalysis 
+                  symbol={result.symbol} 
+                  predictedAt={predictedAt} 
+                />
 
                 {/* Pipeline Timeline */}
                 {result.meta?.pipeline && (
