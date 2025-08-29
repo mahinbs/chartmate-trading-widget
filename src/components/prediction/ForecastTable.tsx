@@ -41,10 +41,10 @@ export function ForecastTable({ forecasts, predictedAt, marketTimeZone }: Foreca
     return `${Math.round(minutes / 10080)}w`
   }
 
-  // Mobile card layout
-  if (isMobile) {
-    return (
-      <div className="space-y-4">
+  return (
+    <>
+      {/* Mobile card layout */}
+      <div className="block lg:hidden space-y-4">
         {forecasts.map((forecast, index) => (
           <Card key={index} className="w-full">
             <CardContent className="p-4 space-y-4">
@@ -117,29 +117,26 @@ export function ForecastTable({ forecasts, predictedAt, marketTimeZone }: Foreca
           </Card>
         ))}
       </div>
-    )
-  }
 
-  // Desktop table layout
-  return (
-    <div className="border rounded-lg overflow-hidden">
-      <Table>
+      {/* Desktop table layout */}
+      <div className="hidden lg:block border rounded-lg overflow-hidden">
+        <Table className="table-fixed">
         <TableHeader>
           <TableRow className="bg-muted/50">
-            <TableHead className="font-semibold">Timeframe</TableHead>
-            <TableHead className="font-semibold">Direction</TableHead>
-            <TableHead className="font-semibold">Expected Return</TableHead>
-            <TableHead className="font-semibold">Confidence</TableHead>
-            <TableHead className="font-semibold">Probability Distribution</TableHead>
+            <TableHead className="font-semibold w-1/5">Timeframe</TableHead>
+            <TableHead className="font-semibold w-1/6">Direction</TableHead>
+            <TableHead className="font-semibold w-1/6">Expected Return</TableHead>
+            <TableHead className="font-semibold w-1/6">Confidence</TableHead>
+            <TableHead className="font-semibold w-1/3">Probability Distribution</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {forecasts.map((forecast, index) => (
             <TableRow key={index} className="hover:bg-muted/30">
-              <TableCell className="font-mono font-medium">
+              <TableCell className="font-mono font-medium min-w-0 whitespace-normal break-words">
                 {predictedAt ? (
-                  <div className="space-y-1">
-                    <div className="font-semibold">
+                  <div className="space-y-1 min-w-0">
+                    <div className="font-semibold text-sm break-words">
                       {formatTargetTime(calculateHorizonTime(forecast.horizon, predictedAt), marketTimeZone)}
                     </div>
                     <div className="text-xs text-muted-foreground">
@@ -166,26 +163,26 @@ export function ForecastTable({ forecasts, predictedAt, marketTimeZone }: Foreca
                   <span className="text-sm font-mono">{fmtPct(asNumber(forecast.confidence))}</span>
                 </div>
               </TableCell>
-              <TableCell>
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className="text-green-600 w-8">↑</span>
-                    <Progress value={asNumber(forecast.probabilities.up) * 100} className="w-12 h-1" />
-                    <span className="text-green-600 font-mono w-10">
+              <TableCell className="min-w-0">
+                <div className="space-y-1 min-w-0">
+                  <div className="flex items-center gap-1 text-xs min-w-0">
+                    <span className="text-green-600 w-6 flex-shrink-0">↑</span>
+                    <Progress value={asNumber(forecast.probabilities.up) * 100} className="flex-1 min-w-0 h-1" />
+                    <span className="text-green-600 font-mono w-8 text-xs flex-shrink-0">
                       {fmtPct(asNumber(forecast.probabilities.up) * 100, 0)}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className="text-red-600 w-8">↓</span>
-                    <Progress value={asNumber(forecast.probabilities.down) * 100} className="w-12 h-1" />
-                    <span className="text-red-600 font-mono w-10">
+                  <div className="flex items-center gap-1 text-xs min-w-0">
+                    <span className="text-red-600 w-6 flex-shrink-0">↓</span>
+                    <Progress value={asNumber(forecast.probabilities.down) * 100} className="flex-1 min-w-0 h-1" />
+                    <span className="text-red-600 font-mono w-8 text-xs flex-shrink-0">
                       {fmtPct(asNumber(forecast.probabilities.down) * 100, 0)}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className="text-yellow-600 w-8">→</span>
-                    <Progress value={asNumber(forecast.probabilities.sideways) * 100} className="w-12 h-1" />
-                    <span className="text-yellow-600 font-mono w-10">
+                  <div className="flex items-center gap-1 text-xs min-w-0">
+                    <span className="text-yellow-600 w-6 flex-shrink-0">→</span>
+                    <Progress value={asNumber(forecast.probabilities.sideways) * 100} className="flex-1 min-w-0 h-1" />
+                    <span className="text-yellow-600 font-mono w-8 text-xs flex-shrink-0">
                       {fmtPct(asNumber(forecast.probabilities.sideways) * 100, 0)}
                     </span>
                   </div>
@@ -195,6 +192,7 @@ export function ForecastTable({ forecasts, predictedAt, marketTimeZone }: Foreca
           ))}
         </TableBody>
       </Table>
-    </div>
+      </div>
+    </>
   )
 }

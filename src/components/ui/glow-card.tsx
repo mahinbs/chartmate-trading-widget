@@ -39,7 +39,7 @@ export function GlowCard({
   return (
     <div
       className={cn(
-        "relative rounded-lg border bg-card/50 backdrop-blur-sm text-card-foreground transition-all duration-300 hover:scale-[1.02]",
+        "relative rounded-lg border bg-card/50 backdrop-blur-sm text-card-foreground transition-all duration-300 md:hover:scale-[1.005] hover:shadow-2xl",
         glowClasses[glowColor][intensity],
         "before:absolute before:inset-0 before:rounded-lg before:bg-gradient-to-br before:from-white/5 before:to-transparent before:pointer-events-none",
         className
