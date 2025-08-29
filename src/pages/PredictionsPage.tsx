@@ -495,12 +495,29 @@ export default function PredictionsPage() {
                     outcome={outcome}
                     isAnalyzing={isAnalyzing}
                     onViewDetails={() => {
-                      // Toggle detailed view for this prediction
-                      setExpandedPredictions(prev => 
-                        prev.includes(prediction.id) 
+                      // Toggle detailed view and scroll to it
+                      setExpandedPredictions(prev => {
+                        const isCurrentlyExpanded = prev.includes(prediction.id)
+                        const newExpanded = isCurrentlyExpanded 
                           ? prev.filter(id => id !== prediction.id)
                           : [...prev, prediction.id]
-                      );
+                        
+                        // Scroll to detailed view after state update
+                        if (!isCurrentlyExpanded) {
+                          setTimeout(() => {
+                            const detailElement = document.getElementById(`detail-${prediction.id}`)
+                            if (detailElement) {
+                              detailElement.scrollIntoView({ 
+                                behavior: 'smooth', 
+                                block: 'start',
+                                inline: 'nearest'
+                              })
+                            }
+                          }, 100)
+                        }
+                        
+                        return newExpanded
+                      })
                     }}
                     onAnalyze={isExpired && outcome === 'pending' ? 
                       () => analyzePostPrediction(prediction, expectedTime) : 
@@ -510,6 +527,19 @@ export default function PredictionsPage() {
                 );
               })}
             </div>
+
+            {/* Multi-horizon Info Banner */}
+            {predictions.length > 0 && (
+              <div className="mb-6 p-4 bg-primary/5 border border-primary/20 rounded-lg">
+                <div className="flex items-center gap-2 mb-2">
+                  <Badge variant="outline" className="text-xs">Multi-Horizon Analysis</Badge>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Each prediction analyzes multiple timeframes (1h, 4h, 1d, 1w) to provide comprehensive market insights. 
+                  Click on any card to view detailed breakdowns for each horizon.
+                </p>
+              </div>
+            )}
 
             {/* Detailed View */}
             {expandedPredictions.map((predictionId) => {
@@ -526,7 +556,11 @@ export default function PredictionsPage() {
             const isAnalyzing = analysisStates[prediction.id]?.loading;
 
             return (
-              <div key={`detailed-${predictionId}`} className="mt-8">
+              <div 
+                id={`detail-${predictionId}`}
+                key={`detailed-${predictionId}`} 
+                className="mt-8 animate-in fade-in-50 slide-in-from-bottom-4"
+              >
                 <Card className="overflow-hidden relative">
                   <Button 
                     variant="ghost" 

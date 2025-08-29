@@ -16,6 +16,7 @@ interface PredictionTileProps {
     confidence: number | null
     created_at: string
     current_price: number | null
+    raw_response?: any
   }
   timeRemaining: number
   isExpired: boolean
@@ -35,7 +36,14 @@ export function PredictionTile({
   onAnalyze
 }: PredictionTileProps) {
   const direction = prediction.expected_move_direction as "up" | "down" | "sideways" || "sideways"
-  const expectedReturn = prediction.expected_move_percent || 0
+  
+  // Fallback to raw_response for expected_move_percent if null
+  let expectedReturn = prediction.expected_move_percent
+  if (expectedReturn === null && prediction.raw_response?.expectedMove?.percent !== undefined) {
+    expectedReturn = prediction.raw_response.expectedMove.percent
+  }
+  expectedReturn = expectedReturn || 0
+  
   const confidence = prediction.confidence || 0
 
   const directionConfig = {
@@ -89,14 +97,17 @@ export function PredictionTile({
   }
 
   return (
-    <Card className={cn(
-      "group relative overflow-hidden transition-all duration-300 hover:scale-[1.02] cursor-pointer",
-      "aspect-square",
-      "bg-gradient-to-br border-2",
-      isExpired ? "from-muted/20 to-muted/5 border-muted/30" : config.gradient,
-      isExpired ? "" : config.border,
-      isExpired ? "" : "shadow-lg hover:shadow-xl"
-    )}>
+    <Card 
+      className={cn(
+        "group relative overflow-hidden transition-all duration-300 hover:scale-[1.02] cursor-pointer",
+        "aspect-square",
+        "bg-gradient-to-br border-2",
+        isExpired ? "from-muted/20 to-muted/5 border-muted/30" : config.gradient,
+        isExpired ? "" : config.border,
+        isExpired ? "" : "shadow-lg hover:shadow-xl"
+      )}
+      onClick={onViewDetails}
+    >
       {/* Background overlay */}
       <div className="absolute inset-0 bg-gradient-to-br from-white/5 via-transparent to-black/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
       
