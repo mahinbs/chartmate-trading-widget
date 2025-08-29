@@ -51,7 +51,7 @@ export function HorizonTile({
 
   return (
     <div className={cn(
-      "relative group overflow-hidden rounded-xl border p-4 transition-all duration-300 hover:scale-[1.02]",
+      "relative group rounded-xl border p-4 transition-all duration-300 hover:scale-[1.02]",
       "bg-gradient-to-br backdrop-blur-sm",
       isExpired ? "from-muted/20 to-muted/5 border-muted/20" : config.gradient,
       isExpired ? "" : config.border,
@@ -62,21 +62,21 @@ export function HorizonTile({
       
       <div className="relative space-y-3">
         {/* Header with horizon and status */}
-        <div className="flex items-center justify-between">
-          <div className="space-y-1">
-            <Badge 
-              variant={isExpired ? "outline" : "secondary"}
-              className={cn(
-                "font-mono text-xs",
-                !isExpired && "bg-gradient-to-r from-background/50 to-background/20 border-white/20"
-              )}
-            >
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0 space-y-1">
+            <div className={cn(
+              "text-xs font-mono leading-tight break-words",
+              isExpired ? "text-muted-foreground" : "text-foreground"
+            )}>
               {horizon}
-            </Badge>
+            </div>
             {shortHorizon && (
-              <div className="text-xs text-muted-foreground font-mono">
+              <Badge 
+                variant={isExpired ? "outline" : "secondary"}
+                className="text-xs font-mono"
+              >
                 {shortHorizon}
-              </div>
+              </Badge>
             )}
           </div>
           
@@ -90,21 +90,23 @@ export function HorizonTile({
         </div>
 
         {/* Prediction details */}
-        <div className="space-y-2">
-          <div className="flex items-baseline gap-2">
+        <div className="space-y-3">
+          <div className="flex items-baseline gap-2 flex-wrap">
             <span className="text-2xl font-bold">
               {expectedReturn >= 0 ? "+" : ""}{expectedReturn.toFixed(2)}%
             </span>
             <span className="text-xs text-muted-foreground">expected</span>
           </div>
           
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">
-              {confidence}% confidence
-            </span>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">
+                {confidence}% confidence
+              </span>
+            </div>
             <div className="text-right">
               <div className={cn(
-                "font-mono text-sm font-medium",
+                "font-mono text-sm font-medium break-words",
                 isExpired ? "text-trading-red" : "text-primary"
               )}>
                 {timeRemaining}
