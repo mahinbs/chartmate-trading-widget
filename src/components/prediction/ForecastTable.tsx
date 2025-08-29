@@ -2,6 +2,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { fmt, fmtPct, asNumber } from "@/lib/utils"
+import { calculateHorizonTime, formatTargetTime, getShortHorizonLabel } from "@/lib/time"
 
 interface Forecast {
   horizon: string
@@ -15,9 +16,11 @@ interface Forecast {
 
 interface ForecastTableProps {
   forecasts: Forecast[]
+  predictedAt?: Date | null
+  marketTimeZone?: string | null
 }
 
-export function ForecastTable({ forecasts }: ForecastTableProps) {
+export function ForecastTable({ forecasts, predictedAt, marketTimeZone }: ForecastTableProps) {
   const getDirectionColor = (direction: string) => {
     switch (direction) {
       case 'up': return 'bg-green-500/10 text-green-600 border-green-500/20'
@@ -50,7 +53,18 @@ export function ForecastTable({ forecasts }: ForecastTableProps) {
           {forecasts.map((forecast, index) => (
             <TableRow key={index} className="hover:bg-muted/30">
               <TableCell className="font-mono font-medium">
-                {getHorizonLabel(forecast.horizon)}
+                {predictedAt ? (
+                  <div className="space-y-1">
+                    <div className="font-semibold">
+                      {formatTargetTime(calculateHorizonTime(forecast.horizon, predictedAt), marketTimeZone)}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {getShortHorizonLabel(forecast.horizon)}
+                    </div>
+                  </div>
+                ) : (
+                  getHorizonLabel(forecast.horizon)
+                )}
               </TableCell>
               <TableCell>
                 <Badge className={getDirectionColor(forecast.direction)}>

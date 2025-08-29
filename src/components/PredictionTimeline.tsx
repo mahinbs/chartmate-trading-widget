@@ -17,7 +17,7 @@ import {
   AlertTriangle,
   Timer
 } from "lucide-react";
-import { formatDuration, formatTimeRemaining, calculateHorizonTime } from "@/lib/time";
+import { formatTimeRemaining, formatDuration, getRelativeTime, calculateHorizonTime, formatTargetTime, getShortHorizonLabel } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 interface PipelineStep {
@@ -48,6 +48,7 @@ interface PredictionTimelineProps {
   pipeline?: PipelineMeta;
   forecasts?: HorizonForecast[];
   predictedAt?: Date;
+  marketTimeZone?: string | null;
 }
 
 const stepIcons: Record<string, any> = {
@@ -75,7 +76,8 @@ const stepLabels: Record<string, string> = {
 export function PredictionTimeline({ 
   pipeline, 
   forecasts = [],
-  predictedAt = new Date()
+  predictedAt = new Date(),
+  marketTimeZone
 }: PredictionTimelineProps) {
   const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -222,7 +224,8 @@ export function PredictionTimeline({
                 return (
                   <HorizonTile
                     key={forecast.horizon}
-                    horizon={forecast.horizon}
+                    horizon={formatTargetTime(targetTime, marketTimeZone)}
+                    shortHorizon={getShortHorizonLabel(forecast.horizon)}
                     direction={forecast.direction}
                     expectedReturn={forecast.expected_return_bp / 100}
                     confidence={forecast.confidence}

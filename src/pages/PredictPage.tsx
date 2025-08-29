@@ -122,6 +122,7 @@ const PredictPage = () => {
   const [chartSymbol, setChartSymbol] = useState("NASDAQ:AAPL");
   const [chartDataSource, setChartDataSource] = useState<string | null>(null);
   const [predictedAt, setPredictedAt] = useState<Date | null>(null);
+  const [marketTimeZone, setMarketTimeZone] = useState<string | null>(null);
   
   const { signOut, user } = useAuth();
   const navigate = useNavigate();
@@ -509,7 +510,11 @@ const PredictPage = () => {
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <ForecastTable forecasts={result.geminiForecast.forecasts} />
+                      <ForecastTable 
+                        forecasts={result.geminiForecast.forecasts} 
+                        predictedAt={predictedAt}
+                        marketTimeZone={marketTimeZone}
+                      />
                     </CardContent>
                   </Card>
                 )}
@@ -563,6 +568,7 @@ const PredictPage = () => {
                           confidence: f.confidence
                         })) || []}
                         predictedAt={predictedAt || new Date()}
+                        marketTimeZone={marketTimeZone}
                       />
                     </CardContent>
                   </Card>

@@ -53,21 +53,55 @@ export function formatTimeRemaining(targetTime: Date, currentTime: Date = new Da
   return `${seconds}s`;
 }
 
-export function formatDateTime(date: Date): string {
-  return new Intl.DateTimeFormat('en-US', {
+export function formatDateTime(date: Date, timeZone?: string): string {
+  const options: Intl.DateTimeFormatOptions = {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
     timeZoneName: 'short'
-  }).format(date);
+  };
+  
+  if (timeZone) {
+    options.timeZone = timeZone;
+  }
+  
+  return new Intl.DateTimeFormat('en-US', options).format(date);
 }
 
-export function calculateHorizonTime(
-  horizon: string, 
-  baseTime: Date = new Date()
-): Date {
+export function formatTargetTime(date: Date, timeZone?: string): string {
+  const options: Intl.DateTimeFormatOptions = {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short'
+  };
+  
+  if (timeZone) {
+    options.timeZone = timeZone;
+  }
+  
+  return new Intl.DateTimeFormat('en-US', options).format(date);
+}
+
+export function getShortHorizonLabel(horizon: string | number): string {
+  if (typeof horizon === 'number') {
+    const minutes = horizon;
+    if (minutes < 60) return `+${minutes}m`;
+    if (minutes < 1440) return `+${Math.round(minutes / 60)}h`;
+    if (minutes < 10080) return `+${Math.round(minutes / 1440)}d`;
+    return `+${Math.round(minutes / 10080)}w`;
+  }
+  
+  return `+${horizon}`;
+}
+
+export function horizonToMilliseconds(horizon: string | number): number {
+  // Handle numeric horizons (minutes) or string horizons ("1h", "4h", etc.)
+  if (typeof horizon === 'number') {
+    return horizon * 60 * 1000; // Convert minutes to milliseconds
+  }
+  
   // Convert horizon format (e.g., "15m", "1h", "1d") to milliseconds
   const timeframeMs: Record<string, number> = {
     '15m': 15 * 60 * 1000,
@@ -79,7 +113,14 @@ export function calculateHorizonTime(
     '1w': 7 * 24 * 60 * 60 * 1000
   };
   
-  const ms = timeframeMs[horizon] || 60 * 60 * 1000; // Default to 1 hour
+  return timeframeMs[horizon] || parseInt(horizon) * 60 * 1000 || 60 * 60 * 1000;
+}
+
+export function calculateHorizonTime(
+  horizon: string | number, 
+  baseTime: Date = new Date()
+): Date {
+  const ms = horizonToMilliseconds(horizon);
   return new Date(baseTime.getTime() + ms);
 }
 

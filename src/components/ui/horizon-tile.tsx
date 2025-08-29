@@ -5,6 +5,7 @@ import { TrendingUp, TrendingDown, Minus } from "lucide-react"
 
 interface HorizonTileProps {
   horizon: string
+  shortHorizon?: string
   direction: "up" | "down" | "sideways"
   expectedReturn: number
   confidence: number
@@ -14,6 +15,7 @@ interface HorizonTileProps {
 
 export function HorizonTile({
   horizon,
+  shortHorizon,
   direction,
   expectedReturn,
   confidence,
@@ -61,15 +63,22 @@ export function HorizonTile({
       <div className="relative space-y-3">
         {/* Header with horizon and status */}
         <div className="flex items-center justify-between">
-          <Badge 
-            variant={isExpired ? "outline" : "secondary"}
-            className={cn(
-              "font-mono text-xs",
-              !isExpired && "bg-gradient-to-r from-background/50 to-background/20 border-white/20"
+          <div className="space-y-1">
+            <Badge 
+              variant={isExpired ? "outline" : "secondary"}
+              className={cn(
+                "font-mono text-xs",
+                !isExpired && "bg-gradient-to-r from-background/50 to-background/20 border-white/20"
+              )}
+            >
+              {horizon}
+            </Badge>
+            {shortHorizon && (
+              <div className="text-xs text-muted-foreground font-mono">
+                {shortHorizon}
+              </div>
             )}
-          >
-            {horizon}
-          </Badge>
+          </div>
           
           <div className={cn(
             "flex items-center gap-1 text-xs font-medium",
