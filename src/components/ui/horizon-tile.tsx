@@ -67,7 +67,7 @@ export function HorizonTile({
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0 space-y-1">
             <div className={cn(
-              "text-xs font-mono leading-tight break-words",
+              "text-xs font-mono leading-tight whitespace-nowrap truncate",
               phase === 'expired' ? "text-muted-foreground" : "text-foreground"
             )}>
               {horizon}

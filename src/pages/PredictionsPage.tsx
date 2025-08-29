@@ -5,7 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ArrowLeft, Clock, ChevronDown, Plus } from "lucide-react";
+import { ArrowLeft, Clock, ChevronDown, Plus, X } from "lucide-react";
+import { PredictionTile } from "@/components/prediction/PredictionTile";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { PredictionTimeline } from "@/components/PredictionTimeline";
@@ -81,6 +82,7 @@ export default function PredictionsPage() {
     error: string | null;
   }>>({});
   const [marketStatuses, setMarketStatuses] = useState<Record<string, any>>({});
+  const [expandedPredictions, setExpandedPredictions] = useState<string[]>([]);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -472,7 +474,7 @@ export default function PredictionsPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {predictions.map((prediction) => {
               const startTime = new Date(prediction.created_at);
               const marketStatus = marketStatuses[prediction.symbol];
@@ -484,7 +486,56 @@ export default function PredictionsPage() {
               const isAnalyzing = analysisStates[prediction.id]?.loading;
 
               return (
-                <Card key={prediction.id} className="overflow-hidden">
+                <PredictionTile
+                  key={prediction.id}
+                  prediction={prediction}
+                  timeRemaining={timeRemaining}
+                  isExpired={isExpired}
+                  outcome={outcome}
+                  isAnalyzing={isAnalyzing}
+                  onViewDetails={() => {
+                    // Toggle detailed view for this prediction
+                    setExpandedPredictions(prev => 
+                      prev.includes(prediction.id) 
+                        ? prev.filter(id => id !== prediction.id)
+                        : [...prev, prediction.id]
+                    );
+                  }}
+                  onAnalyze={isExpired && outcome === 'pending' ? 
+                    () => analyzePostPrediction(prediction, expectedTime) : 
+                    undefined
+                  }
+                />
+              );
+            })}
+          </div>
+
+          {/* Detailed View Modal/Collapsible */}
+          {expandedPredictions.map((predictionId) => {
+            const prediction = predictions.find(p => p.id === predictionId);
+            if (!prediction) return null;
+
+            const startTime = new Date(prediction.created_at);
+            const marketStatus = marketStatuses[prediction.symbol];
+            const expectedTime = calculateExpectedTime(prediction.created_at, prediction.timeframe, marketStatus);
+            const timeRemaining = expectedTime.getTime() - Date.now();
+            const elapsedPercent = getElapsedPercent(startTime, expectedTime, new Date());
+            const isExpired = timeRemaining < 0;
+            const outcome = getOutcome(prediction);
+            const isAnalyzing = analysisStates[prediction.id]?.loading;
+
+            return (
+              <div key={`detailed-${predictionId}`} className="mt-8">
+                <Card className="overflow-hidden relative">
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    onClick={() => setExpandedPredictions(prev => prev.filter(id => id !== predictionId))}
+                    className="absolute top-4 right-4 z-10"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                  
                   {/* Header with Summary */}
                   <CardHeader className="pb-4">
                     <div className="flex items-start justify-between">
@@ -663,11 +714,11 @@ export default function PredictionsPage() {
                     )}
                   </CardContent>
                 </Card>
-              );
-            })}
-          </div>
+              </div>
+            );
+           })}
         )}
       </Container>
     </div>
   );
-};
+}
