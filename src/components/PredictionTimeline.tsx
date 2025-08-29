@@ -19,6 +19,11 @@ import {
 } from "lucide-react";
 import { formatTimeRemaining, formatDuration, getRelativeTime, calculateHorizonTime, formatDateTime, getShortHorizonLabel } from "@/lib/time";
 import { cn } from "@/lib/utils";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { PostPredictionReport } from "@/components/prediction/PostPredictionReport";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 interface PipelineStep {
   name: string;
@@ -49,6 +54,7 @@ interface PredictionTimelineProps {
   forecasts?: HorizonForecast[];
   predictedAt?: Date;
   marketTimeZone?: string | null;
+  symbol?: string;
 }
 
 const stepIcons: Record<string, any> = {
@@ -77,9 +83,13 @@ export function PredictionTimeline({
   pipeline, 
   forecasts = [],
   predictedAt = new Date(),
-  marketTimeZone
+  marketTimeZone,
+  symbol = ''
 }: PredictionTimelineProps) {
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [reportData, setReportData] = useState<any>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const { toast } = useToast();
 
   // Update current time every second for live countdown
   useEffect(() => {
@@ -89,6 +99,48 @@ export function PredictionTimeline({
 
     return () => clearInterval(interval);
   }, []);
+
+  const handleViewReport = async (forecast: HorizonForecast) => {
+    if (!symbol) return;
+    
+    setReportLoading(true);
+    try {
+      const targetTime = calculateHorizonTime(forecast.horizon, predictedAt);
+      
+      const { data, error } = await supabase.functions.invoke('analyze-post-prediction', {
+        body: {
+          symbol,
+          from: predictedAt.toISOString(),
+          to: targetTime.toISOString(),
+          expected: {
+            direction: forecast.direction,
+            movePercent: forecast.expected_return_bp / 100,
+            horizon: forecast.horizon
+          }
+        }
+      });
+
+      if (error) throw error;
+      
+      setReportData({
+        symbol,
+        timeframe: forecast.horizon,
+        evaluation: data.evaluation,
+        marketData: data.marketData,
+        ai: data.ai,
+        dataSource: data.dataSource
+      });
+    } catch (error: any) {
+      console.error('Report generation failed:', error);
+      toast({
+        title: "Report Failed",
+        description: error.message || "Unable to generate analysis report",
+        variant: "destructive",
+      });
+    } finally {
+      setReportLoading(false);
+    }
+  };
 
   if (!pipeline?.steps) {
     return (
@@ -222,16 +274,49 @@ export function PredictionTimeline({
                 const isExpired = targetTime.getTime() <= currentTime.getTime();
 
                 return (
-                  <HorizonTile
-                    key={forecast.horizon}
-                    horizon={formatDateTime(targetTime, marketTimeZone)}
-                    shortHorizon={getShortHorizonLabel(forecast.horizon)}
-                    direction={forecast.direction}
-                    expectedReturn={forecast.expected_return_bp / 100}
-                    confidence={forecast.confidence}
-                    timeRemaining={timeRemaining}
-                    isExpired={isExpired}
-                  />
+                  <div key={forecast.horizon} className="space-y-2">
+                    <HorizonTile
+                      horizon={formatDateTime(targetTime, marketTimeZone)}
+                      shortHorizon={getShortHorizonLabel(forecast.horizon)}
+                      direction={forecast.direction}
+                      expectedReturn={forecast.expected_return_bp / 100}
+                      confidence={forecast.confidence}
+                      timeRemaining={timeRemaining}
+                      isExpired={isExpired}
+                    />
+                    {isExpired && symbol && (
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="w-full"
+                            onClick={() => handleViewReport(forecast)}
+                            disabled={reportLoading}
+                          >
+                            {reportLoading ? (
+                              <>
+                                <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+                                Generating...
+                              </>
+                            ) : (
+                              'View Report'
+                            )}
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+                          <DialogHeader>
+                            <DialogTitle>
+                              {forecast.horizon} Analysis Report - {symbol}
+                            </DialogTitle>
+                          </DialogHeader>
+                          {reportData && (
+                            <PostPredictionReport {...reportData} />
+                          )}
+                        </DialogContent>
+                      </Dialog>
+                    )}
+                  </div>
                 );
               })}
             </div>

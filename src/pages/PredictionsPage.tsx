@@ -15,6 +15,7 @@ import { OutcomeBadge } from "@/components/prediction/OutcomeBadge";
 import { ActionBar } from "@/components/prediction/ActionBar";
 import { KeyLevels } from "@/components/prediction/KeyLevels";
 import { Insights } from "@/components/prediction/Insights";
+import { PostPredictionReport } from "@/components/prediction/PostPredictionReport";
 import { fmt, fmtPct, asNumber } from "@/lib/utils";
 import { Container } from "@/components/layout/Container";
 
@@ -41,7 +42,21 @@ interface AnalysisData {
   marketData?: { candleCount: number; source: string; interval: string };
   from?: string;
   to?: string;
-  ai?: { summary?: string };
+  ai?: { 
+    summary?: string; 
+    report?: {
+      title: string;
+      whatWePredicted: string;
+      whatHappened: string;
+      verdictExplanation: string;
+      failureExcuse?: string | null;
+      successExplanation?: string | null;
+      keyFactors: string[];
+      nextSteps: string[];
+      confidenceNote: string;
+    };
+    rawText?: string;
+  };
   evaluation?: {
     result: 'accurate' | 'partial' | 'failed';
     startPrice: number;
@@ -283,7 +298,7 @@ const PredictionsPage = () => {
         marketData: data.marketData,
         from: data.from || prediction.created_at,
         to: data.to || new Date().toISOString(),
-        ai: { summary: data.summary },
+        ai: data.ai || { summary: data.summary },
         evaluation: data.evaluation
       };
 
@@ -524,52 +539,26 @@ const PredictionsPage = () => {
                       </CollapsibleContent>
                     </Collapsible>
 
-                    {/* Analysis Results */}
-                    {analysisStates[prediction.id]?.data?.evaluation && (
-                      <div className="p-4 bg-muted/30 rounded-lg border">
-                        <h4 className="font-medium text-sm mb-3">Prediction Outcome</h4>
-                        {(() => {
-                          const evaluation = analysisStates[prediction.id]!.data!.evaluation!;
-                          return (
-                            <div className="space-y-3">
-                              <div className="grid grid-cols-2 gap-4 text-sm">
-                                <div>
-                                  <p className="text-muted-foreground">Predicted</p>
-                                  <p className={`font-semibold ${
-                                    evaluation.predictedDirection === 'up' ? 'text-green-600' :
-                                    evaluation.predictedDirection === 'down' ? 'text-red-600' : 'text-yellow-600'
-                                  }`}>
-                                    {evaluation.predictedDirection} {evaluation.predictedMovePercent ? fmtPct(evaluation.predictedMovePercent) : 'N/A'}
-                                  </p>
-                                </div>
-                                <div>
-                                  <p className="text-muted-foreground">Actual</p>
-                                  <p className={`font-semibold ${
-                                    evaluation.actualChangePercent >= 0 ? 'text-green-600' : 'text-red-600'
-                                  }`}>
-                                    {evaluation.actualChangePercent >= 0 ? '+' : ''}{fmt(evaluation.actualChangePercent)}%
-                                  </p>
-                                </div>
-                              </div>
-                              
-                              <div className="text-sm">
-                                <p className="text-muted-foreground">Price Movement</p>
-                                <p className="font-semibold">
-                                  ${fmt(evaluation.startPrice)} → ${fmt(evaluation.endPrice)}
-                                </p>
-                              </div>
-                              
-                              {evaluation.reasoning && (
-                                <div className="pt-3 border-t">
-                                  <p className="text-xs text-muted-foreground leading-relaxed">
-                                    {evaluation.reasoning}
-                                  </p>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })()}
-                      </div>
+                    {/* AI-Powered Analysis Results */}
+                    {analysisStates[prediction.id]?.data && (
+                      <Collapsible>
+                        <CollapsibleTrigger asChild>
+                          <Button variant="ghost" className="w-full justify-between p-0 h-auto">
+                            <h3 className="text-sm font-medium">Prediction Outcome</h3>
+                            <ChevronDown className="h-4 w-4" />
+                          </Button>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="mt-3">
+                          <PostPredictionReport
+                            symbol={prediction.symbol}
+                            timeframe={prediction.timeframe}
+                            evaluation={analysisStates[prediction.id]?.data?.evaluation}
+                            marketData={analysisStates[prediction.id]?.data?.marketData}
+                            ai={analysisStates[prediction.id]?.data?.ai}
+                            dataSource={analysisStates[prediction.id]?.data?.dataSource}
+                          />
+                        </CollapsibleContent>
+                      </Collapsible>
                     )}
 
                     {/* Pipeline Timeline */}
@@ -592,6 +581,7 @@ const PredictionsPage = () => {
                               confidence: f.confidence
                             })) || []}
                             predictedAt={new Date(prediction.created_at)}
+                            symbol={prediction.symbol}
                           />
                         </CollapsibleContent>
                       </Collapsible>

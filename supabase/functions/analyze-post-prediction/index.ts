@@ -131,6 +131,102 @@ async function fetchYahooChartWithPeriod(params: { yahooSymbol: string; period1:
   return candles;
 }
 
+// Generate AI-powered report using Gemini
+async function generateAIReport(
+  symbol: string,
+  prediction: { direction: string; movePercent: number; horizon?: string },
+  actualData: { startPrice: number; endPrice: number; actualChangePercent: number; high: number; low: number; candleCount: number; interval: string },
+  evaluation: { result: 'accurate' | 'partial' | 'failed'; reasoning: string },
+  geminiApiKey: string
+): Promise<{ report: any; rawText: string }> {
+  const prompt = `You are an expert financial analyst providing a detailed post-prediction report. Analyze this market prediction and outcome:
+
+PREDICTION MADE:
+- Symbol: ${symbol}
+- Direction: ${prediction.direction}
+- Expected Move: ${prediction.movePercent}%
+- Timeframe: ${prediction.horizon || 'N/A'}
+
+ACTUAL OUTCOME:
+- Start Price: $${actualData.startPrice.toFixed(4)}
+- End Price: $${actualData.endPrice.toFixed(4)}
+- Actual Move: ${actualData.actualChangePercent.toFixed(2)}%
+- High: $${actualData.high.toFixed(4)}
+- Low: $${actualData.low.toFixed(4)}
+- Data Points: ${actualData.candleCount} candles (${actualData.interval})
+
+EVALUATION: ${evaluation.result.toUpperCase()} - ${evaluation.reasoning}
+
+Provide a comprehensive analysis in this EXACT JSON format:
+{
+  "title": "Brief title summarizing the outcome",
+  "whatWePredicted": "Clear description of what was predicted",
+  "whatHappened": "Factual description of market movement",
+  "verdictExplanation": "Detailed explanation of why it was accurate/partial/failed",
+  "failureExcuse": "If failed: honest, brief excuse (market volatility, news, etc.) - null if not failed",
+  "successExplanation": "If successful: why the prediction worked - null if failed",
+  "keyFactors": ["3-5 bullet points of key factors that influenced the outcome"],
+  "nextSteps": ["3-4 actionable insights for future predictions"],
+  "confidenceNote": "Brief note on prediction confidence and market conditions"
+}
+
+Keep it professional, concise, and educational. Focus on learning from the outcome.`;
+
+  try {
+    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + geminiApiKey, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.3,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 2048,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Gemini API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    
+    // Try to parse JSON from the response
+    let report = null;
+    try {
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        report = JSON.parse(jsonMatch[0]);
+      }
+    } catch (parseError) {
+      console.warn('Failed to parse JSON from Gemini response, using fallback');
+    }
+
+    // Fallback if parsing fails
+    if (!report) {
+      report = {
+        title: `${symbol} Prediction ${evaluation.result === 'accurate' ? 'Success' : evaluation.result === 'partial' ? 'Partial Success' : 'Miss'}`,
+        whatWePredicted: `Expected ${prediction.direction} move of ${prediction.movePercent}%`,
+        whatHappened: `Price moved ${actualData.actualChangePercent.toFixed(2)}% from $${actualData.startPrice.toFixed(4)} to $${actualData.endPrice.toFixed(4)}`,
+        verdictExplanation: evaluation.reasoning,
+        failureExcuse: evaluation.result === 'failed' ? 'Market conditions were more volatile than expected' : null,
+        successExplanation: evaluation.result === 'accurate' ? 'Market behaved as predicted based on technical analysis' : null,
+        keyFactors: ['Market volatility', 'Technical indicators', 'Price action patterns'],
+        nextSteps: ['Monitor similar setups', 'Refine prediction parameters', 'Consider market context'],
+        confidenceNote: 'Continue monitoring market patterns for improved accuracy'
+      };
+    }
+
+    return { report, rawText };
+  } catch (error) {
+    console.error('Gemini API error:', error);
+    throw new Error(`AI analysis failed: ${error.message}`);
+  }
+}
+
 // Generate fallback summary with realistic context
 function generateFallbackSummary(marketData: any, displaySymbol: string, dataSourceInfo: string = '') {
   if (!marketData || !marketData.candles || marketData.candles.length === 0) {
@@ -235,8 +331,9 @@ serve(async (req) => {
     // Generate summary from actual market data
     const summary = generateFallbackSummary(marketData, symbol, dataSource);
 
-    // If we have expected values, calculate evaluation
+    // If we have expected values, calculate evaluation and AI report
     let evaluation = null;
+    let aiReport = null;
     if (expected && marketData.candles.length > 0) {
       const candles = marketData.candles;
       const startPrice = candles[0].close;
@@ -303,6 +400,31 @@ serve(async (req) => {
       };
       
       console.log(`📊 Evaluation: ${result} - ${reasoning}`);
+      
+      // Generate AI-powered detailed report
+      try {
+        const actualData = {
+          startPrice,
+          endPrice,
+          actualChangePercent,
+          high: Math.max(...candles.map((c: any) => c.high)),
+          low: Math.min(...candles.map((c: any) => c.low)),
+          candleCount: candles.length,
+          interval: dataSource.match(/\(([^)]+)\)/)?.[1] || 'unknown'
+        };
+        
+        const predictionData = {
+          direction: expected.direction,
+          movePercent: expected.movePercent,
+          horizon: expected.horizon
+        };
+        
+        aiReport = await generateAIReport(symbol, predictionData, actualData, evaluation, geminiApiKey);
+        console.log('🤖 AI report generated successfully');
+      } catch (aiError) {
+        console.warn('AI report generation failed:', aiError.message);
+        // Continue without AI report if it fails
+      }
     }
 
     return new Response(JSON.stringify({
@@ -316,7 +438,8 @@ serve(async (req) => {
       },
       from: fromTime.toISOString(),
       to: toTime.toISOString(),
-      evaluation
+      evaluation,
+      ai: aiReport
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
