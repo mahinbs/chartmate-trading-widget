@@ -23,6 +23,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { toast } from "sonner";
 import { Loader2, AlertTriangle, BrainCircuit, BarChart3, CheckCircle, ArrowRight, DollarSign, LogOut, History } from "lucide-react";
+import { Container } from "@/components/layout/Container";
 
 interface GeminiForecast {
   symbol: string;
@@ -243,7 +244,7 @@ const PredictPage = () => {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <div className="border-b bg-card/50 backdrop-blur-sm">
-        <div className="container mx-auto px-3 sm:px-6 py-3 sm:py-4">
+        <Container className="py-3 sm:py-4">
           <div className={`flex ${isMobile ? 'flex-col gap-2' : 'justify-between items-center'} mb-4`}>
             <Button
               variant="outline"
@@ -293,14 +294,14 @@ const PredictPage = () => {
               className={isMobile ? 'mobile-stepper' : ''}
             />
           </div>
-        </div>
+        </Container>
       </div>
 
       {/* Main Content */}
-      <div className="container mx-auto px-3 sm:px-6 py-4 sm:py-8">
-        <div className={`grid grid-cols-1 ${!isMobile ? 'lg:grid-cols-2' : ''} gap-4 sm:gap-8 max-w-6xl mx-auto`}>
+      <Container className="py-4 sm:py-8">
+        <div className={`grid grid-cols-1 ${!isMobile ? 'lg:grid-cols-12' : ''} gap-4 sm:gap-8`}>
           {/* Left Column - Step Content */}
-          <div className="space-y-6">
+          <div className={`space-y-6 ${!isMobile ? 'lg:col-span-7 xl:col-span-8' : ''}`}>
             {/* Step 1: Choose Asset */}
             {currentStep === "choose-asset" && (
               <StepContainer 
@@ -601,7 +602,8 @@ const PredictPage = () => {
           </div>
 
           {/* Right Column - Live Chart */}
-          <div className={`${!isMobile ? 'lg:sticky lg:top-8 lg:h-fit' : ''}`}>
+          {!isMobile && (
+            <div className="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-8 space-y-6">
             <Card>
               <CardHeader className={`${isMobile ? 'pb-2' : 'pb-4'}`}>
                 <div className="flex items-center justify-between">
@@ -638,13 +640,14 @@ const PredictPage = () => {
                 </CardContent>
               </Card>
             )}
-          </div>
+            </div>
+          )}
         </div>
-      </div>
+      </Container>
 
       {/* Disclaimer */}
-      <div className="border-t bg-muted/30">
-        <div className="container mx-auto px-3 sm:px-6 py-3 sm:py-4">
+      <div className="border-t bg-muted/20">
+        <Container className="py-4">
           <Alert>
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription className={`${isMobile ? 'text-xs' : 'text-sm'}`}>
@@ -652,7 +655,7 @@ const PredictPage = () => {
               Past performance does not guarantee future results. Always do your own research.
             </AlertDescription>
           </Alert>
-        </div>
+        </Container>
       </div>
     </div>
   );

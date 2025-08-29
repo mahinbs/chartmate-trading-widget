@@ -42,9 +42,10 @@ export function ForecastTable({ forecasts, predictedAt, marketTimeZone }: Foreca
   }
 
   return (
-    <>
+    <div className="w-full space-y-4">
       {/* Mobile card layout */}
-      <div className="block lg:hidden space-y-4">
+      {isMobile ? (
+        <div className="space-y-4">
         {forecasts.map((forecast, index) => (
           <Card key={index} className="w-full">
             <CardContent className="p-4 space-y-4">
@@ -116,10 +117,10 @@ export function ForecastTable({ forecasts, predictedAt, marketTimeZone }: Foreca
             </CardContent>
           </Card>
         ))}
-      </div>
-
-      {/* Desktop table layout */}
-      <div className="hidden lg:block border rounded-lg overflow-hidden">
+        </div>
+      ) : (
+        /* Desktop table layout */
+        <div className="w-full border rounded-lg overflow-x-auto">
         <Table className="table-fixed">
         <TableHeader>
           <TableRow className="bg-muted/50">
@@ -191,8 +192,9 @@ export function ForecastTable({ forecasts, predictedAt, marketTimeZone }: Foreca
             </TableRow>
           ))}
         </TableBody>
-      </Table>
-      </div>
-    </>
+        </Table>
+        </div>
+      )}
+    </div>
   )
 }

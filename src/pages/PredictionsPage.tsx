@@ -16,6 +16,7 @@ import { ActionBar } from "@/components/prediction/ActionBar";
 import { KeyLevels } from "@/components/prediction/KeyLevels";
 import { Insights } from "@/components/prediction/Insights";
 import { fmt, fmtPct, asNumber } from "@/lib/utils";
+import { Container } from "@/components/layout/Container";
 
 interface Prediction {
   id: string;
@@ -328,7 +329,7 @@ const PredictionsPage = () => {
   if (loading) {
     return (
       <div className="min-h-screen bg-background">
-        <div className="container mx-auto p-6">
+        <Container className="p-6">
           <div className="flex items-center gap-4 mb-8">
             <Button variant="ghost" onClick={() => navigate('/predict')}>
               <ArrowLeft className="h-4 w-4 mr-2" />
@@ -336,7 +337,7 @@ const PredictionsPage = () => {
             </Button>
           </div>
           <div className="text-center">Loading predictions...</div>
-        </div>
+        </Container>
       </div>
     );
   }
@@ -345,7 +346,7 @@ const PredictionsPage = () => {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <div className="border-b bg-card/50 backdrop-blur-sm">
-        <div className="container mx-auto px-6 py-4">
+        <Container className="py-4">
           <div className="flex items-center justify-between mb-4">
             <Button variant="ghost" onClick={() => navigate('/predict')}>
               <ArrowLeft className="h-4 w-4 mr-2" />
@@ -362,11 +363,11 @@ const PredictionsPage = () => {
               Track your AI-powered market predictions and their outcomes
             </p>
           </div>
-        </div>
+        </Container>
       </div>
 
       {/* Main Content */}
-      <div className="container mx-auto px-6 py-8">
+      <Container className="py-8">
         {predictions.length === 0 ? (
           <Card className="max-w-md mx-auto text-center">
             <CardContent className="p-8">
@@ -387,7 +388,7 @@ const PredictionsPage = () => {
             </CardContent>
           </Card>
         ) : (
-          <div className="space-y-6 max-w-4xl mx-auto">
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
             {predictions.map((prediction) => {
               const startTime = new Date(prediction.created_at);
               const expectedTime = calculateExpectedTime(prediction.timeframe, startTime);
@@ -601,7 +602,7 @@ const PredictionsPage = () => {
             })}
           </div>
         )}
-      </div>
+      </Container>
     </div>
   );
 };
