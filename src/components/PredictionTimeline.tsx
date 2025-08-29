@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { formatTimeRemaining, formatDuration, getRelativeTime, formatDateTime, getShortHorizonLabel } from "@/lib/time";
 import { getEffectiveStart, getEffectiveTarget, shouldStartTiming } from "@/lib/market-hours";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -271,22 +272,44 @@ export function PredictionTimeline({
             </CardTitle>
           </CardHeader>
           <CardContent>
+            {/* Market closed banner */}
+            {!shouldStartTiming(predictedAt, marketStatus) && (
+              <Alert className="mb-4 border-accent/30 bg-accent/5">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  Market closed. Timers start at {formatDateTime(getEffectiveStart(predictedAt, marketStatus), marketTimeZone)}. 
+                  "Completes in ..." includes the pre-open delay.
+                </AlertDescription>
+              </Alert>
+            )}
+            
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {forecasts.map((forecast) => {
                 const effectiveStart = getEffectiveStart(predictedAt, marketStatus);
                 const targetTime = getEffectiveTarget(forecast.horizon, effectiveStart);
-                const timingStarted = shouldStartTiming(predictedAt, marketStatus);
+                const now = currentTime;
                 
-                let timeLabel: string;
+                let phase: 'waiting' | 'active' | 'expired';
+                let primaryLabel: string;
+                let secondaryLabel: string | undefined;
                 let isExpired: boolean;
                 
-                if (!timingStarted) {
-                  const timeToStart = formatTimeRemaining(effectiveStart, currentTime);
-                  timeLabel = timeToStart === 'Expired' ? 'Starting...' : `Starts in ${timeToStart}`;
+                if (now < effectiveStart) {
+                  // Market is closed - show total completion time and when market opens
+                  phase = 'waiting';
+                  primaryLabel = `Completes in ${formatTimeRemaining(targetTime, now)}`;
+                  secondaryLabel = `Opens in ${formatTimeRemaining(effectiveStart, now)}`;
+                  isExpired = false;
+                } else if (now < targetTime) {
+                  // Market is open, horizon not reached
+                  phase = 'active';
+                  primaryLabel = `${formatTimeRemaining(targetTime, now)} remaining`;
                   isExpired = false;
                 } else {
-                  timeLabel = formatTimeRemaining(targetTime, currentTime);
-                  isExpired = targetTime.getTime() <= currentTime.getTime();
+                  // Horizon expired
+                  phase = 'expired';
+                  primaryLabel = 'Expired';
+                  isExpired = true;
                 }
 
                 return (
@@ -297,8 +320,9 @@ export function PredictionTimeline({
                       direction={forecast.direction}
                       expectedReturn={forecast.expected_return_bp / 100}
                       confidence={forecast.confidence}
-                      timeRemaining={timeLabel}
-                      isExpired={isExpired}
+                      phase={phase}
+                      primaryLabel={primaryLabel}
+                      secondaryLabel={secondaryLabel}
                     />
                     {isExpired && symbol && (
                       <Dialog>

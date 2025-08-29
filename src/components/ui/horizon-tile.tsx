@@ -9,8 +9,9 @@ interface HorizonTileProps {
   direction: "up" | "down" | "sideways"
   expectedReturn: number
   confidence: number
-  timeRemaining: string
-  isExpired: boolean
+  phase: 'waiting' | 'active' | 'expired'
+  primaryLabel: string
+  secondaryLabel?: string
 }
 
 export function HorizonTile({
@@ -19,8 +20,9 @@ export function HorizonTile({
   direction,
   expectedReturn,
   confidence,
-  timeRemaining,
-  isExpired
+  phase,
+  primaryLabel,
+  secondaryLabel
 }: HorizonTileProps) {
   const directionConfig = {
     up: {
@@ -53,9 +55,9 @@ export function HorizonTile({
     <div className={cn(
       "relative group rounded-xl border p-4 transition-all duration-300 hover:scale-[1.02]",
       "bg-gradient-to-br backdrop-blur-sm",
-      isExpired ? "from-muted/20 to-muted/5 border-muted/20" : config.gradient,
-      isExpired ? "" : config.border,
-      isExpired ? "" : config.glow
+      phase === 'expired' ? "from-muted/20 to-muted/5 border-muted/20" : config.gradient,
+      phase === 'expired' ? "" : config.border,
+      phase === 'expired' ? "" : config.glow
     )}>
       {/* Animated background gradient overlay */}
       <div className="absolute inset-0 bg-gradient-to-br from-white/[0.03] via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
@@ -66,13 +68,13 @@ export function HorizonTile({
           <div className="flex-1 min-w-0 space-y-1">
             <div className={cn(
               "text-xs font-mono leading-tight break-words",
-              isExpired ? "text-muted-foreground" : "text-foreground"
+              phase === 'expired' ? "text-muted-foreground" : "text-foreground"
             )}>
               {horizon}
             </div>
             {shortHorizon && (
               <Badge 
-                variant={isExpired ? "outline" : "secondary"}
+                variant={phase === 'expired' ? "outline" : "secondary"}
                 className="text-xs font-mono"
               >
                 {shortHorizon}
@@ -82,7 +84,7 @@ export function HorizonTile({
           
           <div className={cn(
             "flex items-center gap-1 text-xs font-medium",
-            isExpired ? "text-muted-foreground" : "text-foreground"
+            phase === 'expired' ? "text-muted-foreground" : "text-foreground"
           )}>
             <Icon className="h-3 w-3" />
             {config.emoji}
@@ -104,22 +106,29 @@ export function HorizonTile({
                 {confidence}% confidence
               </span>
             </div>
-            <div className="text-right">
+            <div className="text-right space-y-1">
               <div className={cn(
                 "font-mono text-sm font-medium break-words",
-                isExpired ? "text-trading-red" : "text-primary"
+                phase === 'expired' ? "text-trading-red" : 
+                phase === 'waiting' ? "text-accent" : "text-primary"
               )}>
-                {timeRemaining}
+                {primaryLabel}
               </div>
+              {secondaryLabel && (
+                <div className="font-mono text-xs text-muted-foreground">
+                  {secondaryLabel}
+                </div>
+              )}
               <div className="text-xs text-muted-foreground">
-                {isExpired ? "results ready" : "remaining"}
+                {phase === 'expired' ? "results ready" : 
+                 phase === 'waiting' ? "total time" : "remaining"}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Progress indicator for non-expired tiles */}
-        {!isExpired && (
+        {/* Progress indicator only for active phase */}
+        {phase === 'active' && (
           <div className="w-full h-1 bg-muted/20 rounded-full overflow-hidden">
             <div 
               className="h-full bg-gradient-to-r from-primary/60 to-primary rounded-full animate-pulse"
