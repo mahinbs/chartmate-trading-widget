@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import PredictPage from "./pages/PredictPage";
 import PredictionsPage from "./pages/PredictionsPage";
+import IntradayPage from "./pages/IntradayPage";
 import AuthPage from "./pages/AuthPage";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
@@ -33,6 +34,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <PredictionsPage />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/intraday" 
+              element={
+                <ProtectedRoute>
+                  <IntradayPage />
                 </ProtectedRoute>
               } 
             />

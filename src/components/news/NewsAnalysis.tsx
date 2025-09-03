@@ -2,39 +2,37 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ExternalLink, Newspaper, TrendingUp, AlertTriangle, Target } from "lucide-react";
+import { ExternalLink, Newspaper, TrendingUp, AlertTriangle, Target, Clock, Source } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
 
-interface NewsArticle {
-  title: string;
-  url: string;
+interface NewsItem {
+  time: string;
   source: string;
-  publishedAt: string;
-  description?: string;
+  headline: string;
+  sentiment_score: number;
+  novelty: string;
+  relevance: string;
 }
 
-interface NewsAnalysis {
-  summary: string;
-  sentiment: {
-    score: number;
-    label: string;
-  };
-  keyDrivers: string[];
-  risks: string[];
-  opportunities: string[];
-  notableHeadlines: string[];
-}
-
-interface NewsResponse {
+interface EnhancedNewsResponse {
   symbol: string;
-  query: string;
-  from: string;
-  to: string;
-  dataSource: string;
-  articles: NewsArticle[];
-  analysis: NewsAnalysis;
+  totalNews: number;
+  overallSentiment: number;
+  sentimentBreakdown: {
+    positive: number;
+    negative: number;
+    neutral: number;
+  };
+  newsItems: NewsItem[];
+  sources: string[];
+  lastUpdated: string;
+  analysis: {
+    summary: string;
+    confidence: 'high' | 'medium' | 'low';
+    coverage: 'comprehensive' | 'limited';
+  };
 }
 
 interface NewsAnalysisProps {
@@ -43,7 +41,7 @@ interface NewsAnalysisProps {
 }
 
 export function NewsAnalysis({ symbol, predictedAt }: NewsAnalysisProps) {
-  const [newsData, setNewsData] = useState<NewsResponse | null>(null);
+  const [newsData, setNewsData] = useState<EnhancedNewsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
@@ -54,7 +52,7 @@ export function NewsAnalysis({ symbol, predictedAt }: NewsAnalysisProps) {
 
   const getCacheKey = () => {
     const date = predictedAt ? predictedAt.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
-    return `news-google:${symbol}:${date}`;
+    return `enhanced-news:${symbol}:${date}`;
   };
 
   const fetchNewsAnalysis = async () => {
@@ -67,7 +65,7 @@ export function NewsAnalysis({ symbol, predictedAt }: NewsAnalysisProps) {
       const cached = localStorage.getItem(cacheKey);
       if (cached) {
         const { data, timestamp } = JSON.parse(cached);
-        const isExpired = Date.now() - timestamp > 6 * 60 * 60 * 1000; // 6 hours TTL
+        const isExpired = Date.now() - timestamp > 2 * 60 * 60 * 1000; // 2 hours TTL for news
         
         if (!isExpired) {
           setNewsData(data);
@@ -76,19 +74,10 @@ export function NewsAnalysis({ symbol, predictedAt }: NewsAnalysisProps) {
         }
       }
 
-      // Calculate date range
-      const to = predictedAt || new Date();
-      const from = new Date(to.getTime() - 7 * 24 * 60 * 60 * 1000); // 7 days ago
-
-      console.log(`Fetching news analysis for ${symbol}...`);
+      console.log(`Fetching enhanced news analysis for ${symbol}...`);
 
       const { data, error: supabaseError } = await supabase.functions.invoke('analyze-news-google', {
-        body: {
-          symbol,
-          from: from.toISOString(),
-          to: to.toISOString(),
-          limit: 8
-        }
+        body: { symbol }
       });
 
       if (supabaseError) {
@@ -106,10 +95,10 @@ export function NewsAnalysis({ symbol, predictedAt }: NewsAnalysisProps) {
       }));
 
       setNewsData(data);
-      console.log(`News analysis loaded: ${data.articles?.length || 0} articles`);
+      console.log(`Enhanced news analysis loaded: ${data.totalNews || 0} news items`);
 
     } catch (err) {
-      console.error('Error fetching news analysis:', err);
+      console.error('Error fetching enhanced news analysis:', err);
       setError(err instanceof Error ? err.message : 'Failed to load news');
       toast({
         title: "News Analysis Error",
@@ -121,19 +110,36 @@ export function NewsAnalysis({ symbol, predictedAt }: NewsAnalysisProps) {
     }
   };
 
-  const getSentimentColor = (label: string) => {
-    switch (label.toLowerCase()) {
-      case 'positive': return 'bg-green-100 text-green-800 border-green-200';
-      case 'negative': return 'bg-red-100 text-red-800 border-red-200';
-      default: return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-    }
+  const getSentimentColor = (score: number) => {
+    if (typeof score !== 'number' || isNaN(score)) return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+    if (score > 0.3) return 'bg-green-100 text-green-800 border-green-200';
+    if (score < -0.3) return 'bg-red-100 text-red-800 border-red-200';
+    return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+  };
+
+  const getSentimentLabel = (score: number) => {
+    if (typeof score !== 'number' || isNaN(score)) return 'Neutral';
+    if (score > 0.3) return 'Positive';
+    if (score < -0.3) return 'Negative';
+    return 'Neutral';
   };
 
   const formatTimeAgo = (dateString: string) => {
+    if (!dateString) return 'Recently';
     try {
       return formatDistanceToNow(new Date(dateString), { addSuffix: true });
     } catch {
       return 'Recently';
+    }
+  };
+
+  const getConfidenceColor = (confidence: string) => {
+    if (!confidence) return 'bg-gray-100 text-gray-800 border-gray-200';
+    switch (confidence) {
+      case 'high': return 'bg-green-100 text-green-800 border-green-200';
+      case 'medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'low': return 'bg-red-100 text-red-800 border-red-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
     }
   };
 
@@ -184,7 +190,7 @@ export function NewsAnalysis({ symbol, predictedAt }: NewsAnalysisProps) {
     );
   }
 
-  if (!newsData || newsData.articles.length === 0) {
+  if (!newsData || newsData.totalNews === 0) {
     return (
       <Card>
         <CardHeader>
@@ -202,7 +208,7 @@ export function NewsAnalysis({ symbol, predictedAt }: NewsAnalysisProps) {
     );
   }
 
-  const { analysis, articles } = newsData;
+  const { analysis, newsItems, sources } = newsData;
 
   return (
     <Card>
@@ -219,102 +225,91 @@ export function NewsAnalysis({ symbol, predictedAt }: NewsAnalysisProps) {
             <h4 className="font-medium">AI Analysis</h4>
             <Badge 
               variant="outline" 
-              className={getSentimentColor(analysis.sentiment.label)}
+              className={getConfidenceColor(newsData.analysis?.confidence || 'medium')}
             >
-              {analysis.sentiment.label}
+              {newsData.analysis?.confidence || 'medium'} Confidence
+            </Badge>
+            <Badge 
+              variant="outline" 
+              className={getSentimentColor(newsData.overallSentiment || 0)}
+            >
+              {getSentimentLabel(newsData.overallSentiment || 0)}
             </Badge>
           </div>
           
           <p className="text-sm text-muted-foreground leading-relaxed">
-            {analysis.summary}
+            {newsData.analysis?.summary || `Found ${newsData.totalNews} news items for ${newsData.symbol}`}
           </p>
         </div>
 
         {/* Key Insights Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {analysis.keyDrivers.length > 0 && (
-            <div className="space-y-2">
-              <h5 className="flex items-center gap-1.5 text-sm font-medium text-green-700">
-                <TrendingUp className="h-4 w-4" />
-                Key Drivers
-              </h5>
-              <ul className="space-y-1">
-                {analysis.keyDrivers.slice(0, 3).map((driver, idx) => (
-                  <li key={idx} className="text-xs text-muted-foreground flex items-start gap-1">
-                    <span className="text-green-600 mt-0.5">•</span>
-                    {driver}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <div className="space-y-2">
+            <h5 className="flex items-center gap-1.5 text-sm font-medium text-green-700">
+              <TrendingUp className="h-4 w-4" />
+              Overall Sentiment
+            </h5>
+            <p className="text-sm text-muted-foreground">
+              {getSentimentLabel(newsData.overallSentiment || 0)} ({(newsData.overallSentiment || 0).toFixed(2)})
+            </p>
+          </div>
 
-          {analysis.risks.length > 0 && (
-            <div className="space-y-2">
-              <h5 className="flex items-center gap-1.5 text-sm font-medium text-red-700">
-                <AlertTriangle className="h-4 w-4" />
-                Risk Factors
-              </h5>
-              <ul className="space-y-1">
-                {analysis.risks.slice(0, 3).map((risk, idx) => (
-                  <li key={idx} className="text-xs text-muted-foreground flex items-start gap-1">
-                    <span className="text-red-600 mt-0.5">•</span>
-                    {risk}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <div className="space-y-2">
+            <h5 className="flex items-center gap-1.5 text-sm font-medium text-blue-700">
+              <Target className="h-4 w-4" />
+              Coverage
+            </h5>
+            <p className="text-sm text-muted-foreground">
+              {newsData.analysis?.coverage || 'limited'}
+            </p>
+          </div>
 
-          {analysis.opportunities.length > 0 && (
-            <div className="space-y-2">
-              <h5 className="flex items-center gap-1.5 text-sm font-medium text-blue-700">
-                <Target className="h-4 w-4" />
-                Opportunities
-              </h5>
-              <ul className="space-y-1">
-                {analysis.opportunities.slice(0, 3).map((opp, idx) => (
-                  <li key={idx} className="text-xs text-muted-foreground flex items-start gap-1">
-                    <span className="text-blue-600 mt-0.5">•</span>
-                    {opp}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <div className="space-y-2">
+            <h5 className="flex items-center gap-1.5 text-sm font-medium text-gray-700">
+              <Clock className="h-4 w-4" />
+              Last Updated
+            </h5>
+            <p className="text-sm text-muted-foreground">
+              {formatTimeAgo(newsData.lastUpdated || new Date().toISOString())}
+            </p>
+          </div>
         </div>
 
         {/* Recent Headlines */}
         <div className="space-y-3">
           <h4 className="font-medium">Recent Headlines</h4>
           <div className="space-y-2">
-            {articles.slice(0, 5).map((article, idx) => (
-              <div key={idx} className="flex items-start justify-between gap-3 p-2 rounded-lg bg-muted/30">
-                <div className="flex-1 min-w-0">
-                  <a 
-                    href={article.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm font-medium hover:text-primary transition-colors block truncate"
-                  >
-                    {article.title}
-                  </a>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-xs text-muted-foreground">{article.source}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {formatTimeAgo(article.publishedAt)}
-                    </span>
+            {newsItems && newsItems.length > 0 ? (
+              newsItems.slice(0, 5).map((item, idx) => (
+                <div key={idx} className="flex items-start justify-between gap-3 p-2 rounded-lg bg-muted/30">
+                  <div className="flex-1 min-w-0">
+                    <a 
+                      href="#" // Placeholder for article URL
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm font-medium hover:text-primary transition-colors block truncate"
+                    >
+                      {item.headline}
+                    </a>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs text-muted-foreground">{item.source}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {formatTimeAgo(item.time)}
+                      </span>
+                    </div>
                   </div>
+                  <ExternalLink className="h-3 w-3 text-muted-foreground flex-shrink-0 mt-1" />
                 </div>
-                <ExternalLink className="h-3 w-3 text-muted-foreground flex-shrink-0 mt-1" />
-              </div>
-            ))}
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No recent headlines available</p>
+            )}
           </div>
         </div>
 
         {/* Data Source */}
         <div className="text-xs text-muted-foreground pt-2 border-t">
-          Source: {newsData.dataSource} • Query: "{newsData.query}"
+          Sources: {sources?.length > 0 ? sources.join(', ') : 'Multiple sources'}
         </div>
       </CardContent>
     </Card>

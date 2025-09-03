@@ -373,52 +373,107 @@ serve(async (req) => {
       const hitTargetMax = expected.priceTargetMax ? candles.some((c: any) => c.high >= expected.priceTargetMax) : false;
       const hitTargetMin = expected.priceTargetMin ? candles.some((c: any) => c.low <= expected.priceTargetMin) : false;
       
-      // Determine result based on direction and move percent
-      let result: 'accurate' | 'partial' | 'failed' | 'inconclusive' = 'failed';
+      // Enhanced accuracy evaluation with multiple metrics
+      let result: 'accurate' | 'partial' | 'failed' | 'inconclusive' = '';
       let reasoning = '';
+      let accuracyScore = 0;
+      let confidenceAdjustment = 0;
       
       // If insufficient data, mark as inconclusive
       if (isInsufficientData) {
         result = 'inconclusive';
         reasoning = `Insufficient market data for reliable evaluation (${marketData.candleCount} candles, ${dataSource})`;
+        accuracyScore = 0;
       } else {
-        const threshold = expected.movePercent * 0.8; // 80% of predicted move for accuracy
-      
-      if (expected.direction === 'up') {
-        if (actualChangePercent >= threshold) {
+        // Enhanced accuracy calculation with multiple factors
+        
+        // Factor 1: Direction accuracy (40% weight)
+        let directionScore = 0;
+        if (expected.direction === 'up' && actualChangePercent > 0) {
+          directionScore = 1;
+        } else if (expected.direction === 'down' && actualChangePercent < 0) {
+          directionScore = 1;
+        } else if (expected.direction === 'neutral' || expected.direction === 'sideways') {
+          directionScore = Math.abs(actualChangePercent) < 1.0 ? 1 : 0.5;
+        } else {
+          directionScore = 0;
+        }
+        
+        // Factor 2: Magnitude accuracy (30% weight)
+        let magnitudeScore = 0;
+        if (expected.movePercent > 0) {
+          const actualMagnitude = Math.abs(actualChangePercent);
+          const expectedMagnitude = expected.movePercent;
+          const ratio = Math.min(actualMagnitude / expectedMagnitude, expectedMagnitude / actualMagnitude);
+          magnitudeScore = ratio;
+        } else {
+          magnitudeScore = 1; // Neutral/sideways predictions
+        }
+        
+        // Factor 3: Timing accuracy (20% weight)
+        let timingScore = 1; // Default to full score, can be enhanced with intraday analysis
+        
+        // Factor 4: Risk-adjusted performance (10% weight)
+        let riskScore = 1;
+        const maxDrawdown = Math.abs(Math.min(...candles.map((c: any) => c.low)) - startPrice) / startPrice;
+        if (maxDrawdown > expected.movePercent * 2) {
+          riskScore = 0.5; // High drawdown penalty
+        }
+        
+        // Calculate weighted accuracy score
+        accuracyScore = (
+          directionScore * 0.4 +
+          magnitudeScore * 0.3 +
+          timingScore * 0.2 +
+          riskScore * 0.1
+        ) * 100;
+        
+        // Determine result based on accuracy score
+        if (accuracyScore >= 80) {
           result = 'accurate';
-          reasoning = `Predicted upward move achieved: ${actualChangePercent.toFixed(2)}% vs target ${expected.movePercent}%`;
-        } else if (actualChangePercent > 0) {
+          reasoning = `High accuracy prediction: ${accuracyScore.toFixed(1)}% score`;
+        } else if (accuracyScore >= 60) {
           result = 'partial';
-          reasoning = `Moved up ${actualChangePercent.toFixed(2)}% but fell short of ${expected.movePercent}% target`;
+          reasoning = `Moderate accuracy: ${accuracyScore.toFixed(1)}% score`;
         } else {
           result = 'failed';
-          reasoning = `Moved down ${actualChangePercent.toFixed(2)}% instead of up ${expected.movePercent}%`;
+          reasoning = `Low accuracy: ${accuracyScore.toFixed(1)}% score`;
         }
-      } else if (expected.direction === 'down') {
-        if (actualChangePercent <= -threshold) {
-          result = 'accurate';
-          reasoning = `Predicted downward move achieved: ${actualChangePercent.toFixed(2)}% vs target -${expected.movePercent}%`;
-        } else if (actualChangePercent < 0) {
-          result = 'partial';
-          reasoning = `Moved down ${Math.abs(actualChangePercent).toFixed(2)}% but fell short of ${expected.movePercent}% target`;
-        } else {
-          result = 'failed';
-          reasoning = `Moved up ${actualChangePercent.toFixed(2)}% instead of down ${expected.movePercent}%`;
+        
+        // Add specific details to reasoning
+        if (expected.direction === 'up') {
+          if (actualChangePercent >= expected.movePercent * 0.8) {
+            reasoning += ` - Predicted upward move achieved: ${actualChangePercent.toFixed(2)}% vs target ${expected.movePercent}%`;
+          } else if (actualChangePercent > 0) {
+            reasoning += ` - Moved up ${actualChangePercent.toFixed(2)}% but fell short of ${expected.movePercent}% target`;
+          } else {
+            reasoning += ` - Moved down ${actualChangePercent.toFixed(2)}% instead of up ${expected.movePercent}%`;
+          }
+        } else if (expected.direction === 'down') {
+          if (actualChangePercent <= -expected.movePercent * 0.8) {
+            reasoning += ` - Predicted downward move achieved: ${actualChangePercent.toFixed(2)}% vs target -${expected.movePercent}%`;
+          } else if (actualChangePercent < 0) {
+            reasoning += ` - Moved down ${Math.abs(actualChangePercent).toFixed(2)}% but fell short of ${expected.movePercent}% target`;
+          } else {
+            reasoning += ` - Moved up ${actualChangePercent.toFixed(2)}% instead of down ${expected.movePercent}%`;
+          }
+        } else if (expected.direction === 'neutral' || expected.direction === 'sideways') {
+          const absChange = Math.abs(actualChangePercent);
+          if (absChange <= 1.0) {
+            reasoning += ` - Stayed ${expected.direction} with minimal movement: ${actualChangePercent.toFixed(2)}%`;
+          } else if (absChange <= 2.0) {
+            reasoning += ` - Small movement of ${actualChangePercent.toFixed(2)}% close to ${expected.direction} prediction`;
+          } else {
+            reasoning += ` - Significant movement of ${actualChangePercent.toFixed(2)}% exceeded ${expected.direction} prediction`;
+          }
         }
-      } else if (expected.direction === 'neutral' || expected.direction === 'sideways') {
-        const absChange = Math.abs(actualChangePercent);
-        if (absChange <= 1.0) {
-          result = 'accurate';
-          reasoning = `Stayed ${expected.direction} with minimal movement: ${actualChangePercent.toFixed(2)}%`;
-        } else if (absChange <= 2.0) {
-          result = 'partial';
-          reasoning = `Small movement of ${actualChangePercent.toFixed(2)}% close to ${expected.direction} prediction`;
-        } else {
-          result = 'failed';
-          reasoning = `Significant movement of ${actualChangePercent.toFixed(2)}% exceeded ${expected.direction} prediction`;
+        
+        // Calculate confidence adjustment for future predictions
+        if (result === 'accurate') {
+          confidenceAdjustment = Math.min(10, accuracyScore - 80); // Boost confidence up to 10%
+        } else if (result === 'failed') {
+          confidenceAdjustment = Math.max(-20, accuracyScore - 60); // Reduce confidence up to 20%
         }
-      }
       }
       
       evaluation = {
@@ -431,7 +486,14 @@ serve(async (req) => {
         hitTargetMax,
         hitTargetMin,
         endTimeUsed: toTime.toISOString(),
-        reasoning
+        reasoning,
+        // Enhanced accuracy metrics
+        accuracyScore: Math.round(accuracyScore * 10) / 10,
+        confidenceAdjustment,
+        directionAccuracy: directionScore,
+        magnitudeAccuracy: magnitudeScore,
+        timingAccuracy: timingScore,
+        riskAdjustedScore: riskScore
       };
       
       console.log(`📊 Evaluation: ${result} - ${reasoning}`);

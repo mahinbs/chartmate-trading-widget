@@ -23,7 +23,7 @@ import type { SymbolData } from "@/components/SymbolSearch";
 import { useAuth } from "@/hooks/useAuth";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { toast } from "sonner";
-import { Loader2, AlertTriangle, BrainCircuit, BarChart3, CheckCircle, ArrowRight, DollarSign, LogOut, History } from "lucide-react";
+import { Loader2, AlertTriangle, BrainCircuit, BarChart3, CheckCircle, ArrowRight, DollarSign, LogOut, History, Timer } from "lucide-react";
 import { Container } from "@/components/layout/Container";
 
 interface GeminiForecast {
@@ -274,6 +274,15 @@ const PredictPage = () => {
             >
               <History className="h-4 w-4" />
               {isMobile ? "History" : "My Predictions"}
+            </Button>
+            <Button
+              variant="outline"
+              size={isMobile ? "sm" : "sm"}
+              onClick={() => navigate('/intraday')}
+              className={`flex items-center gap-2 ${isMobile ? 'w-full justify-center' : ''}`}
+            >
+              <Timer className="h-4 w-4" />
+              {isMobile ? "Intraday" : "Intraday Trading"}
             </Button>
             <Button
               variant="outline"
