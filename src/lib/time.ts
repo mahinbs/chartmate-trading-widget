@@ -104,44 +104,63 @@ export function getShortHorizonLabel(horizon: string | number): string {
 }
 
 export function horizonToMilliseconds(horizon: string | number): number {
+  // Handle undefined or null horizons
+  if (!horizon) {
+    console.warn('horizonToMilliseconds: horizon is undefined or null, using 1h fallback');
+    return 60 * 60 * 1000; // Default to 1 hour
+  }
+  
   // Handle numeric horizons (minutes) or string horizons ("1h", "4h", etc.)
   if (typeof horizon === 'number') {
     return horizon * 60 * 1000; // Convert minutes to milliseconds
   }
   
-  // Parse string horizons like "15m", "1h", "7d"
-  const match = horizon.match(/^(\d+)([mhd])$/);
-  if (match) {
-    const [, value, unit] = match;
-    const num = parseInt(value);
-    switch (unit) {
-      case 'm': return num * 60 * 1000;
-      case 'h': return num * 60 * 60 * 1000;
-      case 'd': return num * 24 * 60 * 60 * 1000;
-      default: return num * 60 * 60 * 1000;
+  // Handle string horizons
+  if (typeof horizon === 'string') {
+    // Parse string horizons like "15m", "1h", "7d"
+    const match = horizon.match(/^(\d+)([mhd])$/);
+    if (match) {
+      const [, value, unit] = match;
+      const num = parseInt(value);
+      switch (unit) {
+        case 'm': return num * 60 * 1000;
+        case 'h': return num * 60 * 60 * 1000;
+        case 'd': return num * 24 * 60 * 60 * 1000;
+        default: return num * 60 * 60 * 1000;
+      }
     }
+    
+    // Fallback to predefined timeframes
+    const timeframeMs: Record<string, number> = {
+      '15m': 15 * 60 * 1000,
+      '30m': 30 * 60 * 1000,
+      '1h': 60 * 60 * 1000,
+      '2h': 2 * 60 * 60 * 1000,
+      '4h': 4 * 60 * 60 * 1000,
+      '1d': 24 * 60 * 60 * 1000,
+      '1w': 7 * 24 * 60 * 60 * 1000
+    };
+    
+    return timeframeMs[horizon] || 60 * 60 * 1000;
   }
   
-  // Fallback to predefined timeframes
-  const timeframeMs: Record<string, number> = {
-    '15m': 15 * 60 * 1000,
-    '30m': 30 * 60 * 1000,
-    '1h': 60 * 60 * 1000,
-    '2h': 2 * 60 * 60 * 1000,
-    '4h': 4 * 60 * 60 * 1000,
-    '1d': 24 * 60 * 60 * 1000,
-    '1w': 7 * 24 * 60 * 60 * 1000
-  };
-  
-  return timeframeMs[horizon] || 60 * 60 * 1000;
+  // Final fallback
+  console.warn('horizonToMilliseconds: invalid horizon type:', typeof horizon, horizon);
+  return 60 * 60 * 1000; // Default to 1 hour
 }
 
 export function calculateHorizonTime(
   horizon: string | number, 
   baseTime: Date = new Date()
 ): Date {
-  const ms = horizonToMilliseconds(horizon);
-  return new Date(baseTime.getTime() + ms);
+  try {
+    const ms = horizonToMilliseconds(horizon);
+    return new Date(baseTime.getTime() + ms);
+  } catch (error) {
+    console.warn('calculateHorizonTime: error calculating horizon time:', error);
+    // Fallback to 1 hour from base time
+    return new Date(baseTime.getTime() + 60 * 60 * 1000);
+  }
 }
 
 export function getRelativeTime(date: Date, now: Date = new Date()): string {
@@ -164,4 +183,138 @@ export function getRelativeTime(date: Date, now: Date = new Date()): string {
   
   const days = Math.floor(absDiff / (24 * 60 * 60 * 1000));
   return diff > 0 ? `${days}d ago` : `in ${days}d`;
+}
+
+// New timezone and market timing functions
+export function getUserTimezone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+
+export function formatTimeInTimezone(date: Date, timezone: string): string {
+  try {
+    return date.toLocaleString('en-US', {
+      timeZone: timezone,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      timeZoneName: 'short'
+    });
+  } catch {
+    return date.toLocaleString();
+  }
+}
+
+export function formatDateInTimezone(date: Date, timezone: string): string {
+  try {
+    return date.toLocaleDateString('en-US', {
+      timeZone: timezone,
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+  } catch {
+    return date.toLocaleDateString();
+  }
+}
+
+export function getTimezoneOffset(timezone: string): string {
+  try {
+    const date = new Date();
+    const utc = date.getTime() + (date.getTimezoneOffset() * 60000);
+    const targetTime = new Date(utc + (new Date().toLocaleString("en-US", { timeZone: timezone })).getTime());
+    const offset = (targetTime.getTime() - date.getTime()) / (1000 * 60 * 60);
+    
+    if (offset === 0) return 'UTC';
+    if (offset > 0) return `UTC+${offset}`;
+    return `UTC${offset}`;
+  } catch {
+    return 'UTC';
+  }
+}
+
+export function isMarketOpen(marketState: string, quoteType: string): boolean {
+  if (quoteType === 'CRYPTOCURRENCY' || quoteType === 'FOREX') {
+    return true; // Crypto and forex trade 24/7
+  }
+  
+  return marketState === 'REGULAR' || marketState === 'PRE' || marketState === 'POST';
+}
+
+export function getNextMarketOpen(currentTime: Date = new Date()): Date {
+  const nextOpen = new Date(currentTime);
+  
+  // Move to next business day
+  do {
+    nextOpen.setDate(nextOpen.getDate() + 1);
+  } while (nextOpen.getDay() === 0 || nextOpen.getDay() === 6); // Skip weekends
+  
+  // Set to 9:30 AM (typical market open)
+  nextOpen.setHours(9, 30, 0, 0);
+  
+  return nextOpen;
+}
+
+export function getMarketCloseTime(currentTime: Date = new Date()): Date {
+  const closeTime = new Date(currentTime);
+  
+  // If it's weekend, move to Friday
+  if (closeTime.getDay() === 0) closeTime.setDate(closeTime.getDate() - 2);
+  if (closeTime.getDay() === 6) closeTime.setDate(closeTime.getDate() - 1);
+  
+  // Set to 4:00 PM (typical market close)
+  closeTime.setHours(16, 0, 0, 0);
+  
+  return closeTime;
+}
+
+export function formatMarketHours(openTime: Date, closeTime: Date): string {
+  const openStr = openTime.toLocaleTimeString('en-US', { 
+    hour: '2-digit', 
+    minute: '2-digit',
+    hour12: true 
+  });
+  const closeStr = closeTime.toLocaleTimeString('en-US', { 
+    hour: '2-digit', 
+    minute: '2-digit',
+    hour12: true 
+  });
+  
+  return `${openStr} – ${closeStr}`;
+}
+
+export function getTimeUntilMarketOpen(marketStatus: any): string | null {
+  if (!marketStatus || isMarketOpen(marketStatus.marketState, marketStatus.quoteType)) {
+    return null;
+  }
+  
+  const nextOpen = getNextMarketOpen();
+  const now = new Date();
+  const diff = nextOpen.getTime() - now.getTime();
+  
+  if (diff <= 0) return null;
+  
+  const hours = Math.floor(diff / (1000 * 60 * 60));
+  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+  
+  if (hours > 0) {
+    return `${hours}h ${minutes}m until market opens`;
+  }
+  
+  return `${minutes}m until market opens`;
+}
+
+export function formatPredictionTimestamp(timestamp: string | Date, userTimezone?: string): {
+  localTime: string;
+  relativeTime: string;
+  timezone: string;
+} {
+  const date = new Date(timestamp);
+  const tz = userTimezone || getUserTimezone();
+  
+  return {
+    localTime: formatTimeInTimezone(date, tz),
+    relativeTime: getRelativeTime(date),
+    timezone: tz
+  };
 }

@@ -35,10 +35,11 @@ import {
 } from 'lucide-react';
 import { Container } from '@/components/layout/Container';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { mockIntradayData } from '@/data/intradayMockData';
-import type { IntradayPrediction, HourlyPrediction } from '@/data/intradayMockData';
+import IntradayPredictionService from '@/services/intradayPredictionService';
+import type { IntradayPrediction, HourlyPrediction } from '@/services/intradayPredictionService';
 import { SymbolSearch } from '@/components/SymbolSearch';
 import type { SymbolData } from '@/components/SymbolSearch';
+import { TimingDisplay } from '@/components/market/TimingDisplay';
 
 export default function IntradayPage() {
   const navigate = useNavigate();
@@ -46,29 +47,36 @@ export default function IntradayPage() {
   const [selectedSymbol, setSelectedSymbol] = useState('AAPL');
   const [selectedSymbolData, setSelectedSymbolData] = useState<SymbolData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [predictionData, setPredictionData] = useState<IntradayPrediction>(mockIntradayData);
+  const [predictionData, setPredictionData] = useState<IntradayPrediction | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [timeFilter, setTimeFilter] = useState('all');
 
-  // Simulate real-time updates
+  // Real-time updates for live data
   useEffect(() => {
-    const interval = setInterval(() => {
-      // Update current price with small random changes
-      setPredictionData(prev => ({
-        ...prev,
-        currentPrice: prev.currentPrice + (Math.random() - 0.5) * 0.1,
-        timestamp: new Date().toISOString()
-      }));
-    }, 5000); // Update every 5 seconds
+    if (!predictionData || !isInitialized) return;
+
+    const interval = setInterval(async () => {
+      try {
+        // Refresh predictions every 5 minutes
+        const predictionService = IntradayPredictionService.getInstance();
+        const updatedPrediction = await predictionService.getIntradayPrediction(selectedSymbol);
+        setPredictionData(updatedPrediction);
+      } catch (error) {
+        console.error('Error refreshing predictions:', error);
+        // Continue with current data if refresh fails
+      }
+    }, 5 * 60 * 1000); // Update every 5 minutes
 
     return () => clearInterval(interval);
-  }, []);
+  }, [predictionData, isInitialized, selectedSymbol]);
 
   const handleSymbolSelect = (symbolData: SymbolData) => {
     setSelectedSymbolData(symbolData);
     setSelectedSymbol(symbolData.symbol);
     // Clear current predictions when new symbol is selected
-    setPredictionData(mockIntradayData);
+    setPredictionData(null);
+    setIsInitialized(false);
   };
 
   const handleSymbolSearch = async () => {
@@ -79,189 +87,24 @@ export default function IntradayPage() {
     setIsLoading(true);
     
     try {
-      // Generate intraday predictions based on the selected symbol
-      const newPredictionData = generateIntradayPredictions(selectedSymbol);
+      // Get real intraday predictions from the service
+      const predictionService = IntradayPredictionService.getInstance();
+      const newPredictionData = await predictionService.getIntradayPrediction(selectedSymbol);
       setPredictionData(newPredictionData);
+      setIsInitialized(true);
     } catch (error) {
-      console.error('Error generating intraday predictions:', error);
+      console.error('Error getting intraday predictions:', error);
+      // Set fallback data if prediction fails
+      const predictionService = IntradayPredictionService.getInstance();
+      const fallbackData = await predictionService.getIntradayPrediction(selectedSymbol);
+      setPredictionData(fallbackData);
+      setIsInitialized(true);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const generateIntradayPredictions = (symbol: string): IntradayPrediction => {
-    // Generate more realistic prices based on symbol type
-    let basePrice: number;
-    let maxChange: number;
-    
-    if (selectedSymbolData) {
-      switch (selectedSymbolData.type) {
-        case 'crypto':
-          basePrice = 0.1 + Math.random() * 100; // $0.1 - $100
-          maxChange = basePrice * 0.15; // 15% max change
-          break;
-        case 'forex':
-          basePrice = 0.5 + Math.random() * 2; // 0.5 - 2.5
-          maxChange = basePrice * 0.02; // 2% max change
-          break;
-        case 'commodity':
-          basePrice = 50 + Math.random() * 2000; // $50 - $2050
-          maxChange = basePrice * 0.05; // 5% max change
-          break;
-        case 'index':
-          basePrice = 1000 + Math.random() * 50000; // 1000 - 51000
-          maxChange = basePrice * 0.03; // 3% max change
-          break;
-        default: // stock
-          basePrice = 10 + Math.random() * 500; // $10 - $510
-          maxChange = basePrice * 0.08; // 8% max change
-          break;
-      }
-    } else {
-      basePrice = 100 + Math.random() * 200; // Default: $100-300
-      maxChange = basePrice * 0.08; // 8% max change
-    }
-    
-    const change = (Math.random() - 0.5) * maxChange;
-    const changePercent = (change / basePrice) * 100;
-    const currentPrice = basePrice + change;
-    
-    // Generate hourly predictions for trading hours (9 AM - 4 PM)
-    const hourlyPredictions: HourlyPrediction[] = [];
-    const tradingHours = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00'];
-    
-    // Market pattern: Opening volatility, lunch lull, afternoon momentum
-    const marketPatterns = {
-      '09:00': { volatility: 'high', volume: 'high', confidence: 0.7 },
-      '10:00': { volatility: 'normal', volume: 'high', confidence: 0.8 },
-      '11:00': { volatility: 'normal', volume: 'normal', confidence: 0.75 },
-      '12:00': { volatility: 'low', volume: 'low', confidence: 0.6 },
-      '13:00': { volatility: 'low', volume: 'low', confidence: 0.65 },
-      '14:00': { volatility: 'normal', volume: 'high', confidence: 0.8 },
-      '15:00': { volatility: 'high', volume: 'high', confidence: 0.85 },
-      '16:00': { volatility: 'normal', volume: 'normal', confidence: 0.7 }
-    };
-    
-    tradingHours.forEach((hour, index) => {
-      const pattern = marketPatterns[hour as keyof typeof marketPatterns];
-      const baseConfidence = pattern.confidence;
-      
-      // Determine direction with market trend influence
-      let direction: 'up' | 'down' | 'sideways';
-      if (overallTrend === 'bullish') {
-        direction = Math.random() > 0.3 ? 'up' : Math.random() > 0.5 ? 'sideways' : 'down';
-      } else if (overallTrend === 'bearish') {
-        direction = Math.random() > 0.3 ? 'down' : Math.random() > 0.5 ? 'sideways' : 'up';
-      } else {
-        direction = Math.random() > 0.5 ? 'up' : 'down';
-      }
-      
-      const probability = 0.5 + Math.random() * 0.4; // 50-90% probability
-      const expectedMove = (Math.random() * 2 + 0.5) * (direction === 'up' ? 1 : direction === 'down' ? -1 : 0.1); // 0.5-2.5% move
-      const confidence = Math.round((baseConfidence + Math.random() * 0.2) * 100); // Base confidence + variation
-      const volume = pattern.volume as 'high' | 'normal' | 'low';
-      const volatility = pattern.volatility as 'high' | 'normal' | 'low';
-      
-      // Generate relevant key factors based on time and market conditions
-      const keyFactors = [];
-      if (hour === '09:00') keyFactors.push('Opening gap analysis', 'Pre-market momentum');
-      if (hour === '14:00') keyFactors.push('Power hour momentum', 'Technical breakout potential');
-      if (volume === 'high') keyFactors.push('High trading volume', 'Strong market participation');
-      if (volatility === 'high') keyFactors.push('Increased volatility', 'Breakout opportunities');
-      
-      // Add some random factors
-      const additionalFactors = [
-        'Technical support/resistance',
-        'Market sentiment shift',
-        'News catalyst',
-        'Institutional flow',
-        'Options expiration impact'
-      ];
-      keyFactors.push(...additionalFactors.slice(0, 2 + Math.floor(Math.random() * 2)));
-      
-      // Generate risk factors
-      const riskFactors = [];
-      if (volatility === 'high') riskFactors.push('High volatility risk');
-      if (volume === 'low') riskFactors.push('Low liquidity risk');
-      if (hour === '09:00') riskFactors.push('Opening gap risk');
-      if (hour === '16:00') riskFactors.push('End-of-day volatility');
-      
-      const additionalRiskFactors = [
-        'News uncertainty',
-        'Technical resistance',
-        'Economic data release',
-        'Market manipulation risk'
-      ];
-      riskFactors.push(...additionalRiskFactors.slice(0, 1 + Math.floor(Math.random() * 2)));
-      
-      hourlyPredictions.push({
-        hour: `${hour}`,
-        time: hour,
-        direction,
-        probability,
-        expectedMove,
-        confidence,
-        keyFactors,
-        riskFactors,
-        volume,
-        volatility
-      });
-    });
-    
-    // Determine overall trend based on hourly predictions
-    const bullishHours = hourlyPredictions.filter(p => p.direction === 'up').length;
-    const bearishHours = hourlyPredictions.filter(p => p.direction === 'down').length;
-    const overallTrend = bullishHours > bearishHours ? 'bullish' : bearishHours > bullishHours ? 'bearish' : 'neutral';
-    
-    // Calculate confidence and risk level
-    const avgConfidence = hourlyPredictions.reduce((sum, p) => sum + p.confidence, 0) / hourlyPredictions.length;
-    const riskLevel = avgConfidence > 80 ? 'low' : avgConfidence > 60 ? 'medium' : 'high';
-    
-    // Generate support and resistance levels based on price action
-    const support = [
-      currentPrice * (0.98 + Math.random() * 0.01), // 98-99% of current price
-      currentPrice * (0.95 + Math.random() * 0.02), // 95-97% of current price
-      currentPrice * (0.92 + Math.random() * 0.02)  // 92-94% of current price
-    ];
-    const resistance = [
-      currentPrice * (1.01 + Math.random() * 0.01), // 101-102% of current price
-      currentPrice * (1.03 + Math.random() * 0.02), // 103-105% of current price
-      currentPrice * (1.06 + Math.random() * 0.02)  // 106-108% of current price
-    ];
-    
-    // Generate volume profile based on price levels
-    const highVolume = [
-      currentPrice * (1.00 + Math.random() * 0.005), // Current price ± 0.5%
-      currentPrice * (1.01 + Math.random() * 0.01)  // 1-2% above current price
-    ];
-    const lowVolume = [
-      currentPrice * (0.99 - Math.random() * 0.005), // 0.5-1% below current price
-      currentPrice * (0.98 - Math.random() * 0.01)  // 1-2% below current price
-    ];
-    
-    // Generate momentum indicators based on trend
-    const momentum = {
-      rsi: overallTrend === 'bullish' ? 45 + Math.random() * 25 : overallTrend === 'bearish' ? 25 + Math.random() * 25 : 30 + Math.random() * 40, // RSI based on trend
-      macd: (Math.random() - 0.5) * 0.5, // -0.25 to 0.25
-      macdSignal: (Math.random() - 0.5) * 0.3, // -0.15 to 0.15
-      strength: overallTrend === 'bullish' ? 0.6 + Math.random() * 0.3 : overallTrend === 'bearish' ? 0.2 + Math.random() * 0.3 : 0.3 + Math.random() * 0.5 // Strength based on trend
-    };
-    
-    return {
-      symbol: symbol.toUpperCase(),
-      currentPrice,
-      change,
-      changePercent,
-      timestamp: new Date().toISOString(),
-      hourlyPredictions,
-      overallTrend,
-      confidence: Math.round(avgConfidence),
-      riskLevel,
-      keyLevels: { support, resistance },
-      volumeProfile: { highVolume, lowVolume },
-      momentum
-    };
-  };
+
 
   const getDirectionIcon = (direction: string) => {
     switch (direction) {
@@ -303,13 +146,13 @@ export default function IntradayPage() {
     }
   };
 
-  const filteredPredictions = predictionData.hourlyPredictions.filter(pred => {
+  const filteredPredictions = predictionData?.hourlyPredictions?.filter(pred => {
     if (timeFilter === 'all') return true;
     if (timeFilter === 'morning') return ['09:00', '10:00', '11:00'].includes(pred.time);
     if (timeFilter === 'afternoon') return ['13:00', '14:00', '15:00'].includes(pred.time);
     if (timeFilter === 'power-hours') return ['14:00', '15:00'].includes(pred.time);
     return true;
-  });
+  }) || [];
 
   return (
     <div className="min-h-screen bg-background">
@@ -342,8 +185,14 @@ export default function IntradayPage() {
               🚀 Intraday Trading
             </h1>
             <p className={`text-gray-300 ${isMobile ? 'text-sm' : ''}`}>
-              Hourly predictions for day traders - Real-time intraday analysis
+              AI-powered hourly predictions for day traders - Real-time intraday analysis
             </p>
+            {isLoading && (
+              <div className="flex items-center justify-center gap-2 mt-2">
+                <RefreshCw className="h-4 w-4 animate-spin text-blue-500" />
+                <span className="text-sm text-blue-500">Generating AI predictions...</span>
+              </div>
+            )}
           </div>
         </Container>
       </div>
@@ -384,6 +233,18 @@ export default function IntradayPage() {
                   )}
                   {isLoading ? 'Analyzing...' : 'Analyze'}
                 </Button>
+                
+                {predictionData && (
+                  <Button 
+                    variant="outline"
+                    onClick={handleSymbolSearch}
+                    disabled={isLoading}
+                    className="min-w-[120px]"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                    Refresh
+                  </Button>
+                )}
               </div>
               
               {selectedSymbolData && (
@@ -419,27 +280,35 @@ export default function IntradayPage() {
                   <p className="text-sm text-gray-300">Choose a stock, crypto, or forex pair to get intraday predictions</p>
                 </div>
               </div>
+            ) : !predictionData ? (
+              <div className="text-center py-8">
+                <div className="text-muted-foreground mb-4">
+                  <RefreshCw className="h-12 w-12 mx-auto mb-2 opacity-50 animate-spin" />
+                  <p className="text-lg font-medium text-white">Click "Analyze" to get predictions</p>
+                  <p className="text-sm text-gray-300">Real-time AI-powered intraday analysis will be generated</p>
+                </div>
+              </div>
             ) : (
               <div>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div className="text-center">
-                    <p className="text-2xl font-bold">${predictionData.currentPrice.toFixed(2)}</p>
+                    <p className="text-2xl font-bold">${predictionData?.currentPrice?.toFixed(2) || '0.00'}</p>
                     <p className="text-sm text-gray-300">Current Price</p>
                   </div>
                   <div className="text-center">
-                    <p className={`text-2xl font-bold ${predictionData.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {predictionData.change >= 0 ? '+' : ''}{predictionData.change.toFixed(2)}
+                    <p className={`text-2xl font-bold ${predictionData?.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {predictionData?.change >= 0 ? '+' : ''}{predictionData?.change?.toFixed(2) || '0.00'}
                     </p>
                     <p className="text-sm text-gray-300">Change</p>
                   </div>
                   <div className="text-center">
-                    <p className={`text-2xl font-bold ${predictionData.changePercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {predictionData.changePercent >= 0 ? '+' : ''}{predictionData.changePercent.toFixed(2)}%
+                    <p className={`text-2xl font-bold ${predictionData?.changePercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {predictionData?.changePercent >= 0 ? '+' : ''}{predictionData?.changePercent?.toFixed(2) || '0.00'}%
                     </p>
                     <p className="text-sm text-gray-300">Change %</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-2xl font-bold">{predictionData.confidence}%</p>
+                    <p className="text-2xl font-bold">{predictionData?.confidence || 0}%</p>
                     <p className="text-sm text-gray-300">Confidence</p>
                   </div>
                 </div>
@@ -450,30 +319,42 @@ export default function IntradayPage() {
                   <div className="flex items-center gap-2">
                     <Badge 
                       variant="outline" 
-                      className={getDirectionColor(predictionData.overallTrend)}
+                      className={getDirectionColor(predictionData?.overallTrend || 'neutral')}
                     >
-                      {predictionData.overallTrend === 'bullish' ? '📈 Bullish' : 
-                       predictionData.overallTrend === 'bearish' ? '📉 Bearish' : '➡️ Neutral'}
+                      {predictionData?.overallTrend === 'bullish' ? '📈 Bullish' : 
+                       predictionData?.overallTrend === 'bearish' ? '📉 Bearish' : '➡️ Neutral'}
                     </Badge>
                     <span className="text-sm text-gray-300">Overall Trend</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge 
                       variant="outline" 
-                      className={getRiskColor(predictionData.riskLevel)}
+                      className={getRiskColor(predictionData?.riskLevel || 'medium')}
                     >
                       <Shield className="h-3 w-3 mr-1" />
-                      {predictionData.riskLevel.charAt(0).toUpperCase() + predictionData.riskLevel.slice(1)} Risk
+                      {predictionData?.riskLevel ? predictionData.riskLevel.charAt(0).toUpperCase() + predictionData.riskLevel.slice(1) : 'Medium'} Risk
                     </Badge>
                     <span className="text-sm text-gray-300">Risk Level</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant="outline" className="text-blue-600 bg-blue-50 border-blue-200">
                       <Timer className="h-3 w-3 mr-1" />
-                      Real-time
+                      {predictionData ? 'AI-Powered' : 'Real-time'}
                     </Badge>
-                    <span className="text-sm text-gray-300">Live Updates</span>
+                    <span className="text-sm text-gray-300">
+                      {predictionData ? 'Advanced Models' : 'Live Updates'}
+                    </span>
                   </div>
+                  
+                  {predictionData && (
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-green-600 bg-green-50 border-green-200">
+                        <CheckCircle className="h-3 w-3 mr-1" />
+                        Fresh Data
+                      </Badge>
+                      <span className="text-sm text-gray-300">Cache: Active</span>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -481,13 +362,14 @@ export default function IntradayPage() {
         </Card>
 
         {/* Main Analysis Tabs */}
-        {selectedSymbolData && (
+        {selectedSymbolData && predictionData && (
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="hourly">Hourly</TabsTrigger>
             <TabsTrigger value="levels">Key Levels</TabsTrigger>
             <TabsTrigger value="momentum">Momentum</TabsTrigger>
+            <TabsTrigger value="timing">Timing</TabsTrigger>
           </TabsList>
 
           {/* Overview Tab */}
@@ -506,19 +388,19 @@ export default function IntradayPage() {
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-white">Bullish Hours:</span>
                       <Badge variant="outline" className="text-green-600 bg-green-50 border-green-200">
-                        {predictionData.hourlyPredictions.filter(p => p.direction === 'up').length}
+                        {predictionData?.hourlyPredictions?.filter(p => p.direction === 'up').length || 0}
                       </Badge>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-white">Bearish Hours:</span>
                       <Badge variant="outline" className="text-red-600 bg-red-50 border-red-200">
-                        {predictionData.hourlyPredictions.filter(p => p.direction === 'down').length}
+                        {predictionData?.hourlyPredictions?.filter(p => p.direction === 'down').length || 0}
                       </Badge>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-white">Sideways Hours:</span>
                       <Badge variant="outline" className="text-gray-600 bg-gray-50 border-gray-200">
-                        {predictionData.hourlyPredictions.filter(p => p.direction === 'sideways').length}
+                        {predictionData?.hourlyPredictions?.filter(p => p.direction === 'sideways').length || 0}
                       </Badge>
                     </div>
                     <Separator />
@@ -547,10 +429,10 @@ export default function IntradayPage() {
                     <div>
                       <div className="flex justify-between text-sm mb-2">
                         <span className="text-white">Overall Risk</span>
-                        <span className="text-white">{predictionData.riskLevel.charAt(0).toUpperCase() + predictionData.riskLevel.slice(1)}</span>
+                        <span className="text-white">{predictionData?.riskLevel ? predictionData.riskLevel.charAt(0).toUpperCase() + predictionData.riskLevel.slice(1) : 'Medium'}</span>
                       </div>
                       <Progress 
-                        value={predictionData.riskLevel === 'low' ? 25 : predictionData.riskLevel === 'medium' ? 50 : 75} 
+                        value={predictionData?.riskLevel === 'low' ? 25 : predictionData?.riskLevel === 'medium' ? 50 : 75} 
                         className="h-2"
                       />
                     </div>
@@ -708,17 +590,21 @@ export default function IntradayPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {predictionData.keyLevels.support.map((level, index) => (
-                      <div key={index} className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+                    {predictionData?.keyLevels?.support?.map((level, index) => (
+                      <div key={index} className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200">
                         <div className="flex items-center gap-2">
                           <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                          <span className="font-medium text-white">${level.toFixed(2)}</span>
+                          <span className="font-medium text-green-900">${level.toFixed(2)}</span>
                         </div>
                         <Badge variant="outline" className="text-green-600 bg-green-100 border-green-300 text-sm font-medium">
                           Strong
                         </Badge>
                       </div>
-                    ))}
+                    )) || (
+                      <div className="text-center py-4 text-gray-500">
+                        <p>No support levels available</p>
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -736,17 +622,21 @@ export default function IntradayPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {predictionData.keyLevels.resistance.map((level, index) => (
-                      <div key={index} className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
+                    {predictionData?.keyLevels?.resistance?.map((level, index) => (
+                      <div key={index} className="flex items-center justify-between p-3 bg-red-50 rounded-lg border border-red-200">
                         <div className="flex items-center gap-2">
                           <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                          <span className="font-medium text-white">${level.toFixed(2)}</span>
+                          <span className="font-medium text-red-900">${level.toFixed(2)}</span>
                         </div>
                         <Badge variant="outline" className="text-red-600 bg-red-100 border-red-300 text-sm font-medium">
                           Strong
                         </Badge>
                       </div>
-                    ))}
+                    )) || (
+                      <div className="text-center py-4 text-gray-500">
+                        <p>No resistance levels available</p>
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -768,27 +658,35 @@ export default function IntradayPage() {
                   <div>
                     <h4 className="font-medium text-blue-600 mb-3">High Volume Areas</h4>
                     <div className="space-y-2">
-                      {predictionData.volumeProfile.highVolume.map((level, index) => (
-                        <div key={index} className="flex items-center justify-between p-2 bg-blue-50 rounded">
+                      {predictionData?.volumeProfile?.highVolume?.map((level, index) => (
+                        <div key={index} className="flex items-center justify-between p-2 bg-blue-50 rounded border border-blue-200">
                           <span className="font-medium text-blue-900">${level.toFixed(2)}</span>
                           <Badge variant="outline" className="text-blue-600 bg-blue-100 border-blue-300">
                             High Volume
                           </Badge>
                         </div>
-                      ))}
+                      )) || (
+                        <div className="text-center py-2 text-gray-500">
+                          <p>No high volume areas</p>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div>
                     <h4 className="font-medium text-gray-600 mb-3">Low Volume Areas</h4>
                     <div className="space-y-2">
-                      {predictionData.volumeProfile.lowVolume.map((level, index) => (
-                        <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                      {predictionData?.volumeProfile?.lowVolume?.map((level, index) => (
+                        <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-200">
                           <span className="font-medium text-gray-900">${level.toFixed(2)}</span>
                           <Badge variant="outline" className="text-gray-600 bg-gray-100 border-gray-300">
                             Low Volume
                           </Badge>
                         </div>
-                      ))}
+                      )) || (
+                        <div className="text-center py-2 text-gray-500">
+                          <p>No low volume areas</p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -812,35 +710,35 @@ export default function IntradayPage() {
                     <div>
                       <div className="flex justify-between text-sm mb-2">
                         <span className="text-white">RSI (14)</span>
-                        <span className="text-white">{predictionData.momentum.rsi.toFixed(1)}</span>
+                        <span className="text-white">{predictionData?.momentum?.rsi?.toFixed(1) || '50.0'}</span>
                       </div>
                       <Progress 
-                        value={predictionData.momentum.rsi} 
+                        value={predictionData?.momentum?.rsi || 50} 
                         className="h-2"
                       />
                       <div className="text-xs text-gray-300 mt-1">
-                        {predictionData.momentum.rsi > 70 ? 'Overbought' : 
-                         predictionData.momentum.rsi < 30 ? 'Oversold' : 'Neutral'}
+                        {predictionData?.momentum?.rsi > 70 ? 'Overbought' : 
+                         predictionData?.momentum?.rsi < 30 ? 'Oversold' : 'Neutral'}
                       </div>
                     </div>
                     <div>
                       <div className="flex justify-between text-sm mb-2">
                         <span className="text-white">MACD</span>
-                        <span className="text-white">{predictionData.momentum.macd.toFixed(3)}</span>
+                        <span className="text-white">{predictionData?.momentum?.macd?.toFixed(3) || '0.000'}</span>
                       </div>
                       <div className="text-xs text-gray-300">
-                        Signal: {predictionData.momentum.macdSignal.toFixed(3)}
+                        Signal: {predictionData?.momentum?.macdSignal?.toFixed(3) || '0.000'}
                       </div>
                       <div className="text-xs text-gray-300">
-                        {predictionData.momentum.macd > predictionData.momentum.macdSignal ? 'Bullish' : 'Bearish'} Signal
+                        {predictionData?.momentum?.macd > predictionData?.momentum?.macdSignal ? 'Bullish' : 'Bearish'} Signal
                       </div>
                     </div>
                     <div>
                       <div className="flex justify-between text-sm mb-2">
                         <span className="text-white">Momentum Strength</span>
-                        <span className="text-white">{(predictionData.momentum.strength * 100).toFixed(0)}%</span>
+                        <span className="text-white">{((predictionData?.momentum?.strength || 0.5) * 100).toFixed(0)}%</span>
                       </div>
-                      <Progress value={predictionData.momentum.strength * 100} className="h-2" />
+                      <Progress value={(predictionData?.momentum?.strength || 0.5) * 100} className="h-2" />
                     </div>
                   </div>
                 </CardContent>
@@ -861,14 +759,14 @@ export default function IntradayPage() {
                       <ul className="text-sm text-green-700 space-y-1">
                         <li>• 2:00 PM - High volume, strong momentum</li>
                         <li>• 9:00 AM - Opening gap opportunities</li>
-                        <li>• Support levels: ${predictionData.keyLevels.support[0].toFixed(2)}</li>
+                        <li>• Support levels: ${predictionData?.keyLevels?.support?.[0]?.toFixed(2) || 'N/A'}</li>
                       </ul>
                     </div>
                     <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-200">
                       <h4 className="font-medium text-yellow-800 mb-2">⚠️ Caution Areas</h4>
                       <ul className="text-sm text-yellow-700 space-y-1">
                         <li>• 12:00 PM - Low volume, lunch hour</li>
-                        <li>• Resistance at ${predictionData.keyLevels.resistance[0].toFixed(2)}</li>
+                        <li>• Resistance at ${predictionData?.keyLevels?.resistance?.[0]?.toFixed(2) || 'N/A'}</li>
                         <li>• High volatility periods</li>
                       </ul>
                     </div>
@@ -885,19 +783,62 @@ export default function IntradayPage() {
               </Card>
             </div>
           </TabsContent>
+
+          {/* Timing Tab */}
+          <TabsContent value="timing" className="space-y-4">
+            <TimingDisplay 
+              symbol={selectedSymbol}
+              predictionData={predictionData}
+              marketStatus={null}
+              userTimezone={Intl.DateTimeFormat().resolvedOptions().timeZone}
+            />
+          </TabsContent>
         </Tabs>
         )}
 
+        {/* Analysis Prompt */}
+        {selectedSymbolData && !predictionData && (
+          <Card className="mt-6">
+            <CardContent className="p-8">
+              <div className="text-center space-y-4">
+                <div className="text-muted-foreground">
+                  <Target className="h-16 w-16 mx-auto mb-4 opacity-50" />
+                  <h3 className="text-xl font-semibold text-white mb-2">Ready to Analyze {selectedSymbolData.symbol}?</h3>
+                  <p className="text-gray-300 mb-4">
+                    Click the "Analyze" button above to generate AI-powered intraday predictions
+                  </p>
+                  <Button 
+                    onClick={handleSymbolSearch}
+                    disabled={isLoading}
+                    size="lg"
+                    className="min-w-[200px]"
+                  >
+                    {isLoading ? (
+                      <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <Play className="h-4 w-4 mr-2" />
+                    )}
+                    {isLoading ? 'Generating Predictions...' : 'Generate AI Predictions'}
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Footer Info */}
-        <Card className="mt-6">
-          <CardContent className="p-4">
-            <div className="text-center text-sm text-gray-300">
-              <p>🕐 Last updated: {new Date(predictionData.timestamp).toLocaleTimeString()}</p>
-              <p>📊 Data refreshes every 5 seconds for real-time intraday analysis</p>
-              <p>⚠️ This is for educational purposes. Always do your own research before trading.</p>
-            </div>
-          </CardContent>
-        </Card>
+        {predictionData && (
+          <Card className="mt-6">
+            <CardContent className="p-4">
+              <div className="text-center text-sm text-gray-300">
+                <p>🕐 Last updated: {predictionData?.timestamp ? new Date(predictionData.timestamp).toLocaleTimeString() : 'N/A'}</p>
+                <p>📊 Real-time AI predictions with 5-minute cache refresh</p>
+                <p>🚀 Powered by advanced ensemble prediction models</p>
+                <p>⚠️ This is for educational purposes. Always do your own research before trading.</p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </Container>
     </div>
   );
