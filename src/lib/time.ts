@@ -220,14 +220,13 @@ export function formatDateInTimezone(date: Date, timezone: string): string {
 
 export function getTimezoneOffset(timezone: string): string {
   try {
-    const date = new Date();
-    const utc = date.getTime() + (date.getTimezoneOffset() * 60000);
-    const targetTime = new Date(utc + (new Date().toLocaleString("en-US", { timeZone: timezone })).getTime());
-    const offset = (targetTime.getTime() - date.getTime()) / (1000 * 60 * 60);
-    
-    if (offset === 0) return 'UTC';
-    if (offset > 0) return `UTC+${offset}`;
-    return `UTC${offset}`;
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      timeZoneName: 'longOffset'
+    });
+    const parts = formatter.formatToParts(new Date());
+    const offsetPart = parts.find(part => part.type === 'timeZoneName');
+    return offsetPart?.value || 'UTC';
   } catch {
     return 'UTC';
   }
