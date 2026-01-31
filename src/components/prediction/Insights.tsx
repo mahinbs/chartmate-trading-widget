@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Lightbulb, AlertTriangle, Target, TrendingUp } from "lucide-react"
+import { formatKeyDriver, formatPattern } from "@/lib/display-utils"
 
 interface InsightsProps {
   keyDrivers?: string[]
@@ -51,7 +52,7 @@ export function Insights({
                 {keyDrivers.map((driver, index) => (
                   <div key={index} className="flex items-start gap-2">
                     <div className="w-1.5 h-1.5 bg-green-600 rounded-full mt-2 flex-shrink-0" />
-                    <p className="text-sm">{driver}</p>
+                    <p className="text-sm">{formatKeyDriver(driver)}</p>
                   </div>
                 ))}
               </div>
@@ -75,7 +76,7 @@ export function Insights({
                 {riskFlags.map((risk, index) => (
                   <div key={index} className="flex items-start gap-2">
                     <div className="w-1.5 h-1.5 bg-red-600 rounded-full mt-2 flex-shrink-0" />
-                    <p className="text-sm">{risk}</p>
+                    <p className="text-sm">{formatKeyDriver(risk)}</p>
                   </div>
                 ))}
               </div>
@@ -99,7 +100,7 @@ export function Insights({
                 {opportunities.map((opportunity, index) => (
                   <div key={index} className="flex items-start gap-2">
                     <div className="w-1.5 h-1.5 bg-blue-600 rounded-full mt-2 flex-shrink-0" />
-                    <p className="text-sm">{opportunity}</p>
+                    <p className="text-sm">{formatKeyDriver(opportunity)}</p>
                   </div>
                 ))}
               </div>
@@ -119,7 +120,7 @@ export function Insights({
               <div className="flex flex-wrap gap-2">
                 {patterns.map((pattern, index) => (
                   <Badge key={index} variant="outline" className="text-xs">
-                    {pattern}
+                    {formatPattern(pattern)}
                   </Badge>
                 ))}
               </div>

@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { formatTimeRemaining, formatDuration, getRelativeTime, formatDateTime, getShortHorizonLabel } from "@/lib/time";
 import { getEffectiveStart, getEffectiveTarget, shouldStartTiming } from "@/lib/market-hours";
+import { formatPipelineStep } from "@/lib/display-utils";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -236,7 +237,7 @@ export function PredictionTimeline({
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between mb-1">
                         <span className="font-medium">
-                          {stepLabels[step.name] || step.name}
+                          {formatPipelineStep(step.name)}
                         </span>
                         {step.duration && (
                           <Badge variant="outline" className="text-xs font-mono">

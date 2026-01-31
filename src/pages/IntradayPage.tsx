@@ -163,11 +163,11 @@ export default function IntradayPage() {
             <Button
               variant="outline"
               size={isMobile ? "sm" : "sm"}
-              onClick={() => navigate('/predict')}
+              onClick={() => navigate('/home')}
               className={`flex items-center gap-2 ${isMobile ? 'w-full justify-center' : ''}`}
             >
               <ArrowRight className="h-4 w-4 rotate-180" />
-              {isMobile ? "Back" : "Back to Predictions"}
+              {isMobile ? "Home" : "Home"}
             </Button>
             <Button
               variant="outline"

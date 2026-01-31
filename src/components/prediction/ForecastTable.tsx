@@ -2,7 +2,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Card, CardContent } from "@/components/ui/card"
-import { fmt, fmtPct, asNumber } from "@/lib/utils"
+import { asNumber } from "@/lib/utils"
+import { formatPercentage } from "@/lib/display-utils"
 import { formatDateTime, getShortHorizonLabel } from "@/lib/time"
 import { getEffectiveStart, getEffectiveTarget } from "@/lib/market-hours"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -77,14 +78,14 @@ export function ForecastTable({ forecasts, predictedAt, marketTimeZone, marketSt
                 <div className="space-y-1">
                   <div className="text-xs text-muted-foreground">Expected Return</div>
                   <div className={`font-mono text-sm ${forecast.expected_return_bp > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {fmtPct(asNumber(forecast.expected_return_bp) / 100)}
+                    {formatPercentage(asNumber(forecast.expected_return_bp) / 100, 2, true)}
                   </div>
                 </div>
                 <div className="space-y-1">
                   <div className="text-xs text-muted-foreground">Confidence</div>
                   <div className="flex items-center gap-2">
                     <Progress value={asNumber(forecast.confidence)} className="flex-1 h-2" />
-                    <span className="text-xs font-mono">{fmtPct(asNumber(forecast.confidence))}</span>
+                    <span className="text-xs font-mono">{formatPercentage(asNumber(forecast.confidence), 1, false)}</span>
                   </div>
                 </div>
               </div>
@@ -97,21 +98,21 @@ export function ForecastTable({ forecasts, predictedAt, marketTimeZone, marketSt
                     <span className="text-green-600 w-8">↑ Up</span>
                     <Progress value={asNumber(forecast.probabilities.up) * 100} className="flex-1 h-2" />
                     <span className="text-green-600 font-mono w-10">
-                      {fmtPct(asNumber(forecast.probabilities.up) * 100, 0)}
+                      {formatPercentage(asNumber(forecast.probabilities.up) * 100, 0, false)}
                     </span>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     <span className="text-red-600 w-8">↓ Down</span>
                     <Progress value={asNumber(forecast.probabilities.down) * 100} className="flex-1 h-2" />
                     <span className="text-red-600 font-mono w-10">
-                      {fmtPct(asNumber(forecast.probabilities.down) * 100, 0)}
+                      {formatPercentage(asNumber(forecast.probabilities.down) * 100, 0, false)}
                     </span>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     <span className="text-yellow-600 w-8">→ Side</span>
                     <Progress value={asNumber(forecast.probabilities.sideways) * 100} className="flex-1 h-2" />
                     <span className="text-yellow-600 font-mono w-10">
-                      {fmtPct(asNumber(forecast.probabilities.sideways) * 100, 0)}
+                      {formatPercentage(asNumber(forecast.probabilities.sideways) * 100, 0, false)}
                     </span>
                   </div>
                 </div>
@@ -157,13 +158,13 @@ export function ForecastTable({ forecasts, predictedAt, marketTimeZone, marketSt
               </TableCell>
               <TableCell className="font-mono">
                 <span className={forecast.expected_return_bp > 0 ? 'text-green-600' : 'text-red-600'}>
-                  {fmtPct(asNumber(forecast.expected_return_bp) / 100)}
+                  {formatPercentage(asNumber(forecast.expected_return_bp) / 100, 2, true)}
                 </span>
               </TableCell>
               <TableCell>
                 <div className="flex items-center gap-2">
                   <Progress value={asNumber(forecast.confidence)} className="w-16 h-2" />
-                  <span className="text-sm font-mono">{fmtPct(asNumber(forecast.confidence))}</span>
+                  <span className="text-sm font-mono">{formatPercentage(asNumber(forecast.confidence), 1, false)}</span>
                 </div>
               </TableCell>
               <TableCell className="min-w-0">
@@ -172,21 +173,21 @@ export function ForecastTable({ forecasts, predictedAt, marketTimeZone, marketSt
                     <span className="text-green-600 w-6 flex-shrink-0">↑</span>
                     <Progress value={asNumber(forecast.probabilities.up) * 100} className="flex-1 min-w-0 h-1" />
                     <span className="text-green-600 font-mono w-8 text-xs flex-shrink-0">
-                      {fmtPct(asNumber(forecast.probabilities.up) * 100, 0)}
+                      {formatPercentage(asNumber(forecast.probabilities.up) * 100, 0, false)}
                     </span>
                   </div>
                   <div className="flex items-center gap-1 text-xs min-w-0">
                     <span className="text-red-600 w-6 flex-shrink-0">↓</span>
                     <Progress value={asNumber(forecast.probabilities.down) * 100} className="flex-1 min-w-0 h-1" />
                     <span className="text-red-600 font-mono w-8 text-xs flex-shrink-0">
-                      {fmtPct(asNumber(forecast.probabilities.down) * 100, 0)}
+                      {formatPercentage(asNumber(forecast.probabilities.down) * 100, 0, false)}
                     </span>
                   </div>
                   <div className="flex items-center gap-1 text-xs min-w-0">
                     <span className="text-yellow-600 w-6 flex-shrink-0">→</span>
                     <Progress value={asNumber(forecast.probabilities.sideways) * 100} className="flex-1 min-w-0 h-1" />
                     <span className="text-yellow-600 font-mono w-8 text-xs flex-shrink-0">
-                      {fmtPct(asNumber(forecast.probabilities.sideways) * 100, 0)}
+                      {formatPercentage(asNumber(forecast.probabilities.sideways) * 100, 0, false)}
                     </span>
                   </div>
                 </div>

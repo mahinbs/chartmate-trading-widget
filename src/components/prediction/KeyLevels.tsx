@@ -1,7 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { TrendingUp, TrendingDown } from "lucide-react"
-import { fmt, asNumber } from "@/lib/utils"
+import { formatCurrency, formatPercentage } from "@/lib/display-utils"
+import { asNumber } from "@/lib/utils"
 
 interface SupportResistanceLevel {
   level: number
@@ -31,7 +32,7 @@ export function KeyLevels({ supportLevels = [], resistanceLevels = [], currentPr
 
   const formatDistance = (level: number) => {
     const distance = ((level - currentPrice) / currentPrice) * 100
-    return distance > 0 ? `+${fmt(distance, 1)}%` : `${fmt(distance, 1)}%`
+    return formatPercentage(distance, 1, true)
   }
 
   return (
@@ -53,7 +54,7 @@ export function KeyLevels({ supportLevels = [], resistanceLevels = [], currentPr
               .map((support, index) => (
                 <div key={index} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
                   <div>
-                    <p className="font-mono font-semibold">${fmt(asNumber(support.level))}</p>
+                    <p className="font-mono font-semibold">{formatCurrency(asNumber(support.level), 2)}</p>
                     <p className="text-xs text-muted-foreground">
                       {formatDistance(asNumber(support.level))} from current
                     </p>
@@ -84,7 +85,7 @@ export function KeyLevels({ supportLevels = [], resistanceLevels = [], currentPr
               .map((resistance, index) => (
                 <div key={index} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
                   <div>
-                    <p className="font-mono font-semibold">${fmt(asNumber(resistance.level))}</p>
+                    <p className="font-mono font-semibold">{formatCurrency(asNumber(resistance.level), 2)}</p>
                     <p className="text-xs text-muted-foreground">
                       {formatDistance(asNumber(resistance.level))} from current
                     </p>

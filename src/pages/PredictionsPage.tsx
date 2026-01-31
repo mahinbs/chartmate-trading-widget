@@ -16,7 +16,8 @@ import { ActionBar } from "@/components/prediction/ActionBar";
 import { KeyLevels } from "@/components/prediction/KeyLevels";
 import { Insights } from "@/components/prediction/Insights";
 import { PostPredictionReport } from "@/components/prediction/PostPredictionReport";
-import { fmt, fmtPct, asNumber } from "@/lib/utils";
+import { asNumber } from "@/lib/utils";
+import { formatCurrency, formatPercentage } from "@/lib/display-utils";
 import { Container } from "@/components/layout/Container";
 import { getEffectiveStart, getEffectiveTarget } from "@/lib/market-hours";
 
@@ -324,11 +325,22 @@ export default function PredictionsPage() {
         marketMeta: prediction.raw_response?.marketMeta || null
       };
 
+      console.log('🔍 Analyzing prediction:', requestBody);
+      
       const { data, error } = await supabase.functions.invoke('analyze-post-prediction', {
         body: requestBody
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Edge function error:', error);
+        throw new Error(error.message || 'Edge function failed');
+      }
+
+      if (!data) {
+        throw new Error('No data returned from analysis');
+      }
+
+      console.log('✅ Analysis result:', data);
 
       // Handle "no_data" responses gracefully
       if (data.status === 'no_data') {
@@ -376,20 +388,31 @@ export default function PredictionsPage() {
       saveCachedAnalysis(newStates);
 
     } catch (error: any) {
-      console.error('Analysis error:', error);
+      console.error('❌ Analysis error:', error);
+      
+      // Better error message extraction
+      let errorMessage = 'Analysis failed';
+      if (error.message) {
+        errorMessage = error.message;
+      } else if (error.error) {
+        errorMessage = error.error;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      }
+      
       const newStates = {
         ...analysisStates,
-        [predictionId]: { loading: false, data: null, error: error.message || 'Analysis failed' }
+        [predictionId]: { loading: false, data: null, error: errorMessage }
       };
       
       setAnalysisStates(newStates);
       saveCachedAnalysis(newStates);
       
       // Only show error toast for actual errors, not data availability issues
-      if (!error.message?.includes('No market data') && !error.message?.includes('no_data')) {
+      if (!errorMessage?.includes('No market data') && !errorMessage?.includes('no_data')) {
         toast({
           title: "Analysis Failed",
-          description: error.message || "Unable to analyze stock movement",
+          description: errorMessage + ". This can happen if: 1) Market data is not available yet, 2) The timeframe is too short, or 3) The market was closed during the prediction period. Try again later or check the console for details.",
           variant: "destructive",
         });
       }
@@ -415,9 +438,9 @@ export default function PredictionsPage() {
       <div className="min-h-screen bg-background">
         <Container className="p-6">
           <div className="flex items-center gap-4 mb-8">
-            <Button variant="ghost" onClick={() => navigate('/predict')}>
+            <Button variant="ghost" onClick={() => navigate('/home')}>
               <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Dashboard
+              Home
             </Button>
           </div>
           <div className="text-center">Loading predictions...</div>
@@ -432,9 +455,9 @@ export default function PredictionsPage() {
       <div className="border-b bg-card/50 backdrop-blur-sm">
         <Container className="py-4">
           <div className="flex items-center justify-between mb-4">
-            <Button variant="ghost" onClick={() => navigate('/predict')}>
+            <Button variant="ghost" onClick={() => navigate('/home')}>
               <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Dashboard
+              Home
             </Button>
             <Button onClick={() => navigate('/predict')}>
               <Plus className="h-4 w-4 mr-2" />
@@ -466,13 +489,13 @@ export default function PredictionsPage() {
                   </p>
                 </div>
                 <Button onClick={() => navigate('/predict')} className="w-full">
-                  Generate Prediction
+                  New Prediction
                 </Button>
               </div>
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {predictions.map((prediction) => {
               const startTime = new Date(prediction.created_at);
               const marketStatus = marketStatuses[prediction.symbol];
@@ -484,7 +507,7 @@ export default function PredictionsPage() {
               const isAnalyzing = analysisStates[prediction.id]?.loading;
 
               return (
-                <Card key={prediction.id} className="overflow-hidden">
+                <Card key={prediction.id} className="overflow-hidden flex flex-col">
                   {/* Header with Summary */}
                   <CardHeader className="pb-4">
                     <div className="flex items-start justify-between">
@@ -531,7 +554,7 @@ export default function PredictionsPage() {
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-lg">
                       <div>
                         <p className="text-xs text-muted-foreground">Investment</p>
-                        <p className="font-semibold">${prediction.investment?.toLocaleString() || 'N/A'}</p>
+                        <p className="font-semibold">{prediction.investment ? formatCurrency(prediction.investment, 0) : 'N/A'}</p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Timeframe</p>
@@ -544,14 +567,14 @@ export default function PredictionsPage() {
                           prediction.expected_move_direction === 'down' ? 'text-red-600' : 
                           'text-yellow-600'
                         }`}>
-                          {prediction.expected_move_percent ? fmtPct(prediction.expected_move_percent) : 'N/A'}
+                          {prediction.expected_move_percent ? formatPercentage(prediction.expected_move_percent, 1, false) : 'N/A'}
                         </p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Price Target</p>
                         <p className="font-semibold">
                           {prediction.price_target_min && prediction.price_target_max ? 
-                            `$${fmt(prediction.price_target_min)} - $${fmt(prediction.price_target_max)}` : 'N/A'}
+                            `${formatCurrency(prediction.price_target_min, 2)} - ${formatCurrency(prediction.price_target_max, 2)}` : 'N/A'}
                         </p>
                       </div>
                     </div>

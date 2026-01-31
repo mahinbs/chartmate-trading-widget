@@ -1,6 +1,6 @@
 import { Badge } from "@/components/ui/badge"
 import { TrendingUp, TrendingDown, Minus } from "lucide-react"
-import { fmt, fmtPct } from "@/lib/utils"
+import { formatCurrency, formatPercentage } from "@/lib/display-utils"
 
 interface SummaryHeaderProps {
   symbol: string
@@ -43,11 +43,11 @@ export function SummaryHeader({
         <div>
           <h2 className="text-2xl font-bold">{symbol}</h2>
           <div className="flex items-center gap-2 mt-1">
-            <span className="text-lg font-semibold">${fmt(currentPrice)}</span>
+            <span className="text-lg font-semibold">{formatCurrency(currentPrice, 2)}</span>
             <div className={`flex items-center gap-1 ${getChangeColor()}`}>
               {getChangeIcon()}
               <span className="text-sm">
-                ${fmt(Math.abs(change))} ({fmtPct(Math.abs(changePercent))})
+                {formatCurrency(Math.abs(change), 2)} ({formatPercentage(Math.abs(changePercent), 1, false)})
               </span>
             </div>
           </div>
@@ -63,7 +63,7 @@ export function SummaryHeader({
         {confidence && (
           <div className="text-right">
             <p className="text-sm text-muted-foreground">Confidence</p>
-            <p className="text-lg font-semibold">{fmtPct(confidence)}</p>
+            <p className="text-lg font-semibold">{formatPercentage(confidence, 1, false)}</p>
           </div>
         )}
       </div>

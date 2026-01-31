@@ -173,16 +173,19 @@ Provide a comprehensive analysis in this EXACT JSON format:
 Keep it professional, concise, and educational. Focus on learning from the outcome.`;
 
   try {
-    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + geminiApiKey, {
+    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=' + geminiApiKey, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
-          temperature: 0.3,
+          temperature: 0.2,
           topK: 40,
           topP: 0.95,
-          maxOutputTokens: 2048,
+          maxOutputTokens: 3000,
+          thinkingConfig: {
+            thinkingLevel: "high", // Deep thinking for post-analysis
+          }
         },
       }),
     });
@@ -192,6 +195,12 @@ Keep it professional, concise, and educational. Focus on learning from the outco
     }
 
     const data = await response.json();
+    
+    // Log thinking token usage
+    if (data.usageMetadata?.thoughtsTokenCount) {
+      console.log(`🧠 Gemini 3 Pro Deep Thinking: ${data.usageMetadata.thoughtsTokenCount} thinking tokens, ${data.usageMetadata.candidatesTokenCount} output tokens`);
+    }
+    
     const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     
     // Try to parse JSON from the response

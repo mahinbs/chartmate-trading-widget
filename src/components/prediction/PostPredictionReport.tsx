@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { OutcomeBadge } from "./OutcomeBadge";
 import { TrendingUp, TrendingDown, Minus, BarChart3, Brain, Target, AlertCircle } from "lucide-react";
+import { formatCurrency, formatPercentage } from "@/lib/display-utils";
 
 interface PostPredictionReportProps {
   symbol: string;
@@ -52,9 +53,6 @@ export function PostPredictionReport({
       default: return <Minus className="h-4 w-4 text-yellow-600" />;
     }
   };
-
-  const formatPrice = (price: number) => `$${price.toFixed(4)}`;
-  const formatPercent = (percent: number) => `${percent >= 0 ? '+' : ''}${percent.toFixed(2)}%`;
 
   if (!evaluation && !ai?.report) {
     return (
@@ -121,7 +119,7 @@ export function PostPredictionReport({
                 </div>
                 {evaluation.predictedMovePercent && (
                   <p className="text-sm text-muted-foreground">
-                    Expected: {formatPercent(evaluation.predictedMovePercent)}
+                    Expected: {formatPercentage(evaluation.predictedMovePercent, 2, true)}
                   </p>
                 )}
               </div>
@@ -146,11 +144,11 @@ export function PostPredictionReport({
                 <div className="flex items-center gap-2">
                   {getDirectionIcon(evaluation.actualChangePercent >= 0 ? 'up' : 'down')}
                   <span className="text-sm font-medium">
-                    {formatPercent(evaluation.actualChangePercent)}
+                    {formatPercentage(evaluation.actualChangePercent, 2, true)}
                   </span>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  {formatPrice(evaluation.startPrice)} → {formatPrice(evaluation.endPrice)}
+                  {formatCurrency(evaluation.startPrice, 4)} → {formatCurrency(evaluation.endPrice, 4)}
                 </p>
               </div>
             ) : (
@@ -170,16 +168,16 @@ export function PostPredictionReport({
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div>
                 <p className="text-xs text-muted-foreground">Start Price</p>
-                <p className="font-mono text-sm">{formatPrice(evaluation.startPrice)}</p>
+                <p className="font-mono text-sm">{formatCurrency(evaluation.startPrice, 4)}</p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">End Price</p>
-                <p className="font-mono text-sm">{formatPrice(evaluation.endPrice)}</p>
+                <p className="font-mono text-sm">{formatCurrency(evaluation.endPrice, 4)}</p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Actual Move</p>
                 <p className={`font-mono text-sm ${evaluation.actualChangePercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {formatPercent(evaluation.actualChangePercent)}
+                  {formatPercentage(evaluation.actualChangePercent, 2, true)}
                 </p>
               </div>
               <div>

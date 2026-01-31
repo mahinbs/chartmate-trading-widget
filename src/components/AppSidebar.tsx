@@ -1,4 +1,4 @@
-import { Brain } from "lucide-react";
+import { Brain, Home } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 
 import {
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/sidebar";
 
 const menuItems = [
+  { title: "Home", url: "/home", icon: Home },
   { title: "AI Predict", url: "/predict", icon: Brain },
 ];
 

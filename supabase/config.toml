@@ -19,7 +19,7 @@ max_client_conn = 100
 
 [realtime]
 enabled = true
-ip_version = "ipv4"
+ip_version = "IPv4"
 
 [studio]
 enabled = true
@@ -29,7 +29,6 @@ api_url = "http://127.0.0.1:54321"
 [inbucket]
 enabled = true
 port = 54324
-api_url = "http://127.0.0.1:54321"
 smtp_port = 54325
 pop3_port = 54326
 
@@ -49,9 +48,6 @@ enable_anonymous_sign_ins = false
 enable_signup = true
 double_confirm_changes = true
 enable_confirmations = false
-
-[edge_functions]
-enabled = true
 
 [functions.predict-movement]
 verify_jwt = false

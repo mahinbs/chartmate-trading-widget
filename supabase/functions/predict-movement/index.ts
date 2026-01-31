@@ -11,6 +11,15 @@ interface PredictionRequest {
   investment: number;
   timeframe: string;
   horizons?: number[]; // New: array of minutes/days for multiple predictions
+  // Enhanced user context for better predictions
+  riskTolerance?: 'low' | 'medium' | 'high';
+  tradingStyle?: 'day_trading' | 'swing_trading' | 'position_trading' | 'long_term';
+  investmentGoal?: 'growth' | 'income' | 'speculation' | 'hedging';
+  stopLossPercentage?: number;
+  targetProfitPercentage?: number;
+  // Trading execution
+  leverage?: number; // 1x, 2x, 5x, 10x, etc.
+  marginType?: 'cash' | 'margin' | 'options';
 }
 
 interface StockData {
@@ -72,6 +81,19 @@ interface GeminiForecast {
   positioning_guidance: {
     bias: "long" | "short" | "flat";
     notes: string;
+    recommended_hold_period?: string;
+  };
+  // New fields for enhanced decision making
+  action_signal?: {
+    action: "BUY" | "SELL" | "HOLD";
+    confidence: number;
+    urgency: "HIGH" | "MEDIUM" | "LOW";
+  };
+  risk_grade?: "LOW" | "MEDIUM" | "HIGH" | "VERY_HIGH";
+  expected_roi?: {
+    best_case: number;
+    likely_case: number;
+    worst_case: number;
   };
 }
 
@@ -134,8 +156,10 @@ function initializePipeline(): { pipeline: PipelineStep[]; meta: Partial<Pipelin
     { name: 'symbol_validation', status: 'pending' },
     { name: 'market_data_fetch', status: 'pending' },
     { name: 'historical_analysis', status: 'pending' },
+    { name: 'enhanced_data_analysis', status: 'pending' }, // Full year + fundamentals + earnings
     { name: 'news_sentiment', status: 'pending' },
     { name: 'technical_indicators', status: 'pending' },
+    { name: 'market_regime_detection', status: 'pending' },
     { name: 'ai_prediction', status: 'pending' },
     { name: 'multi_horizon_forecast', status: 'pending' },
     { name: 'risk_assessment', status: 'pending' }
@@ -681,6 +705,165 @@ async function fetchAlphaVantageNews(symbol: string): Promise<NewsItem[]> {
 }
 
 // Yahoo Finance News (more reliable)
+// Fetch full year historical data for trend analysis
+async function fetchFullYearHistory(yahooSymbol: string): Promise<{ candles: Candle[]; yearTrend: string; avgVolume: number }> {
+  console.log(`📊 Fetching full year history for ${yahooSymbol}`);
+  
+  try {
+    const response = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1d&range=1y`,
+      {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        signal: AbortSignal.timeout(15000)
+      }
+    );
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    
+    const data = await response.json();
+    const result = data.chart.result[0];
+    const timestamps = result.timestamp || [];
+    const indicators = result.indicators?.quote?.[0];
+    
+    const candles: Candle[] = [];
+    for (let i = 0; i < timestamps.length; i++) {
+      if (indicators.close?.[i] !== null) {
+        candles.push({
+          timestamp: timestamps[i] * 1000,
+          open: indicators.open[i] || 0,
+          high: indicators.high[i] || 0,
+          low: indicators.low[i] || 0,
+          close: indicators.close[i] || 0,
+          volume: indicators.volume?.[i] || 0
+        });
+      }
+    }
+    
+    // Calculate year trend
+    const startPrice = candles[0]?.close || 0;
+    const endPrice = candles[candles.length - 1]?.close || 0;
+    const yearChange = ((endPrice - startPrice) / startPrice) * 100;
+    const yearTrend = yearChange > 15 ? 'strong_uptrend' : 
+                      yearChange > 5 ? 'uptrend' : 
+                      yearChange > -5 ? 'sideways' : 
+                      yearChange > -15 ? 'downtrend' : 'strong_downtrend';
+    
+    // Calculate average volume
+    const avgVolume = candles.reduce((sum, c) => sum + c.volume, 0) / candles.length;
+    
+    console.log(`✅ Full year data: ${candles.length} days, trend: ${yearTrend} (${yearChange.toFixed(2)}%)`);
+    return { candles, yearTrend, avgVolume };
+    
+  } catch (error) {
+    console.log(`⚠️ Full year history failed: ${error.message}`);
+    return { candles: [], yearTrend: 'unknown', avgVolume: 0 };
+  }
+}
+
+// Fetch fundamental data (P/E, market cap, revenue, EPS)
+async function fetchFundamentals(yahooSymbol: string): Promise<any> {
+  console.log(`💼 Fetching fundamentals for ${yahooSymbol}`);
+  
+  try {
+    const response = await fetch(
+      `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${yahooSymbol}?modules=defaultKeyStatistics,financialData,summaryDetail,earnings`,
+      {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        signal: AbortSignal.timeout(15000)
+      }
+    );
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    
+    const data = await response.json();
+    const result = data.quoteSummary?.result?.[0];
+    
+    if (!result) {
+      throw new Error('No summary data');
+    }
+    
+    const fundamentals = {
+      // Valuation
+      peRatio: result.summaryDetail?.trailingPE?.raw || result.defaultKeyStatistics?.forwardPE?.raw || null,
+      pegRatio: result.defaultKeyStatistics?.pegRatio?.raw || null,
+      priceToBook: result.defaultKeyStatistics?.priceToBook?.raw || null,
+      priceToSales: result.summaryDetail?.priceToSalesTrailing12Months?.raw || null,
+      
+      // Size & Scale
+      marketCap: result.summaryDetail?.marketCap?.raw || null,
+      enterpriseValue: result.defaultKeyStatistics?.enterpriseValue?.raw || null,
+      
+      // Profitability
+      eps: result.defaultKeyStatistics?.trailingEps?.raw || null,
+      revenuePerShare: result.financialData?.revenuePerShare?.raw || null,
+      profitMargins: result.financialData?.profitMargins?.raw || null,
+      
+      // Growth
+      revenueGrowth: result.financialData?.revenueGrowth?.raw || null,
+      earningsGrowth: result.financialData?.earningsGrowth?.raw || null,
+      
+      // Health
+      debtToEquity: result.financialData?.debtToEquity?.raw || null,
+      currentRatio: result.financialData?.currentRatio?.raw || null,
+      
+      // Recent Earnings
+      earningsQuarterly: result.earnings?.earningsChart?.quarterly || []
+    };
+    
+    console.log(`✅ Fundamentals: P/E=${fundamentals.peRatio}, MCap=${fundamentals.marketCap ? (fundamentals.marketCap / 1e9).toFixed(2) + 'B' : 'N/A'}`);
+    return fundamentals;
+    
+  } catch (error) {
+    console.log(`⚠️ Fundamentals fetch failed: ${error.message}`);
+    return {
+      peRatio: null,
+      marketCap: null,
+      eps: null,
+      revenueGrowth: null,
+      earningsQuarterly: []
+    };
+  }
+}
+
+// Fetch earnings history (quarterly)
+async function fetchEarningsHistory(yahooSymbol: string): Promise<any[]> {
+  console.log(`📈 Fetching earnings history for ${yahooSymbol}`);
+  
+  try {
+    const response = await fetch(
+      `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${yahooSymbol}?modules=earnings,earningsHistory`,
+      {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        signal: AbortSignal.timeout(15000)
+      }
+    );
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    
+    const data = await response.json();
+    const result = data.quoteSummary?.result?.[0];
+    
+    const earningsData = {
+      quarterly: result?.earnings?.earningsChart?.quarterly || [],
+      history: result?.earningsHistory?.history || [],
+      trend: result?.earnings?.financialsChart?.yearly || []
+    };
+    
+    console.log(`✅ Earnings: ${earningsData.quarterly.length} quarters, ${earningsData.history.length} historical`);
+    return earningsData.quarterly;
+    
+  } catch (error) {
+    console.log(`⚠️ Earnings history failed: ${error.message}`);
+    return [];
+  }
+}
+
 async function fetchYahooFinanceNews(symbol: string): Promise<NewsItem[]> {
   try {
     // Use Yahoo Finance news endpoint
@@ -1243,6 +1426,98 @@ function calculateMeanReversionSignal(prices: number[], sma: number, atr: number
   return Math.max(-1, Math.min(1, deviation / 2));
 }
 
+// Calculate risk grade based on volatility, leverage, and market conditions
+function calculateRiskGrade(
+  volatility: number,
+  leverage: number = 1,
+  riskFlags: string[],
+  confidence: number
+): "LOW" | "MEDIUM" | "HIGH" | "VERY_HIGH" {
+  let riskScore = 0;
+
+  // Volatility contribution (0-30 points)
+  if (volatility > 3) riskScore += 30;
+  else if (volatility > 2) riskScore += 20;
+  else if (volatility > 1.5) riskScore += 10;
+  else riskScore += 5;
+
+  // Leverage contribution (0-40 points)
+  if (leverage >= 10) riskScore += 40;
+  else if (leverage >= 5) riskScore += 30;
+  else if (leverage >= 3) riskScore += 20;
+  else if (leverage >= 2) riskScore += 10;
+  else riskScore += 0;
+
+  // Risk flags contribution (0-20 points)
+  riskScore += Math.min(riskFlags.length * 5, 20);
+
+  // Confidence contribution (0-10 points)
+  if (confidence < 50) riskScore += 10;
+  else if (confidence < 70) riskScore += 5;
+
+  // Determine grade
+  if (riskScore >= 70) return "VERY_HIGH";
+  if (riskScore >= 50) return "HIGH";
+  if (riskScore >= 30) return "MEDIUM";
+  return "LOW";
+}
+
+// Convert direction and bias to clear action signal
+function deriveActionSignal(
+  direction: "up" | "down" | "sideways",
+  bias: "long" | "short" | "flat",
+  confidence: number
+): { action: "BUY" | "SELL" | "HOLD"; confidence: number; urgency: "HIGH" | "MEDIUM" | "LOW" } {
+  
+  let action: "BUY" | "SELL" | "HOLD";
+  let urgency: "HIGH" | "MEDIUM" | "LOW";
+
+  // Determine action
+  if (direction === "up" && bias === "long" && confidence >= 60) {
+    action = "BUY";
+  } else if (direction === "down" && bias === "short" && confidence >= 60) {
+    action = "SELL";
+  } else if (direction === "up" && confidence >= 50) {
+    action = "BUY";
+  } else if (direction === "down" && confidence >= 50) {
+    action = "SELL";
+  } else {
+    action = "HOLD";
+  }
+
+  // Determine urgency
+  if (confidence >= 80) urgency = "HIGH";
+  else if (confidence >= 60) urgency = "MEDIUM";
+  else urgency = "LOW";
+
+  return { action, confidence, urgency };
+}
+
+// Calculate expected ROI ranges based on forecast
+function calculateExpectedROI(
+  expectedReturnBp: number,
+  confidence: number,
+  volatility: number
+): { best_case: number; likely_case: number; worst_case: number } {
+  const baseReturn = expectedReturnBp / 100; // Convert basis points to percentage
+
+  // Best case: higher confidence = higher upside
+  const bestCase = baseReturn * (1 + (confidence / 100) * 0.5);
+
+  // Likely case: the expected return
+  const likelyCase = baseReturn;
+
+  // Worst case: account for volatility and confidence
+  const downside = volatility * (100 - confidence) / 100;
+  const worstCase = -Math.abs(downside);
+
+  return {
+    best_case: Math.round(bestCase * 10) / 10,
+    likely_case: Math.round(likelyCase * 10) / 10,
+    worst_case: Math.round(worstCase * 10) / 10
+  };
+}
+
 // Enhanced Gemini analysis with multi-horizon forecasting and ensemble methods
 async function generateEnhancedGeminiAnalysis(
   symbol: string,
@@ -1250,10 +1525,25 @@ async function generateEnhancedGeminiAnalysis(
   technicalContext: TechnicalContext,
   newsData: NewsItem[],
   investment: number,
-  horizons: number[]
+  horizons: number[],
+    userContext?: {
+    riskTolerance?: string;
+    tradingStyle?: string;
+    investmentGoal?: string;
+    stopLossPercentage?: number;
+    targetProfitPercentage?: number;
+    leverage?: number;
+    marginType?: string;
+  },
+  enhancedData?: {
+    fullYear?: { candles: Candle[]; yearTrend: string; avgVolume: number };
+    fundamentals?: any;
+    earningsHistory?: any[];
+  }
 ): Promise<GeminiForecast> {
   const geminiApiKey = Deno.env.get('GEMINI_API_KEY');
   if (!geminiApiKey) {
+    console.log('Gemini API key not found, falling back to ensemble prediction');
     throw new Error('Gemini API key not found');
   }
 
@@ -1282,7 +1572,38 @@ KEY LEVELS:
 NEWS SENTIMENT (${newsData.length} items):
 ${newsData.slice(0, 5).map(news => `- ${news.headline} (sentiment: ${news.sentiment_score.toFixed(2)})`).join('\n')}
 
-INVESTMENT CONTEXT: $${investment} position
+FULL YEAR ANALYSIS (52-Week Trend):
+${enhancedData?.fullYear ? `- Year Trend: ${enhancedData.fullYear.yearTrend.toUpperCase().replace(/_/g, ' ')}
+- Year Candles: ${enhancedData.fullYear.candles.length} days
+- Average Volume: ${(enhancedData.fullYear.avgVolume / 1e6).toFixed(2)}M
+- Year High: $${Math.max(...enhancedData.fullYear.candles.map(c => c.high)).toFixed(2)}
+- Year Low: $${Math.min(...enhancedData.fullYear.candles.map(c => c.low)).toFixed(2)}
+- Year Return: ${(((stockData.currentPrice - enhancedData.fullYear.candles[0].close) / enhancedData.fullYear.candles[0].close) * 100).toFixed(2)}%` : '- Historical data not available'}
+
+FUNDAMENTAL ANALYSIS:
+${enhancedData?.fundamentals ? `- P/E Ratio: ${enhancedData.fundamentals.peRatio?.toFixed(2) || 'N/A'}
+- Market Cap: ${enhancedData.fundamentals.marketCap ? '$' + (enhancedData.fundamentals.marketCap / 1e9).toFixed(2) + 'B' : 'N/A'}
+- EPS: ${enhancedData.fundamentals.eps?.toFixed(2) || 'N/A'}
+- Revenue Growth: ${enhancedData.fundamentals.revenueGrowth ? (enhancedData.fundamentals.revenueGrowth * 100).toFixed(2) + '%' : 'N/A'}
+- Earnings Growth: ${enhancedData.fundamentals.earningsGrowth ? (enhancedData.fundamentals.earningsGrowth * 100).toFixed(2) + '%' : 'N/A'}
+- Profit Margins: ${enhancedData.fundamentals.profitMargins ? (enhancedData.fundamentals.profitMargins * 100).toFixed(2) + '%' : 'N/A'}
+- Debt/Equity: ${enhancedData.fundamentals.debtToEquity?.toFixed(2) || 'N/A'}` : '- Fundamentals not available'}
+
+EARNINGS HISTORY:
+${enhancedData?.earningsHistory && enhancedData.earningsHistory.length > 0 ? 
+  enhancedData.earningsHistory.slice(0, 4).map((e: any) => 
+    `- ${e.date}: Actual: $${e.actual?.toFixed(2) || 'N/A'}, Estimate: $${e.estimate?.toFixed(2) || 'N/A'} (${e.actual && e.estimate ? ((e.actual - e.estimate) / e.estimate * 100).toFixed(1) + '% ' + (e.actual > e.estimate ? 'beat' : 'miss') : ''})`
+  ).join('\n') : '- No recent earnings data'}
+
+INVESTMENT CONTEXT:
+- Position Size: $${investment}
+${userContext?.riskTolerance ? `- Risk Tolerance: ${userContext.riskTolerance.toUpperCase()}` : ''}
+${userContext?.tradingStyle ? `- Trading Style: ${userContext.tradingStyle.replace(/_/g, ' ').toUpperCase()}` : ''}
+${userContext?.investmentGoal ? `- Investment Goal: ${userContext.investmentGoal.toUpperCase()}` : ''}
+${userContext?.stopLossPercentage ? `- Stop Loss Preference: ${userContext.stopLossPercentage}%` : ''}
+${userContext?.targetProfitPercentage ? `- Target Profit Target: ${userContext.targetProfitPercentage}%` : ''}
+${userContext?.marginType ? `- Account Type: ${userContext.marginType.toUpperCase()}` : ''}
+${userContext?.leverage && userContext.leverage > 1 ? `- Leverage: ${userContext.leverage}x (AMPLIFIES BOTH GAINS AND LOSSES)` : ''}
 
 ANALYSIS INSTRUCTIONS:
 1. Use ensemble methods combining technical, sentiment, and statistical analysis
@@ -1291,6 +1612,14 @@ ANALYSIS INSTRUCTIONS:
 4. Factor in volume confirmation and momentum
 5. Account for mean reversion vs momentum continuation
 6. Provide confidence intervals based on signal strength
+7. CRITICAL: Tailor recommendations to the user's risk tolerance, trading style, and investment goals
+8. If user has HIGH risk tolerance, allow for more aggressive targets; if LOW, be more conservative
+9. RECOMMEND optimal holding periods based on market conditions, volatility, and trading style
+   - For DAY TRADING: Focus on intraday (15m-4h) horizons
+   - For SWING TRADING: Focus on multi-day (1d-1w) horizons
+   - For POSITION TRADING: Focus on weekly-monthly (1w-1m) horizons
+10. If leverage is used, INCREASE risk warnings and tighten stop-loss recommendations
+11. Adjust stop-loss and take-profit levels based on user preferences AND volatility
 
 Generate forecasts for horizons: ${horizons.map(h => h < 1440 ? `${h}m` : `${h/1440}d`).join(', ')}
 
@@ -1317,12 +1646,13 @@ Respond with a valid JSON object matching this exact schema:
   },
   "positioning_guidance": {
     "bias": "long|short|flat",
-    "notes": "Specific actionable guidance"
+    "notes": "Specific actionable guidance",
+    "recommended_hold_period": "Based on market conditions: 1h, 4h, 1d, 1w, etc."
   }
 }`;
 
   try {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=${geminiApiKey}`, {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${geminiApiKey}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1338,17 +1668,29 @@ Respond with a valid JSON object matching this exact schema:
           }
         ],
         generationConfig: {
-          maxOutputTokens: 2000,
-          temperature: 0.3,
+          maxOutputTokens: 4000,
+          temperature: 0.2,
+          topP: 0.95,
+          thinkingConfig: {
+            thinkingLevel: "high", // Maximum reasoning depth for complex market analysis
+          }
         }
       }),
     });
 
     if (!response.ok) {
-      throw new Error(`Gemini API error: ${response.status}`);
+      const errorText = await response.text();
+      console.error(`Gemini API error ${response.status}:`, errorText);
+      throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
+    
+    // Log thinking token usage
+    if (data.usageMetadata?.thoughtsTokenCount) {
+      console.log(`🧠 Gemini 3 Pro Deep Thinking: ${data.usageMetadata.thoughtsTokenCount} thinking tokens, ${data.usageMetadata.candidatesTokenCount} output tokens`);
+    }
+    
     const generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!generatedText) {
@@ -1743,256 +2085,6 @@ function generateEnhancedEnsemblePrediction(
     }
   };
 }
-
-// Serve the prediction endpoint
-serve(async (req) => {
-  // Handle CORS preflight requests
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
-
-  const { pipeline, meta } = initializePipeline();
-
-  try {
-    const requestBody: PredictionRequest = await req.json();
-    const { symbol, investment, timeframe, horizons = [15, 30, 60, 1440] } = requestBody;
-
-    // Step 1: Symbol validation
-    updatePipelineStep(pipeline, 'symbol_validation', 'running');
-    if (!symbol || !investment || !timeframe) {
-      updatePipelineStep(pipeline, 'symbol_validation', 'error', 'Missing required fields');
-      return new Response(
-        JSON.stringify({ error: 'Missing required fields: symbol, investment, timeframe' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-    updatePipelineStep(pipeline, 'symbol_validation', 'completed', `Validated ${symbol}`);
-
-    console.log(`Getting enhanced technical analysis for ${symbol}, investment: $${investment}, timeframe: ${timeframe}`);
-
-    // Step 2: Market data fetch
-    updatePipelineStep(pipeline, 'market_data_fetch', 'running');
-    const [stockData, historicalData] = await Promise.all([
-      fetchRealStockData(symbol),
-      fetchHistoricalCandles(symbol, timeframe)
-    ]);
-    updatePipelineStep(pipeline, 'market_data_fetch', 'completed', `Price: $${stockData.currentPrice.toFixed(2)}`);
-
-    console.log("Real stock data fetched:", stockData);
-    
-    // Step 3: Historical analysis
-    updatePipelineStep(pipeline, 'historical_analysis', 'running');
-    console.log("Historical candles fetched:", historicalData.candles.length, "candles");
-    updatePipelineStep(pipeline, 'historical_analysis', 'completed', `${historicalData.candles.length} candles analyzed`);
-
-    // Step 4: News sentiment
-    updatePipelineStep(pipeline, 'news_sentiment', 'running');
-    const newsData = await fetchNewsData(symbol);
-    console.log("News items fetched:", newsData.length, "items");
-    updatePipelineStep(pipeline, 'news_sentiment', 'completed', `${newsData.length} news items processed`);
-
-    // Step 5: Technical indicators
-    updatePipelineStep(pipeline, 'technical_indicators', 'running');
-    const technicalContext = computeEnhancedTechnicalContext(historicalData.candles, stockData);
-    console.log("Technical context computed:", {
-      patterns: technicalContext.patterns,
-      rsi: technicalContext.indicators.rsi,
-      trend: technicalContext.trendDirection,
-      volatility: technicalContext.volatilityState
-    });
-    updatePipelineStep(pipeline, 'technical_indicators', 'completed', 
-      `RSI: ${technicalContext.indicators.rsi.toFixed(1)}, Trend: ${technicalContext.trendDirection}`);
-
-    // 🌟 GODLY PLAN: Market Regime Detection 🌟
-    updatePipelineStep(pipeline, 'market_regime_detection', 'running');
-    const marketRegime = detectMarketRegime(historicalData.candles, technicalContext);
-    console.log("Market regime detected:", {
-      type: marketRegime.type,
-      strength: marketRegime.strength.toFixed(2),
-      confidence: marketRegime.confidence.toFixed(2),
-      volatility: marketRegime.volatility
-    });
-    updatePipelineStep(pipeline, 'market_regime_detection', 'completed', 
-      `Regime: ${marketRegime.type} (${(marketRegime.strength * 100).toFixed(0)}% strength)`);
-
-    // Step 6: AI prediction
-    updatePipelineStep(pipeline, 'ai_prediction', 'running');
-    
-    // Step 7: Multi-horizon forecast with ensemble fallback
-    updatePipelineStep(pipeline, 'multi_horizon_forecast', 'running');
-    
-    let geminiForecast: GeminiForecast;
-    let predictionSource = 'gemini_ai';
-    
-    // 🌟 GODLY PLAN: Try Quantum Prediction First 🌟
-    try {
-      console.log('Attempting quantum-level prediction...');
-      const quantumPrediction = generateQuantumPrediction(
-        symbol,
-        stockData,
-        technicalContext,
-        newsData,
-        marketRegime,
-        horizons
-      );
-      
-      // Convert quantum prediction to GeminiForecast format for compatibility
-      geminiForecast = {
-        symbol: quantumPrediction.symbol,
-        as_of: quantumPrediction.timestamp,
-        forecasts: [
-          {
-            horizon: `${quantumPrediction.predictions.shortTerm.timeHorizon}m`,
-            direction: quantumPrediction.predictions.shortTerm.direction,
-            probabilities: {
-              up: quantumPrediction.predictions.shortTerm.direction === 'up' ? quantumPrediction.predictions.shortTerm.probability : 0.1,
-              down: quantumPrediction.predictions.shortTerm.direction === 'down' ? quantumPrediction.predictions.shortTerm.probability : 0.1,
-              sideways: quantumPrediction.predictions.shortTerm.direction === 'sideways' ? quantumPrediction.predictions.shortTerm.probability : 0.8
-            },
-            expected_return_bp: Math.round(quantumPrediction.predictions.shortTerm.expectedMove * 100),
-            expected_range_bp: {
-              p10: Math.round(-quantumPrediction.predictions.shortTerm.expectedMove * 100),
-              p50: Math.round(quantumPrediction.predictions.shortTerm.expectedMove * 100),
-              p90: Math.round(quantumPrediction.predictions.shortTerm.expectedMove * 200)
-            },
-            key_drivers: quantumPrediction.predictions.shortTerm.keyFactors,
-            risk_flags: quantumPrediction.predictions.shortTerm.riskFactors,
-            confidence: Math.round(quantumPrediction.predictions.shortTerm.confidence * 100),
-            invalid_if: ['regime_change', 'extreme_volatility']
-          }
-        ],
-        support_resistance: {
-          supports: [{ level: marketRegime.support, strength: 0.9 }],
-          resistances: [{ level: marketRegime.resistance, strength: 0.9 }]
-        },
-        positioning_guidance: {
-          bias: quantumPrediction.predictions.shortTerm.direction === 'up' ? 'long' : 
-                quantumPrediction.predictions.shortTerm.direction === 'down' ? 'short' : 'flat',
-          notes: `Quantum prediction: ${(quantumPrediction.successProbability * 100).toFixed(1)}% success probability. ${quantumPrediction.alternativeScenarios[0]?.description || ''}`
-        }
-      };
-      
-      predictionSource = 'quantum_godly_plan';
-      updatePipelineStep(pipeline, 'ai_prediction', 'completed', 'Quantum prediction generated');
-      
-      console.log('🌟 QUANTUM PREDICTION SUCCESS! 🌟');
-      console.log(`Success Probability: ${(quantumPrediction.successProbability * 100).toFixed(1)}%`);
-      console.log(`Risk Score: ${(quantumPrediction.riskScore * 100).toFixed(1)}%`);
-      console.log(`Market Regime: ${marketRegime.type} (${(marketRegime.strength * 100).toFixed(0)}% strength)`);
-      
-    } catch (quantumError) {
-      console.log('Quantum prediction failed, falling back to standard methods:', quantumError.message);
-      
-      try {
-      geminiForecast = await generateEnhancedGeminiAnalysis(
-        symbol,
-        stockData,
-        technicalContext,
-        newsData,
-        investment,
-        horizons
-      );
-      updatePipelineStep(pipeline, 'ai_prediction', 'completed', 'AI analysis completed');
-    } catch (error) {
-      console.log('Gemini AI failed, using enhanced ensemble prediction:', error.message);
-      geminiForecast = generateEnhancedEnsemblePrediction(
-        symbol,
-        stockData,
-        technicalContext,
-        newsData,
-        horizons
-      );
-      predictionSource = 'enhanced_ensemble_v2';
-      updatePipelineStep(pipeline, 'ai_prediction', 'completed', 'Enhanced ensemble prediction generated');
-    }
-    
-    updatePipelineStep(pipeline, 'multi_horizon_forecast', 'completed', 
-      `${geminiForecast.forecasts.length} horizons analyzed (${predictionSource})`);
-
-    console.log("Enhanced Gemini analysis completed");
-
-    // Step 8: Risk assessment
-    updatePipelineStep(pipeline, 'risk_assessment', 'running');
-    const totalRiskFlags = geminiForecast.forecasts.reduce((sum, f) => sum + f.risk_flags.length, 0);
-    updatePipelineStep(pipeline, 'risk_assessment', 'completed', `${totalRiskFlags} risk factors identified`);
-
-    // Finalize pipeline meta
-    meta.endTime = Date.now();
-    meta.totalDuration = meta.endTime - (meta.startTime || 0);
-    meta.steps = pipeline;
-
-    // Build comprehensive response with backward compatibility
-    const result = {
-      symbol,
-      currentPrice: stockData.currentPrice,
-      change: stockData.change,
-      changePercent: stockData.changePercent,
-      timeframe,
-      analysis: "Enhanced multi-horizon AI analysis with real-time market data",
-      stockData,
-      geminiForecast,
-      meta: {
-        pipeline: meta,
-        predictionSource,
-        enhancedFeatures: {
-          ensembleMethods: true,
-          advancedPatterns: true,
-          volumeConfirmation: true,
-          meanReversionSignals: true,
-          volatilityRegimeDetection: true,
-          quantumPrediction: predictionSource === 'quantum_godly_plan',
-          marketRegimeDetection: true,
-          alternativeScenarios: true,
-          successProbability: true,
-          riskScoring: true
-        }
-      },
-      // Legacy fields for backward compatibility
-      recommendation: geminiForecast?.positioning_guidance?.bias === "long" ? "bullish" as const :
-                     geminiForecast?.positioning_guidance?.bias === "short" ? "bearish" as const : "neutral" as const,
-      confidence: geminiForecast?.forecasts?.[0]?.confidence || 75,
-      expectedMove: {
-        percent: geminiForecast?.forecasts?.[0]?.expected_return_bp ? geminiForecast.forecasts[0].expected_return_bp / 100 : undefined,
-        direction: geminiForecast?.forecasts?.[0]?.direction || "flat" as const,
-        priceTarget: geminiForecast?.forecasts?.[0] ? {
-          min: stockData.currentPrice * (1 + geminiForecast.forecasts[0].expected_range_bp.p10 / 10000),
-          max: stockData.currentPrice * (1 + geminiForecast.forecasts[0].expected_range_bp.p90 / 10000)
-        } : undefined
-      },
-      patterns: technicalContext.patterns,
-      keyLevels: {
-        support: geminiForecast?.support_resistance?.supports?.map(s => s.level) || [],
-        resistance: geminiForecast?.support_resistance?.resistances?.map(r => r.level) || []
-      },
-      risks: geminiForecast?.forecasts?.[0]?.risk_flags || [],
-      opportunities: geminiForecast?.forecasts?.[0]?.key_drivers || [],
-      rationale: geminiForecast?.positioning_guidance?.notes || "Enhanced multi-horizon analysis completed"
-    };
-
-    return new Response(JSON.stringify(result), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-
-  } catch (error) {
-    console.error('Error in predict-movement:', error);
-    
-    // Mark remaining steps as error
-    pipeline.forEach(step => {
-      if (step.status === 'pending' || step.status === 'running') {
-        updatePipelineStep(pipeline, step.name, 'error', error.message);
-      }
-    });
-    
-    return new Response(
-      JSON.stringify({ 
-        error: 'Internal server error',
-        details: error.message,
-        meta: { pipeline: { steps: pipeline } }
-      }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-  }
-});
 
 // 🌟 GODLY PLAN: QUANTUM-LEVEL ACCURACY ENGINE 🌟
 // This system ensures predictions are virtually infallible
@@ -2522,3 +2614,344 @@ function calculateTrendConsistency(prices: number[]): number {
   
   return consistentMoves / totalMoves;
 }
+// Serve the prediction endpoint
+serve(async (req) => {
+  // Handle CORS preflight requests
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  const { pipeline, meta } = initializePipeline();
+
+  try {
+    const requestBody: PredictionRequest = await req.json();
+    const { 
+      symbol, 
+      investment, 
+      timeframe, 
+      horizons = [15, 30, 60, 1440],
+      riskTolerance,
+      tradingStyle,
+      investmentGoal,
+      stopLossPercentage,
+      targetProfitPercentage,
+      leverage,
+      marginType
+    } = requestBody;
+    
+    // Build user context object
+    const userContext = {
+      riskTolerance,
+      tradingStyle,
+      investmentGoal,
+      stopLossPercentage,
+      targetProfitPercentage,
+      leverage,
+      marginType
+    };
+
+    // Step 1: Symbol validation
+    updatePipelineStep(pipeline, 'symbol_validation', 'running');
+    if (!symbol || !investment || !timeframe) {
+      updatePipelineStep(pipeline, 'symbol_validation', 'error', 'Missing required fields');
+      return new Response(
+        JSON.stringify({ error: 'Missing required fields: symbol, investment, timeframe' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    updatePipelineStep(pipeline, 'symbol_validation', 'completed', `Validated ${symbol}`);
+
+    console.log(`Getting enhanced technical analysis for ${symbol}, investment: $${investment}, timeframe: ${timeframe}`);
+
+    // Step 2: Market data fetch
+    updatePipelineStep(pipeline, 'market_data_fetch', 'running');
+    const [stockData, historicalData] = await Promise.all([
+      fetchRealStockData(symbol),
+      fetchHistoricalCandles(symbol, timeframe)
+    ]);
+    updatePipelineStep(pipeline, 'market_data_fetch', 'completed', `Price: $${stockData.currentPrice.toFixed(2)}`);
+
+    console.log("Real stock data fetched:", stockData);
+    
+    // Step 3: Historical analysis
+    updatePipelineStep(pipeline, 'historical_analysis', 'running');
+    console.log("Historical candles fetched:", historicalData.candles.length, "candles");
+    updatePipelineStep(pipeline, 'historical_analysis', 'completed', `${historicalData.candles.length} candles analyzed`);
+
+    // Step 3b: Enhanced Data Analysis (Full Year + Fundamentals + Earnings)
+    updatePipelineStep(pipeline, 'enhanced_data_analysis', 'running');
+    const { yahooSymbol } = normalizeToYahooSymbol(symbol);
+    const [fullYearData, fundamentals, earningsHistory] = await Promise.all([
+      fetchFullYearHistory(yahooSymbol),
+      fetchFundamentals(yahooSymbol),
+      fetchEarningsHistory(yahooSymbol)
+    ]);
+    console.log("Enhanced data fetched:", {
+      yearTrend: fullYearData.yearTrend,
+      yearCandles: fullYearData.candles.length,
+      peRatio: fundamentals.peRatio,
+      marketCap: fundamentals.marketCap ? `$${(fundamentals.marketCap / 1e9).toFixed(2)}B` : 'N/A',
+      earningsQuarters: earningsHistory.length
+    });
+    updatePipelineStep(pipeline, 'enhanced_data_analysis', 'completed', 
+      `Year: ${fullYearData.yearTrend}, P/E: ${fundamentals.peRatio?.toFixed(2) || 'N/A'}, ${earningsHistory.length} earnings`);
+
+    // Step 4: News sentiment
+    updatePipelineStep(pipeline, 'news_sentiment', 'running');
+    const newsData = await fetchNewsData(symbol);
+    console.log("News items fetched:", newsData.length, "items");
+    updatePipelineStep(pipeline, 'news_sentiment', 'completed', `${newsData.length} news items processed`);
+
+    // Step 5: Technical indicators
+    updatePipelineStep(pipeline, 'technical_indicators', 'running');
+    const technicalContext = computeEnhancedTechnicalContext(historicalData.candles, stockData);
+    console.log("Technical context computed:", {
+      patterns: technicalContext.patterns,
+      rsi: technicalContext.indicators.rsi,
+      trend: technicalContext.trendDirection,
+      volatility: technicalContext.volatilityState
+    });
+    updatePipelineStep(pipeline, 'technical_indicators', 'completed', 
+      `RSI: ${technicalContext.indicators.rsi.toFixed(1)}, Trend: ${technicalContext.trendDirection}`);
+
+    // 🌟 GODLY PLAN: Market Regime Detection 🌟
+    updatePipelineStep(pipeline, 'market_regime_detection', 'running');
+    const marketRegime = detectMarketRegime(historicalData.candles, technicalContext);
+    console.log("Market regime detected:", {
+      type: marketRegime.type,
+      strength: marketRegime.strength.toFixed(2),
+      confidence: marketRegime.confidence.toFixed(2),
+      volatility: marketRegime.volatility
+    });
+    updatePipelineStep(pipeline, 'market_regime_detection', 'completed', 
+      `Regime: ${marketRegime.type} (${(marketRegime.strength * 100).toFixed(0)}% strength)`);
+
+    // Step 6: AI prediction
+    updatePipelineStep(pipeline, 'ai_prediction', 'running');
+    
+    // Step 7: Multi-horizon forecast with ensemble fallback
+    updatePipelineStep(pipeline, 'multi_horizon_forecast', 'running');
+    
+    let geminiForecast: GeminiForecast;
+    let predictionSource = 'gemini_ai';
+    
+    // 🌟 GODLY PLAN: Try Quantum Prediction First 🌟
+    try {
+      console.log('Attempting quantum-level prediction...');
+      const quantumPrediction = generateQuantumPrediction(
+        symbol,
+        stockData,
+        technicalContext,
+        newsData,
+        marketRegime,
+        horizons
+      );
+      
+      // Convert quantum prediction to GeminiForecast format for compatibility
+      geminiForecast = {
+        symbol: quantumPrediction.symbol,
+        as_of: quantumPrediction.timestamp,
+        forecasts: [
+          {
+            horizon: `${quantumPrediction.predictions.shortTerm.timeHorizon}m`,
+            direction: quantumPrediction.predictions.shortTerm.direction,
+            probabilities: {
+              up: quantumPrediction.predictions.shortTerm.direction === 'up' ? quantumPrediction.predictions.shortTerm.probability : 0.1,
+              down: quantumPrediction.predictions.shortTerm.direction === 'down' ? quantumPrediction.predictions.shortTerm.probability : 0.1,
+              sideways: quantumPrediction.predictions.shortTerm.direction === 'sideways' ? quantumPrediction.predictions.shortTerm.probability : 0.8
+            },
+            expected_return_bp: Math.round(quantumPrediction.predictions.shortTerm.expectedMove * 100),
+            expected_range_bp: {
+              p10: Math.round(-quantumPrediction.predictions.shortTerm.expectedMove * 100),
+              p50: Math.round(quantumPrediction.predictions.shortTerm.expectedMove * 100),
+              p90: Math.round(quantumPrediction.predictions.shortTerm.expectedMove * 200)
+            },
+            key_drivers: quantumPrediction.predictions.shortTerm.keyFactors,
+            risk_flags: quantumPrediction.predictions.shortTerm.riskFactors,
+            confidence: Math.round(quantumPrediction.predictions.shortTerm.confidence * 100),
+            invalid_if: ['regime_change', 'extreme_volatility']
+          }
+        ],
+        support_resistance: {
+          supports: [{ level: marketRegime.support, strength: 0.9 }],
+          resistances: [{ level: marketRegime.resistance, strength: 0.9 }]
+        },
+        positioning_guidance: {
+          bias: quantumPrediction.predictions.shortTerm.direction === 'up' ? 'long' : 
+                quantumPrediction.predictions.shortTerm.direction === 'down' ? 'short' : 'flat',
+          notes: `Quantum prediction: ${(quantumPrediction.successProbability * 100).toFixed(1)}% success probability. ${quantumPrediction.alternativeScenarios[0]?.description || ''}`
+        }
+      };
+      
+      predictionSource = 'quantum_godly_plan';
+      updatePipelineStep(pipeline, 'ai_prediction', 'completed', 'Quantum prediction generated');
+      
+      console.log('🌟 QUANTUM PREDICTION SUCCESS! 🌟');
+      console.log(`Success Probability: ${(quantumPrediction.successProbability * 100).toFixed(1)}%`);
+      console.log(`Risk Score: ${(quantumPrediction.riskScore * 100).toFixed(1)}%`);
+      console.log(`Market Regime: ${marketRegime.type} (${(marketRegime.strength * 100).toFixed(0)}% strength)`);
+      
+    } catch (quantumError) {
+      console.log('Quantum prediction failed, falling back to standard methods:', quantumError.message);
+      
+      try {
+      geminiForecast = await generateEnhancedGeminiAnalysis(
+        symbol,
+        stockData,
+        technicalContext,
+        newsData,
+        investment,
+        horizons,
+        userContext,
+        {
+          fullYear: fullYearData,
+          fundamentals,
+          earningsHistory
+        }
+      );
+      updatePipelineStep(pipeline, 'ai_prediction', 'completed', 'AI analysis completed');
+    } catch (error) {
+      console.log('Gemini AI failed, using enhanced ensemble prediction:', error.message);
+      geminiForecast = generateEnhancedEnsemblePrediction(
+        symbol,
+        stockData,
+        technicalContext,
+        newsData,
+        horizons
+      );
+      predictionSource = 'enhanced_ensemble_v2';
+      updatePipelineStep(pipeline, 'ai_prediction', 'completed', 'Enhanced ensemble prediction generated');
+    }
+    }
+    
+    updatePipelineStep(pipeline, 'multi_horizon_forecast', 'completed', 
+      `${geminiForecast.forecasts.length} horizons analyzed (${predictionSource})`);
+
+    console.log("Enhanced Gemini analysis completed");
+
+    // Step 8: Risk assessment
+    updatePipelineStep(pipeline, 'risk_assessment', 'running');
+    const totalRiskFlags = geminiForecast.forecasts.reduce((sum, f) => sum + f.risk_flags.length, 0);
+    updatePipelineStep(pipeline, 'risk_assessment', 'completed', `${totalRiskFlags} risk factors identified`);
+
+    // Finalize pipeline meta
+    meta.endTime = Date.now();
+    meta.totalDuration = meta.endTime - (meta.startTime || 0);
+    meta.steps = pipeline;
+
+    // Calculate enhanced decision-making fields
+    const primaryForecast = geminiForecast.forecasts[0];
+    const volatilityPercent = (technicalContext.indicators.atr / stockData.currentPrice) * 100;
+    
+    // Calculate action signal (BUY/SELL/HOLD)
+    const actionSignal = deriveActionSignal(
+      primaryForecast.direction,
+      geminiForecast.positioning_guidance.bias,
+      primaryForecast.confidence
+    );
+    
+    // Calculate risk grade
+    const riskGrade = calculateRiskGrade(
+      volatilityPercent,
+      leverage,
+      primaryForecast.risk_flags,
+      primaryForecast.confidence
+    );
+    
+    // Calculate expected ROI ranges
+    const expectedROI = calculateExpectedROI(
+      primaryForecast.expected_return_bp,
+      primaryForecast.confidence,
+      volatilityPercent
+    );
+    
+    // Calculate position sizing
+    const sharesQuantity = Math.floor(investment / stockData.currentPrice);
+    const actualCost = sharesQuantity * stockData.currentPrice;
+    
+    // Add to forecast
+    geminiForecast.action_signal = actionSignal;
+    geminiForecast.risk_grade = riskGrade;
+    geminiForecast.expected_roi = expectedROI;
+
+    // Build comprehensive response with backward compatibility
+    const result = {
+      symbol,
+      currentPrice: stockData.currentPrice,
+      change: stockData.change,
+      changePercent: stockData.changePercent,
+      timeframe,
+      analysis: "Enhanced multi-horizon AI analysis with real-time market data",
+      stockData,
+      geminiForecast,
+      meta: {
+        pipeline: meta,
+        predictionSource,
+        enhancedFeatures: {
+          ensembleMethods: true,
+          advancedPatterns: true,
+          volumeConfirmation: true,
+          meanReversionSignals: true,
+          volatilityRegimeDetection: true,
+          quantumPrediction: predictionSource === 'quantum_godly_plan',
+          marketRegimeDetection: true,
+          alternativeScenarios: true,
+          successProbability: true,
+          riskScoring: true
+        }
+      },
+      // Legacy fields for backward compatibility
+      recommendation: geminiForecast?.positioning_guidance?.bias === "long" ? "bullish" as const :
+                     geminiForecast?.positioning_guidance?.bias === "short" ? "bearish" as const : "neutral" as const,
+      confidence: geminiForecast?.forecasts?.[0]?.confidence || 75,
+      expectedMove: {
+        percent: geminiForecast?.forecasts?.[0]?.expected_return_bp ? geminiForecast.forecasts[0].expected_return_bp / 100 : undefined,
+        direction: geminiForecast?.forecasts?.[0]?.direction || "flat" as const,
+        priceTarget: geminiForecast?.forecasts?.[0] ? {
+          min: stockData.currentPrice * (1 + geminiForecast.forecasts[0].expected_range_bp.p10 / 10000),
+          max: stockData.currentPrice * (1 + geminiForecast.forecasts[0].expected_range_bp.p90 / 10000)
+        } : undefined
+      },
+      patterns: technicalContext.patterns,
+      keyLevels: {
+        support: geminiForecast?.support_resistance?.supports?.map(s => s.level) || [],
+        resistance: geminiForecast?.support_resistance?.resistances?.map(r => r.level) || []
+      },
+      risks: geminiForecast?.forecasts?.[0]?.risk_flags || [],
+      opportunities: geminiForecast?.forecasts?.[0]?.key_drivers || [],
+      rationale: geminiForecast?.positioning_guidance?.notes || "Enhanced multi-horizon analysis completed",
+      // New enhanced fields for decision making
+      positionSize: {
+        shares: sharesQuantity,
+        costPerShare: stockData.currentPrice,
+        totalCost: actualCost,
+        remainingCash: investment - actualCost
+      },
+      leverage: leverage || 1,
+      marginType: marginType || 'cash'
+    };
+
+    return new Response(JSON.stringify(result), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+
+  } catch (error) {
+    console.error('Error in predict-movement:', error);
+    
+    // Mark remaining steps as error
+    pipeline.forEach(step => {
+      if (step.status === 'pending' || step.status === 'running') {
+        updatePipelineStep(pipeline, step.name, 'error', error.message);
+      }
+    });
+    
+    return new Response(
+      JSON.stringify({ 
+        error: 'Internal server error',
+        details: error.message,
+        meta: { pipeline: { steps: pipeline } }
+      }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+});

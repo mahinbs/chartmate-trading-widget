@@ -21,7 +21,7 @@ const AuthPage = () => {
 
   useEffect(() => {
     if (user) {
-      navigate('/predict');
+      navigate('/home');
     }
   }, [user, navigate]);
 
@@ -43,7 +43,7 @@ const AuthPage = () => {
           title: "Welcome back!",
           description: "You have successfully signed in.",
         });
-        navigate('/predict');
+        navigate('/home');
       }
     } catch (error) {
       toast({

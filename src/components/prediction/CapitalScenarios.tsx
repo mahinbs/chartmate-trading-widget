@@ -1,0 +1,169 @@
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { DollarSign, TrendingUp, TrendingDown, Users, AlertTriangle } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { formatCurrency, formatPercentage } from "@/lib/display-utils";
+
+interface CapitalScenariosProps {
+  currentPrice: number;
+  expectedROI: {
+    best: number;
+    likely: number;
+    worst: number;
+  };
+  stopLossPercentage: number;
+  leverage?: number;
+}
+
+export function CapitalScenarios({ 
+  currentPrice, 
+  expectedROI,
+  stopLossPercentage,
+  leverage = 1 
+}: CapitalScenariosProps) {
+  
+  const scenarios = [
+    { amount: 10000, label: 'Small Investor', icon: '👤' },
+    { amount: 100000, label: 'Medium Investor', icon: '👥' },
+    { amount: 1000000, label: 'Large Investor', icon: '🏢' }
+  ];
+
+  const calculateScenario = (investment: number) => {
+    const shares = Math.floor(investment / currentPrice);
+    const actualInvestment = shares * currentPrice;
+    
+    const bestCase = (actualInvestment * expectedROI.best * leverage) / 100;
+    const likelyCase = (actualInvestment * expectedROI.likely * leverage) / 100;
+    const worstCase = (actualInvestment * expectedROI.worst * leverage) / 100;
+    const maxLoss = (actualInvestment * stopLossPercentage * leverage) / 100;
+
+    return {
+      shares,
+      actualInvestment,
+      bestCase,
+      likelyCase,
+      worstCase,
+      maxLoss
+    };
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Users className="h-5 w-5" />
+          Investment Planning - Capital Scenarios
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">
+          See how the same signal performs across different investment sizes (USD)
+        </p>
+      </CardHeader>
+      
+      <CardContent>
+        <div className="space-y-6">
+          
+          {scenarios.map(({ amount, label, icon }) => {
+            const scenario = calculateScenario(amount);
+            
+            return (
+              <div key={amount} className="p-4 rounded-lg border bg-muted/30">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">{icon}</span>
+                    <div>
+                      <h4 className="font-bold">{label}</h4>
+                      <p className="text-sm text-muted-foreground">
+                        {formatCurrency(amount, 0)} investment
+                      </p>
+                    </div>
+                  </div>
+                  <Badge variant="outline">{scenario.shares} shares</Badge>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  
+                  {/* Best Case */}
+                  <div className="text-center p-3 bg-green-500/10 rounded border border-green-500/30">
+                    <p className="text-xs text-muted-foreground mb-1">Best Case</p>
+                    <p className="text-lg font-bold text-green-600">
+                      {formatCurrency(scenario.bestCase, 0)}
+                    </p>
+                    <p className="text-xs text-green-600">{formatPercentage(expectedROI.best)}</p>
+                  </div>
+
+                  {/* Likely Case */}
+                  <div className="text-center p-3 bg-blue-500/10 rounded border border-blue-500/30">
+                    <p className="text-xs text-muted-foreground mb-1">Likely</p>
+                    <p className="text-lg font-bold text-blue-600">
+                      {formatCurrency(scenario.likelyCase, 0)}
+                    </p>
+                    <p className="text-xs text-blue-600">{formatPercentage(expectedROI.likely)}</p>
+                  </div>
+
+                  {/* Worst Case */}
+                  <div className="text-center p-3 bg-orange-500/10 rounded border border-orange-500/30">
+                    <p className="text-xs text-muted-foreground mb-1">Worst Case</p>
+                    <p className="text-lg font-bold text-orange-600">
+                      {formatCurrency(scenario.worstCase, 0)}
+                    </p>
+                    <p className="text-xs text-orange-600">{formatPercentage(expectedROI.worst, 2, false)}</p>
+                  </div>
+
+                  {/* Max Loss (Stop Loss) */}
+                  <div className="text-center p-3 bg-red-500/10 rounded border border-red-500/30">
+                    <p className="text-xs text-muted-foreground mb-1">Max Loss</p>
+                    <p className="text-lg font-bold text-red-600">
+                      -{formatCurrency(scenario.maxLoss, 0)}
+                    </p>
+                    <p className="text-xs text-red-600">-{stopLossPercentage}%</p>
+                  </div>
+
+                </div>
+
+                {/* Risk per Trade */}
+                <div className="mt-3 pt-3 border-t">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Risk per trade:</span>
+                    <span className="font-semibold">
+                      {formatCurrency(scenario.maxLoss, 0)} ({stopLossPercentage}% of capital)
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm mt-1">
+                    <span className="text-muted-foreground">Risk-Reward Ratio:</span>
+                    <span className="font-semibold">
+                      1:{(scenario.likelyCase / scenario.maxLoss).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Leverage Impact Notice */}
+          {leverage > 1 && (
+            <Alert className="border-orange-500/30 bg-orange-500/10">
+              <AlertTriangle className="h-4 w-4 text-orange-600" />
+              <AlertDescription className="text-sm">
+                All scenarios above reflect <strong>{leverage}x leverage</strong>. 
+                Returns and losses are amplified by {leverage}x compared to cash trading.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Investment Guidance */}
+          <div className="p-4 bg-blue-500/10 rounded-lg border border-blue-500/30">
+            <p className="font-semibold text-sm mb-2 text-blue-600">💡 Position Sizing Guidance:</p>
+            <ul className="text-sm text-muted-foreground space-y-1">
+              <li>• <strong>Conservative:</strong> Risk 1-2% of capital per trade</li>
+              <li>• <strong>Moderate:</strong> Risk 2-3% of capital per trade</li>
+              <li>• <strong>Aggressive:</strong> Risk 3-5% of capital per trade</li>
+              <li>• <strong>Never risk more than 5%</strong> on a single trade</li>
+            </ul>
+          </div>
+
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
