@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -5,6 +7,10 @@
 /* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
 All colors MUST be HSL.
 */
+
+*{
+  font-family: 'Inter', sans-serif;
+}
 
 @layer base {
   :root {
@@ -124,6 +130,20 @@ All colors MUST be HSL.
 }
 
 @layer components {
+ .text-heading{
+  @apply text-[#181B22]
+ }
+ .text-content{
+  @apply text-[#2A3452]
+ }
+
+ .btn-primary {
+    @apply bg-primary text-white px-6 py-3 rounded-full font-semibold transition-colors hover:bg-primary-hover;
+  }
+  .container-custom {
+    @apply max-w-[88rem] mx-auto px-4 sm:px-6 lg:px-8;
+  }
+
   /* Glassmorphism utility classes */
   .glass-card {
     @apply bg-card/50 backdrop-blur-sm border border-white/10;
@@ -188,3 +208,31 @@ All colors MUST be HSL.
     -webkit-overflow-scrolling: touch;
   }
 }
+
+@keyframes scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-scroll {
+  animation: scroll 30s linear infinite;
+}
+
+@keyframes drop {
+  0% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(1000px);
+    opacity: 0;
+  }
+}
+
+.animate-drop {
+  animation: drop linear forwards;
+}
+

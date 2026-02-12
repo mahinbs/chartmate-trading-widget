@@ -115,10 +115,10 @@ const AuthPage = () => {
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="signin" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
+            {/* <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="signin">Sign In</TabsTrigger>
               <TabsTrigger value="signup">Sign Up</TabsTrigger>
-            </TabsList>
+            </TabsList> */}
             
             <TabsContent value="signin">
               <form onSubmit={handleSignIn} className="space-y-4">

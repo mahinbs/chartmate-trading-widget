@@ -10,6 +10,7 @@ import IntradayPage from "./pages/IntradayPage";
 import ActiveTradesPage from "./pages/ActiveTradesPage";
 import AuthPage from "./pages/AuthPage";
 import { ProtectedRoute } from "./components/ProtectedRoute";
+import LandingPage from "./pages/LandingPage";
 
 const queryClient = new QueryClient();
 
@@ -21,47 +22,48 @@ const App = () => (
       <BrowserRouter>
         <div className="min-h-screen bg-background">
           <Routes>
-            <Route path="/" element={<Navigate to="/home" replace />} />
+            <Route path="/" element={<LandingPage />} />
+            {/* <Route path="/" element={<Navigate to="/home" replace />} /> */}
             <Route path="/auth" element={<AuthPage />} />
-            <Route 
-              path="/home" 
+            <Route
+              path="/home"
               element={
                 <ProtectedRoute>
                   <HomePage />
                 </ProtectedRoute>
-              } 
+              }
             />
-            <Route 
-              path="/predict" 
+            <Route
+              path="/predict"
               element={
                 <ProtectedRoute>
                   <PredictPage />
                 </ProtectedRoute>
-              } 
+              }
             />
-            <Route 
-              path="/predictions" 
+            <Route
+              path="/predictions"
               element={
                 <ProtectedRoute>
                   <PredictionsPage />
                 </ProtectedRoute>
-              } 
+              }
             />
-            <Route 
-              path="/intraday" 
+            <Route
+              path="/intraday"
               element={
                 <ProtectedRoute>
                   <IntradayPage />
                 </ProtectedRoute>
-              } 
+              }
             />
-            <Route 
-              path="/active-trades" 
+            <Route
+              path="/active-trades"
               element={
                 <ProtectedRoute>
                   <ActiveTradesPage />
                 </ProtectedRoute>
-              } 
+              }
             />
             <Route path="*" element={<Navigate to="/home" replace />} />
           </Routes>
