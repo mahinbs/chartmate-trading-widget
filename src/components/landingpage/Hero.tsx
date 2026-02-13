@@ -149,8 +149,8 @@ const Hero = () => {
 
                 {/* Main Headline */}
                 <h1 className="max-w-5xl text-5xl md:text-6xl lg:text-7xl font-bold font-heading text-heading leading-[1.1] mb-8 tracking-tight">
-                    Analyze Market Probabilities With <span className="text-primary relative inline-block">
-                        AI Precision
+                    Decode the Market. Then Define Your <span className="text-primary relative inline-block">
+                        Edge
                         <svg className="absolute w-full h-3 -bottom-1 left-0 text-primary opacity-20" viewBox="0 0 100 10" preserveAspectRatio="none">
                             <path d="M0 5 Q 50 10 100 5" stroke="currentColor" strokeWidth="3" fill="none" />
                         </svg>
@@ -160,7 +160,7 @@ const Hero = () => {
                 {/* Description */}
                 <div className="max-w-3xl mx-auto mb-12">
                     <p className="text-xl text-gray-600 mb-6 leading-relaxed">
-                        Stop guessing. Start trading with the power of Gemini AI. Get multi-horizon forecasts, real-time risk management, and institutional-grade analytics.
+                       Analyze Market Probabilities With AI Precision. Stop guessing and understand your trades with the power of AI. Get multi-horizon forecasts, real-time risk management, and institutional-grade analytics.
                     </p>
                 </div>
 

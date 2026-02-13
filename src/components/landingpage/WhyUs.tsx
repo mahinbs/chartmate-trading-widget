@@ -4,8 +4,8 @@ import { Brain, Zap, UserCheck } from 'lucide-react';
 const reasons = [
     {
         icon: <Brain className="w-12 h-12 text-primary mb-6" />,
-        title: "Gemini-Powered Intelligence",
-        description: "Leveraging Google's most advanced AI models to process millions of market data points in seconds, identifying patterns invisible to the human eye."
+        title: "AI-Powered Intelligence",
+        description: "Leveraging advanced AI to process millions of market data points in seconds, uncovering patterns invisible to human analysis."
     },
     {
         icon: <Zap className="w-12 h-12 text-primary mb-6" />,

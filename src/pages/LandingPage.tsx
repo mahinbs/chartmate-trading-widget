@@ -15,12 +15,12 @@ const LandingPage = () => {
             <Hero />
             <Services />
             <WhyUs />
-            <Testimonial />
             <WorkSlider />
             <Pricing />
             <HowToGetStarted />
             <LatestInsights />
             <FAQ />
+            <Testimonial />
         </Layout>
     )
 }
