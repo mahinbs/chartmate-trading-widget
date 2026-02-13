@@ -45,7 +45,7 @@ const FAQ = () => {
         },
         {
             question: "Do you execute trades for me?",
-            answer: "No, ChartMate AI is an intelligence tool, not an auto-trader. We provide the signals, analysis, and risk parameters, but you retain full control over your execution and funds."
+            answer: "No, ChartMate AI is an intelligence tool, not an auto-trader. We provide probability analysis and risk parameters. You retain full control over your execution and funds."
         },
         {
             question: "What markets are supported?",
@@ -53,7 +53,7 @@ const FAQ = () => {
         },
         {
             question: "Is there a free trial?",
-            answer: "Yes! You can access our 'Basic' analysis tier for free forever. For advanced multi-horizon forecasts and real-time alerts, we offer a 14-day free trial of our Pro plan."
+            answer: "Yes! We offer a 7-day free trial with full access to all features. After the trial period, your selected subscription plan will begin."
         },
         {
             question: "Is this suitable for beginners?",
