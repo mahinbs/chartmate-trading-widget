@@ -45,7 +45,7 @@ const FAQ = () => {
         },
         {
             question: "Do you execute trades for me?",
-            answer: "No, ChartMate AI is an intelligence tool, not an auto-trader. We provide probability analysis and risk parameters. You retain full control over your execution and funds."
+            answer: "No, ChartMate AI is an intelligence tool, not an auto-trader. We provide probability analysis and risk parameters."
         },
         {
             question: "What markets are supported?",
