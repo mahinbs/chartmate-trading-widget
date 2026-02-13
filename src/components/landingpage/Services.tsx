@@ -5,7 +5,7 @@ const features = [
     {
         icon: <Target className="w-8 h-8 text-primary" />,
         title: "Multi-Horizon Forecasts",
-        description: "AI-driven predictions for 15m, 1h, and 1d timeframes to guide your strategy."
+        description: "AI-driven probability analysis for 15m, 1h, and 1d timeframes to guide your strategy."
     },
     {
         icon: <Clock className="w-8 h-8 text-primary" />,
@@ -26,7 +26,7 @@ const features = [
 
 const Services = () => {
     return (
-        <section id="services" className="py-24 bg-gray-50">
+        <section id="features" className="py-24 bg-gray-50">
             <div className="container-custom">
                 <div className="text-center mb-16">
                     <h2 className="text-3xl md:text-4xl font-bold font-heading text-heading mb-4">

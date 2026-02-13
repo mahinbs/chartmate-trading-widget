@@ -40,7 +40,7 @@ const FAQ = () => {
 
     const faqs = [
         {
-            question: "How accurate are the AI predictions?",
+            question: "How accurate is the AI probability analysis?",
             answer: "Our models utilize advanced machine learning algorithms trained on decades of market data. While no system can guarantee 100% accuracy, ChartMate AI consistently maintains a 70-80% success rate on high-confidence setups."
         },
         {

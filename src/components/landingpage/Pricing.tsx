@@ -77,40 +77,83 @@ const Pricing = () => {
                             <p className="text-gray-400 mt-4">Start your own software business. Sell licenses and keep the profits.</p>
                         </div>
 
-                        <div className="space-y-4 mb-8 flex-grow relative z-10">
-                            <div className="flex items-start gap-3">
-                                <Check className="w-5 h-5 text-primary flex-shrink-0 mt-1" />
-                                <span className="text-gray-300"><strong>Full Resale Rights</strong> - Sell Key to others</span>
+                        <div className="space-y-6 mb-8 flex-grow relative z-10">
+
+                            {/* What Users Receive */}
+                            <div className="space-y-3">
+                                <h4 className="text-white font-bold text-sm uppercase tracking-wider border-b border-gray-700 pb-2">Includes</h4>
+                                <ul className="space-y-2">
+                                    {[
+                                        "Your own branded trading software",
+                                        "Deployment on your own domain",
+                                        "Fully designed landing page",
+                                        "Client login dashboard",
+                                        "Admin panel to manage users",
+                                        "Annual license system ($99/year model)",
+                                        "Multi-factor probability trade analysis engine",
+                                        "Risk–reward calculator",
+                                        "Strategy builder panel",
+                                        "Trade performance tracking",
+                                        "Basic backtesting module",
+                                        "Optional strategy automation (algo execution)"
+                                    ].map((item, i) => (
+                                        <li key={i} className="flex items-start gap-3">
+                                            <Check className="w-4 h-4 text-primary flex-shrink-0 mt-1" />
+                                            <span className="text-gray-300 text-sm">{item}</span>
+                                        </li>
+                                    ))}
+                                </ul>
                             </div>
 
-                            {/* Resale Table */}
-                            <div className="mt-6 bg-[#252a33] rounded-xl overflow-hidden border border-gray-700">
-                                <div className="px-4 py-3 bg-[#2d333f] border-b border-gray-700 flex justify-between items-center">
-                                    <span className="text-xs font-bold text-gray-300 uppercase tracking-wider">Your Revenue Potential</span>
-                                    <span className="text-[10px] text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20">Platform Fees</span>
-                                </div>
-                                <div className="divide-y divide-gray-700/50">
-                                    {resaleItems.map((item, index) => (
-                                        <div key={index} className="p-3 text-sm grid grid-cols-[1.5fr,1fr,0.5fr] gap-2 items-center hover:bg-white/5 transition-colors">
-                                            <div>
-                                                <div className="text-white font-medium">{item.name}</div>
-                                                <div className="text-gray-500 text-xs mt-0.5">{item.note}</div>
-                                            </div>
-                                            <div className="text-right px-2">
-                                                <div className="text-white font-mono">{item.price}</div>
-                                                {item.isSubscription && <div className="text-xs text-primary mt-0.5">Recurring</div>}
-                                            </div>
-                                            <div className="text-right">
-                                                <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${item.fee === "0%" ? "bg-green-500/20 text-green-400" : "bg-yellow-500/20 text-yellow-400"}`}>
-                                                    {item.fee}
-                                                </span>
-                                            </div>
+                            {/* What You Control */}
+                            <div className="space-y-3">
+                                <h4 className="text-white font-bold text-sm uppercase tracking-wider border-b border-gray-700 pb-2">You Control</h4>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {[
+                                        "Your brand name",
+                                        "Your domain",
+                                        "Your pricing",
+                                        "Your marketing",
+                                        "Your customers",
+                                        "Your revenue"
+                                    ].map((item, i) => (
+                                        <div key={i} className="flex items-center gap-2">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0"></div>
+                                            <span className="text-gray-300 text-xs">{item}</span>
                                         </div>
                                     ))}
                                 </div>
-                                <div className="p-3 bg-[#22262e] border-t border-gray-700 text-xs text-gray-400 italic text-center">
-                                    * A 30% platform commission applies exclusively to recurring subscription revenue.
+                            </div>
+
+                            {/* Revenue Model */}
+                            <div className="bg-[#252a33] rounded-xl p-4 border border-gray-700">
+                                <h4 className="text-primary font-bold text-sm uppercase tracking-wider mb-3">Revenue Model</h4>
+                                <ul className="space-y-2">
+                                    <li className="flex justify-between text-sm">
+                                        <span className="text-gray-300">License Sales</span>
+                                        <span className="text-white font-medium">$99/year+</span>
+                                    </li>
+                                    <li className="flex justify-between text-sm">
+                                        <span className="text-gray-300">Your Share</span>
+                                        <span className="text-green-400 font-bold">70%</span>
+                                    </li>
+                                    <li className="flex justify-between text-sm">
+                                        <span className="text-gray-300">Platform Share to Boostmysites</span>
+                                        <span className="text-gray-400">30%</span>
+                                    </li>
+                                </ul>
+                                <div className="mt-3 pt-3 border-t border-gray-700 space-y-1">
+                                    <p className="text-[12px] text-gray-500 italic">* Backend infrastructure & maintenance handled by us.</p>
+                                    <p className="text-[12px] text-gray-500 italic">* Algo & server infrastructure fee applies per active user.</p>
                                 </div>
+                            </div>
+
+                            {/* What We Handle */}
+                            <div className="space-y-2">
+                                <h4 className="text-white font-bold text-sm uppercase tracking-wider border-b border-gray-700 pb-2">We Handle</h4>
+                                <p className="text-xs text-gray-400 leading-relaxed">
+                                    Full technical deployment, software updates, server management, maintenance & security, and backend system stability.
+                                </p>
                             </div>
                         </div>
 

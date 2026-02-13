@@ -149,7 +149,7 @@ const Hero = () => {
 
                 {/* Main Headline */}
                 <h1 className="max-w-5xl text-5xl md:text-6xl lg:text-7xl font-bold font-heading text-heading leading-[1.1] mb-8 tracking-tight">
-                    Predict Market Moves With <span className="text-primary relative inline-block">
+                    Analyze Market Probabilities With <span className="text-primary relative inline-block">
                         AI Precision
                         <svg className="absolute w-full h-3 -bottom-1 left-0 text-primary opacity-20" viewBox="0 0 100 10" preserveAspectRatio="none">
                             <path d="M0 5 Q 50 10 100 5" stroke="currentColor" strokeWidth="3" fill="none" />
@@ -170,17 +170,20 @@ const Hero = () => {
                         Start Free Analysis
                         <ArrowRight className="ml-2 w-5 h-5" />
                     </Link>
-                    <a href="/#features" className="bg-white border border-gray-200 text-heading px-8 py-4 rounded-lg shadow-sm hover:bg-gray-50 transition-all font-bold text-lg flex items-center justify-center">
+                    <button
+                        onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}
+                        className="bg-white border border-gray-200 text-heading px-8 py-4 rounded-lg shadow-sm hover:bg-gray-50 transition-all font-bold text-lg flex items-center justify-center cursor-pointer"
+                    >
                         <BarChart2 className="mr-2 w-5 h-5 text-gray-500" />
                         Explore Features
-                    </a>
+                    </button>
                 </div>
 
                 {/* Stats / Trust (replacing Logos) */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-16 border-t border-gray-100 pt-12">
                     <div>
                         <div className="text-3xl font-bold text-heading">94%</div>
-                        <div className="text-sm text-gray-500 font-medium mt-1">Prediction Accuracy</div>
+                        <div className="text-sm text-gray-500 font-medium mt-1">Model Accuracy</div>
                     </div>
                     <div>
                         <div className="text-3xl font-bold text-heading">24/7</div>
