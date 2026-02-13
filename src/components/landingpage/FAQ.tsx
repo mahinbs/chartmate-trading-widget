@@ -55,10 +55,6 @@ const FAQ = () => {
             question: "Is there a free trial?",
             answer: "Yes! We offer a 7-day free trial with full access to all features. After the trial period, your selected subscription plan will begin."
         },
-        {
-            question: "Is this suitable for beginners?",
-            answer: "Absolutely. We simplify complex market data into clear, actionable insights (Buy/Sell zones). You don't need to be an expert technical analyst to benefit from our risk management features."
-        }
     ];
 
     const handleToggle = (index: number) => {
