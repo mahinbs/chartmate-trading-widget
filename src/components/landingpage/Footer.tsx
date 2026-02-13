@@ -1,58 +1,44 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 
 const Footer = () => {
     return (
-        <footer className="text-white pt-24 pb-8 px-7 relative overflow-hidden bg-white">
+        <footer className="text-white pt-24 pb-8 px-4 md:px-7 relative overflow-hidden bg-white">
             <div className="container-custom !bg-[#181b22] relative z-10 p-10 rounded-xl">
                 <div className="flex flex-col lg:flex-row gap-16 lg:gap-32">
 
                     {/* Left Column: Brand & CTA */}
                     <div className="lg:w-[45%]">
                         <h2 className="text-2xl md:text-3xl font-bold font-heading leading-[1.1] mb-8 text-white">
-                            The Gnar is a fire-<br />
-                            breathing, Boston-based<br />
-                            software consultancy<br />
-                            made of problem-solvers.
+                            ChartMate AI<br />
+                            Trading Intelligence<br />
+                            For The Modern Trader.
                         </h2>
                         <div className="space-y-6 mb-10 max-w-xl">
                             <p className="text-gray-400 text-base leading-relaxed font-semibold">
-                                Whether you're starting from scratch or want to upgrade a feature, we can help.
-                            </p>
-                            <p className="text-gray-400 text-base leading-relaxed">
-                                Bring vision to life with a dedicated team, bug-free code, and a process that's built for speed and scalability.
+                                Whether you're a day trader or a long-term investor, our AI gives you the data-driven edge you need.
                             </p>
                         </div>
-                        <a
-                            href="#contact"
+                        <Link
+                            to="/predict"
                             className="inline-block bg-primary text-white font-bold py-4 px-8 rounded shadow-primary-hover hover:shadow-primary-hover hover:translate-y-[2px] transition-all text-base"
                         >
-                            Let's Build Together
-                        </a>
+                            Start Analysis Now
+                        </Link>
                     </div>
 
                     {/* Right Column: Links */}
                     <div className="lg:w-[55%] flex flex-col justify-between">
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-16">
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-8 mb-16">
 
-                            {/* Services */}
+                            {/* Product */}
                             <div>
-                                <h4 className="font-bold text-white mb-6">Services</h4>
+                                <h4 className="font-bold text-white mb-6">Product</h4>
                                 <ul className="space-y-3 text-gray-400">
-                                    <li><a href="#" className="hover:text-white transition-colors">Gnar AI Spark</a></li>
-                                    <li><a href="#" className="hover:text-white transition-colors">Gnar Ideate</a></li>
-                                    <li><a href="#" className="hover:text-white transition-colors">Gnar Ignite</a></li>
-                                    <li><a href="#" className="hover:text-white transition-colors">Gnar Embed</a></li>
-                                    <li><a href="#" className="hover:text-white transition-colors">Gnar Integrate</a></li>
-                                </ul>
-                            </div>
-
-                            {/* Technologies */}
-                            <div>
-                                <h4 className="font-bold text-white mb-6">Technologies</h4>
-                                <ul className="space-y-3 text-gray-400">
-                                    <li><a href="#" className="hover:text-white transition-colors">Web Development</a></li>
-                                    <li><a href="#" className="hover:text-white transition-colors">Mobile Development</a></li>
-                                    <li><a href="#" className="hover:text-white transition-colors">UI/UX Design</a></li>
+                                    <li><Link to="/predict" className="hover:text-white transition-colors">AI Analysis</Link></li>
+                                    <li><Link to="/intraday" className="hover:text-white transition-colors">Intraday</Link></li>
+                                    <li><Link to="/predictions" className="hover:text-white transition-colors">History</Link></li>
+                                    <li><Link to="/active-trades" className="hover:text-white transition-colors">Track Trades</Link></li>
                                 </ul>
                             </div>
 
@@ -60,18 +46,20 @@ const Footer = () => {
                             <div>
                                 <h4 className="font-bold text-white mb-6">Company</h4>
                                 <ul className="space-y-3 text-gray-400">
-                                    <li><a href="#" className="hover:text-white transition-colors">Our Work</a></li>
-                                    <li><a href="#" className="hover:text-white transition-colors">About Us</a></li>
+                                    <li><Link to="/" className="hover:text-white transition-colors">About Us</Link></li>
+                                    <li><a href="/#features" className="hover:text-white transition-colors">Features</a></li>
+                                    <li><a href="/#pricing" className="hover:text-white transition-colors">Pricing</a></li>
                                     <li><a href="#" className="hover:text-white transition-colors">Contact</a></li>
-                                    <li><a href="#" className="hover:text-white transition-colors">Schedule Meeting</a></li>
                                 </ul>
                             </div>
 
-                            {/* Resources */}
+                            {/* Legal */}
                             <div>
-                                <h4 className="font-bold text-white mb-6">Resources</h4>
+                                <h4 className="font-bold text-white mb-6">Legal</h4>
                                 <ul className="space-y-3 text-gray-400">
-                                    <li><a href="#" className="hover:text-white transition-colors">Blog</a></li>
+                                    <li><a href="#" className="hover:text-white transition-colors">Privacy Policy</a></li>
+                                    <li><a href="#" className="hover:text-white transition-colors">Terms of Service</a></li>
+                                    <li><a href="#" className="hover:text-white transition-colors">Risk Disclaimer</a></li>
                                 </ul>
                             </div>
                         </div>
@@ -88,7 +76,7 @@ const Footer = () => {
                                     </div>
                                 </div>
                                 <p className="text-gray-500 text-sm max-w-sm leading-relaxed">
-                                    The Gnar is a U.S.-based software development partner that delivers scalable, production-ready code to help businesses overcome technical challenges and grow with confidence.
+                                    Trading involves high risk. Past performance is not indicative of future results. Information provided is for educational purposes only.
                                 </p>
                             </div>
 
@@ -105,16 +93,12 @@ const Footer = () => {
                 </div>
             </div>
 
-            {/* Tiger Graphic */}
-            {/* <div className="absolute bottom-0 right-0 w-64 h-64 opacity-20 pointer-events-none">
-                <img src="https://images.unsplash.com/photo-1638214394146-2b1d57176f8a?fm=jpg&q=60&w=3000&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8OHx8dGlnZXIlMjBpbGx1c3RyYXRpb24lMjBibGFjayUyMGFuZCUyMHdoaXRlfGVufDB8fDB8fHww" alt="Tiger Illustration" className="w-full h-full object-contain grayscale invert" />
-            </div> */}
-
             {/* Copyright Bar */}
             <div className="container-custom pt-3 flex flex-col md:flex-row justify-between items-center text-gray-500 text-sm">
-                <p>&copy; {new Date().getFullYear()} The Gnar Co. Inc | 117 Kendrick Street, Suite 300 | Needham, MA 02494</p>
+                <p>&copy; {new Date().getFullYear()} ChartMate AI. All rights reserved.</p>
                 <div className="flex space-x-6 mt-4 md:mt-0">
-                    <a href="#" className="hover:text-white transition-colors">Privacy & Cookie Policy</a>
+                    <a href="#" className="hover:text-white transition-colors">Privacy</a>
+                    <a href="#" className="hover:text-white transition-colors">Terms</a>
                     <a href="#" className="hover:text-white transition-colors">Sitemap</a>
                 </div>
             </div>

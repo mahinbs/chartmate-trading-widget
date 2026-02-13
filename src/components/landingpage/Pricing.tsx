@@ -31,7 +31,7 @@ const Pricing = () => {
                             <h3 className="text-2xl font-bold text-heading mb-2">Partnership</h3>
                             <div className="flex items-baseline gap-1">
                                 <span className="text-4xl font-bold text-primary">$499</span>
-                                <span className="text-gray-500 font-medium">/ one-time</span>
+                                <span className="text-gray-500 font-medium">/ yearly</span>
                             </div>
                             <p className="text-gray-500 mt-4">For trading firms and educators who want to use the tool internally.</p>
                         </div>
@@ -109,7 +109,7 @@ const Pricing = () => {
                                     ))}
                                 </div>
                                 <div className="p-3 bg-[#22262e] border-t border-gray-700 text-xs text-gray-400 italic text-center">
-                                    * We take a 30% commission only on recurring subscription sales.
+                                    * A 30% platform commission applies exclusively to recurring subscription revenue.
                                 </div>
                             </div>
                         </div>

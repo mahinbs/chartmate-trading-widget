@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { ArrowRight, BarChart2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 interface Square {
     top: number;
@@ -93,7 +95,7 @@ const Hero = () => {
     };
 
     return (
-        <section className="relative bg-white pt-32 pb-20 lg:pt-40 lg:pb-24 overflow-hidden">
+        <section className="relative bg-white pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden">
             {/* Grid Background */}
             <div className="absolute inset-0 z-0 pointer-events-none"
                 style={{
@@ -108,7 +110,7 @@ const Hero = () => {
                 {squares.map((pos, index) => (
                     <div
                         key={`square-${index}`}
-                        className="absolute w-[80px] h-[80px] bg-red-50/50 transition-all duration-1000 ease-in-out"
+                        className="absolute w-[80px] h-[80px] bg-primary/5 transition-all duration-1000 ease-in-out"
                         style={{
                             top: `${pos.top}px`,
                             left: `${pos.left}px`
@@ -116,7 +118,7 @@ const Hero = () => {
                     ></div>
                 ))}
 
-                {/* Orange Drops */}
+                {/* Drops */}
                 {drops.map((drop) => (
                     <div
                         key={`${drop.id}-${drop.key}`}
@@ -135,51 +137,63 @@ const Hero = () => {
             <div className="container-custom relative z-10 flex flex-col items-center text-center">
 
                 {/* Chartmate Badge */}
-                <div className="mb-8 bg-white border border-gray-200 rounded-full px-4 py-1 flex items-center shadow-sm">
-                    <span className="font-bold text-heading mr-2">Chartmate</span>
-                    <div className="flex text-red-500 text-xs">
-                        {'★'.repeat(5)}
+                <div className="mb-8 bg-white border border-gray-200 rounded-full px-4 py-1.5 flex items-center shadow-sm animate-fade-in-up">
+                    <span className="font-bold text-heading text-sm mr-2 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                        ChartMate AI
+                    </span>
+                    <div className="text-xs text-gray-500 font-medium border-l border-gray-200 pl-2">
+                        Now Live
                     </div>
                 </div>
 
-                {/* Sub-headline */}
-                <p className="text-gray-500 text-sm md:text-base mb-6">
-                    Top Ruby on Rails Developer | Top App Development Company
-                </p>
-
                 {/* Main Headline */}
-                <h1 className="max-w-5xl text-huge md:text-text-4xl lg:text-4xl font-bold font-heading text-heading leading-[1] mb-6 tracking-tight text-[#181B22]">
-                    We're A Product Development Team That Brings High-Velocity Development with High-Impact Results
+                <h1 className="max-w-5xl text-5xl md:text-6xl lg:text-7xl font-bold font-heading text-heading leading-[1.1] mb-8 tracking-tight">
+                    Predict Market Moves With <span className="text-primary relative inline-block">
+                        AI Precision
+                        <svg className="absolute w-full h-3 -bottom-1 left-0 text-primary opacity-20" viewBox="0 0 100 10" preserveAspectRatio="none">
+                            <path d="M0 5 Q 50 10 100 5" stroke="currentColor" strokeWidth="3" fill="none" />
+                        </svg>
+                    </span>
                 </h1>
 
                 {/* Description */}
-                <div className="max-w-4xl mx-auto mb-10">
-                    <p className="text-xl md:text-2xl text-content mb-4 leading-relaxed">
-                        Companies partner with us when they need scalable, bug-free software delivered fast.
-                    </p>
-                    <p className="text-sm md:text-base text-gray-500 leading-relaxed max-w-4xl mx-auto">
-                        Our senior-level U.S.-based product team helps you get to market quickly with high-quality software—reducing long-term costs, maximizing ROI, and maintaining product momentum
+                <div className="max-w-3xl mx-auto mb-12">
+                    <p className="text-xl text-gray-600 mb-6 leading-relaxed">
+                        Stop guessing. Start trading with the power of Gemini AI. Get multi-horizon forecasts, real-time risk management, and institutional-grade analytics.
                     </p>
                 </div>
 
                 {/* CTA Buttons */}
-                <div className="flex flex-col sm:flex-row gap-4 mb-20">
-                    <a href="#contact" className="bg-primary hover:bg-primary-hover text-white px-8 py-3 rounded shadow-sm transition-colors">
-                        Let's Build Together
-                    </a>
-                    <a href="#work" className="bg-white border border-gray-300 text-heading px-8 py-3 rounded shadow-sm hover:bg-gray-50 transition-colors">
-                        See Our Work
+                <div className="flex flex-col sm:flex-row gap-4 mb-20 animate-fade-in-up delay-100">
+                    <Link to="/predict" className="bg-primary hover:bg-primary-hover text-white px-8 py-4 rounded-lg shadow-lg shadow-primary/20 transition-all hover:-translate-y-1 font-bold text-lg flex items-center justify-center">
+                        Start Free Analysis
+                        <ArrowRight className="ml-2 w-5 h-5" />
+                    </Link>
+                    <a href="/#features" className="bg-white border border-gray-200 text-heading px-8 py-4 rounded-lg shadow-sm hover:bg-gray-50 transition-all font-bold text-lg flex items-center justify-center">
+                        <BarChart2 className="mr-2 w-5 h-5 text-gray-500" />
+                        Explore Features
                     </a>
                 </div>
 
-                {/* Client Logos */}
-                <div className="flex flex-wrap justify-center items-center gap-8 md:gap-12 opacity-80 grayscale">
-                    {/* Simple text placeholders for logos as per image */}
-                    <span className="font-bold text-xl text-gray-600">KOLIDE</span>
-                    <span className="font-bold text-xl text-gray-600 italic">Optimizely</span>
-                    <span className="font-bold text-xl text-gray-600 tracking-widest">WHOOP</span>
-                    <span className="font-bold text-xl text-gray-600">SALSIFY</span>
-                    <span className="font-bold text-xl text-gray-600">fitbit</span>
+                {/* Stats / Trust (replacing Logos) */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-16 border-t border-gray-100 pt-12">
+                    <div>
+                        <div className="text-3xl font-bold text-heading">94%</div>
+                        <div className="text-sm text-gray-500 font-medium mt-1">Prediction Accuracy</div>
+                    </div>
+                    <div>
+                        <div className="text-3xl font-bold text-heading">24/7</div>
+                        <div className="text-sm text-gray-500 font-medium mt-1">Market Monitoring</div>
+                    </div>
+                    <div>
+                        <div className="text-3xl font-bold text-heading">150+</div>
+                        <div className="text-sm text-gray-500 font-medium mt-1">Supported Assets</div>
+                    </div>
+                    <div>
+                        <div className="text-3xl font-bold text-heading">&lt;1s</div>
+                        <div className="text-sm text-gray-500 font-medium mt-1">Data Latency</div>
+                    </div>
                 </div>
 
             </div>

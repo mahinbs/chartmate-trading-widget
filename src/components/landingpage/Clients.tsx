@@ -1,21 +1,20 @@
 import React from 'react';
 
 const Clients = () => {
-    // Placeholder client names since we don't have the logos
-    const clients = [
-        "Client 1", "Client 2", "Client 3", "Client 4", "Client 5", "Client 6"
+    const markets = [
+        "BINANCE", "COINBASE", "NASDAQ", "NYSE", "FOREX.COM", "KRAKEN"
     ];
 
     return (
-        <section className="py-12 border-b border-gray-100">
+        <section className="py-12 border-b border-gray-100 bg-white">
             <div className="container-custom">
                 <p className="text-center text-gray-400 text-sm font-semibold uppercase tracking-wider mb-8">
-                    Trusted by innovative companies
+                    Compatible with Major Markets & Exchanges
                 </p>
-                <div className="flex flex-wrap justify-center items-center gap-8 md:gap-16 opacity-50 grayscale hover:grayscale-0 transition-all duration-500">
-                    {clients.map((client, index) => (
-                        <div key={index} className="text-xl font-bold text-gray-400 hover:text-primary cursor-default">
-                            {client}
+                <div className="flex flex-wrap justify-center items-center gap-8 md:gap-16">
+                    {markets.map((market, index) => (
+                        <div key={index} className="text-xl font-bold text-gray-400 hover:text-primary transition-colors cursor-default">
+                            {market}
                         </div>
                     ))}
                 </div>

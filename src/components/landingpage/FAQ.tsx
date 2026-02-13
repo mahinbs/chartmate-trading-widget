@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { HelpCircle, ChevronDown } from 'lucide-react';
 
 interface FAQItemProps {
     question: string;
@@ -9,23 +10,24 @@ interface FAQItemProps {
 
 const FAQItem: React.FC<FAQItemProps> = ({ question, answer, isOpen, onClick }) => {
     return (
-        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden mb-4 transition-shadow hover:shadow-md">
+        <div className="bg-white rounded-lg border border-gray-100 overflow-hidden mb-4 transition-all hover:shadow-md">
             <button
-                className="w-full px-4 py-4 flex justify-between items-center text-left focus:outline-none"
+                className="w-full px-6 py-5 flex justify-between items-center text-left focus:outline-none bg-white hover:bg-gray-50 transition-colors"
                 onClick={onClick}
             >
-                <span className="text-xl font-medium text-heading pr-8">{question}</span>
-                <span className={`transform transition-transform duration-300 text-heading ${isOpen ? 'rotate-45' : 'rotate-0'}`}>
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
+                <span className="text-lg font-bold text-heading pr-8 flex items-center">
+                    <HelpCircle className="w-5 h-5 text-primary mr-3 opacity-50" />
+                    {question}
+                </span>
+                <span className={`transform transition-transform duration-300 text-gray-400 ${isOpen ? 'rotate-180' : 'rotate-0'}`}>
+                    <ChevronDown className="w-5 h-5" />
                 </span>
             </button>
             <div
                 className={`transition-all duration-300 ease-in-out overflow-hidden ${isOpen ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'
                     }`}
             >
-                <div className="px-8 pb-8 text-gray-600 leading-relaxed text-base">
+                <div className="px-6 pb-6 pt-2 pl-14 text-gray-600 leading-relaxed text-base">
                     {answer}
                 </div>
             </div>
@@ -34,36 +36,28 @@ const FAQItem: React.FC<FAQItemProps> = ({ question, answer, isOpen, onClick }) 
 };
 
 const FAQ = () => {
-    const [openIndex, setOpenIndex] = useState<number | null>(null);
+    const [openIndex, setOpenIndex] = useState<number | null>(0);
 
     const faqs = [
         {
-            question: "What technologies does The Gnar specialize in?",
-            answer: "We specialize in modern web and mobile technologies including React, React Native, Ruby on Rails, Node.js, and Python. We choose the right tools for the job to ensure scalability, performance, and maintainability."
+            question: "How accurate are the AI predictions?",
+            answer: "Our models utilize advanced machine learning algorithms trained on decades of market data. While no system can guarantee 100% accuracy, ChartMate AI consistently maintains a 70-80% success rate on high-confidence setups."
         },
         {
-            question: "How long does it typically take to build a product?",
-            answer: "Timeline varies based on complexity, but our rapid delivery model typically gets an MVP to market in 3-4 months. We work in agile sprints to deliver value incrementally and adapt to feedback."
+            question: "Do you execute trades for me?",
+            answer: "No, ChartMate AI is an intelligence tool, not an auto-trader. We provide the signals, analysis, and risk parameters, but you retain full control over your execution and funds."
         },
         {
-            question: "How does The Gnar handle project billing and budgets?",
-            answer: "We work on a time and materials basis or fixed-bid depending on the project scope. We provide transparent weekly reports so you always know where your budget is going and can make informed decisions."
+            question: "What markets are supported?",
+            answer: "We support over 150 assets including major Forex pairs (EUR/USD, GBP/JPY), global equities (US Stocks), and top cryptocurrencies (BTC, ETH, SOL)."
         },
         {
-            question: "What makes The Gnar different from other software consultancies?",
-            answer: "Our 'Founders Mindset' approach means we treat your business like our own. We combine senior-level engineering talent with strategic product thinking to build solutions that actually solve business problems."
+            question: "Is there a free trial?",
+            answer: "Yes! You can access our 'Basic' analysis tier for free forever. For advanced multi-horizon forecasts and real-time alerts, we offer a 14-day free trial of our Pro plan."
         },
         {
-            question: "How does The Gnar's Bug-Free Warranty work?",
-            answer: "We stand behind our code. If you find a bug in any code we've released to production, we'll fix it for free for up to one year after launch. It's our commitment to quality."
-        },
-        {
-            question: "Can The Gnar integrate with our existing team?",
-            answer: "Absolutely. We often work as an extension of existing engineering teams, providing specialized expertise, increasing velocity, and helping to mentor junior developers."
-        },
-        {
-            question: "What happens after the initial product launch?",
-            answer: "We don't just launch and leave. We offer ongoing support, maintenance, and feature development packages to ensure your product continues to evolve and perform as your user base grows."
+            question: "Is this suitable for beginners?",
+            answer: "Absolutely. We simplify complex market data into clear, actionable insights (Buy/Sell zones). You don't need to be an expert technical analyst to benefit from our risk management features."
         }
     ];
 
@@ -72,11 +66,16 @@ const FAQ = () => {
     };
 
     return (
-        <section className="py-24 bg-[#f9f7f6]">
+        <section id="faq" className="py-24 bg-gray-50">
             <div className="container-custom max-w-4xl mx-auto">
-                <h2 className="text-huge md:text-text-4xl lg:text-4xl font-bold font-heading text-heading text-center mb-12 text-[#181B22]">
-                    Frequently Asked Questions
-                </h2>
+                <div className="text-center mb-16">
+                    <h2 className="text-3xl md:text-4xl font-bold font-heading text-heading mb-4">
+                        Frequently Asked Questions
+                    </h2>
+                    <p className="text-gray-600">
+                        Everything you need to know about trading with ChartMate AI.
+                    </p>
+                </div>
 
                 <div>
                     {faqs.map((faq, index) => (
