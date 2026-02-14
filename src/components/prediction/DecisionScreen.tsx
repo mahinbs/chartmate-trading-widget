@@ -65,28 +65,32 @@ export function DecisionScreen({
         text: 'TRADE NOW',
         urgency: 'HIGH',
         color: 'bg-green-600 hover:bg-green-700',
-        reason: 'Strong buy signal with high confidence'
+        reason: 'Strong buy signal with high confidence',
+        explanation: `AI detected strong upward momentum with ${confidence}% confidence. Multiple technical indicators align for a bullish move. Risk level is ${riskLevel.toLowerCase()}.`
       };
     } else if (action === 'BUY' && confidence >= 50) {
       return {
         text: 'TRADE WITH CAUTION',
         urgency: 'MEDIUM',
         color: 'bg-yellow-600 hover:bg-yellow-700',
-        reason: 'Moderate confidence - consider smaller position'
+        reason: 'Moderate confidence - consider smaller position',
+        explanation: `AI shows moderate buy signal with ${confidence}% confidence. Some indicators are positive but not all align. Consider reducing position size or waiting.`
       };
     } else if (action === 'SELL') {
       return {
         text: 'AVOID OR EXIT',
         urgency: 'HIGH',
         color: 'bg-red-600 hover:bg-red-700',
-        reason: 'Bearish signal detected'
+        reason: 'Bearish signal detected',
+        explanation: `AI detected downward pressure with ${confidence}% confidence. Technical indicators suggest potential decline. Consider shorting or avoiding this position.`
       };
     } else {
       return {
         text: 'WAIT',
         urgency: 'LOW',
         color: 'bg-gray-600 hover:bg-gray-700',
-        reason: 'Market unclear - wait for better setup'
+        reason: 'Market unclear - wait for better setup',
+        explanation: `AI recommends HOLD with only ${confidence}% confidence. Signals are mixed or unclear - entering now carries ${riskLevel.toLowerCase()} risk with uncertain reward. Wait for ${confidence < 40 ? 'much stronger' : 'stronger'} confirmation before committing capital.`
       };
     }
   };
@@ -103,6 +107,31 @@ export function DecisionScreen({
             <RiskGrade level={riskLevel} size="lg" />
           </div>
         </div>
+        
+        {/* WHY THIS SIGNAL - Prominent Explanation */}
+        <Alert className={`mt-4 ${
+          action === 'BUY' ? 'border-green-500/30 bg-green-500/10' : 
+          action === 'SELL' ? 'border-red-500/30 bg-red-500/10' : 
+          'border-amber-500/30 bg-amber-500/10'
+        }`}>
+          <AlertTriangle className={`h-4 w-4 ${
+            action === 'BUY' ? 'text-green-600' : 
+            action === 'SELL' ? 'text-red-600' : 
+            'text-amber-600'
+          }`} />
+          <AlertDescription>
+            <p className={`font-bold text-sm mb-1 ${
+              action === 'BUY' ? 'text-green-700 dark:text-green-400' : 
+              action === 'SELL' ? 'text-red-700 dark:text-red-400' : 
+              'text-amber-700 dark:text-amber-400'
+            }`}>
+              Why {action}?
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {recommendation.explanation}
+            </p>
+          </AlertDescription>
+        </Alert>
       </CardHeader>
       
       <CardContent className="space-y-6">
