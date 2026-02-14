@@ -83,7 +83,7 @@ interface GeminiForecast {
     notes: string;
     recommended_hold_period?: string;
   };
-  // New fields for enhanced decision making
+  // Enhanced decision making fields
   action_signal?: {
     action: "BUY" | "SELL" | "HOLD";
     confidence: number;
@@ -94,6 +94,22 @@ interface GeminiForecast {
     best_case: number;
     likely_case: number;
     worst_case: number;
+  };
+  // NEW: Deep analysis fields
+  deep_analysis?: {
+    bullish_case: string;
+    bearish_case: string;
+    contrarian_view: string;
+    conviction_rationale: string;
+    invalidation_triggers: string[];
+    risk_reward_ratio: number;
+    success_probability: number;
+  };
+  market_context?: {
+    correlation_insight: string;
+    sector_strength: string;
+    macro_factors: string;
+    institutional_activity: string;
   };
 }
 
@@ -1548,7 +1564,14 @@ async function generateEnhancedGeminiAnalysis(
   }
 
   // Create enhanced prompt with all context
-  const prompt = `You are an expert quantitative analyst with deep knowledge of technical analysis, market psychology, and statistical modeling. Analyze ${symbol} and provide a comprehensive multi-horizon forecast using ensemble methods and advanced pattern recognition.
+  const prompt = `You are a world-class institutional quantitative analyst with 20+ years of experience at top hedge funds. You combine technical analysis, fundamental research, market psychology, statistical modeling, and contrarian thinking to generate highly accurate predictions.
+
+CRITICAL MISSION: Analyze ${symbol} with EXTREME depth and accuracy. Use multi-pass analysis:
+1. FIRST PASS: Gather all signals (bullish, bearish, neutral)
+2. SECOND PASS: Challenge your own assumptions with contrarian viewpoint
+3. THIRD PASS: Synthesize into high-conviction forecast with calibrated confidence
+
+Your analysis should be SO detailed that professional traders would pay for it.
 
 CURRENT MARKET DATA:
 - Price: $${stockData.currentPrice.toFixed(2)} (${stockData.changePercent.toFixed(2)}% change)
@@ -1595,6 +1618,21 @@ ${enhancedData?.earningsHistory && enhancedData.earningsHistory.length > 0 ?
     `- ${e.date}: Actual: $${e.actual?.toFixed(2) || 'N/A'}, Estimate: $${e.estimate?.toFixed(2) || 'N/A'} (${e.actual && e.estimate ? ((e.actual - e.estimate) / e.estimate * 100).toFixed(1) + '% ' + (e.actual > e.estimate ? 'beat' : 'miss') : ''})`
   ).join('\n') : '- No recent earnings data'}
 
+MARKET CORRELATION ANALYSIS (vs S&P 500):
+${spyCorrelation ? `- Correlation Coefficient: ${(spyCorrelation.coefficient * 100).toFixed(1)}% (${spyCorrelation.relationship})
+- Stock is moving ${spyCorrelation.movingWith} 
+- SPY Recent Change: ${spyCorrelation.spyChange.toFixed(2)}%
+- Interpretation: ${Math.abs(spyCorrelation.coefficient) > 0.7 ? 
+    'Stock highly correlated with market - macro factors dominate' : 
+    Math.abs(spyCorrelation.coefficient) > 0.4 ? 
+      'Stock moderately tied to market - mix of macro & company-specific' : 
+      'Stock moves independently - focus on company-specific factors'}
+- Risk Insight: ${spyCorrelation.coefficient < 0 ? 
+    '⚠️ NEGATIVE correlation - potential hedge/defensive play' : 
+    spyCorrelation.coefficient > 0.8 ? 
+      '⚠️ BETA risk - will amplify market moves' : 
+      '✓ Moderate market sensitivity'}` : '- Correlation data not available'}
+
 INVESTMENT CONTEXT:
 - Position Size: $${investment}
 ${userContext?.riskTolerance ? `- Risk Tolerance: ${userContext.riskTolerance.toUpperCase()}` : ''}
@@ -1605,23 +1643,65 @@ ${userContext?.targetProfitPercentage ? `- Target Profit Target: ${userContext.t
 ${userContext?.marginType ? `- Account Type: ${userContext.marginType.toUpperCase()}` : ''}
 ${userContext?.leverage && userContext.leverage > 1 ? `- Leverage: ${userContext.leverage}x (AMPLIFIES BOTH GAINS AND LOSSES)` : ''}
 
-ANALYSIS INSTRUCTIONS:
-1. Use ensemble methods combining technical, sentiment, and statistical analysis
-2. Consider market regime (trending vs ranging, volatility state)
-3. Weight patterns by their historical reliability
-4. Factor in volume confirmation and momentum
-5. Account for mean reversion vs momentum continuation
-6. Provide confidence intervals based on signal strength
-7. CRITICAL: Tailor recommendations to the user's risk tolerance, trading style, and investment goals
-8. If user has HIGH risk tolerance, allow for more aggressive targets; if LOW, be more conservative
-9. RECOMMEND optimal holding periods based on market conditions, volatility, and trading style
-   - For DAY TRADING: Focus on intraday (15m-4h) horizons
-   - For SWING TRADING: Focus on multi-day (1d-1w) horizons
-   - For POSITION TRADING: Focus on weekly-monthly (1w-1m) horizons
-10. If leverage is used, INCREASE risk warnings and tighten stop-loss recommendations
-11. Adjust stop-loss and take-profit levels based on user preferences AND volatility
+🎯 MULTI-PASS ANALYSIS FRAMEWORK:
+
+PASS 1 - COMPREHENSIVE DATA SYNTHESIS:
+1. Analyze ALL technical indicators (RSI, MACD, Bollinger, Volume, Momentum)
+2. Evaluate sentiment from news (weight recent news more heavily)
+3. Assess fundamental strength (P/E, earnings trends, growth rates)
+4. Identify chart patterns and their historical success rates
+5. Calculate support/resistance with confluence zones (multiple indicators agree)
+6. Measure trend strength across multiple timeframes (15m, 1h, 4h, 1d)
+
+PASS 2 - CONTRARIAN CHALLENGE (Devil's Advocate):
+7. For EVERY bullish signal, find the bearish counterargument
+8. For EVERY bearish signal, find the bullish counterargument
+9. Identify hidden risks that most traders miss (liquidity, correlation breaks, sentiment extremes)
+10. Check for "false signals" (RSI divergence, volume warnings, pattern failures)
+11. Consider what could invalidate your thesis (earnings surprise, macro shock, sector rotation)
+
+PASS 3 - MARKET CONTEXT & CORRELATION:
+12. Compare to SPY (S&P 500) - is stock moving with or against market?
+13. Check sector performance - is this stock outperforming/underperforming peers?
+14. Evaluate macro conditions - Fed policy, interest rates, economic data
+15. Measure correlation breakdown - when stock diverges from sector, it's a signal
+16. Identify institutional behavior patterns from volume spikes
+
+PASS 4 - CONFIDENCE CALIBRATION:
+17. Assign confidence based on signal confluence (more indicators = higher confidence)
+18. REDUCE confidence if contrarian viewpoint is strong (shows uncertainty)
+19. INCREASE confidence if multiple timeframes align
+20. Factor in volatility - high volatility = lower confidence for tight ranges
+21. Historical pattern success rate should modulate confidence
+22. If fundamental and technical disagree, confidence should be MEDIUM at most
+
+PASS 5 - PERSONALIZATION & RISK MANAGEMENT:
+23. CRITICAL: Tailor ALL recommendations to user's risk tolerance, trading style, and goals
+24. If user has HIGH risk tolerance, allow aggressive targets but warn of downside
+25. If user has LOW risk tolerance, be VERY conservative, prioritize capital preservation
+26. RECOMMEND optimal holding periods based on:
+    - DAY TRADING: Intraday (15m-4h) - Quick in/out, tight stops
+    - SWING TRADING: Multi-day (1d-1w) - Ride momentum, wider stops
+    - POSITION TRADING: Weekly-monthly (1w-1m+) - Long-term trends, patient
+27. If leverage > 1x, DRAMATICALLY increase risk warnings and tighten stops
+28. Adjust stop-loss distance based on: volatility + user preference + liquidity
+29. Set take-profit targets based on: realistic price action + risk-reward ratio (min 2:1)
+
+PASS 6 - FINAL SYNTHESIS:
+30. Synthesize ALL passes into ONE clear, high-conviction recommendation
+31. Your confidence score must reflect: signal strength + contrarian analysis + market context
+32. Provide specific price targets with probability estimates
+33. Give clear, actionable reasoning that a professional trader would respect
+34. If signals are mixed or weak, recommend HOLD - don't force a trade
 
 Generate forecasts for horizons: ${horizons.map(h => h < 1440 ? `${h}m` : `${h/1440}d`).join(', ')}
+
+⚠️ CRITICAL REQUIREMENTS:
+- Your analysis must be PROFESSIONAL-GRADE, not generic
+- Every statement must be backed by data (not vague)
+- Confidence must be HONEST (don't overstate weak signals)
+- If you're uncertain, SAY SO and recommend HOLD
+- Think like a risk manager, not a hype generator
 
 Respond with a valid JSON object matching this exact schema:
 {
@@ -1648,6 +1728,32 @@ Respond with a valid JSON object matching this exact schema:
     "bias": "long|short|flat",
     "notes": "Specific actionable guidance",
     "recommended_hold_period": "Based on market conditions: 1h, 4h, 1d, 1w, etc."
+  },
+  "action_signal": {
+    "action": "BUY|SELL|HOLD",
+    "confidence": 75,
+    "urgency": "HIGH|MEDIUM|LOW"
+  },
+  "risk_grade": "LOW|MEDIUM|HIGH|VERY_HIGH",
+  "expected_roi": {
+    "best_case": 8.5,
+    "likely_case": 4.2,
+    "worst_case": -3.1
+  },
+  "deep_analysis": {
+    "bullish_case": "Detailed explanation of why price could go UP (3-5 specific reasons with data)",
+    "bearish_case": "Detailed explanation of why price could go DOWN (3-5 specific reasons with data)",
+    "contrarian_view": "What are traders missing? What could surprise the market?",
+    "conviction_rationale": "Why this recommendation over alternatives? What makes you confident?",
+    "invalidation_triggers": ["Specific events that would prove this analysis wrong"],
+    "risk_reward_ratio": 2.5,
+    "success_probability": 65
+  },
+  "market_context": {
+    "correlation_insight": "How stock relates to SPY - is it moving with/against market?",
+    "sector_strength": "Is the sector strong or weak right now?",
+    "macro_factors": "Fed policy, interest rates, economic data impact",
+    "institutional_activity": "What are big players doing based on volume?"
   }
 }`;
 
@@ -1668,9 +1774,9 @@ Respond with a valid JSON object matching this exact schema:
           }
         ],
         generationConfig: {
-          maxOutputTokens: 4000,
-          temperature: 0.2,
-          topP: 0.95,
+          maxOutputTokens: 8000,
+          temperature: 0.15,
+          topP: 0.9,
           thinkingConfig: {
             thinkingLevel: "high", // Maximum reasoning depth for complex market analysis
           }
@@ -2695,6 +2801,48 @@ serve(async (req) => {
     });
     updatePipelineStep(pipeline, 'enhanced_data_analysis', 'completed', 
       `Year: ${fullYearData.yearTrend}, P/E: ${fundamentals.peRatio?.toFixed(2) || 'N/A'}, ${earningsHistory.length} earnings`);
+
+    // Step 3c: Market Correlation Analysis (SPY)
+    updatePipelineStep(pipeline, 'market_correlation', 'running');
+    let spyCorrelation = null;
+    try {
+      // Fetch SPY (S&P 500) data for same timeframe
+      const spyData = await fetchHistoricalCandles('SPY', timeframe);
+      if (spyData.candles.length > 10 && historicalData.candles.length > 10) {
+        // Calculate correlation between stock and SPY
+        const minLength = Math.min(spyData.candles.length, historicalData.candles.length);
+        const stockReturns = historicalData.candles.slice(0, minLength).map((c, i) => 
+          i === 0 ? 0 : (c.close - historicalData.candles[i-1].close) / historicalData.candles[i-1].close
+        );
+        const spyReturns = spyData.candles.slice(0, minLength).map((c, i) => 
+          i === 0 ? 0 : (c.close - spyData.candles[i-1].close) / spyData.candles[i-1].close
+        );
+        
+        // Calculate Pearson correlation
+        const n = stockReturns.length;
+        const sumX = stockReturns.reduce((a, b) => a + b, 0);
+        const sumY = spyReturns.reduce((a, b) => a + b, 0);
+        const sumXY = stockReturns.reduce((sum, x, i) => sum + x * spyReturns[i], 0);
+        const sumX2 = stockReturns.reduce((sum, x) => sum + x * x, 0);
+        const sumY2 = spyReturns.reduce((sum, y) => sum + y * y, 0);
+        
+        const correlation = (n * sumXY - sumX * sumY) / 
+          Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+        
+        spyCorrelation = {
+          coefficient: isNaN(correlation) ? 0 : Math.max(-1, Math.min(1, correlation)),
+          spyChange: ((spyData.candles[spyData.candles.length - 1].close - spyData.candles[0].close) / spyData.candles[0].close) * 100,
+          relationship: Math.abs(correlation) > 0.7 ? 'strong' : Math.abs(correlation) > 0.4 ? 'moderate' : 'weak',
+          movingWith: correlation > 0 ? 'with market' : 'against market'
+        };
+        console.log(`📊 SPY Correlation: ${(correlation * 100).toFixed(1)}% (${spyCorrelation.relationship})`);
+      }
+      updatePipelineStep(pipeline, 'market_correlation', 'completed', 
+        spyCorrelation ? `Correlation: ${(spyCorrelation.coefficient * 100).toFixed(0)}%` : 'Calculated');
+    } catch (error) {
+      console.log('⚠️ SPY correlation failed:', error.message);
+      updatePipelineStep(pipeline, 'market_correlation', 'completed', 'Limited data');
+    }
 
     // Step 4: News sentiment
     updatePipelineStep(pipeline, 'news_sentiment', 'running');

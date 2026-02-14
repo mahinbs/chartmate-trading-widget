@@ -51,18 +51,31 @@ export function ActionSignal({ action, confidence, size = 'md' }: ActionSignalPr
   };
 
   return (
-    <Badge 
-      className={cn(
-        styles.bg,
-        styles.border,
-        styles.text,
-        'border-2 font-bold',
-        sizeClasses[size]
+    <div className="flex items-center gap-2">
+      <Badge 
+        className={cn(
+          styles.bg,
+          styles.border,
+          styles.text,
+          'border-2 font-bold',
+          sizeClasses[size]
+        )}
+      >
+        <Icon className={cn(iconSizes[size], 'mr-1')} />
+        {action}
+      </Badge>
+      {confidence && (
+        <Badge 
+          variant="outline"
+          className={cn(
+            'border-primary/30 bg-primary/5',
+            sizeClasses[size]
+          )}
+        >
+          <span className="text-muted-foreground text-xs">ML Confidence:</span>
+          <span className="ml-1 font-bold">{confidence}%</span>
+        </Badge>
       )}
-    >
-      <Icon className={cn(iconSizes[size], 'mr-1')} />
-      {action}
-      {confidence && <span className="ml-1 opacity-80">({confidence}%)</span>}
-    </Badge>
+    </div>
   );
 }

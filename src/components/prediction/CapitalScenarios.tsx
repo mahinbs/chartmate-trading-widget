@@ -14,13 +14,15 @@ interface CapitalScenariosProps {
   };
   stopLossPercentage: number;
   leverage?: number;
+  allowFractionalShares?: boolean; // Some brokers allow, some don't
 }
 
 export function CapitalScenarios({ 
   currentPrice, 
   expectedROI,
   stopLossPercentage,
-  leverage = 1 
+  leverage = 1,
+  allowFractionalShares = true // Default: allow fractional (modern brokers like Robinhood, Webull)
 }: CapitalScenariosProps) {
   
   const scenarios = [
@@ -30,13 +32,26 @@ export function CapitalScenarios({
   ];
 
   const calculateScenario = (investment: number) => {
-    const shares = Math.floor(investment / currentPrice);
-    const actualInvestment = shares * currentPrice;
+    // Calculate shares based on broker capability
+    let shares: number;
+    let actualInvestment: number;
     
-    const bestCase = (actualInvestment * expectedROI.best * leverage) / 100;
-    const likelyCase = (actualInvestment * expectedROI.likely * leverage) / 100;
-    const worstCase = (actualInvestment * expectedROI.worst * leverage) / 100;
-    const maxLoss = (actualInvestment * stopLossPercentage * leverage) / 100;
+    if (allowFractionalShares) {
+      // Modern brokers (Robinhood, Webull, etc.) - allow fractional shares
+      shares = investment / currentPrice;
+      actualInvestment = investment; // Use full investment
+    } else {
+      // Traditional brokers - only whole shares
+      shares = Math.floor(investment / currentPrice);
+      actualInvestment = shares * currentPrice; // Actual investment based on whole shares
+    }
+    
+    // expectedROI values are already in percentage format (e.g., 5 for 5%)
+    // Convert to decimal by dividing by 100, then multiply by investment
+    const bestCase = actualInvestment * (expectedROI.best / 100) * leverage;
+    const likelyCase = actualInvestment * (expectedROI.likely / 100) * leverage;
+    const worstCase = actualInvestment * (expectedROI.worst / 100) * leverage;
+    const maxLoss = actualInvestment * (stopLossPercentage / 100) * leverage;
 
     return {
       shares,
@@ -55,9 +70,14 @@ export function CapitalScenarios({
           <Users className="h-5 w-5" />
           Investment Planning - Capital Scenarios
         </CardTitle>
-        <p className="text-sm text-muted-foreground">
-          See how the same signal performs across different investment sizes (USD)
-        </p>
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            See how the same signal performs across different investment sizes (USD)
+          </p>
+          <Badge variant={allowFractionalShares ? "default" : "secondary"} className="text-xs">
+            {allowFractionalShares ? "✓ Fractional Shares" : "Whole Shares Only"}
+          </Badge>
+        </div>
       </CardHeader>
       
       <CardContent>
@@ -78,7 +98,14 @@ export function CapitalScenarios({
                       </p>
                     </div>
                   </div>
-                  <Badge variant="outline">{scenario.shares} shares</Badge>
+                  <Badge variant="outline">
+                    {scenario.shares < 1 
+                      ? scenario.shares.toFixed(4) 
+                      : scenario.shares < 10 
+                        ? scenario.shares.toFixed(2) 
+                        : Math.floor(scenario.shares)
+                    } shares
+                  </Badge>
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -161,6 +188,27 @@ export function CapitalScenarios({
               <li>• <strong>Never risk more than 5%</strong> on a single trade</li>
             </ul>
           </div>
+
+          {/* Broker Fractional Shares Info */}
+          {!allowFractionalShares && (
+            <Alert className="border-amber-500/30 bg-amber-500/10">
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+              <AlertDescription className="text-sm">
+                <strong>Whole Shares Only:</strong> Calculations use whole shares only. 
+                If you can't afford 1 full share, consider brokers that support fractional shares 
+                (Robinhood, Webull, Fidelity, Charles Schwab, etc.)
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {allowFractionalShares && (
+            <div className="p-3 bg-green-500/10 rounded-lg border border-green-500/30">
+              <p className="text-sm text-green-700 dark:text-green-400">
+                ✓ <strong>Fractional Shares Enabled:</strong> You can invest any amount, even if it's less than 1 full share. 
+                Most modern brokers support this feature.
+              </p>
+            </div>
+          )}
 
         </div>
       </CardContent>

@@ -72,6 +72,22 @@ interface GeminiForecast {
     likely_case: number;
     worst_case: number;
   };
+  // NEW: Deep analysis fields
+  deep_analysis?: {
+    bullish_case?: string;
+    bearish_case?: string;
+    contrarian_view?: string;
+    conviction_rationale?: string;
+    invalidation_triggers?: string[];
+    risk_reward_ratio?: number;
+    success_probability?: number;
+  };
+  market_context?: {
+    correlation_insight?: string;
+    sector_strength?: string;
+    macro_factors?: string;
+    institutional_activity?: string;
+  };
 }
 
 interface PipelineStep {
@@ -768,6 +784,20 @@ const PredictPage = () => {
             {currentStep === "results" && result && (
               <div className="space-y-6">
                 
+                {/* AI Reasoning - Why this signal? (MOVED TO TOP) */}
+                {result.geminiForecast && (
+                  <AIReasoningDisplay
+                    symbol={result.symbol}
+                    action={result.geminiForecast.action_signal?.action || 'HOLD'}
+                    confidence={result.geminiForecast.action_signal?.confidence || result.confidence || 50}
+                    technicalFactors={result.patterns}
+                    keyDrivers={result.geminiForecast.forecasts?.[0]?.key_drivers}
+                    oneLineSummary={result.rationale}
+                    deepAnalysis={result.geminiForecast.deep_analysis}
+                    marketContext={result.geminiForecast.market_context}
+                  />
+                )}
+
                 {/* Decision Screen - Primary Call to Action */}
                 {result.geminiForecast && (
                   <DecisionScreen
@@ -882,18 +912,6 @@ const PredictPage = () => {
                   </CardContent>
                 </Card>
 
-                {/* AI Reasoning - Why this signal? */}
-                {result.geminiForecast && (
-                  <AIReasoningDisplay
-                    symbol={result.symbol}
-                    action={result.geminiForecast.action_signal?.action || 'HOLD'}
-                    confidence={result.geminiForecast.action_signal?.confidence || result.confidence || 50}
-                    technicalFactors={result.patterns}
-                    keyDrivers={result.geminiForecast.forecasts?.[0]?.key_drivers}
-                    oneLineSummary={result.rationale}
-                  />
-                )}
-
                 {/* Capital Scenarios - Small vs Large investors */}
                 {result.geminiForecast?.expected_roi && (
                   <CapitalScenarios
@@ -905,6 +923,7 @@ const PredictPage = () => {
                     }}
                     stopLossPercentage={userProfile.stopLossPercentage || 5}
                     leverage={userProfile.leverage}
+                    allowFractionalShares={true} // Modern brokers support fractional shares (Robinhood, Webull, etc.)
                   />
                 )}
 
