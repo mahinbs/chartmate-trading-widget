@@ -23,8 +23,8 @@ const App = () => (
       <BrowserRouter>
         <div className="min-h-screen bg-background">
           <Routes>
-            <Route path="/start-your-fintech-company" element={<LandingPage />} />
-            <Route path="/" element={<Navigate to="/start-your-fintech-company" replace />} />
+            <Route path="/rsb-fintech-founder" element={<LandingPage />} />
+            <Route path="/" element={<Navigate to="/rsb-fintech-founder" replace />} />
             <Route path="/contact-us" element={<ContactUsPage />} />
             <Route path="/auth" element={<AuthPage />} />
             <Route
