@@ -130,7 +130,7 @@ const Hero = () => {
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
                             <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
                         </span>
-                        ChartMate AI Now Live
+                        our ai probability software AI Now Live
                     </div>
                 </ScrollReveal>
 
@@ -151,7 +151,7 @@ const Hero = () => {
                 <ScrollReveal delay={0.8}>
                     <div className="flex flex-col sm:flex-row gap-6 justify-center items-center mb-16">
                         <Link
-                            to="/predict"
+                            to="/contact-us"
                             className="bg-cyan-500 text-black hover:bg-cyan-400 text-lg px-10 py-7 rounded-full font-bold shadow-[0_0_40px_rgba(6,182,212,0.3)] hover:shadow-[0_0_60px_rgba(6,182,212,0.5)] transition-all duration-300 hover:-translate-y-1 flex items-center"
                         >
                             Get Platform Demo
