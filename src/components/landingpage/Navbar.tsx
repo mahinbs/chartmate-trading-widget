@@ -108,7 +108,7 @@ const Navbar = () => {
                     <NavLink to="/predictions">Probabilities</NavLink>
                     <ScrollLink to="testimonials">Testimonials</ScrollLink>
                     <ScrollLink to="faq">FAQ</ScrollLink> */}
-                    <Link to="/predict" className="bg-primary hover:bg-primary-hover text-white px-6 py-2.5 rounded text-sm font-bold transition-colors shadow-sm">
+                    <Link to="/contact-us" className="bg-primary hover:bg-primary-hover text-white px-6 py-2.5 rounded text-sm font-bold transition-colors shadow-sm">
                         Launch App
                     </Link>
                 </div>
