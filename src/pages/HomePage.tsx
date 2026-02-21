@@ -19,7 +19,7 @@ export default function HomePage() {
             className="flex items-center gap-2 hover:opacity-90 transition-opacity"
           >
             <TrendingUp className="h-6 w-6 text-primary" />
-            <h1 className="text-2xl font-bold">ChartMate AI</h1>
+            <h1 className="text-2xl font-bold">our ai probability software</h1>
           </button>
           <div className="flex items-center gap-4">
             <span className="text-sm text-muted-foreground">{user?.email}</span>
@@ -45,7 +45,7 @@ export default function HomePage() {
         <div className="grid md:grid-cols-2 gap-6 mb-8">
           {/* Create New Prediction */}
           <Card className="border-2 border-primary/20 hover:border-primary/40 transition-all hover:shadow-lg cursor-pointer group"
-                onClick={() => navigate('/predict')}>
+            onClick={() => navigate('/predict')}>
             <CardHeader>
               <CardTitle className="flex items-center gap-3 text-2xl">
                 <div className="p-3 bg-gradient-to-br from-green-500 to-green-600 rounded-lg group-hover:scale-110 transition-transform">
@@ -82,7 +82,7 @@ export default function HomePage() {
 
           {/* View Current Predictions/Trades */}
           <Card className="border-2 border-primary/20 hover:border-primary/40 transition-all hover:shadow-lg cursor-pointer group"
-                onClick={() => navigate('/active-trades')}>
+            onClick={() => navigate('/active-trades')}>
             <CardHeader>
               <CardTitle className="flex items-center gap-3 text-2xl">
                 <div className="p-3 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg group-hover:scale-110 transition-transform">
@@ -121,7 +121,7 @@ export default function HomePage() {
         {/* Additional Options */}
         <div className="grid md:grid-cols-2 gap-4">
           <Card className="hover:shadow-md transition-shadow cursor-pointer"
-                onClick={() => navigate('/predictions')}>
+            onClick={() => navigate('/predictions')}>
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-lg">
                 <Activity className="h-5 w-5 text-primary" />
@@ -136,7 +136,7 @@ export default function HomePage() {
           </Card>
 
           <Card className="hover:shadow-md transition-shadow cursor-pointer"
-                onClick={() => navigate('/active-trades?tab=completed')}>
+            onClick={() => navigate('/active-trades?tab=completed')}>
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-lg">
                 <BarChart3 className="h-5 w-5 text-primary" />

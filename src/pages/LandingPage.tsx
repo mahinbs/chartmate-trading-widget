@@ -8,19 +8,25 @@ import Pricing from '../components/landingpage/Pricing'
 import HowToGetStarted from '../components/landingpage/HowToGetStarted'
 import LatestInsights from '../components/landingpage/LatestInsights'
 import FAQ from '../components/landingpage/FAQ'
+import HowItWorks from '../components/landingpage/HowItWorks'
+import DemoFeature from '../components/landingpage/DemoFeature'
+import SupportedMarkets from '../components/landingpage/SupportedMarkets'
 
 const LandingPage = () => {
     return (
         <Layout>
-            <Hero />
-            <Services />
-            <WhyUs />
-            <WorkSlider />
-            <Pricing />
-            <HowToGetStarted />
-            <LatestInsights />
-            <FAQ />
-            <Testimonial />
+            <div className="bg-black text-white font-sans selection:bg-cyan-500 selection:text-black min-h-screen">
+                <Hero />
+                <SupportedMarkets />
+                <HowItWorks />
+                <DemoFeature />
+                <HowToGetStarted />
+                <WorkSlider />
+                <Pricing />
+                <LatestInsights />
+                <FAQ />
+                <Testimonial />
+            </div>
         </Layout>
     )
 }
