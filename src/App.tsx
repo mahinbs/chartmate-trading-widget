@@ -24,6 +24,7 @@ const App = () => (
         <div className="min-h-screen bg-background">
           <Routes>
             <Route path="/rsb-fintech-founder" element={<LandingPage />} />
+            <Route path="/dsn-fintech-founder" element={<LandingPage />} />
             <Route path="/" element={<Navigate to="/rsb-fintech-founder" replace />} />
             <Route path="/contact-us" element={<ContactUsPage />} />
             <Route path="/auth" element={<AuthPage />} />
