@@ -1,48 +1,26 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ArrowRight, BarChart2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-
-interface Square {
-    top: number;
-    left: number;
-}
-
-interface Drop {
-    id: number;
-    key: number;
-    left: number;
-    duration: number;
-    delay: number;
-}
+import { ScrollReveal } from '../ui/ScrollReveal';
 
 const Hero = () => {
-    const [squares, setSquares] = useState<Square[]>([]);
-    const [drops, setDrops] = useState<Drop[]>([]);
-    const recentDropsRef = useRef<number[]>([]);
-
-    // Helper to get a unique grid position
-    const getUniqueLeft = () => {
-        let left;
-        let attempts = 0;
-        do {
-            left = Math.floor(Math.random() * 20) * 80;
-            attempts++;
-        } while (recentDropsRef.current.includes(left) && attempts < 10);
-
-        // Update recent positions
-        recentDropsRef.current = [left, ...recentDropsRef.current].slice(0, 6); // Keep last 6 positions
-        return left;
-    };
+    // Original Animation States
+    const [squares, setSquares] = useState<{ top: number, left: number }[]>([]);
+    const [drops, setDrops] = useState<{ id: number, key: number, left: number, duration: number, delay: number }[]>([]);
 
     useEffect(() => {
-        // Function to generate random grid positions for squares
+        const getUniqueLeft = () => {
+            return Math.floor(Math.random() * 20) * 80;
+        };
+
+        // Generate static squares
         const generateSquares = () => {
             const newSquares = [];
-            const numSquares = 5; // Number of active squares
+            const numSquares = 5;
 
             for (let i = 0; i < numSquares; i++) {
-                const top = Math.floor(Math.random() * 10) * 80; // 0 to 800px
-                const left = Math.floor(Math.random() * 20) * 80; // 0 to 1600px
+                const top = Math.floor(Math.random() * 10) * 80;
+                const left = Math.floor(Math.random() * 20) * 80;
                 newSquares.push({ top, left });
             }
             setSquares(newSquares);
@@ -51,15 +29,15 @@ const Hero = () => {
         // Initialize drops
         const initDrops = () => {
             const newDrops = [];
-            const numDrops = 3; // Only 3 drops at a time
+            const numDrops = 3;
 
             for (let i = 0; i < numDrops; i++) {
                 const left = getUniqueLeft();
-                const duration = 2 + Math.random() * 2; // 2-4s duration
-                const delay = Math.random() * 3; // Initial random delay
+                const duration = 2 + Math.random() * 2;
+                const delay = Math.random() * 3;
                 newDrops.push({
                     id: i,
-                    key: i, // Key to force re-render
+                    key: i,
                     left,
                     duration,
                     delay
@@ -76,15 +54,18 @@ const Hero = () => {
     }, []);
 
     const handleDropAnimationEnd = (dropId: number) => {
+        const getUniqueLeft = () => {
+            return Math.floor(Math.random() * 20) * 80;
+        };
+
         setDrops(prevDrops => prevDrops.map(drop => {
             if (drop.id === dropId) {
                 const left = getUniqueLeft();
                 const duration = 2 + Math.random() * 2;
-                // Add a small delay before next drop to vary the rhythm
-                const delay = Math.random() * 2;
+                const delay = Math.random() * 2; // Add small delay
                 return {
                     ...drop,
-                    key: drop.key + 1, // Increment key to restart animation
+                    key: drop.key + 1,
                     left,
                     duration,
                     delay
@@ -95,22 +76,30 @@ const Hero = () => {
     };
 
     return (
-        <section className="relative bg-white pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden">
-            {/* Grid Background */}
-            <div className="absolute inset-0 z-0 pointer-events-none"
+        <section id="hero" className="relative min-h-screen flex items-center justify-center pt-40 pb-20 px-4 overflow-hidden bg-black">
+
+            {/* Overlay Gradients for Depth (Put this below the grid/animations, or keep grid above) */}
+            <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/50 to-black z-0 pointer-events-none"></div>
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-transparent via-black/60 to-black z-0 pointer-events-none"></div>
+
+            {/* Background Animation Canvas */}
+            <div className="absolute inset-0 z-10 pointer-events-none"
                 style={{
                     backgroundImage: `
-            linear-gradient(to right, #f0f0f0 1px, transparent 1px),
-            linear-gradient(to bottom, #f0f0f0 1px, transparent 1px)
+            linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px)
           `,
                     backgroundSize: '80px 80px'
                 }}
             >
+                {/* Animated Elements */}
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-cyan-500/10 rounded-full blur-[120px] animate-pulse z-0 hidden md:block"></div>
+
                 {/* Dynamic colored squares */}
                 {squares.map((pos, index) => (
                     <div
                         key={`square-${index}`}
-                        className="absolute w-[80px] h-[80px] bg-primary/5 transition-all duration-1000 ease-in-out"
+                        className="absolute w-[80px] h-[80px] bg-cyan-500/10 transition-all duration-1000 ease-in-out"
                         style={{
                             top: `${pos.top}px`,
                             left: `${pos.left}px`
@@ -122,7 +111,7 @@ const Hero = () => {
                 {drops.map((drop) => (
                     <div
                         key={`${drop.id}-${drop.key}`}
-                        className="absolute w-[2px] h-[150px] bg-gradient-to-b from-transparent to-primary animate-drop"
+                        className="absolute w-[2px] h-[150px] bg-gradient-to-b from-transparent to-cyan-500 animate-drop"
                         style={{
                             left: `${drop.left}px`,
                             top: '-150px',
@@ -134,75 +123,64 @@ const Hero = () => {
                 ))}
             </div>
 
-            <div className="container-custom relative z-10 flex flex-col items-center text-center">
-
-                {/* Chartmate Badge */}
-                <div className="mb-8 bg-white border border-gray-200 rounded-full px-4 py-1.5 flex items-center shadow-sm animate-fade-in-up">
-                    <span className="font-bold text-heading text-sm mr-2 flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                        ChartMate AI
-                    </span>
-                    <div className="text-xs text-gray-500 font-medium border-l border-gray-200 pl-2">
-                        Now Live
+            <div className="container mx-auto z-10 text-center relative">
+                <ScrollReveal delay={0.2}>
+                    <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 rounded-full text-cyan-400 text-xs md:text-sm font-medium mb-8 backdrop-blur-xl shadow-lg shadow-cyan-900/10">
+                        <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+                        </span>
+                        ChartMate AI Now Live
                     </div>
-                </div>
+                </ScrollReveal>
 
-                {/* Main Headline */}
-                <h1 className="max-w-5xl text-5xl md:text-6xl lg:text-7xl font-bold font-heading text-heading leading-[1.1] mb-8 tracking-tight">
-                    Decode the Market. Then Define Your <span className="text-primary relative inline-block">
-                        Edge
-                        <svg className="absolute w-full h-3 -bottom-1 left-0 text-primary opacity-20" viewBox="0 0 100 10" preserveAspectRatio="none">
-                            <path d="M0 5 Q 50 10 100 5" stroke="currentColor" strokeWidth="3" fill="none" />
-                        </svg>
-                    </span>
-                </h1>
+                <ScrollReveal delay={0.4}>
+                    <h1 className="text-5xl md:text-7xl lg:text-8xl font-black tracking-tighter mb-8 leading-[1.1] max-w-6xl mx-auto text-white drop-shadow-2xl">
+                        Launch Your Own AI Trading <br />
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-600 animate-gradient">Fintech</span>
+                    </h1>
+                </ScrollReveal>
 
-                {/* Description */}
-                <div className="max-w-3xl mx-auto mb-12">
-                    <p className="text-xl text-gray-600 mb-6 leading-relaxed">
-                        Analyze Market Probabilities With AI Precision. Stop guessing and understand your trades with the power of AI. Get multi-horizon forecasts, real-time risk management, and institutional-grade analytics.
+                <ScrollReveal delay={0.6}>
+                    <p className="text-xl md:text-2xl text-gray-400 max-w-3xl mx-auto mb-12 font-light leading-relaxed">
+                        The world's first turnkey, probability-based trading platform. <br />
+                        <span className="text-white font-medium">Fully brandable. Deploy on your own domain.</span>
                     </p>
-                </div>
+                </ScrollReveal>
 
-                {/* CTA Buttons */}
-                <div className="flex flex-col sm:flex-row gap-4 mb-20 animate-fade-in-up delay-100">
-                    <Link to="/predict" className="bg-primary hover:bg-primary-hover text-white px-8 py-4 rounded-lg shadow-lg shadow-primary/20 transition-all hover:-translate-y-1 font-bold text-lg flex items-center justify-center">
-                        Start Free Analysis
-                        <ArrowRight className="ml-2 w-5 h-5" />
-                    </Link>
-                    <Link to="/contact-us" className="bg-primary hover:bg-primary-hover text-white px-8 py-4 rounded-lg shadow-lg shadow-primary/20 transition-all hover:-translate-y-1 font-bold text-lg flex items-center justify-center">
-                        Get Started
-                        <ArrowRight className="ml-2 w-5 h-5" />
-                    </Link>
-                    <button
-                        onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}
-                        className="bg-white border border-gray-200 text-heading px-8 py-4 rounded-lg shadow-sm hover:bg-gray-50 transition-all font-bold text-lg flex items-center justify-center cursor-pointer"
-                    >
-                        <BarChart2 className="mr-2 w-5 h-5 text-gray-500" />
-                        Explore Features
-                    </button>
-                </div>
+                <ScrollReveal delay={0.8}>
+                    <div className="flex flex-col sm:flex-row gap-6 justify-center items-center mb-16">
+                        <Link
+                            to="/predict"
+                            className="bg-cyan-500 text-black hover:bg-cyan-400 text-lg px-10 py-7 rounded-full font-bold shadow-[0_0_40px_rgba(6,182,212,0.3)] hover:shadow-[0_0_60px_rgba(6,182,212,0.5)] transition-all duration-300 hover:-translate-y-1 flex items-center"
+                        >
+                            Get Platform Demo
+                            <ArrowRight className="ml-2 w-5 h-5" />
+                        </Link>
+                        <Link
+                            to="/contact-us"
+                            className="border border-white/10 text-white hover:text-white hover:bg-white/5 bg-white/5 backdrop-blur-sm text-lg px-10 py-7 rounded-full font-bold transition-all duration-300 flex items-center"
+                        >
+                            Contact Us
+                        </Link>
+                    </div>
+                </ScrollReveal>
 
-                {/* Stats / Trust (replacing Logos) */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-16 border-t border-gray-100 pt-12">
-                    <div>
-                        <div className="text-3xl font-bold text-heading">94%</div>
-                        <div className="text-sm text-gray-500 font-medium mt-1">Model Accuracy</div>
+                <ScrollReveal delay={1.0}>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8 max-w-5xl mx-auto border-t border-white/5 pt-12">
+                        {[
+                            { label: "Model Accuracy", value: "94%", color: "text-cyan-400" },
+                            { label: "Market Monitoring", value: "24/7", color: "text-white" },
+                            { label: "Supported Assets", value: "150+", color: "text-purple-400" },
+                            { label: "Data Latency", value: "<1s", color: "text-green-500" }
+                        ].map((stat, i) => (
+                            <div key={i} className="p-6 bg-white/5 border border-white/10 rounded-3xl backdrop-blur-sm hover:border-white/20 transition-colors h-full">
+                                <div className={`text-3xl md:text-4xl font-bold ${stat.color} mb-2 tracking-tight`}>{stat.value}</div>
+                                <div className="text-[10px] md:text-xs text-gray-400 uppercase tracking-[0.1em] font-medium">{stat.label}</div>
+                            </div>
+                        ))}
                     </div>
-                    <div>
-                        <div className="text-3xl font-bold text-heading">24/7</div>
-                        <div className="text-sm text-gray-500 font-medium mt-1">Market Monitoring</div>
-                    </div>
-                    <div>
-                        <div className="text-3xl font-bold text-heading">150+</div>
-                        <div className="text-sm text-gray-500 font-medium mt-1">Supported Assets</div>
-                    </div>
-                    <div>
-                        <div className="text-3xl font-bold text-heading">&lt;1s</div>
-                        <div className="text-sm text-gray-500 font-medium mt-1">Data Latency</div>
-                    </div>
-                </div>
-
+                </ScrollReveal>
             </div>
         </section>
     );

@@ -96,8 +96,9 @@ const Navbar = () => {
         <nav className={`fixed w-full z-50 transition-all duration-300 ${isScrolled ? 'bg-white shadow-sm py-4' : 'bg-white/90 backdrop-blur-sm py-5'}`}>
             <div className="container-custom flex justify-between items-center">
                 {/* Logo */}
-                <Link to="/" className="flex items-center gap-2" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
-                    <span className="text-2xl font-bold font-heading text-heading tracking-widest uppercase">Chartmate</span>
+                <Link to="/" className="flex items-center gap-1" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+                    <img src="/boostmysite-logo.png" alt="BoostMySites Logo" className="h-10 w-auto" />
+                    <span className="text-2xl font-bold font-heading text-heading tracking-widest uppercase">BOOSTMYSITES</span>
                 </Link>
 
                 {/* Desktop Menu */}

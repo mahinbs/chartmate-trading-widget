@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Star } from 'lucide-react';
 import { useKeenSlider } from "keen-slider/react"
 import "keen-slider/keen-slider.min.css"
+import { ScrollReveal } from '../ui/ScrollReveal';
 
 const testimonials = [
     {
@@ -41,7 +42,7 @@ const Testimonial = () => {
     const [sliderRef] = useKeenSlider<HTMLDivElement>({
         loop: true,
         renderMode: "performance",
-        drag: true, // Allow users to drag if they want
+        drag: true,
         created(s) {
             s.moveToIdx(5, true, animation)
         },
@@ -63,32 +64,44 @@ const Testimonial = () => {
     })
 
     return (
-        <section id="testimonials" className="py-24 bg-gray-50 border-t border-black/5 overflow-hidden">
-            <div className="">
-                <div className="container-custom text-center mb-16">
-                    <h2 className="text-3xl md:text-4xl font-bold font-heading text-heading mb-4">
-                        Trusted by Smart Traders
-                    </h2>
-                </div>
+        <section id="testimonials" className="py-32 bg-zinc-950 border-t border-white/5 overflow-hidden relative">
+            <div className="container mx-auto px-4 relative z-10">
+                <ScrollReveal>
+                    <div className="text-center mb-16">
+                        <h2 className="text-4xl md:text-5xl font-bold text-white mb-4 tracking-tight">
+                            Trusted by <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-500">Smart Traders</span>
+                        </h2>
+                    </div>
+                </ScrollReveal>
 
-                <div ref={sliderRef} className="keen-slider py-4">
-                    {testimonials.map((item, index) => (
-                        <div key={index} className="keen-slider__slide bg-white p-8 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center text-center h-auto min-h-[320px]">
-                            <div className="flex space-x-1 mb-6">
-                                {[...Array(5)].map((_, i) => (
-                                    <Star key={i} className="w-5 h-5 text-yellow-400 fill-current" />
-                                ))}
+                <ScrollReveal delay={0.2} direction="up">
+                    <div ref={sliderRef} className="keen-slider py-4">
+                        {testimonials.map((item, index) => (
+                            <div key={index} className="keen-slider__slide bg-zinc-900/50 p-8 md:p-10 rounded-3xl border border-white/10 flex flex-col justify-between h-auto min-h-[360px] hover:border-cyan-500/30 transition-colors backdrop-blur-sm group">
+                                <div>
+                                    <div className="flex space-x-1 mb-6">
+                                        {[...Array(5)].map((_, i) => (
+                                            <Star key={i} className="w-5 h-5 text-cyan-500 fill-current opacity-80 group-hover:opacity-100 transition-opacity" />
+                                        ))}
+                                    </div>
+                                    <p className="text-gray-300 text-lg italic mb-6 leading-relaxed font-light">
+                                        "{item.quote}"
+                                    </p>
+                                </div>
+
+                                <div className="flex items-center gap-4 mt-auto pt-6 border-t border-white/5">
+                                    <div className="w-12 h-12 min-w-12 bg-gradient-to-br from-cyan-900 to-black rounded-full flex items-center justify-center font-bold text-cyan-400 border border-cyan-500/20 shadow-[0_0_15px_rgba(6,182,212,0.2)]">
+                                        {item.author[0]}
+                                    </div>
+                                    <div>
+                                        <h4 className="font-bold text-white text-base">{item.author}</h4>
+                                        <span className="text-sm text-gray-500">{item.role}</span>
+                                    </div>
+                                </div>
                             </div>
-                            <p className="text-gray-600 text-lg italic mb-6 leading-relaxed flex-grow">
-                                "{item.quote}"
-                            </p>
-                            <div>
-                                <h4 className="font-bold text-heading">{item.author}</h4>
-                                <span className="text-sm text-gray-500">{item.role}</span>
-                            </div>
-                        </div>
-                    ))}
-                </div>
+                        ))}
+                    </div>
+                </ScrollReveal>
             </div>
         </section>
     );

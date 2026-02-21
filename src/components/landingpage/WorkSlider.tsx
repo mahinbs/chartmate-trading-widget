@@ -5,6 +5,7 @@ import 'swiper/css';
 import 'swiper/css/navigation';
 import { ArrowRight, TrendingUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { ScrollReveal } from '../ui/ScrollReveal';
 
 const WorkSlider = () => {
     const swiperRef = useRef<any>(null);
@@ -37,92 +38,98 @@ const WorkSlider = () => {
     ];
 
     return (
-        <section className="py-24 px-4 md:px-7 bg-white">
-            <div className="container-custom !bg-[#181b22] overflow-hidden py-16 !px-8 md:!px-14 rounded-3xl">
+        <section className="py-32 px-4 md:px-7 bg-black">
+            <ScrollReveal>
+                <div className="container mx-auto !bg-zinc-950/80 border border-white/5 overflow-hidden py-16 !px-6 md:!px-12 rounded-[2.5rem] relative">
 
-                {/* Header with Navigation */}
-                <div className="flex flex-col md:flex-row justify-between items-end mb-12">
-                    <h2 className="text-3xl md:text-4xl font-bold font-heading mb-6 md:mb-0 text-white leading-tight">
-                        See The AI In Action
-                    </h2>
+                    {/* Background glow */}
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-purple-500/10 rounded-full blur-[100px] pointer-events-none"></div>
 
-                    <div className="flex space-x-4">
-                        <button
-                            onClick={() => swiperRef.current?.slidePrev()}
-                            className="w-12 h-12 rounded-full border border-gray-600 flex items-center justify-center hover:bg-gray-800 transition-colors text-white"
-                            aria-label="Previous slide"
-                        >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-                        </button>
-                        <button
-                            onClick={() => swiperRef.current?.slideNext()}
-                            className="w-12 h-12 rounded-full border border-gray-600 flex items-center justify-center hover:bg-gray-800 transition-colors text-white"
-                            aria-label="Next slide"
-                        >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
-                        </button>
+                    {/* Header with Navigation */}
+                    <div className="flex flex-col md:flex-row justify-between items-end mb-12 relative z-10">
+                        <h2 className="text-4xl md:text-5xl font-bold mb-6 md:mb-0 text-white leading-tight tracking-tight">
+                            See The AI <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400">In Action</span>
+                        </h2>
+
+                        <div className="flex space-x-4">
+                            <button
+                                onClick={() => swiperRef.current?.slidePrev()}
+                                className="w-14 h-14 rounded-full border border-white/10 bg-black/50 flex items-center justify-center hover:bg-cyan-500/10 hover:border-cyan-500/50 hover:text-cyan-400 transition-all text-white backdrop-blur-sm"
+                                aria-label="Previous slide"
+                            >
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+                            </button>
+                            <button
+                                onClick={() => swiperRef.current?.slideNext()}
+                                className="w-14 h-14 rounded-full border border-white/10 bg-black/50 flex items-center justify-center hover:bg-cyan-500/10 hover:border-cyan-500/50 hover:text-cyan-400 transition-all text-white backdrop-blur-sm"
+                                aria-label="Next slide"
+                            >
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
+                            </button>
+                        </div>
                     </div>
-                </div>
 
-                {/* Slider Track */}
-                <Swiper
-                    modules={[Navigation]}
-                    spaceBetween={30}
-                    slidesPerView={1}
-                    breakpoints={{
-                        768: {
-                            slidesPerView: 1.2,
-                        }
-                    }}
-                    onBeforeInit={(swiper: any) => {
-                        swiperRef.current = swiper;
-                    }}
-                    loop={true}
-                    className="w-full"
-                >
-                    {caseStudies.map((study) => (
-                        <SwiperSlide key={study.id}>
-                            <div className="w-full h-full">
-                                <div className="bg-white rounded-3xl overflow-hidden flex flex-col lg:flex-row min-h-[500px] h-full">
+                    {/* Slider Track */}
+                    <Swiper
+                        modules={[Navigation]}
+                        spaceBetween={30}
+                        slidesPerView={1}
+                        breakpoints={{
+                            768: {
+                                slidesPerView: 1.2,
+                            }
+                        }}
+                        onBeforeInit={(swiper: any) => {
+                            swiperRef.current = swiper;
+                        }}
+                        loop={true}
+                        className="w-full relative z-10"
+                    >
+                        {caseStudies.map((study) => (
+                            <SwiperSlide key={study.id}>
+                                <div className="w-full h-full p-1">
+                                    <div className="bg-black/60 rounded-[2rem] border border-white/10 overflow-hidden flex flex-col lg:flex-row min-h-[500px] h-full backdrop-blur-md hover:border-purple-500/30 transition-colors group">
 
-                                    {/* Image Side */}
-                                    <div className="lg:w-[45%] relative p-4 md:p-6 lg:border-r border-gray-100">
-                                        <div className="relative w-full h-full rounded-2xl overflow-hidden min-h-[300px]">
-                                            <img src={study.image} alt={study.title} className="w-full h-full object-cover absolute inset-0" />
-                                            <div className="absolute top-4 left-4 bg-white/90 backdrop-blur px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider text-heading shadow-sm">
-                                                {study.client}
+                                        {/* Image Side */}
+                                        <div className="lg:w-[45%] relative p-4 md:p-6 lg:border-r border-white/5">
+                                            <div className="relative w-full h-full rounded-xl overflow-hidden min-h-[300px]">
+                                                <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent z-10"></div>
+                                                <img src={study.image} alt={study.title} className="w-full h-full object-cover absolute inset-0 group-hover:scale-105 transition-transform duration-700" />
+                                                <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest text-cyan-400 border border-cyan-500/20 shadow-sm z-20">
+                                                    {study.client}
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
 
-                                    {/* Content Side */}
-                                    <div className="lg:w-[55%] p-8 md:p-12 flex flex-col justify-center h-full">
-                                        <div className="flex items-center space-x-2 mb-6">
-                                            <TrendingUp className="w-5 h-5 text-primary" />
-                                            <span className="text-primary font-bold text-sm uppercase tracking-wider">{study.tech}</span>
+                                        {/* Content Side */}
+                                        <div className="lg:w-[55%] p-8 md:p-12 flex flex-col justify-center h-full">
+                                            <div className="flex items-center space-x-2 mb-6 bg-cyan-900/20 w-fit px-3 py-1.5 rounded-full border border-cyan-500/20">
+                                                <TrendingUp className="w-4 h-4 text-cyan-400" />
+                                                <span className="text-cyan-400 font-bold text-xs uppercase tracking-widest">{study.tech}</span>
+                                            </div>
+
+                                            <h3 className="text-3xl md:text-4xl font-bold text-white mb-6 leading-tight group-hover:text-purple-400 transition-colors">
+                                                {study.title}
+                                            </h3>
+                                            <p className="text-gray-400 text-lg leading-relaxed mb-10 font-light">
+                                                {study.description}
+                                            </p>
+                                            <div>
+                                                <Link to="/predict" className="inline-flex items-center text-white font-bold text-base hover:text-cyan-400 transition-colors">
+                                                    Analyze This Asset
+                                                    <ArrowRight className="w-5 h-5 ml-2 transform group-hover:translate-x-2 transition-transform" />
+                                                </Link>
+                                            </div>
                                         </div>
 
-                                        <h3 className="text-2xl md:text-3xl font-bold font-heading text-heading mb-6 leading-tight">
-                                            {study.title}
-                                        </h3>
-                                        <p className="text-gray-500 text-lg leading-relaxed mb-10">
-                                            {study.description}
-                                        </p>
-                                        <div>
-                                            <Link to="/predict" className="inline-flex items-center text-heading font-bold text-base hover:text-primary transition-colors group">
-                                                Analyze This Asset
-                                                <ArrowRight className="w-5 h-5 ml-2 transform group-hover:translate-x-1 transition-transform" />
-                                            </Link>
-                                        </div>
                                     </div>
-
                                 </div>
-                            </div>
-                        </SwiperSlide>
-                    ))}
-                </Swiper>
+                            </SwiperSlide>
+                        ))}
+                    </Swiper>
 
-            </div>
+                </div>
+            </ScrollReveal>
         </section>
     );
 };
