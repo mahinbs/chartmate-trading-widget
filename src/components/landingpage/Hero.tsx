@@ -160,7 +160,7 @@ const Hero = () => {
                 {/* Description */}
                 <div className="max-w-3xl mx-auto mb-12">
                     <p className="text-xl text-gray-600 mb-6 leading-relaxed">
-                       Analyze Market Probabilities With AI Precision. Stop guessing and understand your trades with the power of AI. Get multi-horizon forecasts, real-time risk management, and institutional-grade analytics.
+                        Analyze Market Probabilities With AI Precision. Stop guessing and understand your trades with the power of AI. Get multi-horizon forecasts, real-time risk management, and institutional-grade analytics.
                     </p>
                 </div>
 
@@ -168,6 +168,10 @@ const Hero = () => {
                 <div className="flex flex-col sm:flex-row gap-4 mb-20 animate-fade-in-up delay-100">
                     <Link to="/predict" className="bg-primary hover:bg-primary-hover text-white px-8 py-4 rounded-lg shadow-lg shadow-primary/20 transition-all hover:-translate-y-1 font-bold text-lg flex items-center justify-center">
                         Start Free Analysis
+                        <ArrowRight className="ml-2 w-5 h-5" />
+                    </Link>
+                    <Link to="/contact-us" className="bg-primary hover:bg-primary-hover text-white px-8 py-4 rounded-lg shadow-lg shadow-primary/20 transition-all hover:-translate-y-1 font-bold text-lg flex items-center justify-center">
+                        Get Started
                         <ArrowRight className="ml-2 w-5 h-5" />
                     </Link>
                     <button

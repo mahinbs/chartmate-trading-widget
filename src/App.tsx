@@ -11,6 +11,7 @@ import ActiveTradesPage from "./pages/ActiveTradesPage";
 import AuthPage from "./pages/AuthPage";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import LandingPage from "./pages/LandingPage";
+import ContactUsPage from "./pages/ContactUs";
 
 const queryClient = new QueryClient();
 
@@ -22,8 +23,9 @@ const App = () => (
       <BrowserRouter>
         <div className="min-h-screen bg-background">
           <Routes>
-            <Route path="/" element={<LandingPage />} />
-            {/* <Route path="/" element={<Navigate to="/home" replace />} /> */}
+            <Route path="/start-your-fintech-company" element={<LandingPage />} />
+            <Route path="/" element={<Navigate to="/start-your-fintech-company" replace />} />
+            <Route path="/contact-us" element={<ContactUsPage />} />
             <Route path="/auth" element={<AuthPage />} />
             <Route
               path="/home"
