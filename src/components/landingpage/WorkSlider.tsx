@@ -24,7 +24,7 @@ const WorkSlider = () => {
             client: "NVDA",
             title: "Protecting Capital on Tech Reversals",
             tech: "Daily Timeframe",
-            description: "While retail sentiment was maximum bullish, ChartMate's sentiment analysis diverged, identifying a top with 94% confidence. This alert helped thousands of traders lock in profits before the 12% correction.",
+            description: "While retail sentiment was maximum bullish, our ai probability software's sentiment analysis diverged, identifying a top with 94% confidence. This alert helped thousands of traders lock in profits before the 12% correction.",
             image: "https://images.unsplash.com/photo-1591696205602-2f950c417cb9?auto=format&fit=crop&q=80&w=1000",
         },
         {

@@ -22,7 +22,7 @@ const reasons = [
     {
         icon: <UserCheck className="w-12 h-12 text-blue-400 mb-6" />,
         title: "Personalized For You",
-        description: "Your risk tolerance, your capital, your goals. ChartMate AI adapts its recommendations to fit your specific trading profile.",
+        description: "Your risk tolerance, your capital, your goals. our ai probability software  adapts its recommendations to fit your specific trading profile.",
         bg: "bg-blue-500/10",
         border: "border-blue-500/30",
         shadow: "shadow-[0_0_30px_rgba(59,130,246,0.2)]"
@@ -38,7 +38,7 @@ const WhyUs = () => {
                 <ScrollReveal>
                     <div className="text-center max-w-3xl mx-auto mb-20">
                         <h2 className="text-4xl md:text-5xl font-bold mb-6 text-white tracking-tight">
-                            Why Choose <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400">ChartMate AI?</span>
+                            Why Choose <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400">our ai probability software AI?</span>
                         </h2>
                         <p className="text-xl text-gray-400 leading-relaxed font-light">
                             Manual trading is exhausting and error-prone. Upgrade to an intelligent system that never sleeps, never panics, and always follows the data.

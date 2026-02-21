@@ -6,7 +6,7 @@ import { ScrollReveal } from '../ui/ScrollReveal';
 
 const testimonials = [
     {
-        quote: "I was skeptical about AI tools—most are just hype. But ChartMate's risk management actually kept me out of bad trades during the last correction. It's not magic, but it keeps me disciplined.",
+        quote: "I was skeptical about AI tools—most are just hype. But our ai probability software's risk management actually kept me out of bad trades during the last correction. It's not magic, but it keeps me disciplined.",
         author: "Lachlan Ross",
         role: "Swing Trader, Melbourne"
     },

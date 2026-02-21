@@ -41,11 +41,11 @@ const FAQ = () => {
     const faqs = [
         {
             question: "How accurate is the AI probability analysis?",
-            answer: "Our models utilize advanced machine learning algorithms trained on decades of market data. While no system can guarantee 100% accuracy, ChartMate AI consistently maintains a 70-80% success rate on high-confidence setups."
+            answer: "Our models utilize advanced machine learning algorithms trained on decades of market data. While no system can guarantee 100% accuracy, our ai probability software AI consistently maintains a 70-80% success rate on high-confidence setups."
         },
         {
             question: "Do you execute trades for me?",
-            answer: "No, ChartMate AI is an intelligence tool, not an auto-trader. We provide probability analysis and risk parameters."
+            answer: "No, our ai probability software is an intelligence tool, not an auto-trader. We provide probability analysis and risk parameters."
         },
         {
             question: "What markets are supported?",
@@ -70,7 +70,7 @@ const FAQ = () => {
                             Frequently Asked <span className="text-cyan-400">Questions</span>
                         </h2>
                         <p className="text-xl text-gray-400 font-light">
-                            Everything you need to know about trading with ChartMate AI.
+                            Everything you need to know about trading with our ai probability software AI.
                         </p>
                     </div>
                 </ScrollReveal>

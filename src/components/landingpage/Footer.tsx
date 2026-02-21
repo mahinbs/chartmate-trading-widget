@@ -12,7 +12,7 @@ const Footer = () => {
                     <div className="lg:w-[45%]">
                         <ScrollReveal>
                             <h2 className="text-3xl md:text-4xl font-black leading-[1.1] mb-8 text-white tracking-tight">
-                                ChartMate AI<br />
+                                our ai probability software<br />
                                 Trading Intelligence<br />
                                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-500">For The Modern Trader.</span>
                             </h2>
@@ -74,7 +74,7 @@ const Footer = () => {
                             <div className="flex flex-col md:flex-row justify-between items-end border-t border-white/5 pt-8">
                                 <div className="mb-8 md:mb-0">
                                     <div className="bg-black/50 border border-white/10 rounded-full px-4 py-2 inline-flex items-center space-x-2 mb-6 backdrop-blur-sm">
-                                        <span className="font-black text-white text-xs tracking-widest uppercase">Chartmate</span>
+                                        <span className="font-black text-white text-xs tracking-widest uppercase">our ai probability software</span>
                                         <div className="flex text-cyan-400">
                                             {[1, 2, 3, 4, 5].map((star) => (
                                                 <svg key={star} className="w-3 h-3 fill-current drop-shadow-[0_0_5px_rgba(34,211,238,0.5)]" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
@@ -102,7 +102,7 @@ const Footer = () => {
 
             {/* Copyright Bar */}
             <div className="container mx-auto px-4 pt-8 flex flex-col md:flex-row justify-between items-center text-gray-600 text-xs uppercase tracking-widest font-bold">
-                <p>&copy; {new Date().getFullYear()} ChartMate AI. All rights reserved.</p>
+                <p>&copy; {new Date().getFullYear()} our ai probability software AI. All rights reserved.</p>
                 <div className="flex space-x-6 mt-4 md:mt-0">
                     <a href="#" className="hover:text-cyan-400 transition-colors">Privacy</a>
                     <a href="#" className="hover:text-cyan-400 transition-colors">Terms</a>
