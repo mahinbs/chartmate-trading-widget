@@ -115,7 +115,7 @@ const WorkSlider = () => {
                                                 {study.description}
                                             </p>
                                             <div>
-                                                <Link to="/predict" className="inline-flex items-center text-white font-bold text-base hover:text-cyan-400 transition-colors">
+                                                <Link to="/contact-us" className="inline-flex items-center text-white font-bold text-base hover:text-cyan-400 transition-colors">
                                                     Analyze This Asset
                                                     <ArrowRight className="w-5 h-5 ml-2 transform group-hover:translate-x-2 transition-transform" />
                                                 </Link>

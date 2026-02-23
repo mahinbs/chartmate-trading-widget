@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowRight, BarChart2 } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { ScrollReveal } from '../ui/ScrollReveal';
 
@@ -130,7 +130,7 @@ const Hero = () => {
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
                             <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
                         </span>
-                        our ai probability software AI Now Live
+                        Our AI Probability Software Now Live
                     </div>
                 </ScrollReveal>
 
@@ -157,12 +157,12 @@ const Hero = () => {
                             Get Platform Demo
                             <ArrowRight className="ml-2 w-5 h-5" />
                         </Link>
-                        <Link
+                        {/* <Link
                             to="/contact-us"
                             className="border border-white/10 text-white hover:text-white hover:bg-white/5 bg-white/5 backdrop-blur-sm text-lg px-10 py-7 rounded-full font-bold transition-all duration-300 flex items-center"
                         >
                             Contact Us
-                        </Link>
+                        </Link> */}
                     </div>
                 </ScrollReveal>
 

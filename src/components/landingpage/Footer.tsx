@@ -22,7 +22,7 @@ const Footer = () => {
                                 </p>
                             </div>
                             <Link
-                                to="/predict"
+                                to="/contact-us"
                                 className="inline-block bg-white text-black font-bold py-4 px-8 rounded-full shadow-[0_0_20px_rgba(255,255,255,0.1)] hover:shadow-[0_0_30px_rgba(255,255,255,0.2)] hover:-translate-y-1 transition-all text-base"
                             >
                                 Start Analysis Now

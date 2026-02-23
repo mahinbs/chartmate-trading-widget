@@ -44,7 +44,7 @@ const LatestInsights = () => {
                         <h2 className="text-4xl md:text-5xl font-bold text-white tracking-tight">
                             Recent Market <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-500">Analysis</span>
                         </h2>
-                        <Link to="/intraday" className="hidden md:inline-flex items-center justify-center border border-cyan-500/50 text-cyan-400 font-bold py-3 px-8 rounded-full hover:bg-cyan-500 hover:text-black transition-all shadow-[0_0_15px_rgba(6,182,212,0.15)] hover:shadow-[0_0_25px_rgba(6,182,212,0.3)] text-base">
+                        <Link to="/contact-us" className="hidden md:inline-flex items-center justify-center border border-cyan-500/50 text-cyan-400 font-bold py-3 px-8 rounded-full hover:bg-cyan-500 hover:text-black transition-all shadow-[0_0_15px_rgba(6,182,212,0.15)] hover:shadow-[0_0_25px_rgba(6,182,212,0.3)] text-base">
                             View All Analysis
                         </Link>
                     </div>

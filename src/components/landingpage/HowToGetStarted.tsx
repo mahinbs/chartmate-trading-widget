@@ -20,7 +20,7 @@ const HowToGetStarted = () => {
                                 Minutes
                             </h2>
                             <Link
-                                to="/predict"
+                                to="/contact-us"
                                 className="inline-flex items-center justify-center bg-cyan-500 text-black font-bold py-4 px-8 rounded-full shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:shadow-[0_0_30px_rgba(6,182,212,0.5)] hover:bg-cyan-400 hover:-translate-y-1 transition-all text-base w-full md:w-auto"
                             >
                                 Get Instant Analysis
