@@ -69,7 +69,7 @@ export function AIReasoningDisplay({
           AI Reasoning
         </CardTitle>
         <p className="text-sm text-muted-foreground">
-          Why the AI made this prediction
+          Why the AI made this analysis
         </p>
       </CardHeader>
       

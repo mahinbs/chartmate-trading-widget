@@ -1,12 +1,19 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, Activity, BarChart3, PlusCircle, Eye } from "lucide-react";
+import { TrendingUp, Activity, BarChart3, PlusCircle, Eye, Sparkles, ShieldCheck, KeyRound } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useAdmin } from "@/hooks/useAdmin";
+import { useTradingIntegration } from "@/hooks/useTradingIntegration";
+import { TradingIntegrationModal } from "@/components/trading/TradingIntegrationModal";
 
 export default function HomePage() {
   const navigate = useNavigate();
   const { signOut, user } = useAuth();
+  const { isAdmin } = useAdmin();
+  const { hasIntegration, save, refresh } = useTradingIntegration();
+  const [showBrokerModal, setShowBrokerModal] = useState(false);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
@@ -43,7 +50,7 @@ export default function HomePage() {
 
         {/* Quick Actions */}
         <div className="grid md:grid-cols-2 gap-6 mb-8">
-          {/* Create New Prediction */}
+          {/* Create New Analysis */}
           <Card className="border-2 border-primary/20 hover:border-primary/40 transition-all hover:shadow-lg cursor-pointer group"
             onClick={() => navigate('/predict')}>
             <CardHeader>
@@ -52,7 +59,7 @@ export default function HomePage() {
                   <PlusCircle className="h-8 w-8 text-white" />
                 </div>
                 <div>
-                  <div>Create New Prediction</div>
+                  <div>Create New Analysis</div>
                   <p className="text-sm font-normal text-muted-foreground mt-1">
                     Get AI analysis for any stock, crypto, or forex
                   </p>
@@ -80,7 +87,7 @@ export default function HomePage() {
             </CardContent>
           </Card>
 
-          {/* View Current Predictions/Trades */}
+          {/* View Current Analyses/Trades */}
           <Card className="border-2 border-primary/20 hover:border-primary/40 transition-all hover:shadow-lg cursor-pointer group"
             onClick={() => navigate('/active-trades')}>
             <CardHeader>
@@ -125,12 +132,12 @@ export default function HomePage() {
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-lg">
                 <Activity className="h-5 w-5 text-primary" />
-                Past Predictions
+                Past Analyses
               </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">
-                Review your prediction history
+                Review your analysis history
               </p>
             </CardContent>
           </Card>
@@ -151,6 +158,65 @@ export default function HomePage() {
           </Card>
         </div>
 
+        <div className="grid md:grid-cols-2 gap-4 mt-4">
+          <Card className="hover:shadow-md transition-shadow cursor-pointer"
+            onClick={() => navigate('/market-picks')}>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Sparkles className="h-5 w-5 text-primary" />
+                Daily Market Picks
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                View admin-curated top 10 symbols with live AI probability scores
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Broker connection card temporarily disabled while running in mock-order mode
+          <Card className="hover:shadow-md transition-shadow">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <KeyRound className="h-5 w-5 text-primary" />
+                Broker connection
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground mb-3">
+                {hasIntegration
+                  ? "Connected. You can place live orders when starting a trade."
+                  : "Connect your broker via our trading gateway to place live orders."}
+              </p>
+              <Button
+                variant={hasIntegration ? "outline" : "default"}
+                size="sm"
+                onClick={() => setShowBrokerModal(true)}
+              >
+                {hasIntegration ? "Update connection" : "Connect"}
+              </Button>
+            </CardContent>
+          </Card>
+          */}
+
+          {isAdmin && (
+            <Card className="hover:shadow-md transition-shadow cursor-pointer"
+              onClick={() => navigate('/admin/users')}>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <ShieldCheck className="h-5 w-5 text-primary" />
+                  Admin Panel
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">
+                  Manage users and the 10-stock daily analysis board
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+
         {/* Features Highlight */}
         <Card className="mt-8 bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20">
           <CardHeader>
@@ -161,7 +227,7 @@ export default function HomePage() {
               <div>
                 <h4 className="font-semibold mb-2">🤖 AI Analysis</h4>
                 <ul className="space-y-1 text-muted-foreground">
-                  <li>• Gemini AI-powered predictions</li>
+                  <li>• Gemini AI-powered probability-based analysis</li>
                   <li>• Multi-timeframe forecasts</li>
                   <li>• Sentiment & news analysis</li>
                 </ul>
@@ -193,6 +259,13 @@ export default function HomePage() {
             </div>
           </CardContent>
         </Card>
+
+        <TradingIntegrationModal
+          open={showBrokerModal}
+          onOpenChange={setShowBrokerModal}
+          onSaved={() => refresh()}
+          save={async (params) => save(params)}
+        />
       </div>
     </div>
   );

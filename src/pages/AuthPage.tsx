@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/hooks/useAuth';
+import { useAdmin } from '@/hooks/useAdmin';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import { Container } from '@/components/layout/Container';
@@ -16,14 +17,15 @@ const AuthPage = () => {
   const [signUpData, setSignUpData] = useState({ email: '', password: '', confirmPassword: '' });
   
   const { signIn, signUp, user } = useAuth();
+  const { isAdmin, loading: adminLoading } = useAdmin();
   const { toast } = useToast();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (user) {
-      navigate('/home');
+    if (!adminLoading && user) {
+      navigate(isAdmin ? '/admin/users' : '/home');
     }
-  }, [user, navigate]);
+  }, [user, isAdmin, adminLoading, navigate]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,7 +45,6 @@ const AuthPage = () => {
           title: "Welcome back!",
           description: "You have successfully signed in.",
         });
-        navigate('/home');
       }
     } catch (error) {
       toast({

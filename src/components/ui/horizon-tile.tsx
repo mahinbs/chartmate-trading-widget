@@ -91,7 +91,7 @@ export function HorizonTile({
           </div>
         </div>
 
-        {/* Prediction details */}
+        {/* Analysis details */}
         <div className="space-y-3">
           <div className="flex items-baseline gap-2 flex-wrap">
             <span className="text-2xl font-bold">

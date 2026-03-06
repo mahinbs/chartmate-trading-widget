@@ -176,7 +176,7 @@ export default function IntradayPage() {
               className={`flex items-center gap-2 ${isMobile ? 'w-full justify-center' : ''}`}
             >
               <BarChart3 className="h-4 w-4" />
-              {isMobile ? "History" : "Prediction History"}
+              {isMobile ? "History" : "Analysis History"}
             </Button>
           </div>
           
@@ -185,12 +185,12 @@ export default function IntradayPage() {
               🚀 Intraday Trading
             </h1>
             <p className={`text-gray-300 ${isMobile ? 'text-sm' : ''}`}>
-              AI-powered hourly predictions for day traders - Real-time intraday analysis
+              AI-powered hourly probability-based analyses for day traders - Real-time intraday analysis
             </p>
             {isLoading && (
               <div className="flex items-center justify-center gap-2 mt-2">
                 <RefreshCw className="h-4 w-4 animate-spin text-blue-500" />
-                <span className="text-sm text-blue-500">Generating AI predictions...</span>
+                <span className="text-sm text-blue-500">Generating AI analyses...</span>
               </div>
             )}
           </div>
@@ -207,7 +207,7 @@ export default function IntradayPage() {
                   Symbol Analysis
                 </CardTitle>
             <CardDescription className="text-gray-300">
-              Enter a stock symbol to get intraday hourly predictions
+              Enter a stock symbol to get intraday hourly analyses
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -277,14 +277,14 @@ export default function IntradayPage() {
                 <div className="text-muted-foreground mb-4">
                   <Target className="h-12 w-12 mx-auto mb-2 opacity-50" />
                   <p className="text-lg font-medium text-white">Select a symbol to analyze</p>
-                  <p className="text-sm text-gray-300">Choose a stock, crypto, or forex pair to get intraday predictions</p>
+                  <p className="text-sm text-gray-300">Choose a stock, crypto, or forex pair to get intraday analyses</p>
                 </div>
               </div>
             ) : !predictionData ? (
               <div className="text-center py-8">
                 <div className="text-muted-foreground mb-4">
                   <RefreshCw className="h-12 w-12 mx-auto mb-2 opacity-50 animate-spin" />
-                  <p className="text-lg font-medium text-white">Click "Analyze" to get predictions</p>
+                  <p className="text-lg font-medium text-white">Click "Analyze" to get analyses</p>
                   <p className="text-sm text-gray-300">Real-time AI-powered intraday analysis will be generated</p>
                 </div>
               </div>
@@ -469,7 +469,7 @@ export default function IntradayPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-white">
                   <Timer className="h-5 w-5" />
-                  Hourly Predictions
+                  Hourly Analyses
                 </CardTitle>
                                   <CardDescription className="text-gray-300">
                     Detailed hourly analysis with probability and risk assessment
@@ -818,7 +818,7 @@ export default function IntradayPage() {
                     ) : (
                       <Play className="h-4 w-4 mr-2" />
                     )}
-                    {isLoading ? 'Generating Predictions...' : 'Generate AI Predictions'}
+                    {isLoading ? 'Generating Analyses...' : 'Generate AI Analyses'}
                   </Button>
                 </div>
               </div>

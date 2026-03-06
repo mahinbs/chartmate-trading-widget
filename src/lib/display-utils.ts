@@ -118,22 +118,26 @@ export function formatPattern(pattern: string): string {
 }
 
 /**
- * Format currency consistently (USD)
+ * Format currency consistently.
+ * @param currency - 'INR' (₹) or 'USD' ($). Default USD for backward compatibility.
  */
-export function formatCurrency(amount: number, decimals: number = 2, allowNegative: boolean = false): string {
+export function formatCurrency(
+  amount: number,
+  decimals: number = 2,
+  allowNegative: boolean = false,
+  currency: "INR" | "USD" = "USD"
+): string {
   const absAmount = Math.abs(amount);
-  const formatted = absAmount.toLocaleString('en-US', {
+  const locale = currency === "INR" ? "en-IN" : "en-US";
+  const formatted = absAmount.toLocaleString(locale, {
     minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals
+    maximumFractionDigits: decimals,
   });
-  
+  const symbol = currency === "INR" ? "₹" : "$";
   if (allowNegative && amount < 0) {
-    return `-$${formatted}`;
-  } else if (amount >= 0) {
-    return `$${formatted}`;
-  } else {
-    return `$${formatted}`;
+    return `-${symbol}${formatted}`;
   }
+  return `${symbol}${formatted}`;
 }
 
 /**

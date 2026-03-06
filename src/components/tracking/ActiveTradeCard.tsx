@@ -12,19 +12,40 @@ import {
   AlertTriangle,
   X,
   ExternalLink,
-  CheckCircle
+  CheckCircle,
+  LogOut,
+  Loader2,
 } from "lucide-react";
 import { ActiveTrade } from "@/services/tradeTrackingService";
+import { isUsdDenominatedSymbol, getTradingViewSymbol } from "@/lib/tradingview-symbols";
+import TradingViewWidget from "@/components/TradingViewWidget";
 import { cn } from "@/lib/utils";
+import { useState } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 
 interface ActiveTradeCardProps {
   trade: ActiveTrade;
   onCancel?: (tradeId: string) => void;
   onClose?: (tradeId: string) => void;
+  /** Square off via broker (places real SELL order). If not provided, button is hidden. */
+  onSquareOff?: (tradeId: string) => Promise<void>;
   onViewDetails?: (tradeId: string) => void;
+  /** Display currency for amounts. If USD, values are assumed INR and converted using usdPerInr. */
+  displayCurrency?: "INR" | "USD";
+  usdPerInr?: number | null;
 }
 
-export function ActiveTradeCard({ trade, onCancel, onClose, onViewDetails }: ActiveTradeCardProps) {
+export function ActiveTradeCard({
+  trade,
+  onCancel,
+  onClose,
+  onSquareOff,
+  onViewDetails,
+  displayCurrency = "INR",
+  usdPerInr,
+}: ActiveTradeCardProps) {
+  const [squaringOff, setSquaringOff] = useState(false);
+  const [chartExpanded, setChartExpanded] = useState(false);
   const isProfitable = (trade.currentPnl || 0) >= 0;
   const isNearStopLoss = trade.stopLossPrice && trade.currentPrice && 
     Math.abs(trade.currentPrice - trade.stopLossPrice) / trade.stopLossPrice < 0.05;
@@ -37,12 +58,24 @@ export function ActiveTradeCard({ trade, onCancel, onClose, onViewDetails }: Act
         return <Badge variant="default" className="bg-blue-500">Active</Badge>;
       case 'monitoring':
         return <Badge variant="default" className="bg-yellow-500">Monitoring</Badge>;
-      case 'exit_zone':
+      case "exit_zone":
         return <Badge variant="destructive">Exit Zone</Badge>;
       default:
         return <Badge variant="outline">{trade.status}</Badge>;
     }
   };
+
+  const assetCurrency: "INR" | "USD" = isUsdDenominatedSymbol(trade.symbol) ? "USD" : "INR";
+  // Card always shows prices in the asset's native currency (INR for Indian stocks, USD for US/crypto)
+  const convertAmount = (value: number | undefined | null) => {
+    const v = value ?? 0;
+    return v;
+  };
+
+  const currencySymbol = assetCurrency === "USD" ? "$" : "₹";
+  const strategyLabel = trade.strategyType
+    ? trade.strategyType.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+    : "Not specified";
 
   return (
     <Card className={cn(
@@ -59,16 +92,24 @@ export function ActiveTradeCard({ trade, onCancel, onClose, onViewDetails }: Act
 
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <CardTitle className="text-2xl font-bold">{trade.symbol}</CardTitle>
-            <ActionSignal 
-              action={trade.action} 
-              confidence={trade.confidence || 0} 
-              size="sm"
-            />
-            {trade.riskGrade && (
-              <RiskGrade level={trade.riskGrade as any} size="sm" />
-            )}
+          <div className="space-y-1">
+            <div className="flex items-center gap-3">
+              <CardTitle className="text-2xl font-bold">{trade.symbol}</CardTitle>
+              <ActionSignal 
+                action={trade.action} 
+                confidence={trade.confidence || 0} 
+                size="sm"
+              />
+              {trade.riskGrade && (
+                <RiskGrade level={trade.riskGrade as any} size="sm" />
+              )}
+            </div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span>Strategy:</span>
+              <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
+                {strategyLabel}
+              </Badge>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             {getStatusBadge()}
@@ -96,11 +137,15 @@ export function ActiveTradeCard({ trade, onCancel, onClose, onViewDetails }: Act
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-muted-foreground">Current P&L</p>
-              <p className={cn(
-                "text-3xl font-bold transition-all duration-300",
-                isProfitable ? "text-green-600" : "text-red-600"
-              )}>
-                {isProfitable ? '+' : ''}${(trade.currentPnl || 0).toFixed(2)}
+              <p
+                className={cn(
+                  "text-3xl font-bold transition-all duration-300",
+                  isProfitable ? "text-green-600" : "text-red-600",
+                )}
+              >
+                {isProfitable ? "+" : ""}
+                {currencySymbol}
+                {convertAmount(trade.currentPnl).toFixed(2)}
               </p>
             </div>
             <div className="text-right">
@@ -119,11 +164,17 @@ export function ActiveTradeCard({ trade, onCancel, onClose, onViewDetails }: Act
         <div className="grid grid-cols-3 gap-3 text-sm">
           <div className="text-center p-2 bg-muted/50 rounded">
             <p className="text-muted-foreground mb-1">Entry</p>
-            <p className="font-semibold">${trade.entryPrice.toFixed(2)}</p>
+            <p className="font-semibold">
+              {currencySymbol}
+              {convertAmount(trade.entryPrice).toFixed(2)}
+            </p>
           </div>
           <div className="text-center p-2 bg-muted/50 rounded">
             <p className="text-muted-foreground mb-1">Current</p>
-            <p className="font-semibold">${trade.currentPrice?.toFixed(2) || trade.entryPrice.toFixed(2)}</p>
+            <p className="font-semibold">
+              {currencySymbol}
+              {convertAmount(trade.currentPrice ?? trade.entryPrice).toFixed(2)}
+            </p>
           </div>
           <div className="text-center p-2 bg-muted/50 rounded">
             <p className="text-muted-foreground mb-1">Shares</p>
@@ -142,7 +193,9 @@ export function ActiveTradeCard({ trade, onCancel, onClose, onViewDetails }: Act
               <p className="text-xs text-muted-foreground">Stop Loss</p>
             </div>
             <p className="text-lg font-bold text-red-600">
-              ${trade.stopLossPrice?.toFixed(2) || 'N/A'}
+              {trade.stopLossPrice != null
+                ? `${currencySymbol}${convertAmount(trade.stopLossPrice).toFixed(2)}`
+                : "N/A"}
             </p>
             <p className="text-xs text-muted-foreground">
               -{trade.stopLossPercentage}%
@@ -158,7 +211,9 @@ export function ActiveTradeCard({ trade, onCancel, onClose, onViewDetails }: Act
               <p className="text-xs text-muted-foreground">Take Profit</p>
             </div>
             <p className="text-lg font-bold text-green-600">
-              ${trade.takeProfitPrice?.toFixed(2) || 'N/A'}
+              {trade.takeProfitPrice != null
+                ? `${currencySymbol}${convertAmount(trade.takeProfitPrice).toFixed(2)}`
+                : "N/A"}
             </p>
             <p className="text-xs text-muted-foreground">
               +{trade.targetProfitPercentage}%
@@ -217,7 +272,10 @@ export function ActiveTradeCard({ trade, onCancel, onClose, onViewDetails }: Act
         <div className="text-xs text-muted-foreground space-y-1 pt-2 border-t">
           <div className="flex justify-between">
             <span>Investment:</span>
-            <span className="font-medium">${trade.investmentAmount.toFixed(2)}</span>
+            <span className="font-medium">
+              {currencySymbol}
+              {convertAmount(trade.investmentAmount).toFixed(2)}
+            </span>
           </div>
           <div className="flex justify-between">
             <span>Account Type:</span>
@@ -244,6 +302,26 @@ export function ActiveTradeCard({ trade, onCancel, onClose, onViewDetails }: Act
           )}
         </div>
 
+        {/* TradingView chart (expandable) */}
+        <div className="border rounded-lg overflow-hidden">
+          <Button
+            variant="ghost"
+            className="w-full justify-between"
+            onClick={() => setChartExpanded((e) => !e)}
+          >
+            <span className="flex items-center gap-2">
+              <ExternalLink className="h-4 w-4" />
+              {chartExpanded ? "Hide" : "Show"} TradingView chart
+            </span>
+            {chartExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </Button>
+          {chartExpanded && (
+            <div className="h-64 w-full">
+              <TradingViewWidget symbol={getTradingViewSymbol(trade.symbol)} interval="15" />
+            </div>
+          )}
+        </div>
+
         {/* Actions */}
         <div className="space-y-2">
           {onViewDetails && (
@@ -257,27 +335,56 @@ export function ActiveTradeCard({ trade, onCancel, onClose, onViewDetails }: Act
             </Button>
           )}
 
+          {/* Square Off via Broker — places a real SELL order via TradeBrainX trading engine */}
+          {onSquareOff && (
+            <Button
+              variant="default"
+              className="w-full bg-orange-600 hover:bg-orange-700 text-white"
+              disabled={squaringOff}
+              onClick={async () => {
+                if (!confirm(`Square off ${trade.shares} shares of ${trade.symbol} at market price via your broker?`)) return;
+                setSquaringOff(true);
+                try {
+                  await onSquareOff(trade.id);
+                } finally {
+                  setSquaringOff(false);
+                }
+              }}
+            >
+              {squaringOff ? (
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Placing exit order…</>
+              ) : (
+                <><LogOut className="h-4 w-4 mr-2" />Square Off via Broker</>
+              )}
+            </Button>
+          )}
+
           <div className="grid grid-cols-2 gap-2">
             {onClose && (
               <Button
-                variant="default"
-                className="bg-green-600 hover:bg-green-700"
+                variant="outline"
+                className="border-green-600 text-green-600 hover:bg-green-50"
                 onClick={() => onClose(trade.id)}
               >
                 <CheckCircle className="h-4 w-4 mr-2" />
-                Close Trade
+                Close (track only)
               </Button>
             )}
             {onCancel && (
               <Button
-                variant="destructive"
+                variant="ghost"
+                className="text-muted-foreground"
                 onClick={() => onCancel(trade.id)}
               >
                 <X className="h-4 w-4 mr-2" />
-                Cancel
+                Stop tracking
               </Button>
             )}
           </div>
+          <p className="text-xs text-center text-muted-foreground">
+            "Square Off" places a real {trade.action === 'BUY' ? 'SELL' : 'BUY'} order {trade.exchange && !isUsdDenominatedSymbol(trade.symbol) ? `on ${trade.exchange} ` : ''}via your broker.
+            "Close" only updates this app.
+          </p>
         </div>
 
       </CardContent>

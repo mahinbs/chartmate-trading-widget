@@ -9,9 +9,17 @@ import PredictionsPage from "./pages/PredictionsPage";
 import IntradayPage from "./pages/IntradayPage";
 import ActiveTradesPage from "./pages/ActiveTradesPage";
 import AuthPage from "./pages/AuthPage";
+import BrokerCallbackPage from "./pages/BrokerCallbackPage";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import LandingPage from "./pages/LandingPage";
 import ContactUsPage from "./pages/ContactUs";
+import MarketPicksPage from "./pages/MarketPicksPage";
+import AdminUsersPage from "./pages/admin/AdminUsersPage";
+import AdminPredictionsPage from "./pages/admin/AdminPredictionsPage";
+import { AdminRoute } from "./components/AdminRoute";
+import { useEffect } from "react";
+
+// OpenAlgo ping temporarily disabled in mock-order mode to avoid CORS noise
 
 const queryClient = new QueryClient();
 
@@ -28,6 +36,14 @@ const App = () => (
             <Route path="/" element={<Navigate to="/rsb-fintech-founder" replace />} />
             <Route path="/contact-us" element={<ContactUsPage />} />
             <Route path="/auth" element={<AuthPage />} />
+            <Route
+              path="/broker-callback"
+              element={
+                <ProtectedRoute>
+                  <BrokerCallbackPage />
+                </ProtectedRoute>
+              }
+            />
             <Route
               path="/home"
               element={
@@ -68,6 +84,27 @@ const App = () => (
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/market-picks"
+              element={<MarketPicksPage />}
+            />
+            <Route
+              path="/admin/users"
+              element={
+                <AdminRoute>
+                  <AdminUsersPage />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/predictions"
+              element={
+                <AdminRoute>
+                  <AdminPredictionsPage />
+                </AdminRoute>
+              }
+            />
+            <Route path="/admin" element={<Navigate to="/admin/users" replace />} />
             <Route path="*" element={<Navigate to="/home" replace />} />
           </Routes>
         </div>

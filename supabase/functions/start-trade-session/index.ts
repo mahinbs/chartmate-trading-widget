@@ -8,35 +8,27 @@ const corsHeaders = {
 };
 
 interface StartTradeRequest {
-  // Prediction Details
   symbol: string;
   action: 'BUY' | 'SELL' | 'HOLD';
   confidence: number;
   riskGrade: string;
-  
-  // Entry Details
   entryPrice: number;
   shares: number;
   investmentAmount: number;
-  
-  // Position Details
   leverage?: number;
   marginType?: string;
-  
-  // Risk Management
+  // Broker execution fields
+  exchange?: string;        // NSE | BSE | NFO
+  product?: string;         // CNC | MIS | NRML
+  brokerOrderId?: string;   // Order ID returned by broker on entry
+  strategyType?: string;    // trend_following | momentum | etc.
   stopLossPercentage: number;
   targetProfitPercentage: number;
-  
-  // Holding Period
-  holdingPeriod?: string; // User chosen
-  aiRecommendedHoldPeriod?: string; // AI recommendation
-  
-  // Expected ROI
+  holdingPeriod?: string;
+  aiRecommendedHoldPeriod?: string;
   expectedRoiBest?: number;
   expectedRoiLikely?: number;
   expectedRoiWorst?: number;
-  
-  // Reference
   predictionId?: string;
 }
 
@@ -132,6 +124,11 @@ serve(async (req) => {
       }
     }
 
+    const isCrypto = /BTC|ETH|-USD|CRYPTO/i.test(requestBody.symbol || '');
+    const isForex = /=[Xx]|[A-Z]{6}$/.test(requestBody.symbol || '') || requestBody.exchange === 'FOREX';
+    const defaultExchange = isCrypto ? 'CRYPTO' : isForex ? 'FOREX' : (requestBody.exchange || 'NSE');
+    const defaultProduct = isCrypto || isForex ? 'CNC' : (requestBody.product || 'CNC');
+
     // Create active trade record
     const tradeData = {
       user_id: user.id,
@@ -146,7 +143,12 @@ serve(async (req) => {
       
       leverage: requestBody.leverage || 1.0,
       margin_type: requestBody.marginType || 'cash',
-      
+
+      exchange:        requestBody.exchange      || defaultExchange,
+      product:         requestBody.product       || defaultProduct,
+      broker_order_id: requestBody.brokerOrderId || null,
+      strategy_type:   requestBody.strategyType  || null,
+
       stop_loss_price: stopLossPrice,
       take_profit_price: takeProfitPrice,
       stop_loss_percentage: requestBody.stopLossPercentage,
@@ -192,7 +194,7 @@ serve(async (req) => {
         user_id: user.id,
         type: 'mid_trade_update',
         title: `Trade Started: ${requestBody.action} ${requestBody.symbol}`,
-        message: `Your ${requestBody.action} trade for ${requestBody.symbol} has started. Entry: $${requestBody.entryPrice.toFixed(2)}, Target: $${takeProfitPrice.toFixed(2)}, Stop: $${stopLossPrice.toFixed(2)}`,
+        message: `Your ${requestBody.action} trade for ${requestBody.symbol} has started. Entry: ₹${requestBody.entryPrice.toFixed(2)}, Target: ₹${takeProfitPrice.toFixed(2)}, Stop: ₹${stopLossPrice.toFixed(2)}${requestBody.brokerOrderId ? ` | Order ID: ${requestBody.brokerOrderId}` : ''}`,
         status: 'pending',
         channel: 'in_app'
       });

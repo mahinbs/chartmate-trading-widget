@@ -258,13 +258,13 @@ export function TimingDisplay({
         </CardContent>
       </Card>
 
-      {/* Prediction Timing */}
+      {/* Analysis Timing */}
       {predictionTiming && (
         <Card className="bg-gradient-to-r from-purple-50 to-pink-50 border-purple-200">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-lg">
               <Target className="h-5 w-5 text-purple-600" />
-              Prediction Timing
+              Analysis Timing
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -281,7 +281,7 @@ export function TimingDisplay({
             </div>
 
             <div className="space-y-2">
-              <h4 className="font-medium text-purple-800">Prediction Horizons:</h4>
+              <h4 className="font-medium text-purple-800">Analysis Horizons:</h4>
               {predictionTiming.horizons.map((horizon: any, index: number) => (
                 <div key={index} className="flex items-center justify-between p-2 bg-white rounded border border-purple-200">
                   <div className="flex items-center gap-2">

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,14 @@ import { Label } from "@/components/ui/label";
 import { SymbolSearch } from "@/components/SymbolSearch";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import ChartPanel from "@/components/ChartPanel";
 import { AdvancedPredictLoader } from "@/components/AdvancedPredictLoader";
 import { PredictionTimeline } from "@/components/PredictionTimeline";
@@ -32,6 +40,10 @@ import { supabase } from "@/integrations/supabase/client";
 import type { SymbolData } from "@/components/SymbolSearch";
 import { useAuth } from "@/hooks/useAuth";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useTradingIntegration } from "@/hooks/useTradingIntegration";
+import { TradingIntegrationModal } from "@/components/trading/TradingIntegrationModal";
+import { StrategySelectionDialog, STRATEGIES } from "@/components/trading/StrategySelectionDialog";
+import { UsePreviousOrNewStrategyDialog } from "@/components/trading/UsePreviousOrNewStrategyDialog";
 import { toast } from "sonner";
 import { Loader2, AlertTriangle, BrainCircuit, BarChart3, CheckCircle, ArrowRight, DollarSign, LogOut, History, Timer, Home } from "lucide-react";
 import { Container } from "@/components/layout/Container";
@@ -156,6 +168,14 @@ interface PredictionResult {
   marginType?: string;
 }
 
+interface PredictionPreset {
+  symbol: string | null;
+  timeframe: string | null;
+  custom_timeframe: string | null;
+  investment: number | null;
+  profile: Partial<UserProfile> | null;
+}
+
 const PredictPage = () => {
   const [symbol, setSymbol] = useState("");
   const [selectedSymbol, setSelectedSymbol] = useState<SymbolData | null>(null);
@@ -186,10 +206,69 @@ const PredictPage = () => {
   const [marketClosed, setMarketClosed] = useState(false);
   const [predictedAt, setPredictedAt] = useState<Date | null>(null);
   const [marketTimeZone, setMarketTimeZone] = useState<string | null>(null);
+  const [latestPreset, setLatestPreset] = useState<PredictionPreset | null>(null);
+  const [showPresetDialog, setShowPresetDialog] = useState(false);
+  const [presetChecked, setPresetChecked] = useState(false);
+  // Have we already asked \"use previous details?\" in this flow (after symbol + investment)?
+  const [presetPromptShown, setPresetPromptShown] = useState(false);
   
   const { signOut, user } = useAuth();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const { hasIntegration, save: saveTradingIntegration, refresh: refreshTradingIntegration } = useTradingIntegration();
+  const [showIntegrationModal, setShowIntegrationModal] = useState(false);
+  const [showStrategyDialog, setShowStrategyDialog]     = useState(false);
+  const [showPreviousOrNewDialog, setShowPreviousOrNewDialog] = useState(false);
+  const [lastUsedStrategy, setLastUsedStrategy]         = useState<{ strategyType: string; product: string; label: string } | null>(null);
+  const [displayCurrency, setDisplayCurrency] = useState<"INR" | "USD">("INR");
+
+  // ── Mock order + track ────────────────────────────────────────────────────
+  const placeMockOrderAndTrack = useCallback(async (strategyCode: string, product: string) => {
+    if (!result) return;
+    const mockOrderId = `MOCK-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
+    const action = result.geminiForecast?.action_signal?.action === 'SELL' ? 'SELL' : 'BUY';
+    const shares = Math.floor(result.positionSize?.shares || 0) || 1;
+    const aiRecommendedPeriod = result.geminiForecast?.positioning_guidance?.recommended_hold_period;
+    const userChosenPeriod    = userProfile.userHoldingPeriod;
+    const effectiveHoldingPeriod = !userChosenPeriod || userChosenPeriod === 'ai_recommendation'
+      ? aiRecommendedPeriod
+      : userChosenPeriod === 'none' ? null : userChosenPeriod;
+
+    toast.loading("Placing order…", { id: 'trade-start' });
+    try {
+      const { tradeTrackingService } = await import("@/services/tradeTrackingService");
+      const response = await tradeTrackingService.startTradeSession({
+        symbol:                  result.symbol,
+        action,
+        confidence:              result.geminiForecast?.action_signal?.confidence || result.confidence || 0,
+        riskGrade:               result.geminiForecast?.risk_grade || 'MEDIUM',
+        entryPrice:              result.currentPrice,
+        shares,
+        investmentAmount:        parseFloat(investment),
+        leverage:                userProfile.leverage,
+        marginType:              userProfile.marginType,
+        exchange:                'NSE',
+        product,
+        brokerOrderId:           mockOrderId,
+        strategyType:            strategyCode,
+        stopLossPercentage:      userProfile.stopLossPercentage || 5,
+        targetProfitPercentage:  userProfile.targetProfitPercentage || 15,
+        holdingPeriod:           effectiveHoldingPeriod,
+        aiRecommendedHoldPeriod: aiRecommendedPeriod,
+        expectedRoiBest:         result.geminiForecast?.expected_roi?.best_case,
+        expectedRoiLikely:       result.geminiForecast?.expected_roi?.likely_case,
+        expectedRoiWorst:        result.geminiForecast?.expected_roi?.worst_case,
+      });
+      if (response.error) {
+        toast.error('Tracking failed: ' + response.error, { id: 'trade-start' });
+      } else {
+        toast.success(`Order placed (${mockOrderId}). Tracking started!`, { id: 'trade-start' });
+        setTimeout(() => navigate('/active-trades'), 1000);
+      }
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed', { id: 'trade-start' });
+    }
+  }, [result, investment, userProfile, navigate]);
 
   // Fetch market status when symbol is selected
   useEffect(() => {
@@ -221,13 +300,128 @@ const PredictPage = () => {
     fetchMarketStatus();
   }, [selectedSymbol]);
 
+  const applyPreset = (preset: PredictionPreset, keepSymbol = false) => {
+    const presetCurrency = (preset.profile as { displayCurrency?: "INR" | "USD" })?.displayCurrency;
+    if (presetCurrency) setDisplayCurrency(presetCurrency);
+
+    if (!keepSymbol) {
+      setSymbol("");
+      setInvestment("");
+      setSelectedSymbol(null);
+      if (preset.investment != null) setInvestment(String(preset.investment));
+    } else {
+      if (preset.investment != null) setInvestment(String(preset.investment));
+    }
+    setTimeframe(preset.timeframe || "1h");
+    setCustomTimeframe(preset.custom_timeframe || "");
+    if (preset.profile) {
+      setUserProfile((prev) => ({
+        ...prev,
+        ...preset.profile,
+        riskAcceptance: false,
+      }));
+    } else {
+      setUserProfile((prev) => ({ ...prev, riskAcceptance: false }));
+    }
+  };
+
+  const resetPredictionForm = (clearAll: boolean = true) => {
+    setCurrentStep("choose-asset");
+    setCompletedSteps([]);
+    setResult(null);
+    setSelectedSymbol(null);
+    setMarketStatus(null);
+    setPredictedAt(null);
+
+    if (clearAll) {
+      setSymbol("");
+      setInvestment("");
+      setTimeframe("1h");
+      setCustomTimeframe("");
+    }
+  };
+
+  const loadLatestPreset = async () => {
+    if (!user?.id) return;
+    try {
+      const { data, error } = await supabase
+        .from("user_prediction_presets" as any)
+        .select("symbol, timeframe, custom_timeframe, investment, profile")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (error) {
+        console.error("Error loading user preset:", error);
+        return;
+      }
+
+      if (data) {
+        setLatestPreset(data as unknown as PredictionPreset);
+        // Dialog is shown only after user fills symbol and clicks Continue (see handleNextStep)
+      }
+    } catch (error) {
+      console.error("Failed to load latest preset:", error);
+    } finally {
+      setPresetChecked(true);
+    }
+  };
+
+  const saveLatestPreset = async () => {
+    if (!user?.id) return;
+    try {
+      const payload = {
+        user_id: user.id,
+        symbol: symbol || null,
+        timeframe: timeframe || null,
+        custom_timeframe: timeframe === "custom" ? customTimeframe || null : null,
+        investment: investment ? parseFloat(investment) : null,
+        profile: { ...userProfile, displayCurrency },
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from("user_prediction_presets" as any)
+        .upsert(payload, { onConflict: "user_id" });
+
+      if (error) {
+        console.error("Error saving user preset:", error);
+      } else {
+        setLatestPreset({
+          symbol: payload.symbol,
+          timeframe: payload.timeframe,
+          custom_timeframe: payload.custom_timeframe,
+          investment: payload.investment,
+          profile: payload.profile as PredictionPreset["profile"],
+        });
+      }
+    } catch (error) {
+      console.error("Failed to save latest preset:", error);
+    }
+  };
+
+  const startNewPredictionFlow = () => {
+    resetPredictionForm(false);
+    setSymbol("");
+    setInvestment("");
+    setSelectedSymbol(null);
+    setUserProfile((prev) => ({ ...prev, riskAcceptance: false }));
+    resetPredictionForm(true);
+    setPresetPromptShown(false);
+    // Preset dialog is shown only after user fills symbol and clicks Continue to Investment
+  };
+
+  useEffect(() => {
+    if (!user?.id || presetChecked) return;
+    loadLatestPreset();
+  }, [user?.id, presetChecked]);
+
   const steps = [
     { id: "choose-asset", title: "Choose Asset", description: "Select symbol" },
     { id: "set-investment", title: "Set Investment", description: "Amount to invest" },
     { id: "trading-profile", title: "Trading Profile", description: "Risk & preferences" },
     { id: "review", title: "Review & Start", description: "Confirm details" },
     { id: "analysis", title: "Live Analysis", description: "AI processing" },
-    { id: "results", title: "Results", description: "View prediction" }
+    { id: "results", title: "Results", description: "View analysis" }
   ];
 
   // Auto-save prediction to database
@@ -270,9 +464,16 @@ const PredictPage = () => {
 
   const handleNextStep = () => {
     if (currentStep === "choose-asset" && symbol) {
+      // Step 1 → Step 2 (no preset prompt yet; we only ask after amount is filled)
       setCompletedSteps(prev => [...prev, "choose-asset"]);
       setCurrentStep("set-investment");
     } else if (currentStep === "set-investment" && investment) {
+      // After user has chosen symbol + investment, ask if they want previous details
+      if (latestPreset && !presetPromptShown) {
+        setShowPresetDialog(true);
+        setPresetPromptShown(true);
+        return;
+      }
       setCompletedSteps(prev => [...prev, "set-investment"]);
       setCurrentStep("trading-profile");
     } else if (currentStep === "trading-profile") {
@@ -347,12 +548,13 @@ const PredictPage = () => {
       
       // Auto-save the prediction
       await savePrediction(data);
+      await saveLatestPreset();
       // Loader will complete when it's ready
     } catch (error) {
       console.error("Error:", error);
       setShowAdvancedLoader(false);
       setAnalysisReady(false);
-      toast.error("An error occurred while getting the prediction");
+      toast.error("An error occurred while getting the analysis");
     } finally {
       setLoading(false);
     }
@@ -381,6 +583,59 @@ const PredictPage = () => {
 
   return (
     <div className="min-h-screen bg-background">
+      <Dialog open={showPresetDialog} onOpenChange={setShowPresetDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Use previous analysis details?</DialogTitle>
+            <DialogDescription>
+              We found your recent preferences. Timeframe, investment, and profile can be reused for this analysis.
+            </DialogDescription>
+          </DialogHeader>
+
+          {latestPreset && (
+            <div className="rounded-lg border p-3 text-sm space-y-1">
+              <p><strong>Symbol:</strong> {latestPreset.symbol || "-"}</p>
+              <p><strong>Timeframe:</strong> {latestPreset.timeframe || "-"}</p>
+              <p><strong>Investment:</strong> {latestPreset.investment != null
+                ? formatCurrency(Number(latestPreset.investment), 0, false, (latestPreset.profile as { displayCurrency?: "INR" | "USD" })?.displayCurrency ?? "INR")
+                : "-"}
+              </p>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowPresetDialog(false);
+                // User wants fresh settings; continue to Trading Profile with current symbol + amount
+                setCompletedSteps(prev => [...prev, "set-investment"]);
+                setCurrentStep("trading-profile");
+              }}
+            >
+              Use New
+            </Button>
+            <Button
+              onClick={() => {
+                if (latestPreset) {
+                  applyPreset(latestPreset, true);
+                  setCompletedSteps(prev => [...prev, "choose-asset", "set-investment"]);
+                  setCurrentStep("trading-profile");
+                  setShowPresetDialog(false);
+                  setTimeout(() => {
+                    document.getElementById("risk-acknowledge-block")?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  }, 300);
+                } else {
+                  setShowPresetDialog(false);
+                }
+              }}
+            >
+              Use Prefilled Details
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Header */}
       <div className="border-b bg-card/50 backdrop-blur-sm">
         <Container className="py-3 sm:py-4">
@@ -401,7 +656,7 @@ const PredictPage = () => {
               className={`flex items-center gap-2 ${isMobile ? 'w-full justify-center' : ''}`}
             >
               <History className="h-4 w-4" />
-              {isMobile ? "History" : "My Predictions"}
+              {isMobile ? "History" : "My Analyses"}
             </Button>
             <Button
               variant="outline"
@@ -430,10 +685,10 @@ const PredictPage = () => {
           
           <div className="text-center space-y-2">
             <h1 className={`${isMobile ? 'text-2xl' : 'text-3xl md:text-4xl'} font-bold`}>
-              AI Market Prediction
+              Probability-Based Analysis Software
             </h1>
             <p className={`text-muted-foreground ${isMobile ? 'text-sm' : ''}`}>
-              Get real-time AI-powered predictions for any stock, forex, or crypto
+              Get real-time AI-powered probability-based analysis for any stock, forex, or crypto
             </p>
             {user?.email && (
               <p className="text-xs text-muted-foreground">
@@ -491,7 +746,7 @@ const PredictPage = () => {
                       {/* Timeframe Selector */}
                       <div>
                         <Label htmlFor="timeframe" className="text-sm font-medium mb-2 block">
-                          Prediction Timeframe
+                          Analysis Timeframe
                         </Label>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
                           {['15m', '30m', '1h', '4h', '1d', '1w'].map((tf) => (
@@ -533,13 +788,13 @@ const PredictPage = () => {
                           </div>
                         )}
                         <p className="text-xs text-muted-foreground mt-2">
-                          {timeframe === '15m' && '⚡ Ultra short-term: AI will predict next 15 minutes'}
-                          {timeframe === '30m' && '⏰ Very short-term: AI will predict next 30 minutes'}
-                          {timeframe === '1h' && '🕐 Short-term: AI will predict next 1 hour (recommended)'}
-                          {timeframe === '4h' && '🕓 Medium-term: AI will predict next 4 hours'}
-                          {timeframe === '1d' && '📅 Daily: AI will predict today\'s movement'}
-                          {timeframe === '1w' && '📆 Weekly: AI will predict this week\'s movement'}
-                          {timeframe === 'custom' && '✏️ Custom timeframe: Enter your desired prediction window'}
+                          {timeframe === '15m' && '⚡ Ultra short-term: AI will analyze next 15 minutes'}
+                          {timeframe === '30m' && '⏰ Very short-term: AI will analyze next 30 minutes'}
+                          {timeframe === '1h' && '🕐 Short-term: AI will analyze next 1 hour (recommended)'}
+                          {timeframe === '4h' && '🕓 Medium-term: AI will analyze next 4 hours'}
+                          {timeframe === '1d' && '📅 Daily: AI will analyze today\'s movement'}
+                          {timeframe === '1w' && '📆 Weekly: AI will analyze this week\'s movement'}
+                          {timeframe === 'custom' && '✏️ Custom timeframe: Enter your desired analysis window'}
                         </p>
                       </div>
                       
@@ -575,12 +830,33 @@ const PredictPage = () => {
                 isActive={true}
               >
                 <div className="space-y-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <Label className="text-sm text-muted-foreground">Show amounts in</Label>
+                    <div className="flex rounded-full border p-0.5 bg-muted/60">
+                      <button
+                        type="button"
+                        className={`px-3 py-1 rounded-full text-sm ${displayCurrency === "INR" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                        onClick={() => setDisplayCurrency("INR")}
+                      >
+                        INR
+                      </button>
+                      <button
+                        type="button"
+                        className={`px-3 py-1 rounded-full text-sm ${displayCurrency === "USD" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                        onClick={() => setDisplayCurrency("USD")}
+                      >
+                        USD
+                      </button>
+                    </div>
+                  </div>
                   <div>
                     <Label htmlFor="investment" className="text-sm font-medium mb-2 block">
-                      Investment Amount (USD)
+                      Investment Amount ({displayCurrency})
                     </Label>
                     <div className="relative">
-                      <DollarSign className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <span className="absolute left-3 top-3 h-4 w-4 flex items-center justify-center text-muted-foreground font-medium">
+                        {displayCurrency === "INR" ? "₹" : "$"}
+                      </span>
                       <Input
                         id="investment"
                         type="number"
@@ -598,7 +874,7 @@ const PredictPage = () => {
                     <div className="p-4 bg-muted/30 rounded-lg border">
                       <div className="flex items-center gap-2">
                         <CheckCircle className="h-5 w-5 text-green-600" />
-                        <span className="font-medium">Investment: {formatCurrency(parseFloat(investment), 0)}</span>
+                        <span className="font-medium">Investment: {formatCurrency(parseFloat(investment), 0, false, displayCurrency)}</span>
                       </div>
                     </div>
                   )}
@@ -638,7 +914,7 @@ const PredictPage = () => {
                       AI Personalization
                     </h4>
                     <p className="text-sm text-muted-foreground">
-                      AI will use your trading profile to provide tailored predictions, 
+AI will use your trading profile to provide tailored probability-based analysis,
                       risk assessments, and recommendations that match your strategy and goals.
                     </p>
                   </div>
@@ -665,7 +941,7 @@ const PredictPage = () => {
             {currentStep === "review" && (
               <StepContainer 
                 title="Review & Start Analysis"
-                description="Confirm your prediction parameters before starting the AI analysis"
+                description="Confirm your analysis parameters before starting the AI analysis"
                 isActive={true}
               >
                 <div className="space-y-6">
@@ -676,7 +952,7 @@ const PredictPage = () => {
                     </div>
                     <div className="p-4 bg-muted/30 rounded-lg border">
                       <p className="text-sm text-muted-foreground">Investment</p>
-                      <p className="text-lg font-semibold">{formatCurrency(parseFloat(investment || "0"), 0)}</p>
+                      <p className="text-lg font-semibold">{formatCurrency(parseFloat(investment || "0"), 0, false, displayCurrency)}</p>
                     </div>
                   </div>
 
@@ -765,7 +1041,7 @@ const PredictPage = () => {
             {currentStep === "analysis" && (
               <StepContainer 
                 title="Live AI Analysis"
-                description="Our AI is analyzing market data and generating your prediction"
+                description="Our AI is analyzing market data and generating your probability-based analysis"
                 isActive={true}
               >
                 {showAdvancedLoader && (
@@ -821,6 +1097,7 @@ const PredictPage = () => {
                     stopLoss={userProfile.stopLossPercentage || 5}
                     takeProfit={userProfile.targetProfitPercentage || 15}
                     leverage={userProfile.leverage || 1}
+                    currency={displayCurrency}
                   />
                 )}
 
@@ -848,51 +1125,14 @@ const PredictPage = () => {
                       
                       <Button 
                         onClick={async () => {
-                          try {
-                            const { tradeTrackingService } = await import("@/services/tradeTrackingService");
-                            
-                            // Determine holding period to use
-                            const aiRecommendedPeriod = result.geminiForecast.positioning_guidance?.recommended_hold_period;
-                            const userChosenPeriod = userProfile.userHoldingPeriod;
-                            
-                            // If user chose AI recommendation, use the AI value; if "none", use null; otherwise use user's choice
-                            const effectiveHoldingPeriod = 
-                              !userChosenPeriod || userChosenPeriod === 'ai_recommendation' 
-                                ? aiRecommendedPeriod 
-                                : userChosenPeriod === 'none' 
-                                  ? null 
-                                  : userChosenPeriod;
-
-                            const tradeData = {
-                              symbol: result.symbol,
-                              action: result.geminiForecast.action_signal?.action || 'BUY',
-                              confidence: result.geminiForecast.action_signal?.confidence || result.confidence || 0,
-                              riskGrade: result.geminiForecast.risk_grade || 'MEDIUM',
-                              entryPrice: result.currentPrice,
-                              shares: result.positionSize?.shares || 0,
-                              investmentAmount: parseFloat(investment),
-                              leverage: userProfile.leverage,
-                              marginType: userProfile.marginType,
-                              stopLossPercentage: userProfile.stopLossPercentage || 5,
-                              targetProfitPercentage: userProfile.targetProfitPercentage || 15,
-                              holdingPeriod: effectiveHoldingPeriod,
-                              aiRecommendedHoldPeriod: aiRecommendedPeriod,
-                              expectedRoiBest: result.geminiForecast.expected_roi?.best_case,
-                              expectedRoiLikely: result.geminiForecast.expected_roi?.likely_case,
-                              expectedRoiWorst: result.geminiForecast.expected_roi?.worst_case
-                            };
-
-                            toast.loading("Starting trade session...", { id: 'trade-start' });
-                            const response = await tradeTrackingService.startTradeSession(tradeData);
-                            
-                            if (response.error) {
-                              toast.error('Error: ' + response.error, { id: 'trade-start' });
-                            } else {
-                              toast.success('✅ Trade tracking started!', { id: 'trade-start' });
-                              setTimeout(() => navigate('/active-trades'), 1000);
-                            }
-                          } catch (error: any) {
-                            toast.error('Error: ' + error.message, { id: 'trade-start' });
+                          const { tradeTrackingService } = await import("@/services/tradeTrackingService");
+                          const last = await tradeTrackingService.getLastUsedStrategy();
+                          if (last) {
+                            const label = STRATEGIES.find(s => s.value === last.strategyType)?.label ?? last.strategyType;
+                            setLastUsedStrategy({ ...last, label });
+                            setShowPreviousOrNewDialog(true);
+                          } else {
+                            setShowStrategyDialog(true);
                           }
                         }}
                         className={`w-full text-lg py-8 shadow-lg ${
@@ -908,6 +1148,45 @@ const PredictPage = () => {
                           : '🎯 Start Tracking This Trade'
                         }
                       </Button>
+
+                      {/* Use previous strategy or choose new */}
+                      {result && lastUsedStrategy && (
+                        <UsePreviousOrNewStrategyDialog
+                          open={showPreviousOrNewDialog}
+                          onOpenChange={setShowPreviousOrNewDialog}
+                          lastStrategyLabel={lastUsedStrategy.label}
+                          symbol={result.symbol}
+                          action={result.geminiForecast?.action_signal?.action === 'SELL' ? 'SELL' : 'BUY'}
+                          onUsePrevious={() => placeMockOrderAndTrack(lastUsedStrategy.strategyType, lastUsedStrategy.product)}
+                          onChooseNew={() => setShowStrategyDialog(true)}
+                        />
+                      )}
+
+                      {/* Strategy selection (AI + market research) → place order */}
+                      {result && (
+                        <StrategySelectionDialog
+                          open={showStrategyDialog}
+                          onOpenChange={setShowStrategyDialog}
+                          currentStrategy={lastUsedStrategy?.strategyType ?? userProfile.tradingStrategy ?? 'trend_following'}
+                          symbol={result.symbol}
+                          action={result.geminiForecast?.action_signal?.action === 'SELL' ? 'SELL' : 'BUY'}
+                          investment={investment ? parseFloat(investment) : 10000}
+                          timeframe={timeframe === "custom" ? customTimeframe || "1d" : timeframe || "1d"}
+                          onConfirm={placeMockOrderAndTrack}
+                        />
+                      )}
+
+                      <TradingIntegrationModal
+                        open={showIntegrationModal}
+                        onOpenChange={setShowIntegrationModal}
+                        onSaved={async () => {
+                          await refreshTradingIntegration();
+                          setShowIntegrationModal(false);
+                          setShowStrategyDialog(true);
+                        }}
+                        onSkip={() => setShowIntegrationModal(false)}
+                        save={async (params) => saveTradingIntegration(params)}
+                      />
                     </div>
                   </CardContent>
                 </Card>
@@ -1029,22 +1308,16 @@ const PredictPage = () => {
                 <div className="flex flex-col gap-4">
                   <div className="grid grid-cols-2 gap-4">
                     <Button 
-                      onClick={() => {
-                        setCurrentStep("choose-asset");
-                        setCompletedSteps([]);
-                        setResult(null);
-                        setSymbol("");
-                        setInvestment("");
-                      }}
+                      onClick={startNewPredictionFlow}
                       variant="outline"
                     >
-                      New Prediction
+                      New Analysis
                     </Button>
                     <Button 
                       onClick={() => navigate('/predictions')}
                       variant="outline"
                     >
-                      View All Predictions
+                      View All Analyses
                     </Button>
                   </div>
 
@@ -1110,7 +1383,7 @@ const PredictPage = () => {
           <Alert>
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription className={`${isMobile ? 'text-xs' : 'text-sm'}`}>
-              This is an AI-generated prediction for educational purposes only. Not financial advice.
+              This is AI-generated probability-based analysis for educational purposes only. Not financial advice.
               Past performance does not guarantee future results. Always do your own research.
             </AlertDescription>
           </Alert>

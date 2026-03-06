@@ -9,6 +9,7 @@ import { ActiveTradeCard } from "@/components/tracking/ActiveTradeCard";
 import { ActionSignal } from "@/components/prediction/ActionSignal";
 import { PerformanceDashboard } from "@/components/performance/PerformanceDashboard";
 import { tradeTrackingService, ActiveTrade } from "@/services/tradeTrackingService";
+import { getTradingViewSymbol, isUsdDenominatedSymbol } from "@/lib/tradingview-symbols";
 import { RefreshCw, TrendingUp, Activity, CheckCircle, Bell, BarChart3, Home } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -17,6 +18,10 @@ export default function ActiveTradesPage() {
   const [completedTrades, setCompletedTrades] = useState<ActiveTrade[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [displayCurrency, setDisplayCurrency] = useState<"INR" | "USD">("INR");
+  const [usdPerInr, setUsdPerInr] = useState<number | null>(null);
+  const [fxLoading, setFxLoading] = useState(false);
+  const [fxError, setFxError] = useState<string | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -60,6 +65,29 @@ export default function ActiveTradesPage() {
     });
   };
 
+  const loadFxRate = async () => {
+    try {
+      setFxLoading(true);
+      setFxError(null);
+      const res = await fetch(
+        "https://api.frankfurter.app/latest?from=INR&to=USD",
+      );
+      if (!res.ok) throw new Error("Failed to load FX rate");
+      const json = await res.json();
+      const rate = json?.rates?.USD;
+      if (typeof rate === "number" && rate > 0) {
+        setUsdPerInr(rate);
+      } else {
+        throw new Error("Invalid FX rate");
+      }
+    } catch (e: any) {
+      console.error("FX load error", e);
+      setFxError(e?.message || "Failed to load USD/INR rate");
+    } finally {
+      setFxLoading(false);
+    }
+  };
+
   const handleCancelTrade = async (tradeId: string) => {
     if (!confirm("Are you sure you want to cancel this trade tracking? This will not close the position, only stop tracking.")) {
       return;
@@ -83,7 +111,7 @@ export default function ActiveTradesPage() {
   };
 
   const handleCloseTrade = async (tradeId: string, currentPrice: number) => {
-    if (!confirm("Are you sure you want to close this trade? This will mark it as completed with current P&L.")) {
+    if (!confirm("Close this trade in the app only (no order placed on broker)?")) {
       return;
     }
 
@@ -98,7 +126,24 @@ export default function ActiveTradesPage() {
     } else {
       toast({
         title: "Trade Closed",
-        description: "Trade has been closed successfully"
+        description: "Trade has been closed in the app"
+      });
+      await loadTrades();
+    }
+  };
+
+  const handleSquareOff = async (tradeId: string) => {
+    const result = await tradeTrackingService.squareOff(tradeId);
+    if (result.error) {
+      toast({
+        title: "Square Off Failed",
+        description: result.error,
+        variant: "destructive",
+      });
+    } else {
+      toast({
+        title: "Squared Off",
+        description: `Exit order placed${result.exitOrderId ? ` (Order ID: ${result.exitOrderId})` : ""}. Position closed.`,
       });
       await loadTrades();
     }
@@ -123,49 +168,120 @@ export default function ActiveTradesPage() {
       });
     });
 
-    // Auto-refresh prices every 30 seconds (faster for better UX)
-    const priceRefreshInterval = setInterval(async () => {
-      console.log('🔄 Auto-refreshing trade prices...');
-      const result = await tradeTrackingService.updateAllPrices();
-      if (!result.error) {
-        // Force immediate reload after price update
-        await loadTrades();
-      }
-    }, 30000); // 30 seconds
-
     return () => {
       subscription.unsubscribe();
       notifSubscription.unsubscribe();
-      clearInterval(priceRefreshInterval);
     };
   }, []); // Remove dependency to avoid re-creating subscriptions
 
-  const calculatePortfolioStats = () => {
-    // Active trades
-    const activeInvested = activeTrades.reduce((sum, t) => sum + t.investmentAmount, 0);
-    const activePnL = activeTrades.reduce((sum, t) => sum + (t.currentPnl || 0), 0);
-    
-    // Completed trades
-    const completedInvested = completedTrades.reduce((sum, t) => sum + (t.investmentAmount || 0), 0);
-    const completedPnL = completedTrades.reduce((sum, t) => sum + (t.actualPnl || 0), 0);
-    
-    // Totals
-    const totalInvested = activeInvested + completedInvested;
-    const totalPnL = activePnL + completedPnL;
-    const totalPnLPercentage = totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0;
+  useEffect(() => {
+    const hasUsdAssets =
+      activeTrades.some((t) => isUsdDenominatedSymbol(t.symbol)) ||
+      completedTrades.some((t) => isUsdDenominatedSymbol(t.symbol));
 
-    return { 
-      totalInvested, 
-      totalPnL, 
-      totalPnLPercentage,
-      activeInvested,
-      activePnL,
-      completedInvested,
-      completedPnL
+    if (usdPerInr == null && !fxLoading && hasUsdAssets) {
+      loadFxRate();
+    }
+  }, [usdPerInr, fxLoading, activeTrades, completedTrades]);
+
+  // Binance WebSocket for crypto symbols (BTC-USD, etc.) so prices match TradingView's Binance feed
+  useEffect(() => {
+    // Collect all USD-denominated symbols we are tracking (crypto/US stocks)
+    const cryptoSymbols = Array.from(
+      new Set(
+        activeTrades
+          .filter((t) => isUsdDenominatedSymbol(t.symbol))
+          .map((t) => t.symbol.toUpperCase())
+      )
+    );
+
+    if (cryptoSymbols.length === 0) {
+      return;
+    }
+
+    const toBinanceSymbol = (symbol: string) => {
+      // BTC-USD -> BTCUSDT, ETH-USD -> ETHUSDT, etc.
+      const base = symbol.replace(/[^A-Z]/gi, "").replace(/USD$/i, "");
+      return `${base}USDT`.toUpperCase();
     };
+
+    const streams = cryptoSymbols.map((s) => `${toBinanceSymbol(s).toLowerCase()}@trade`);
+    const url = `wss://stream.binance.com:9443/stream?streams=${streams.join("/")}`;
+
+    let ws: WebSocket | null = null;
+    try {
+      ws = new WebSocket(url);
+
+      ws.onopen = () => {
+        console.log("⚡ Binance WS connected for", cryptoSymbols.join(", "));
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          const tick = payload.data || payload;
+          const binanceSymbol: string = (tick.s || tick.symbol || "").toUpperCase();
+          const price: number = parseFloat(tick.p || tick.c || tick.price);
+          if (!binanceSymbol || !price || Number.isNaN(price)) return;
+
+          const fromBinanceToInternal = (sym: string) =>
+            `${sym.replace(/USDT$/i, "")}-USD`;
+          const internalSymbol = fromBinanceToInternal(binanceSymbol).toUpperCase();
+
+          setActiveTrades((prev) =>
+            prev.map((t) => {
+              if (t.symbol.toUpperCase() !== internalSymbol) return t;
+              const pnl = (price - t.entryPrice) * t.shares * (t.action === "SELL" ? -1 : 1);
+              const pnlPct = (pnl / t.investmentAmount) * 100;
+              return {
+                ...t,
+                currentPrice: price,
+                currentPnl: pnl,
+                currentPnlPercentage: pnlPct,
+                lastPriceUpdate: new Date().toISOString(),
+              };
+            })
+          );
+        } catch {
+          // ignore malformed ticks
+        }
+      };
+
+      ws.onerror = () => {
+        console.warn("Binance WS error");
+        ws?.close();
+      };
+    } catch (e) {
+      console.error("Binance WS connect error", e);
+    }
+
+    return () => {
+      ws?.close();
+    };
+  }, [activeTrades.map((t) => t.symbol).join(",")]);
+
+  const convertAmount = (value: number, symbol?: string) => {
+    const assetCurrency = symbol ? (isUsdDenominatedSymbol(symbol) ? "USD" : "INR") : "INR";
+    if (displayCurrency === assetCurrency) return value;
+    if (displayCurrency === "USD" && assetCurrency === "INR" && usdPerInr && usdPerInr > 0) return value * usdPerInr;
+    if (displayCurrency === "INR" && assetCurrency === "USD" && usdPerInr && usdPerInr > 0) return value / usdPerInr;
+    return value;
+  };
+
+  const calculatePortfolioStats = () => {
+    // Top summary should reflect only ACTIVE portfolio,
+    // so completed trades do not distort current P&L.
+    const activeInvested = activeTrades.reduce((sum, t) => sum + convertAmount(t.investmentAmount, t.symbol), 0);
+    const activePnL = activeTrades.reduce((sum, t) => sum + convertAmount(t.currentPnl ?? 0, t.symbol), 0);
+    const totalInvested = activeInvested;
+    const totalPnL = activePnL;
+    const totalPnLPercentage = totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0;
+    return { totalInvested, totalPnL, totalPnLPercentage, activeInvested, activePnL, completedInvested: 0, completedPnL: 0 };
   };
 
   const stats = calculatePortfolioStats();
+
+  const currencySymbol = displayCurrency === "USD" ? "$" : "₹";
 
   if (loading) {
     return (
@@ -186,7 +302,22 @@ export default function ActiveTradesPage() {
           <h1 className="text-3xl font-bold">Active Trades</h1>
           <p className="text-muted-foreground">Track your live positions in real-time</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 rounded-full border px-2 py-1 text-xs bg-muted/60">
+            <span className="text-muted-foreground">Currency:</span>
+            <button
+              className={`px-2 py-0.5 rounded-full ${displayCurrency === "INR" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+              onClick={() => setDisplayCurrency("INR")}
+            >
+              INR
+            </button>
+            <button
+              className={`px-2 py-0.5 rounded-full ${displayCurrency === "USD" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+              onClick={() => setDisplayCurrency("USD")}
+            >
+              USD
+            </button>
+          </div>
           <Button
             variant="ghost"
             onClick={() => navigate('/home')}
@@ -204,7 +335,7 @@ export default function ActiveTradesPage() {
           </Button>
           <Button onClick={() => navigate('/predict')}>
             <TrendingUp className="h-4 w-4 mr-2" />
-            New Prediction
+            New Analysis
           </Button>
         </div>
       </div>
@@ -219,7 +350,10 @@ export default function ActiveTradesPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold">${stats.totalInvested.toFixed(2)}</p>
+              <p className="text-2xl font-bold">
+                {currencySymbol}
+                {stats.totalInvested.toFixed(2)}
+              </p>
             </CardContent>
           </Card>
 
@@ -231,7 +365,9 @@ export default function ActiveTradesPage() {
             </CardHeader>
             <CardContent>
               <p className={`text-2xl font-bold ${stats.totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {stats.totalPnL >= 0 ? '+' : ''}${stats.totalPnL.toFixed(2)}
+                {stats.totalPnL >= 0 ? '+' : ''}
+                {currencySymbol}
+                {stats.totalPnL.toFixed(2)}
               </p>
             </CardContent>
           </Card>
@@ -274,16 +410,19 @@ export default function ActiveTradesPage() {
             <Alert>
               <Bell className="h-4 w-4" />
               <AlertDescription>
-                No active trades. Start by making a <a href="/predict" className="underline font-medium">new prediction</a> and clicking "Start Tracking".
+                No active trades. Start by making a <a href="/predict" className="underline font-medium">new analysis</a> and clicking "Start Tracking".
               </AlertDescription>
             </Alert>
           ) : (
             <div className="grid md:grid-cols-2 gap-6">
               {activeTrades.map((trade) => (
                 <ActiveTradeCard
-                  key={`${trade.id}-${trade.lastPriceUpdate || trade.entryTime}`}
+                  key={trade.id}
                   trade={trade}
+                  displayCurrency={displayCurrency}
+                  usdPerInr={usdPerInr}
                   onCancel={handleCancelTrade}
+                  onSquareOff={trade.brokerOrderId ? handleSquareOff : undefined}
                   onClose={(id) => {
                     const tradeData = activeTrades.find(t => t.id === id);
                     if (tradeData) {
@@ -291,10 +430,10 @@ export default function ActiveTradesPage() {
                     }
                   }}
                   onViewDetails={(id) => {
-                    // Open trade in new tab with TradingView chart
                     const tradeData = activeTrades.find(t => t.id === id);
                     if (tradeData) {
-                      window.open(`https://www.tradingview.com/chart/?symbol=${tradeData.symbol}`, '_blank');
+                      const tvSymbol = getTradingViewSymbol(tradeData.symbol);
+                      window.open(`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(tvSymbol)}`, '_blank');
                     }
                   }}
                 />
@@ -330,13 +469,27 @@ export default function ActiveTradesPage() {
                         {new Date(trade.entryTime).toLocaleDateString()} - {trade.exitTime && new Date(trade.exitTime).toLocaleDateString()}
                       </p>
                       <div className="mt-2 text-sm text-muted-foreground">
-                        <p>Invested: <span className="font-semibold">${trade.investmentAmount?.toFixed(2) || '0.00'}</span></p>
-                        <p>Entry: ${trade.entryPrice?.toFixed(2)} | Exit: ${trade.exitPrice?.toFixed(2) || 'N/A'}</p>
+                        <p>
+                          Invested:{" "}
+                          <span className="font-semibold">
+                            {currencySymbol}
+                            {convertAmount(trade.investmentAmount || 0, trade.symbol).toFixed(2)}
+                          </span>
+                        </p>
+                        <p>
+                          Entry: {currencySymbol}
+                          {convertAmount(trade.entryPrice || 0, trade.symbol).toFixed(2)} | Exit:{" "}
+                          {trade.exitPrice != null
+                            ? `${currencySymbol}${convertAmount(trade.exitPrice, trade.symbol).toFixed(2)}`
+                            : "N/A"}
+                        </p>
                       </div>
                     </div>
                     <div className="text-right">
                       <p className={`text-2xl font-bold ${(trade.actualPnl || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {(trade.actualPnl || 0) >= 0 ? '+' : ''}${trade.actualPnl?.toFixed(2) || '0.00'}
+                        {(trade.actualPnl || 0) >= 0 ? '+' : ''}
+                        {currencySymbol}
+                        {convertAmount(trade.actualPnl || 0, trade.symbol).toFixed(2)}
                       </p>
                       <p className={`text-sm font-medium ${(trade.actualPnlPercentage || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                         {(trade.actualPnlPercentage || 0) >= 0 ? '+' : ''}{trade.actualPnlPercentage?.toFixed(2) || '0.00'}%

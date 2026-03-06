@@ -74,7 +74,7 @@ export function PostPredictionReport({
             <div>
               <h4 className="font-semibold text-yellow-800 mb-1">Limited Data Available</h4>
               <p className="text-sm text-yellow-700">
-                This prediction could not be properly evaluated due to insufficient market data during the specified timeframe. 
+                This analysis could not be properly evaluated due to insufficient market data during the specified timeframe. 
                 The analysis may not be reliable for this particular trading period.
               </p>
             </div>
@@ -97,13 +97,13 @@ export function PostPredictionReport({
         </Card>
       )}
 
-      {/* Prediction vs Reality */}
+      {/* Analysis vs Reality */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-sm">
               <Target className="h-4 w-4" />
-              What We Predicted
+              What We Analyzed
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -124,7 +124,7 @@ export function PostPredictionReport({
                 )}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">No prediction data</p>
+              <p className="text-sm text-muted-foreground">No analysis data</p>
             )}
           </CardContent>
         </Card>

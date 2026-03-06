@@ -108,6 +108,9 @@ const Navbar = () => {
                     <NavLink to="/predictions">Probabilities</NavLink>
                     <ScrollLink to="testimonials">Testimonials</ScrollLink>
                     <ScrollLink to="faq">FAQ</ScrollLink> */}
+                    <Link to="/market-picks" className="text-heading hover:text-primary font-medium transition-colors text-sm">
+                        Daily Analyses
+                    </Link>
                     <Link to="/contact-us" className="bg-primary hover:bg-primary-hover text-white px-6 py-2.5 rounded text-sm font-bold transition-colors shadow-sm">
                         Launch App
                     </Link>
@@ -128,6 +131,7 @@ const Navbar = () => {
             {isMobileMenuOpen && (
                 <div className="md:hidden bg-white absolute top-full left-0 w-full shadow-lg py-4 px-4 flex flex-col space-y-4 border-t">
                     <MobileScrollLink to="features">Features</MobileScrollLink>
+                    <Link to="/market-picks" className="text-heading font-medium" onClick={() => setIsMobileMenuOpen(false)}>Daily Analyses</Link>
                     <Link to="/intraday" className="text-heading font-medium" onClick={() => setIsMobileMenuOpen(false)}>Intraday</Link>
                     <Link to="/predictions" className="text-heading font-medium" onClick={() => setIsMobileMenuOpen(false)}>Probabilities</Link>
                     <MobileScrollLink to="testimonials">Testimonials</MobileScrollLink>

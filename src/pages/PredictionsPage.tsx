@@ -124,18 +124,16 @@ export default function PredictionsPage() {
     return new Date(baseTime.getTime() + minutes * 60 * 1000);
   };
 
+  // React to predictions list changing: fetch market statuses + schedule auto-analysis
   useEffect(() => {
-    fetchPredictions();
-    
+    if (predictions.length === 0) return;
+
     // Fetch market statuses for unique symbols
     const fetchMarketStatuses = async () => {
       const uniqueSymbols = [...new Set(predictions.map(p => p.symbol))];
       await Promise.all(uniqueSymbols.map(symbol => fetchMarketStatus(symbol)));
     };
-    
-    if (predictions.length > 0) {
-      fetchMarketStatuses();
-    }
+    fetchMarketStatuses();
     
     // Auto-analyze predictions that have expired
     const interval = setInterval(() => {
@@ -152,7 +150,7 @@ export default function PredictionsPage() {
     }, 30000); // Check every 30 seconds
 
     return () => clearInterval(interval);
-  }, [predictions.length, analysisStates, marketStatuses]);
+  }, [predictions, analysisStates, marketStatuses]);
 
   // Cache management
   const CACHE_KEY = 'prediction-analysis-cache';
@@ -208,7 +206,7 @@ export default function PredictionsPage() {
       console.error('Error fetching predictions:', error);
       toast({
         title: "Error",
-        description: "Failed to load predictions",
+        description: "Failed to load analyses",
         variant: "destructive"
       });
     } finally {
@@ -236,13 +234,13 @@ export default function PredictionsPage() {
       
       toast({
         title: "Success",
-        description: "Prediction deleted successfully"
+        description: "Analysis deleted successfully"
       });
     } catch (error) {
       console.error('Error deleting prediction:', error);
       toast({
         title: "Error",
-        description: "Failed to delete prediction",
+        description: "Failed to delete analysis",
         variant: "destructive"
       });
     }
@@ -412,7 +410,7 @@ export default function PredictionsPage() {
       if (!errorMessage?.includes('No market data') && !errorMessage?.includes('no_data')) {
         toast({
           title: "Analysis Failed",
-          description: errorMessage + ". This can happen if: 1) Market data is not available yet, 2) The timeframe is too short, or 3) The market was closed during the prediction period. Try again later or check the console for details.",
+          description: errorMessage + ". This can happen if: 1) Market data is not available yet, 2) The timeframe is too short, or 3) The market was closed during the analysis period. Try again later or check the console for details.",
           variant: "destructive",
         });
       }
@@ -443,7 +441,7 @@ export default function PredictionsPage() {
               Home
             </Button>
           </div>
-          <div className="text-center">Loading predictions...</div>
+          <div className="text-center">Loading analyses...</div>
         </Container>
       </div>
     );
@@ -461,13 +459,13 @@ export default function PredictionsPage() {
             </Button>
             <Button onClick={() => navigate('/predict')}>
               <Plus className="h-4 w-4 mr-2" />
-              New Prediction
+              New Analysis
             </Button>
           </div>
           <div>
-            <h1 className="text-3xl font-bold">My Predictions</h1>
+            <h1 className="text-3xl font-bold">My Analyses</h1>
             <p className="text-muted-foreground mt-1">
-              Track your AI-powered market predictions and their outcomes
+              Track your AI-powered probability-based analyses and their outcomes
             </p>
           </div>
         </Container>
@@ -483,13 +481,13 @@ export default function PredictionsPage() {
                   <Plus className="h-8 w-8 text-muted-foreground" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold">No predictions yet</h3>
+                  <h3 className="text-lg font-semibold">No analyses yet</h3>
                   <p className="text-muted-foreground text-sm">
-                    Create your first AI-powered market prediction to get started
+                    Create your first AI-powered probability-based analysis to get started
                   </p>
                 </div>
                 <Button onClick={() => navigate('/predict')} className="w-full">
-                  New Prediction
+                  New Analysis
                 </Button>
               </div>
             </CardContent>
@@ -641,7 +639,7 @@ export default function PredictionsPage() {
                       <Collapsible>
                         <CollapsibleTrigger asChild>
                           <Button variant="ghost" className="w-full justify-between p-0 h-auto">
-                            <h3 className="text-sm font-medium">Prediction Outcome</h3>
+                            <h3 className="text-sm font-medium">Probability Outcome</h3>
                             <ChevronDown className="h-4 w-4" />
                           </Button>
                         </CollapsibleTrigger>

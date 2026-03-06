@@ -35,6 +35,8 @@ interface DecisionScreenProps {
   stopLoss: number;
   takeProfit: number;
   leverage?: number;
+  /** Display currency for all amounts (INR or USD). Default USD. */
+  currency?: "INR" | "USD";
 }
 
 export function DecisionScreen({
@@ -49,9 +51,12 @@ export function DecisionScreen({
   recommendedHoldPeriod,
   stopLoss,
   takeProfit,
-  leverage = 1
+  leverage = 1,
+  currency = "USD",
 }: DecisionScreenProps) {
-  
+  const fmt = (amount: number, decimals = 2, allowNegative = false) =>
+    formatCurrency(amount, decimals, allowNegative, currency);
+
   const bestCaseAmount = (investment * expectedROI.best) / 100;
   const likelyCaseAmount = (investment * expectedROI.likely) / 100;
   const worstCaseAmount = (investment * expectedROI.worst) / 100;
@@ -140,15 +145,15 @@ export function DecisionScreen({
         <div className="p-6 bg-muted/50 rounded-lg border-2 border-primary/20">
           <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
             <DollarSign className="h-5 w-5 text-primary" />
-            If You Invest {formatCurrency(investment, 0)} Today
+            If You Invest {fmt(investment, 0)} Today
           </h3>
           
           <div className="grid grid-cols-3 gap-4">
-            {/* Best Case */}
+            {/* Best Case - use 2 decimals so small investments (e.g. ₹10) don't show ₹0 */}
             <div className="text-center p-4 bg-green-500/10 rounded-lg border border-green-500/30">
               <div className="text-xs text-muted-foreground mb-1">BEST CASE</div>
               <div className="text-2xl font-bold text-green-600">
-                {formatCurrency(bestCaseAmount, 0)}
+                {fmt(bestCaseAmount, 2)}
               </div>
               <div className="text-sm text-green-600 font-medium">
                 ({formatPercentage(expectedROI.best)})
@@ -159,7 +164,7 @@ export function DecisionScreen({
             <div className="text-center p-4 bg-blue-500/10 rounded-lg border-2 border-blue-500/50">
               <div className="text-xs text-muted-foreground mb-1">LIKELY</div>
               <div className="text-2xl font-bold text-blue-600">
-                {formatCurrency(likelyCaseAmount, 0)}
+                {fmt(likelyCaseAmount, 2)}
               </div>
               <div className="text-sm text-blue-600 font-medium">
                 ({formatPercentage(expectedROI.likely)})
@@ -170,7 +175,7 @@ export function DecisionScreen({
             <div className="text-center p-4 bg-red-500/10 rounded-lg border border-red-500/30">
               <div className="text-xs text-muted-foreground mb-1">WORST CASE</div>
               <div className="text-2xl font-bold text-red-600">
-                {formatCurrency(worstCaseAmount, 0, true)}
+                {fmt(worstCaseAmount, 2, true)}
               </div>
               <div className="text-sm text-red-600 font-medium">
                 ({formatPercentage(expectedROI.worst)})
@@ -193,11 +198,11 @@ export function DecisionScreen({
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Price per share:</span>
-                <span className="font-medium">{formatCurrency(positionSize.costPerShare, 2)}</span>
+                <span className="font-medium">{fmt(positionSize.costPerShare, 2)}</span>
               </div>
               <div className="flex justify-between pt-2 border-t">
                 <span className="text-muted-foreground">Total cost:</span>
-                <span className="font-bold">{formatCurrency(positionSize.totalCost, 2)}</span>
+                <span className="font-bold">{fmt(positionSize.totalCost, 2)}</span>
               </div>
             </div>
           </div>
@@ -210,11 +215,11 @@ export function DecisionScreen({
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Stop Loss:</span>
-                <span className="font-bold text-red-600">-{formatCurrency(stopLossAmount, 0)} ({formatPercentage(stopLoss, 0, false)})</span>
+                <span className="font-bold text-red-600">-{fmt(stopLossAmount, 0)} ({formatPercentage(stopLoss, 0, false)})</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Take Profit:</span>
-                <span className="font-bold text-green-600">+{formatCurrency(takeProfitAmount, 0)} ({formatPercentage(takeProfit, 0, false)})</span>
+                <span className="font-bold text-green-600">+{fmt(takeProfitAmount, 0)} ({formatPercentage(takeProfit, 0, false)})</span>
               </div>
               {leverage > 1 && (
                 <div className="flex justify-between pt-2 border-t">
@@ -264,7 +269,7 @@ export function DecisionScreen({
         {/* One-Line Summary */}
         <div className="p-4 bg-primary/10 rounded-lg border border-primary/20 text-center">
           <p className="font-semibold text-sm">
-            {action === 'BUY' && `${action} ${symbol} at ${formatCurrency(currentPrice, 2)} with ${recommendedHoldPeriod || '1 week'} hold for ${formatPercentage(expectedROI.likely, 0, false)} gain`}
+            {action === 'BUY' && `${action} ${symbol} at ${fmt(currentPrice, 2)} with ${recommendedHoldPeriod || '1 week'} hold for ${formatPercentage(expectedROI.likely, 0, false)} gain`}
             {action === 'SELL' && `${action} ${symbol} - bearish outlook`}
             {action === 'HOLD' && `${action} ${symbol} - wait for better opportunity`}
           </p>

@@ -16,7 +16,7 @@ import {
 
 const menuItems = [
   { title: "Home", url: "/home", icon: Home },
-  { title: "AI Predict", url: "/predict", icon: Brain },
+  { title: "AI Analysis", url: "/predict", icon: Brain },
 ];
 
 export function AppSidebar() {

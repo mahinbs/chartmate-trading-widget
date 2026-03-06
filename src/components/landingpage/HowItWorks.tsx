@@ -21,7 +21,7 @@ const HowItWorks = () => {
                             { title: "Data Ingestion", icon: <FaNetworkWired />, desc: "Real-time price & volume data" },
                             { title: "Pattern Recog.", icon: <FaChartBar />, desc: "Identifies complex structures" },
                             { title: "Strategy Match", icon: <FaLayerGroup />, desc: "Trend, scalp, or swing logic" },
-                            { title: "Prediction", icon: <FaBrain />, desc: "Probability score generation", highlight: true },
+                            { title: "Analysis", icon: <FaBrain />, desc: "Probability score generation", highlight: true },
                             { title: "Self Learning", icon: <BiCctv />, desc: "Adapts to new market behavior" }
                         ].map((step, i) => (
                             <ScrollReveal key={i} delay={i * 0.15} direction="up">

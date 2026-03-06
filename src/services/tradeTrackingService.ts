@@ -14,6 +14,17 @@ export interface ActiveTrade {
   leverage?: number;
   marginType?: string;
   
+  /** NSE | BSE | NFO — needed to square off via OpenAlgo */
+  exchange?: string;
+  /** CNC | MIS | NRML — product type used for entry, same used for exit */
+  product?: string;
+  /** OpenAlgo order ID from entry */
+  brokerOrderId?: string;
+  /** OpenAlgo order ID from exit/square-off */
+  exitOrderId?: string;
+  /** Strategy type: trend_following | intraday | swing | fno */
+  strategyType?: string;
+
   stopLossPrice?: number;
   takeProfitPrice?: number;
   stopLossPercentage?: number;
@@ -64,6 +75,10 @@ class TradeTrackingService {
     investmentAmount: number;
     leverage?: number;
     marginType?: string;
+    exchange?: string;
+    product?: string;
+    brokerOrderId?: string;
+    strategyType?: string;
     stopLossPercentage: number;
     targetProfitPercentage: number;
     holdingPeriod?: string;
@@ -132,6 +147,28 @@ class TradeTrackingService {
     } catch (error: any) {
       console.error('Error fetching completed trades:', error);
       return { data: null, error: error.message };
+    }
+  }
+
+  /**
+   * Get last used strategy (most recent trade by entry_time) for "use previous strategy" prompt
+   */
+  async getLastUsedStrategy(): Promise<{ strategyType: string; product: string } | null> {
+    try {
+      const { data, error } = await supabase
+        .from('active_trades')
+        .select('strategy_type, product, entry_time')
+        .order('entry_time', { ascending: false })
+        .limit(1);
+
+      const row = Array.isArray(data) ? data[0] : data;
+      if (error || !row?.strategy_type) return null;
+      return {
+        strategyType: row.strategy_type as string,
+        product: (row.product as string) || 'CNC',
+      };
+    } catch {
+      return null;
     }
   }
 
@@ -229,6 +266,73 @@ class TradeTrackingService {
     } catch (error: any) {
       console.error('Error marking notification read:', error);
       return { error: error.message };
+    }
+  }
+
+  /**
+   * Square off an active trade via OpenAlgo (places real SELL order), then closes in DB.
+   * This is the correct exit path when the user placed a real entry order.
+   */
+  async squareOff(tradeId: string): Promise<{ exitOrderId?: string; error: string | null }> {
+    try {
+      // Load trade details
+      const { data: trade, error: fetchError } = await supabase
+        .from('active_trades')
+        .select('*')
+        .eq('id', tradeId)
+        .single();
+
+      if (fetchError || !trade) {
+        return { error: 'Trade not found' };
+      }
+
+      const exitAction = trade.action === 'BUY' ? 'SELL' : 'BUY';
+      const exchange   = trade.exchange   || 'NSE';
+      const product    = trade.product    || 'CNC';
+      const shares     = trade.shares;
+
+      // Place the exit order via OpenAlgo edge function
+      const { data: orderData, error: orderErr } = await supabase.functions.invoke(
+        'openalgo-place-order',
+        {
+          body: {
+            symbol:    trade.symbol,
+            action:    exitAction,
+            quantity:  shares,
+            exchange,
+            product,
+            pricetype: 'MARKET',
+            strategy:  trade.strategy_type ? `ChartMate ${trade.strategy_type}` : 'ChartMate AI',
+          },
+        }
+      );
+
+      if (orderErr || (orderData as any)?.error) {
+        return { error: (orderData as any)?.error || orderErr?.message || 'Exit order failed' };
+      }
+
+      const exitOrderId = (orderData as any)?.orderid ?? (orderData as any)?.order_id;
+      const currentPrice = trade.current_price ?? trade.entry_price;
+      const pnl = ((currentPrice - trade.entry_price) * shares) * (trade.action === 'SELL' ? -1 : 1);
+      const pnlPct = (pnl / trade.investment_amount) * 100;
+
+      // Mark trade as completed in DB
+      await supabase
+        .from('active_trades')
+        .update({
+          status:          'completed',
+          exit_price:      currentPrice,
+          exit_time:       new Date().toISOString(),
+          exit_reason:     'user_squared_off',
+          exit_order_id:   exitOrderId ?? null,
+          actual_pnl:      pnl,
+          actual_pnl_percentage: pnlPct,
+        })
+        .eq('id', tradeId);
+
+      return { exitOrderId, error: null };
+    } catch (e: any) {
+      return { error: e?.message || 'Square off failed' };
     }
   }
 
@@ -383,7 +487,13 @@ class TradeTrackingService {
       
       leverage: data.leverage,
       marginType: data.margin_type,
-      
+
+      exchange:      data.exchange    ?? 'NSE',
+      product:       data.product     ?? 'CNC',
+      brokerOrderId: data.broker_order_id ?? undefined,
+      exitOrderId:   data.exit_order_id   ?? undefined,
+      strategyType:  data.strategy_type   ?? undefined,
+
       stopLossPrice: data.stop_loss_price ? parseFloat(data.stop_loss_price) : undefined,
       takeProfitPrice: data.take_profit_price ? parseFloat(data.take_profit_price) : undefined,
       stopLossPercentage: data.stop_loss_percentage,

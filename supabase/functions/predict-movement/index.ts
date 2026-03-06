@@ -6,6 +6,53 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+type ProviderCacheEntry = {
+  value: unknown;
+  expiresAt: number;
+  updatedAt: number;
+};
+
+const providerCache = new Map<string, ProviderCacheEntry>();
+
+const PROVIDER_TTL_MS = {
+  alphaQuote: 45_000,
+  alphaCandles: 120_000,
+  alphaIndicators: 180_000,
+  alphaNewsSentiment: 300_000,
+  coingeckoMarket: 60_000,
+  coingeckoGlobal: 180_000,
+};
+
+async function getOrSetProviderCache<T>(
+  key: string,
+  ttlMs: number,
+  fetcher: () => Promise<T>,
+  staleFallbackMs: number = ttlMs * 5
+): Promise<T> {
+  const now = Date.now();
+  const existing = providerCache.get(key);
+  if (existing && existing.expiresAt > now) {
+    return existing.value as T;
+  }
+
+  try {
+    const fresh = await fetcher();
+    providerCache.set(key, {
+      value: fresh,
+      expiresAt: now + ttlMs,
+      updatedAt: now,
+    });
+    return fresh;
+  } catch (error) {
+    // If provider is rate-limiting or transiently down, use stale cache briefly.
+    if (existing && now - existing.updatedAt <= staleFallbackMs) {
+      console.log(`Using stale provider cache for key=${key} due to fetch error: ${error?.message || error}`);
+      return existing.value as T;
+    }
+    throw error;
+  }
+}
+
 interface PredictionRequest {
   symbol: string;
   investment: number;
@@ -149,6 +196,50 @@ interface MarketMeta {
   yahooRange: string;
 }
 
+interface AssetRouteInfo {
+  rawSymbol: string;
+  cleanSymbol: string;
+  assetType: 'stock' | 'forex' | 'crypto' | 'index' | 'commodity';
+  isIndianStock: boolean;
+  isUsStock: boolean;
+  coingeckoId?: string;
+}
+
+interface ExternalMarketSnapshot {
+  provider: string;
+  assetType: string;
+  symbol: string;
+  marketCap?: number | null;
+  peRatio?: number | null;
+  volume24h?: number | null;
+  high24h?: number | null;
+  low24h?: number | null;
+  open?: number | null;
+  previousClose?: number | null;
+}
+
+interface ProviderIntelligence {
+  momentum: {
+    source: string;
+    volume24h: number | null;
+    rsi: number | null;
+    notes?: string;
+  };
+  volatility: {
+    source: string;
+    bollingerBands: { upper: number; middle: number; lower: number } | null;
+    optionGreeks: { delta: number | null; theta: number | null; gamma: number | null; source: string } | null;
+    notes?: string;
+  };
+  sentiment: {
+    source: string;
+    btcDominance: number | null;
+    trendingCoins: string[];
+    newsSentimentScore: number | null;
+    notes?: string;
+  };
+}
+
 // Enhanced pipeline with detailed timings
 interface PipelineStep {
   name: string;
@@ -220,7 +311,33 @@ function updatePipelineStep(
 // Yahoo Finance symbol normalization
 function normalizeToYahooSymbol(raw: string): { yahooSymbol: string; assetType: 'stock' | 'forex' | 'crypto' | 'index' | 'commodity' } {
   // Strip exchange prefixes
-  const cleanSymbol = raw.replace(/^(NASDAQ|NYSE|BINANCE|OANDA|SP|DJ|COMEX|NYMEX):/, '');
+  const cleanSymbol = raw.replace(/^(NASDAQ|NYSE|NSE|BINANCE|OANDA|SP|DJ|COMEX|NYMEX):/, '');
+
+  // Crypto mapping (must be checked before stock regex)
+  const cryptoMap: Record<string, string> = {
+    'BTCUSDT': 'BTC-USD',
+    'BTCUSD': 'BTC-USD',
+    'BTC-USD': 'BTC-USD',
+    'ETHUSDT': 'ETH-USD',
+    'ETHUSD': 'ETH-USD',
+    'ETH-USD': 'ETH-USD',
+    'SOLUSDT': 'SOL-USD',
+    'SOLUSD': 'SOL-USD',
+    'SOL-USD': 'SOL-USD',
+    'ADAUSDT': 'ADA-USD',
+    'ADAUSD': 'ADA-USD',
+    'ADA-USD': 'ADA-USD',
+    'XRPUSDT': 'XRP-USD',
+    'XRPUSD': 'XRP-USD',
+    'XRP-USD': 'XRP-USD',
+    'DOGEUSDT': 'DOGE-USD',
+    'DOGEUSD': 'DOGE-USD',
+    'DOGE-USD': 'DOGE-USD',
+  };
+  
+  if (cryptoMap[cleanSymbol]) {
+    return { yahooSymbol: cryptoMap[cleanSymbol], assetType: 'crypto' };
+  }
   
   // Stocks mapping
   if (/^[A-Z]{1,5}$/.test(cleanSymbol)) {
@@ -247,22 +364,6 @@ function normalizeToYahooSymbol(raw: string): { yahooSymbol: string; assetType: 
   
   if (forexPairs.includes(forexBase) && forexPairs.includes(forexQuote)) {
     return { yahooSymbol: `${forexBase}${forexQuote}=X`, assetType: 'forex' };
-  }
-  
-  // Crypto mapping
-  const cryptoMap: Record<string, string> = {
-    'BTCUSDT': 'BTC-USD',
-    'BTCUSD': 'BTC-USD',
-    'ETHUSDT': 'ETH-USD',
-    'ETHUSD': 'ETH-USD',
-    'SOLUSDT': 'SOL-USD',
-    'SOLUSD': 'SOL-USD',
-    'ADAUSDT': 'ADA-USD',
-    'ADAUSD': 'ADA-USD',
-  };
-  
-  if (cryptoMap[cleanSymbol]) {
-    return { yahooSymbol: cryptoMap[cleanSymbol], assetType: 'crypto' };
   }
   
   // Index mapping
@@ -292,6 +393,62 @@ function normalizeToYahooSymbol(raw: string): { yahooSymbol: string; assetType: 
   
   // Default to stock
   return { yahooSymbol: cleanSymbol, assetType: 'stock' };
+}
+
+function normalizeCleanSymbol(raw: string): string {
+  return raw
+    .replace(/^(NASDAQ|NYSE|NSE|BINANCE|OANDA|SP|DJ|COMEX|NYMEX):/, '')
+    .trim()
+    .toUpperCase();
+}
+
+function resolveCoinGeckoId(raw: string): string | undefined {
+  const clean = normalizeCleanSymbol(raw);
+  const normalized = clean.replace(/[-_/]/g, '');
+  const map: Record<string, string> = {
+    BTC: 'bitcoin',
+    BTCUSD: 'bitcoin',
+    BTCUSDT: 'bitcoin',
+    'BTC-USD': 'bitcoin',
+    ETH: 'ethereum',
+    ETHUSD: 'ethereum',
+    ETHUSDT: 'ethereum',
+    'ETH-USD': 'ethereum',
+    SOL: 'solana',
+    SOLUSD: 'solana',
+    SOLUSDT: 'solana',
+    'SOL-USD': 'solana',
+    ADA: 'cardano',
+    ADAUSD: 'cardano',
+    ADAUSDT: 'cardano',
+    'ADA-USD': 'cardano',
+    XRP: 'ripple',
+    XRPUSD: 'ripple',
+    XRPUSDT: 'ripple',
+    'XRP-USD': 'ripple',
+    DOGE: 'dogecoin',
+    DOGEUSD: 'dogecoin',
+    DOGEUSDT: 'dogecoin',
+    'DOGE-USD': 'dogecoin',
+  };
+  return map[clean] || map[normalized];
+}
+
+function getAssetRouteInfo(symbol: string): AssetRouteInfo {
+  const { assetType } = normalizeToYahooSymbol(symbol);
+  const cleanSymbol = normalizeCleanSymbol(symbol);
+  const isIndianStock = symbol.toUpperCase().startsWith('NSE:');
+  const isUsStock = assetType === 'stock' && !isIndianStock && /^[A-Z]{1,5}$/.test(cleanSymbol);
+  const coingeckoId = assetType === 'crypto' ? resolveCoinGeckoId(symbol) : undefined;
+
+  return {
+    rawSymbol: symbol,
+    cleanSymbol,
+    assetType,
+    isIndianStock,
+    isUsStock,
+    coingeckoId,
+  };
 }
 
 // Yahoo interval mapping
@@ -462,8 +619,542 @@ async function fetchYahooChart(params: { yahooSymbol: string; interval: string; 
   return candles;
 }
 
+function getAlphaVantageApiKey(): string | null {
+  return Deno.env.get('ALPHA_VANTAGE_API_KEY') || null;
+}
+
+function getCoinGeckoApiKey(): string | null {
+  return Deno.env.get('COINGECKO_API_KEY') || null;
+}
+
+function mapTimeframeToAlphaInterval(timeframe: string): '1min' | '5min' | '15min' | '30min' | '60min' | 'daily' {
+  const tf = String(timeframe || '').toLowerCase();
+  if (tf === '1') return '1min';
+  if (tf === '5') return '5min';
+  if (tf === '15') return '15min';
+  if (tf === '15m') return '15min';
+  if (tf === '30') return '30min';
+  if (tf === '30m') return '30min';
+  if (tf === '60') return '60min';
+  if (tf === '1h') return '60min';
+  if (tf === '240') return '60min';
+  if (tf === '4h') return '60min';
+  if (tf === 'd' || tf === '1d' || tf === 'daily') return 'daily';
+  if (tf === 'w' || tf === '1w' || tf === 'weekly') return 'daily';
+  return 'daily';
+}
+
+async function fetchAlphaVantageGlobalQuote(symbol: string): Promise<StockData> {
+  return getOrSetProviderCache<StockData>(
+    `alpha:quote:${symbol}`,
+    PROVIDER_TTL_MS.alphaQuote,
+    async () => {
+      const apiKey = getAlphaVantageApiKey();
+      if (!apiKey) throw new Error('Alpha Vantage API key missing');
+      const response = await fetch(
+        `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(symbol)}&apikey=${apiKey}`,
+        { signal: AbortSignal.timeout(15000) }
+      );
+      if (!response.ok) throw new Error(`Alpha Vantage quote HTTP ${response.status}`);
+      const data = await response.json();
+      if (data?.Note || data?.Information) {
+        throw new Error(data?.Note || data?.Information || 'Alpha Vantage rate limit');
+      }
+      const q = data?.['Global Quote'];
+      if (!q || !q['05. price']) throw new Error(`Alpha Vantage quote unavailable for ${symbol}`);
+      const currentPrice = Number(q['05. price'] || 0);
+      const openPrice = Number(q['02. open'] || currentPrice);
+      const highPrice = Number(q['03. high'] || currentPrice);
+      const lowPrice = Number(q['04. low'] || currentPrice);
+      const previousClose = Number(q['08. previous close'] || currentPrice);
+      const change = Number(q['09. change'] || (currentPrice - previousClose));
+      const changePercent = Number(String(q['10. change percent'] || '0').replace('%', '')) || 0;
+
+      return {
+        currentPrice,
+        openPrice,
+        highPrice,
+        lowPrice,
+        previousClose,
+        change,
+        changePercent
+      };
+    }
+  );
+}
+
+async function fetchAlphaVantageCandles(symbol: string, timeframe: string): Promise<Candle[]> {
+  return getOrSetProviderCache<Candle[]>(
+    `alpha:candles:${symbol}:${timeframe}`,
+    PROVIDER_TTL_MS.alphaCandles,
+    async () => {
+      const apiKey = getAlphaVantageApiKey();
+      if (!apiKey) throw new Error('Alpha Vantage API key missing');
+      const interval = mapTimeframeToAlphaInterval(timeframe);
+      const url = interval === 'daily'
+        ? `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED&symbol=${encodeURIComponent(symbol)}&outputsize=full&apikey=${apiKey}`
+        : `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${encodeURIComponent(symbol)}&interval=${interval}&outputsize=full&apikey=${apiKey}`;
+
+      const response = await fetch(url, { signal: AbortSignal.timeout(20000) });
+      if (!response.ok) throw new Error(`Alpha Vantage candles HTTP ${response.status}`);
+      const data = await response.json();
+      if (data?.Note || data?.Information) {
+        throw new Error(data?.Note || data?.Information || 'Alpha Vantage rate limit');
+      }
+
+      const seriesKey = interval === 'daily'
+        ? 'Time Series (Daily)'
+        : `Time Series (${interval})`;
+      const series = data?.[seriesKey];
+      if (!series || typeof series !== 'object') throw new Error(`Alpha Vantage series missing for ${symbol}`);
+
+      const candles = Object.entries(series).map(([ts, row]: [string, any]) => ({
+        timestamp: new Date(ts).getTime(),
+        open: Number(row['1. open'] || 0),
+        high: Number(row['2. high'] || 0),
+        low: Number(row['3. low'] || 0),
+        close: Number(row['4. close'] || 0),
+        volume: Number(row['6. volume'] || row['5. volume'] || 0),
+      }))
+      .filter((c) => c.close > 0)
+      .sort((a, b) => a.timestamp - b.timestamp);
+
+      return candles;
+    }
+  );
+}
+
+async function fetchCoinGeckoMarketData(coinId: string): Promise<{ stockData: StockData; candles: Candle[]; snapshot: ExternalMarketSnapshot }> {
+  return getOrSetProviderCache<{ stockData: StockData; candles: Candle[]; snapshot: ExternalMarketSnapshot }>(
+    `cg:market:${coinId}`,
+    PROVIDER_TTL_MS.coingeckoMarket,
+    async () => {
+      const apiKey = getCoinGeckoApiKey();
+      const headers: Record<string, string> = apiKey ? { 'x-cg-demo-api-key': apiKey } : {};
+
+      const marketResponse = await fetch(
+        `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${encodeURIComponent(coinId)}&price_change_percentage=24h`,
+        { headers, signal: AbortSignal.timeout(15000) }
+      );
+      if (!marketResponse.ok) throw new Error(`CoinGecko market HTTP ${marketResponse.status}`);
+      const marketData = await marketResponse.json();
+      const market = Array.isArray(marketData) ? marketData[0] : null;
+      if (!market) throw new Error(`CoinGecko market data unavailable for ${coinId}`);
+
+      const currentPrice = Number(market.current_price || 0);
+      const previousClose = Number(market.current_price || 0) - Number(market.price_change_24h || 0);
+      const stockData: StockData = {
+        currentPrice,
+        openPrice: previousClose || currentPrice,
+        highPrice: Number(market.high_24h || currentPrice),
+        lowPrice: Number(market.low_24h || currentPrice),
+        previousClose: previousClose || currentPrice,
+        change: Number(market.price_change_24h || 0),
+        changePercent: Number(market.price_change_percentage_24h || 0),
+      };
+
+      const chartResponse = await fetch(
+        `https://api.coingecko.com/api/v3/coins/${encodeURIComponent(coinId)}/market_chart?vs_currency=usd&days=30&interval=daily`,
+        { headers, signal: AbortSignal.timeout(15000) }
+      );
+      const chartData = chartResponse.ok ? await chartResponse.json() : null;
+      const prices: Array<[number, number]> = chartData?.prices || [];
+      const volumes: Array<[number, number]> = chartData?.total_volumes || [];
+      const volumeByTs = new Map<number, number>(volumes.map((v) => [v[0], Number(v[1] || 0)]));
+
+      const candles: Candle[] = prices.map(([ts, close], idx) => {
+        const prev = idx > 0 ? prices[idx - 1][1] : close;
+        return {
+          timestamp: ts,
+          open: Number(prev),
+          high: Math.max(Number(prev), Number(close)),
+          low: Math.min(Number(prev), Number(close)),
+          close: Number(close),
+          volume: volumeByTs.get(ts) || Number(market.total_volume || 0),
+        };
+      });
+
+      return {
+        stockData,
+        candles,
+        snapshot: {
+          provider: 'CoinGecko',
+          assetType: 'crypto',
+          symbol: String(market.symbol || coinId).toUpperCase(),
+          marketCap: Number(market.market_cap || 0),
+          volume24h: Number(market.total_volume || 0),
+          high24h: Number(market.high_24h || 0),
+          low24h: Number(market.low_24h || 0),
+          open: stockData.openPrice,
+          previousClose: stockData.previousClose,
+        }
+      };
+    }
+  );
+}
+
+async function fetchExternalMarketSnapshot(
+  symbol: string,
+  stockData: StockData,
+  fundamentals?: any
+): Promise<ExternalMarketSnapshot | null> {
+  const route = getAssetRouteInfo(symbol);
+
+  if (route.assetType === 'crypto' && route.coingeckoId) {
+    try {
+      const cg = await fetchCoinGeckoMarketData(route.coingeckoId);
+      return cg.snapshot;
+    } catch (error) {
+      console.log(`External snapshot fallback for crypto ${symbol}:`, error.message);
+      return {
+        provider: 'CoinGecko',
+        assetType: 'crypto',
+        symbol: route.cleanSymbol,
+        high24h: stockData.highPrice,
+        low24h: stockData.lowPrice,
+        open: stockData.openPrice,
+        previousClose: stockData.previousClose,
+      };
+    }
+  }
+
+  if (route.isUsStock) {
+    return {
+      provider: 'Alpha Vantage',
+      assetType: 'stock',
+      symbol: route.cleanSymbol,
+      marketCap: fundamentals?.marketCap ?? null,
+      peRatio: fundamentals?.peRatio ?? null,
+      high24h: stockData.highPrice,
+      low24h: stockData.lowPrice,
+      open: stockData.openPrice,
+      previousClose: stockData.previousClose,
+    };
+  }
+
+  // Upstox will be used for Indian markets once API credentials are available.
+  if (route.isIndianStock) {
+    return {
+      provider: 'Yahoo Finance (Upstox pending)',
+      assetType: 'stock',
+      symbol: route.cleanSymbol,
+      high24h: stockData.highPrice,
+      low24h: stockData.lowPrice,
+      open: stockData.openPrice,
+      previousClose: stockData.previousClose,
+    };
+  }
+
+  return {
+    provider: 'Yahoo Finance',
+    assetType: route.assetType,
+    symbol: route.cleanSymbol,
+    high24h: stockData.highPrice,
+    low24h: stockData.lowPrice,
+    open: stockData.openPrice,
+    previousClose: stockData.previousClose,
+  };
+}
+
+async function fetchAlphaVantageRSI(symbol: string, timeframe: string): Promise<number | null> {
+  try {
+    return await getOrSetProviderCache<number | null>(
+      `alpha:rsi:${symbol}:${timeframe}`,
+      PROVIDER_TTL_MS.alphaIndicators,
+      async () => {
+        const apiKey = getAlphaVantageApiKey();
+        if (!apiKey) return null;
+        const interval = mapTimeframeToAlphaInterval(timeframe);
+        const adjustedInterval = interval === 'daily' ? 'daily' : interval;
+        const response = await fetch(
+          `https://www.alphavantage.co/query?function=RSI&symbol=${encodeURIComponent(symbol)}&interval=${adjustedInterval}&time_period=14&series_type=close&apikey=${apiKey}`,
+          { signal: AbortSignal.timeout(15000) }
+        );
+        if (!response.ok) return null;
+        const data = await response.json();
+        if (data?.Note || data?.Information) {
+          throw new Error(data?.Note || data?.Information || 'Alpha Vantage rate limit');
+        }
+        const key = 'Technical Analysis: RSI';
+        const rows = data?.[key];
+        if (!rows || typeof rows !== 'object') return null;
+        const latestKey = Object.keys(rows).sort().pop();
+        if (!latestKey) return null;
+        const value = Number(rows[latestKey]?.RSI);
+        return Number.isFinite(value) ? value : null;
+      }
+    );
+  } catch {
+    return null;
+  }
+}
+
+async function fetchAlphaVantageBollingerBands(
+  symbol: string,
+  timeframe: string
+): Promise<{ upper: number; middle: number; lower: number } | null> {
+  try {
+    return await getOrSetProviderCache<{ upper: number; middle: number; lower: number } | null>(
+      `alpha:bbands:${symbol}:${timeframe}`,
+      PROVIDER_TTL_MS.alphaIndicators,
+      async () => {
+        const apiKey = getAlphaVantageApiKey();
+        if (!apiKey) return null;
+        const interval = mapTimeframeToAlphaInterval(timeframe);
+        const adjustedInterval = interval === 'daily' ? 'daily' : interval;
+        const response = await fetch(
+          `https://www.alphavantage.co/query?function=BBANDS&symbol=${encodeURIComponent(symbol)}&interval=${adjustedInterval}&time_period=20&series_type=close&nbdevup=2&nbdevdn=2&apikey=${apiKey}`,
+          { signal: AbortSignal.timeout(15000) }
+        );
+        if (!response.ok) return null;
+        const data = await response.json();
+        if (data?.Note || data?.Information) {
+          throw new Error(data?.Note || data?.Information || 'Alpha Vantage rate limit');
+        }
+        const key = 'Technical Analysis: BBANDS';
+        const rows = data?.[key];
+        if (!rows || typeof rows !== 'object') return null;
+        const latestKey = Object.keys(rows).sort().pop();
+        if (!latestKey) return null;
+        const row = rows[latestKey];
+        const upper = Number(row?.['Real Upper Band']);
+        const middle = Number(row?.['Real Middle Band']);
+        const lower = Number(row?.['Real Lower Band']);
+        if (![upper, middle, lower].every(Number.isFinite)) return null;
+        return { upper, middle, lower };
+      }
+    );
+  } catch {
+    return null;
+  }
+}
+
+async function fetchAlphaVantageNewsSentimentScore(symbol: string): Promise<number | null> {
+  try {
+    return await getOrSetProviderCache<number | null>(
+      `alpha:newsSent:${symbol}`,
+      PROVIDER_TTL_MS.alphaNewsSentiment,
+      async () => {
+        const apiKey = getAlphaVantageApiKey();
+        if (!apiKey) return null;
+        const response = await fetch(
+          `https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers=${encodeURIComponent(symbol)}&apikey=${apiKey}&limit=50`,
+          { signal: AbortSignal.timeout(15000) }
+        );
+        if (!response.ok) return null;
+        const data = await response.json();
+        if (data?.Note || data?.Information) {
+          throw new Error(data?.Note || data?.Information || 'Alpha Vantage rate limit');
+        }
+        const feed = Array.isArray(data?.feed) ? data.feed : [];
+        if (!feed.length) return null;
+
+        const scored = feed
+          .map((item: any) => Number(item?.overall_sentiment_score))
+          .filter((v: number) => Number.isFinite(v));
+        if (!scored.length) return null;
+        const avg = scored.reduce((a: number, b: number) => a + b, 0) / scored.length;
+        return Math.max(-1, Math.min(1, avg));
+      }
+    );
+  } catch {
+    return null;
+  }
+}
+
+async function fetchCoinGeckoDominanceAndTrending(): Promise<{ btcDominance: number | null; trendingCoins: string[] }> {
+  try {
+    return await getOrSetProviderCache<{ btcDominance: number | null; trendingCoins: string[] }>(
+      'cg:global:dominance-trending',
+      PROVIDER_TTL_MS.coingeckoGlobal,
+      async () => {
+        const apiKey = getCoinGeckoApiKey();
+        const headers: Record<string, string> = apiKey ? { 'x-cg-demo-api-key': apiKey } : {};
+
+        const [globalRes, trendingRes] = await Promise.all([
+          fetch('https://api.coingecko.com/api/v3/global', { headers, signal: AbortSignal.timeout(12000) }),
+          fetch('https://api.coingecko.com/api/v3/search/trending', { headers, signal: AbortSignal.timeout(12000) }),
+        ]);
+
+        const globalJson = globalRes.ok ? await globalRes.json() : null;
+        const trendingJson = trendingRes.ok ? await trendingRes.json() : null;
+        const btcDominance = Number(globalJson?.data?.market_cap_percentage?.btc);
+        const trendingCoins = Array.isArray(trendingJson?.coins)
+          ? trendingJson.coins.slice(0, 10).map((c: any) => c?.item?.symbol).filter(Boolean)
+          : [];
+
+        return {
+          btcDominance: Number.isFinite(btcDominance) ? btcDominance : null,
+          trendingCoins,
+        };
+      }
+    );
+  } catch {
+    return { btcDominance: null, trendingCoins: [] };
+  }
+}
+
+async function buildProviderIntelligence(
+  symbol: string,
+  timeframe: string,
+  stockData: StockData,
+  candles: Candle[],
+  technicalContext: TechnicalContext
+): Promise<ProviderIntelligence> {
+  const route = getAssetRouteInfo(symbol);
+
+  // Defaults
+  const intelligence: ProviderIntelligence = {
+    momentum: {
+      source: 'computed',
+      volume24h: candles.length ? candles[candles.length - 1].volume : null,
+      rsi: Number.isFinite(technicalContext.indicators.rsi) ? technicalContext.indicators.rsi : null,
+    },
+    volatility: {
+      source: 'computed',
+      bollingerBands: {
+        upper: technicalContext.indicators.bbUpper,
+        middle: technicalContext.indicators.bbMiddle,
+        lower: technicalContext.indicators.bbLower,
+      },
+      optionGreeks: null,
+    },
+    sentiment: {
+      source: 'internal_news',
+      btcDominance: null,
+      trendingCoins: [],
+      newsSentimentScore: null,
+    },
+  };
+
+  if (route.isUsStock) {
+    const [rsi, bbands, newsSentiment] = await Promise.all([
+      fetchAlphaVantageRSI(route.cleanSymbol, timeframe),
+      fetchAlphaVantageBollingerBands(route.cleanSymbol, timeframe),
+      fetchAlphaVantageNewsSentimentScore(route.cleanSymbol),
+    ]);
+
+    intelligence.momentum = {
+      source: 'Alpha Vantage',
+      volume24h: candles.length ? candles[candles.length - 1].volume : null,
+      rsi,
+      notes: 'RSI from Alpha Vantage technical indicator endpoint',
+    };
+    intelligence.volatility = {
+      source: 'Alpha Vantage',
+      bollingerBands: bbands,
+      optionGreeks: null,
+      notes: 'Bollinger Bands from Alpha Vantage BBANDS endpoint',
+    };
+    intelligence.sentiment = {
+      source: 'Alpha Vantage',
+      btcDominance: null,
+      trendingCoins: [],
+      newsSentimentScore: newsSentiment,
+      notes: 'News sentiment score from Alpha Vantage NEWS_SENTIMENT',
+    };
+    return intelligence;
+  }
+
+  if (route.assetType === 'crypto') {
+    const [marketData, dominanceAndTrending] = await Promise.all([
+      route.coingeckoId ? fetchCoinGeckoMarketData(route.coingeckoId) : Promise.resolve(null),
+      fetchCoinGeckoDominanceAndTrending(),
+    ]);
+
+    const prices = marketData?.candles?.map((c) => c.close) || candles.map((c) => c.close);
+    const rsiFromPrices = prices.length > 14 ? calculateRSI(prices, 14) : null;
+
+    intelligence.momentum = {
+      source: 'CoinGecko',
+      volume24h: marketData?.snapshot?.volume24h ?? null,
+      rsi: Number.isFinite(rsiFromPrices as number) ? Number(rsiFromPrices) : null,
+      notes: 'RSI derived from CoinGecko price series',
+    };
+    intelligence.volatility = {
+      source: 'CoinGecko+computed',
+      bollingerBands: {
+        upper: technicalContext.indicators.bbUpper,
+        middle: technicalContext.indicators.bbMiddle,
+        lower: technicalContext.indicators.bbLower,
+      },
+      optionGreeks: null,
+      notes: 'No options chain greeks from CoinGecko API',
+    };
+    intelligence.sentiment = {
+      source: 'CoinGecko',
+      btcDominance: dominanceAndTrending.btcDominance,
+      trendingCoins: dominanceAndTrending.trendingCoins,
+      newsSentimentScore: null,
+      notes: 'BTC dominance + trending coins from CoinGecko endpoints',
+    };
+    return intelligence;
+  }
+
+  if (route.isIndianStock) {
+    intelligence.volatility = {
+      source: 'Upstox pending credentials',
+      bollingerBands: {
+        upper: technicalContext.indicators.bbUpper,
+        middle: technicalContext.indicators.bbMiddle,
+        lower: technicalContext.indicators.bbLower,
+      },
+      optionGreeks: { delta: null, theta: null, gamma: null, source: 'Upstox pending credentials' },
+      notes: 'Option Greeks will be fetched from Upstox once API credentials are configured',
+    };
+  }
+
+  return intelligence;
+}
+
 async function fetchHistoricalCandles(symbol: string, timeframe: string): Promise<{ candles: Candle[]; meta: MarketMeta | null }> {
   try {
+    const route = getAssetRouteInfo(symbol);
+
+    // Use Alpha Vantage for US equities only to preserve API quota.
+    if (route.isUsStock) {
+      try {
+        const candles = await fetchAlphaVantageCandles(route.cleanSymbol, timeframe);
+        const alphaInterval = mapTimeframeToAlphaInterval(timeframe);
+        const trimmed = candles.slice(-100);
+        const meta: MarketMeta = {
+          provider: 'Alpha Vantage',
+          symbol: route.cleanSymbol,
+          resolution: alphaInterval,
+          assetType: route.assetType,
+          yahooSymbol: route.cleanSymbol,
+          yahooInterval: alphaInterval,
+          yahooRange: 'full',
+        };
+        if (trimmed.length > 0) {
+          return { candles: trimmed, meta };
+        }
+      } catch (alphaError) {
+        console.log(`Alpha Vantage candles fallback to Yahoo for ${route.cleanSymbol}:`, alphaError.message);
+      }
+    }
+
+    // Use CoinGecko daily market chart for crypto where supported.
+    if (route.assetType === 'crypto' && route.coingeckoId) {
+      try {
+        const cg = await fetchCoinGeckoMarketData(route.coingeckoId);
+        if (cg.candles.length > 0) {
+          const meta: MarketMeta = {
+            provider: 'CoinGecko',
+            symbol: route.coingeckoId,
+            resolution: '1d',
+            assetType: route.assetType,
+            yahooSymbol: route.cleanSymbol,
+            yahooInterval: '1d',
+            yahooRange: '30d',
+          };
+          return { candles: cg.candles.slice(-100), meta };
+        }
+      } catch (cgError) {
+        console.log(`CoinGecko candles fallback to Yahoo for ${symbol}:`, cgError.message);
+      }
+    }
+
     const { yahooSymbol, assetType } = normalizeToYahooSymbol(symbol);
     const intervalMapping = mapInterval(timeframe);
     const range = pickRangeForInterval(intervalMapping.yahooInterval);
@@ -516,8 +1207,31 @@ async function fetchHistoricalCandles(symbol: string, timeframe: string): Promis
 
 // Real-time data fetching using Yahoo Finance candles only (no quote API)
 async function fetchRealStockData(symbol: string): Promise<StockData> {
-  console.log(`Fetching REAL-TIME Yahoo Finance data for ${symbol}`);
-  
+  console.log(`Fetching real-time market data for ${symbol}`);
+  const route = getAssetRouteInfo(symbol);
+
+  // Use Alpha Vantage only for US equities to avoid burning quota for other asset classes.
+  if (route.isUsStock) {
+    try {
+      const quote = await fetchAlphaVantageGlobalQuote(route.cleanSymbol);
+      console.log(`✅ Alpha Vantage quote for ${route.cleanSymbol}`);
+      return quote;
+    } catch (alphaError) {
+      console.log(`⚠️ Alpha Vantage quote fallback to Yahoo for ${route.cleanSymbol}:`, alphaError.message);
+    }
+  }
+
+  // Use CoinGecko for crypto where symbol mapping exists.
+  if (route.assetType === 'crypto' && route.coingeckoId) {
+    try {
+      const cg = await fetchCoinGeckoMarketData(route.coingeckoId);
+      console.log(`✅ CoinGecko quote for ${route.coingeckoId}`);
+      return cg.stockData;
+    } catch (cgError) {
+      console.log(`⚠️ CoinGecko quote fallback to Yahoo for ${symbol}:`, cgError.message);
+    }
+  }
+
   const { yahooSymbol, assetType } = normalizeToYahooSymbol(symbol);
   console.log(`Mapped ${symbol} → ${yahooSymbol} (${assetType})`);
   
@@ -686,6 +1400,11 @@ async function fetchNewsData(symbol: string): Promise<NewsItem[]> {
 // Alpha Vantage news (existing implementation)
 async function fetchAlphaVantageNews(symbol: string): Promise<NewsItem[]> {
   try {
+    const route = getAssetRouteInfo(symbol);
+    if (!route.isUsStock) {
+      return [];
+    }
+
     const alphaVantageKey = Deno.env.get('ALPHA_VANTAGE_API_KEY');
     if (!alphaVantageKey) {
       return [];
@@ -722,10 +1441,26 @@ async function fetchAlphaVantageNews(symbol: string): Promise<NewsItem[]> {
 
 // Yahoo Finance News (more reliable)
 // Fetch full year historical data for trend analysis
-async function fetchFullYearHistory(yahooSymbol: string): Promise<{ candles: Candle[]; yearTrend: string; avgVolume: number }> {
-  console.log(`📊 Fetching full year history for ${yahooSymbol}`);
+async function fetchFullYearHistory(symbol: string): Promise<{ candles: Candle[]; yearTrend: string; avgVolume: number }> {
+  const route = getAssetRouteInfo(symbol);
+  const yahooSymbol = normalizeToYahooSymbol(symbol).yahooSymbol;
+  console.log(`📊 Fetching full year history for ${symbol}`);
   
   try {
+    if (route.isUsStock) {
+      const alphaCandles = await fetchAlphaVantageCandles(route.cleanSymbol, 'D');
+      const candles = alphaCandles.slice(-252);
+      const startPrice = candles[0]?.close || 0;
+      const endPrice = candles[candles.length - 1]?.close || 0;
+      const yearChange = startPrice ? ((endPrice - startPrice) / startPrice) * 100 : 0;
+      const yearTrend = yearChange > 15 ? 'strong_uptrend' :
+                        yearChange > 5 ? 'uptrend' :
+                        yearChange > -5 ? 'sideways' :
+                        yearChange > -15 ? 'downtrend' : 'strong_downtrend';
+      const avgVolume = candles.length ? candles.reduce((sum, c) => sum + c.volume, 0) / candles.length : 0;
+      return { candles, yearTrend, avgVolume };
+    }
+
     const response = await fetch(
       `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1d&range=1y`,
       {
@@ -779,10 +1514,53 @@ async function fetchFullYearHistory(yahooSymbol: string): Promise<{ candles: Can
 }
 
 // Fetch fundamental data (P/E, market cap, revenue, EPS)
-async function fetchFundamentals(yahooSymbol: string): Promise<any> {
-  console.log(`💼 Fetching fundamentals for ${yahooSymbol}`);
+async function fetchFundamentals(symbol: string): Promise<any> {
+  const route = getAssetRouteInfo(symbol);
+  const yahooSymbol = normalizeToYahooSymbol(symbol).yahooSymbol;
+  console.log(`💼 Fetching fundamentals for ${symbol}`);
   
   try {
+    if (route.assetType !== 'stock') {
+      return {
+        peRatio: null,
+        marketCap: null,
+        eps: null,
+        revenueGrowth: null,
+        earningsQuarterly: []
+      };
+    }
+
+    if (route.isUsStock) {
+      const apiKey = getAlphaVantageApiKey();
+      if (apiKey) {
+        const response = await fetch(
+          `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${encodeURIComponent(route.cleanSymbol)}&apikey=${apiKey}`,
+          { signal: AbortSignal.timeout(15000) }
+        );
+        if (response.ok) {
+          const ov = await response.json();
+          if (ov && !ov.Note && ov.Symbol) {
+            return {
+              peRatio: Number(ov.PERatio) || null,
+              pegRatio: Number(ov.PEGRatio) || null,
+              priceToBook: Number(ov.PriceToBookRatio) || null,
+              priceToSales: Number(ov.PriceToSalesRatioTTM) || null,
+              marketCap: Number(ov.MarketCapitalization) || null,
+              enterpriseValue: Number(ov.EVToRevenue) || null,
+              eps: Number(ov.EPS) || null,
+              revenuePerShare: Number(ov.RevenuePerShareTTM) || null,
+              profitMargins: Number(ov.ProfitMargin) || null,
+              revenueGrowth: Number(ov.QuarterlyRevenueGrowthYOY) || null,
+              earningsGrowth: Number(ov.QuarterlyEarningsGrowthYOY) || null,
+              debtToEquity: Number(ov.DebtToEquityRatio) || null,
+              currentRatio: Number(ov.CurrentRatio) || null,
+              earningsQuarterly: []
+            };
+          }
+        }
+      }
+    }
+
     const response = await fetch(
       `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${yahooSymbol}?modules=defaultKeyStatistics,financialData,summaryDetail,earnings`,
       {
@@ -846,10 +1624,35 @@ async function fetchFundamentals(yahooSymbol: string): Promise<any> {
 }
 
 // Fetch earnings history (quarterly)
-async function fetchEarningsHistory(yahooSymbol: string): Promise<any[]> {
-  console.log(`📈 Fetching earnings history for ${yahooSymbol}`);
+async function fetchEarningsHistory(symbol: string): Promise<any[]> {
+  const route = getAssetRouteInfo(symbol);
+  const yahooSymbol = normalizeToYahooSymbol(symbol).yahooSymbol;
+  console.log(`📈 Fetching earnings history for ${symbol}`);
   
   try {
+    if (route.assetType !== 'stock') {
+      return [];
+    }
+
+    if (route.isUsStock) {
+      const apiKey = getAlphaVantageApiKey();
+      if (apiKey) {
+        const response = await fetch(
+          `https://www.alphavantage.co/query?function=EARNINGS&symbol=${encodeURIComponent(route.cleanSymbol)}&apikey=${apiKey}`,
+          { signal: AbortSignal.timeout(15000) }
+        );
+        if (response.ok) {
+          const data = await response.json();
+          const q = Array.isArray(data?.quarterlyEarnings) ? data.quarterlyEarnings : [];
+          return q.slice(0, 8).map((e: any) => ({
+            date: e.fiscalDateEnding,
+            actual: Number(e.reportedEPS) || null,
+            estimate: Number(e.estimatedEPS) || null,
+          }));
+        }
+      }
+    }
+
     const response = await fetch(
       `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${yahooSymbol}?modules=earnings,earningsHistory`,
       {
@@ -1555,6 +2358,8 @@ async function generateEnhancedGeminiAnalysis(
     fullYear?: { candles: Candle[]; yearTrend: string; avgVolume: number };
     fundamentals?: any;
     earningsHistory?: any[];
+    externalSnapshot?: ExternalMarketSnapshot | null;
+    providerIntelligence?: ProviderIntelligence | null;
   }
 ): Promise<GeminiForecast> {
   const geminiApiKey = Deno.env.get('GEMINI_API_KEY');
@@ -1611,6 +2416,36 @@ ${enhancedData?.fundamentals ? `- P/E Ratio: ${enhancedData.fundamentals.peRatio
 - Earnings Growth: ${enhancedData.fundamentals.earningsGrowth ? (enhancedData.fundamentals.earningsGrowth * 100).toFixed(2) + '%' : 'N/A'}
 - Profit Margins: ${enhancedData.fundamentals.profitMargins ? (enhancedData.fundamentals.profitMargins * 100).toFixed(2) + '%' : 'N/A'}
 - Debt/Equity: ${enhancedData.fundamentals.debtToEquity?.toFixed(2) || 'N/A'}` : '- Fundamentals not available'}
+
+EXTERNAL MARKET PROVIDER SNAPSHOT:
+${enhancedData?.externalSnapshot ? `- Provider: ${enhancedData.externalSnapshot.provider}
+- Asset Type: ${enhancedData.externalSnapshot.assetType}
+- Symbol: ${enhancedData.externalSnapshot.symbol}
+- Open: ${enhancedData.externalSnapshot.open ?? 'N/A'}
+- Previous Close: ${enhancedData.externalSnapshot.previousClose ?? 'N/A'}
+- 24h High: ${enhancedData.externalSnapshot.high24h ?? 'N/A'}
+- 24h Low: ${enhancedData.externalSnapshot.low24h ?? 'N/A'}
+- 24h Volume: ${enhancedData.externalSnapshot.volume24h ?? 'N/A'}
+- Market Cap: ${enhancedData.externalSnapshot.marketCap ?? 'N/A'}` : '- No external snapshot available'}
+
+MOMENTUM DATA (API-DRIVEN):
+${enhancedData?.providerIntelligence ? `- Source: ${enhancedData.providerIntelligence.momentum.source}
+- 24h Volume: ${enhancedData.providerIntelligence.momentum.volume24h ?? 'N/A'}
+- RSI: ${enhancedData.providerIntelligence.momentum.rsi ?? 'N/A'}
+- Notes: ${enhancedData.providerIntelligence.momentum.notes || 'N/A'}` : '- Momentum block unavailable'}
+
+VOLATILITY DATA (API-DRIVEN):
+${enhancedData?.providerIntelligence ? `- Source: ${enhancedData.providerIntelligence.volatility.source}
+- Bollinger Bands: ${enhancedData.providerIntelligence.volatility.bollingerBands ? `Upper=${enhancedData.providerIntelligence.volatility.bollingerBands.upper.toFixed(2)}, Middle=${enhancedData.providerIntelligence.volatility.bollingerBands.middle.toFixed(2)}, Lower=${enhancedData.providerIntelligence.volatility.bollingerBands.lower.toFixed(2)}` : 'N/A'}
+- Option Greeks (Delta/Theta/Gamma): ${enhancedData.providerIntelligence.volatility.optionGreeks ? `D=${enhancedData.providerIntelligence.volatility.optionGreeks.delta ?? 'N/A'}, T=${enhancedData.providerIntelligence.volatility.optionGreeks.theta ?? 'N/A'}, G=${enhancedData.providerIntelligence.volatility.optionGreeks.gamma ?? 'N/A'}` : 'N/A'}
+- Notes: ${enhancedData.providerIntelligence.volatility.notes || 'N/A'}` : '- Volatility block unavailable'}
+
+SENTIMENT DATA (API-DRIVEN):
+${enhancedData?.providerIntelligence ? `- Source: ${enhancedData.providerIntelligence.sentiment.source}
+- BTC Dominance: ${enhancedData.providerIntelligence.sentiment.btcDominance ?? 'N/A'}
+- Trending Coins: ${enhancedData.providerIntelligence.sentiment.trendingCoins?.join(', ') || 'N/A'}
+- News Sentiment Score: ${enhancedData.providerIntelligence.sentiment.newsSentimentScore ?? 'N/A'}
+- Notes: ${enhancedData.providerIntelligence.sentiment.notes || 'N/A'}` : '- Sentiment block unavailable'}
 
 EARNINGS HISTORY:
 ${enhancedData?.earningsHistory && enhancedData.earningsHistory.length > 0 ? 
@@ -2786,11 +3621,10 @@ serve(async (req) => {
 
     // Step 3b: Enhanced Data Analysis (Full Year + Fundamentals + Earnings)
     updatePipelineStep(pipeline, 'enhanced_data_analysis', 'running');
-    const { yahooSymbol } = normalizeToYahooSymbol(symbol);
     const [fullYearData, fundamentals, earningsHistory] = await Promise.all([
-      fetchFullYearHistory(yahooSymbol),
-      fetchFundamentals(yahooSymbol),
-      fetchEarningsHistory(yahooSymbol)
+      fetchFullYearHistory(symbol),
+      fetchFundamentals(symbol),
+      fetchEarningsHistory(symbol)
     ]);
     console.log("Enhanced data fetched:", {
       yearTrend: fullYearData.yearTrend,
@@ -2799,13 +3633,18 @@ serve(async (req) => {
       marketCap: fundamentals.marketCap ? `$${(fundamentals.marketCap / 1e9).toFixed(2)}B` : 'N/A',
       earningsQuarters: earningsHistory.length
     });
+    const externalSnapshot = await fetchExternalMarketSnapshot(symbol, stockData, fundamentals);
     updatePipelineStep(pipeline, 'enhanced_data_analysis', 'completed', 
       `Year: ${fullYearData.yearTrend}, P/E: ${fundamentals.peRatio?.toFixed(2) || 'N/A'}, ${earningsHistory.length} earnings`);
 
     // Step 3c: Market Correlation Analysis (SPY)
     updatePipelineStep(pipeline, 'market_correlation', 'running');
+    const routeInfo = getAssetRouteInfo(symbol);
     let spyCorrelation = null;
     try {
+      if (!routeInfo.isUsStock) {
+        updatePipelineStep(pipeline, 'market_correlation', 'completed', 'Skipped for non-US stock');
+      } else {
       // Fetch SPY (S&P 500) data for same timeframe
       const spyData = await fetchHistoricalCandles('SPY', timeframe);
       if (spyData.candles.length > 10 && historicalData.candles.length > 10) {
@@ -2839,6 +3678,7 @@ serve(async (req) => {
       }
       updatePipelineStep(pipeline, 'market_correlation', 'completed', 
         spyCorrelation ? `Correlation: ${(spyCorrelation.coefficient * 100).toFixed(0)}%` : 'Calculated');
+      }
     } catch (error) {
       console.log('⚠️ SPY correlation failed:', error.message);
       updatePipelineStep(pipeline, 'market_correlation', 'completed', 'Limited data');
@@ -2859,6 +3699,13 @@ serve(async (req) => {
       trend: technicalContext.trendDirection,
       volatility: technicalContext.volatilityState
     });
+    const providerIntelligence = await buildProviderIntelligence(
+      symbol,
+      timeframe,
+      stockData,
+      historicalData.candles,
+      technicalContext
+    );
     updatePipelineStep(pipeline, 'technical_indicators', 'completed', 
       `RSI: ${technicalContext.indicators.rsi.toFixed(1)}, Trend: ${technicalContext.trendDirection}`);
 
@@ -2954,7 +3801,9 @@ serve(async (req) => {
         {
           fullYear: fullYearData,
           fundamentals,
-          earningsHistory
+          earningsHistory,
+          externalSnapshot,
+          providerIntelligence
         }
       );
       updatePipelineStep(pipeline, 'ai_prediction', 'completed', 'AI analysis completed');
@@ -2989,6 +3838,16 @@ serve(async (req) => {
 
     // Calculate enhanced decision-making fields
     const primaryForecast = geminiForecast.forecasts[0];
+    const probabilityScore =
+      typeof primaryForecast?.probabilities?.up === 'number' &&
+      typeof primaryForecast?.probabilities?.down === 'number' &&
+      typeof primaryForecast?.probabilities?.sideways === 'number'
+        ? Math.max(
+            Math.min(1, primaryForecast.probabilities.up || 0),
+            Math.min(1, primaryForecast.probabilities.down || 0),
+            Math.min(1, primaryForecast.probabilities.sideways || 0)
+          )
+        : Math.max(0, Math.min(1, (geminiForecast?.deep_analysis?.success_probability || 0) / 100));
     const volatilityPercent = (technicalContext.indicators.atr / stockData.currentPrice) * 100;
     
     // Calculate action signal (BUY/SELL/HOLD)
@@ -3032,9 +3891,18 @@ serve(async (req) => {
       analysis: "Enhanced multi-horizon AI analysis with real-time market data",
       stockData,
       geminiForecast,
+      probabilityScore,
+      providerIntelligence,
       meta: {
         pipeline: meta,
         predictionSource,
+        dataProviders: {
+          market: externalSnapshot?.provider || historicalData.meta?.provider || 'Yahoo Finance',
+          externalSnapshot: externalSnapshot?.provider || null,
+          momentum: providerIntelligence?.momentum?.source || null,
+          volatility: providerIntelligence?.volatility?.source || null,
+          sentiment: providerIntelligence?.sentiment?.source || null,
+        },
         enhancedFeatures: {
           ensembleMethods: true,
           advancedPatterns: true,

@@ -155,12 +155,12 @@ export function MarketStatus({ symbol, displaySymbol, exchange, type }: MarketSt
               </Badge>
               {status.exchange && status.exchange !== 'Unknown' && (
                 <span className="text-xs sm:text-sm text-muted-foreground">
-                  {status.exchange}
+                  {status.exchangeTimezoneName === 'Asia/Kolkata' ? 'NSE/BSE' : status.exchange}
                 </span>
               )}
               {status.exchangeTimezoneName && status.exchangeTimezoneName !== 'UTC' && (
                 <span className="text-xs text-muted-foreground">
-                  ({status.exchangeTimezoneName})
+                  ({status.exchangeTimezoneName === 'Asia/Kolkata' ? 'Asia/Kolkata (IST)' : status.exchangeTimezoneName})
                 </span>
               )}
             </div>

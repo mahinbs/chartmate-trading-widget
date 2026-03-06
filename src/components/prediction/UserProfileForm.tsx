@@ -661,7 +661,7 @@ export const UserProfileForm = ({
       </Card>
 
       {/* NEW: Risk Acceptance Disclaimer */}
-      <Card className="border-red-500/30 bg-red-500/5">
+      <Card id="risk-acknowledge-block" className="border-red-500/30 bg-red-500/5">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg text-red-600">
             <FileCheck className="h-5 w-5" />
@@ -680,7 +680,7 @@ export const UserProfileForm = ({
                 <ul className="list-disc list-inside space-y-1 text-xs text-muted-foreground">
                   <li>You can lose part or all of your invested capital</li>
                   <li>Past performance does not guarantee future results</li>
-                  <li>AI predictions are not 100% accurate and can be wrong</li>
+                  <li>AI probability-based analyses are not 100% accurate and can be wrong</li>
                   <li>Market conditions can change rapidly and unexpectedly</li>
                   <li>Leverage amplifies both gains and losses</li>
                 </ul>
@@ -710,7 +710,7 @@ export const UserProfileForm = ({
             <Alert className="border-yellow-500/30 bg-yellow-500/10">
               <AlertCircle className="h-4 w-4 text-yellow-600" />
               <AlertDescription className="text-xs text-yellow-600">
-                You must accept the risk disclosure to proceed with the prediction and trade tracking.
+                You must accept the risk disclosure to proceed with the analysis and trade tracking.
               </AlertDescription>
             </Alert>
           )}

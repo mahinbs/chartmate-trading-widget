@@ -157,12 +157,12 @@ const Hero = () => {
                             Get Platform Demo
                             <ArrowRight className="ml-2 w-5 h-5" />
                         </Link>
-                        {/* <Link
-                            to="/contact-us"
-                            className="border border-white/10 text-white hover:text-white hover:bg-white/5 bg-white/5 backdrop-blur-sm text-lg px-10 py-7 rounded-full font-bold transition-all duration-300 flex items-center"
+                        <Link
+                            to="/market-picks"
+                            className="border border-white/15 text-white hover:text-white hover:bg-white/10 bg-white/5 backdrop-blur-sm text-lg px-10 py-7 rounded-full font-bold transition-all duration-300 flex items-center"
                         >
-                            Contact Us
-                        </Link> */}
+                            View Daily Analyses
+                        </Link>
                     </div>
                 </ScrollReveal>
 

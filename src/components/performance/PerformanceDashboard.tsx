@@ -246,7 +246,7 @@ export function PerformanceDashboard() {
                     <div>
                       <p className="font-semibold text-red-600">What Went Wrong:</p>
                       <p className="text-muted-foreground">
-                        {trade.exitReason === 'stop_loss_triggered' && "Stop loss was hit. Price moved against our prediction."}
+                        {trade.exitReason === 'stop_loss_triggered' && "Stop loss was hit. Price moved against our analysis."}
                         {trade.exitReason === 'holding_period_ended' && "Holding period ended without reaching target. Market didn't move as expected."}
                         {trade.exitReason === 'target_hit' && "This wasn't a loss - target was hit!"} 
                         {!trade.exitReason && "Trade completed with loss."}

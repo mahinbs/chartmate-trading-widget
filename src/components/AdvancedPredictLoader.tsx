@@ -44,14 +44,14 @@ const ANALYSIS_STEPS = [
     label: "AI Model Processing",
     icon: BrainCircuit,
     duration: 1700,
-    description: "Running neural network predictions"
+    description: "Running neural network analysis"
   },
   {
     id: "final",
     label: "Finalizing Analysis",
     icon: Sparkles,
     duration: 900,
-    description: "Compiling comprehensive prediction report"
+    description: "Compiling comprehensive analysis report"
   }
 ];
 
@@ -83,7 +83,7 @@ export function AdvancedPredictLoader({ isVisible, symbol, timeframe, ready, onC
           setTelemetryLines(prev => {
             const newLines = [...prev, {
               id: `waiting-${Date.now()}`,
-              text: `Waiting for prediction results... ${symbol}`,
+              text: `Waiting for analysis results... ${symbol}`,
               timestamp: Date.now()
             }];
             return newLines.slice(-4);
@@ -154,7 +154,7 @@ export function AdvancedPredictLoader({ isVisible, symbol, timeframe, ready, onC
           </div>
           <h2 className="text-xl font-bold mb-2">AI Analysis in Progress</h2>
           <p className="text-sm text-muted-foreground">
-            Generating multi-horizon prediction for <span className="font-mono text-primary">{symbol}</span>
+            Generating multi-horizon analysis for <span className="font-mono text-primary">{symbol}</span>
           </p>
         </div>
 

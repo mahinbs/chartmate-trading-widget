@@ -269,13 +269,60 @@ serve(async (req) => {
           console.log(`✅ Trailing stop updated for ${trade.symbol}: $${newStopLoss.toFixed(2)} (was $${trade.stop_loss_price.toFixed(2)})`);
         }
 
-        // If completing, add exit details
+        // If completing, add exit details AND auto square-off via broker
         if (shouldExit) {
           updateData.exit_price = currentPrice;
           updateData.exit_time = new Date().toISOString();
           updateData.actual_pnl = pnl;
           updateData.actual_pnl_percentage = pnlPercentage;
           updateData.exit_reason = reason;
+
+          // Auto square-off via broker if this trade was placed via the trading engine
+          if (trade.broker_order_id) {
+            try {
+              const OPENALGO_URL = (Deno.env.get('OPENALGO_URL') ?? '').replace(/\/$/, '');
+              // Load the user's OpenAlgo API key
+              const { data: integration } = await supabaseClient
+                .from('user_trading_integration')
+                .select('openalgo_api_key')
+                .eq('user_id', trade.user_id)
+                .eq('is_active', true)
+                .maybeSingle();
+
+              const openalgoApiKey = integration?.openalgo_api_key ?? '';
+
+              if (OPENALGO_URL && openalgoApiKey) {
+                const exitAction = trade.action === 'BUY' ? 'SELL' : 'BUY';
+                const exitRes = await fetch(`${OPENALGO_URL}/api/v1/placeorder`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    apikey:             openalgoApiKey,
+                    strategy:           `ChartMate Auto-Exit`,
+                    exchange:           trade.exchange   || 'NSE',
+                    symbol:             trade.symbol,
+                    action:             exitAction,
+                    product:            trade.product    || 'CNC',
+                    pricetype:          'MARKET',
+                    quantity:           String(trade.shares),
+                    price:              '0',
+                    trigger_price:      '0',
+                    disclosed_quantity: '0',
+                  }),
+                });
+                const exitData = await exitRes.json().catch(() => ({}));
+                const exitOrderId = (exitData as any)?.orderid ?? (exitData as any)?.order_id;
+                if (exitOrderId) {
+                  updateData.exit_order_id = exitOrderId;
+                  console.log(`✅ Auto-exit order placed for ${trade.symbol}: ${exitOrderId} (${reason})`);
+                } else {
+                  console.error(`❌ Auto-exit order failed for ${trade.symbol}:`, exitData);
+                }
+              }
+            } catch (exitErr) {
+              console.error(`❌ Auto-exit broker call failed for ${trade.symbol}:`, exitErr);
+            }
+          }
         }
 
         const { error: updateError } = await supabaseClient
@@ -310,8 +357,8 @@ serve(async (req) => {
               user_id: trade.user_id,
               type: reason === 'stop_loss_triggered' ? 'stop_loss_triggered' :
                     reason === 'target_hit' ? 'target_hit' : 'holding_period_ending',
-              title: `Trade ${reason === 'target_hit' ? 'Target Hit' : 'Completed'}: ${trade.symbol}`,
-              message: `Your ${trade.action} trade for ${trade.symbol} has ${reason === 'target_hit' ? 'hit target' : 'completed'}. P&L: ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)} (${pnlPercentage >= 0 ? '+' : ''}${pnlPercentage.toFixed(2)}%)`,
+              title: `Trade ${reason === 'target_hit' ? '🎯 Target Hit' : reason === 'stop_loss_triggered' || reason === 'trailing_stop_triggered' ? '🛑 Stop Loss Hit' : '✅ Completed'}: ${trade.symbol}`,
+              message: `Your ${trade.action} trade for ${trade.symbol} has ${reason === 'target_hit' ? 'hit target' : reason?.includes('stop') ? 'hit stop loss' : 'completed'}. P&L: ${pnl >= 0 ? '+' : ''}₹${pnl.toFixed(2)} (${pnlPercentage >= 0 ? '+' : ''}${pnlPercentage.toFixed(2)}%)${trade.broker_order_id ? ' | Exit order placed on broker automatically.' : ''}`,
               status: 'pending',
               channel: 'in_app'
             });
