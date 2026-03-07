@@ -47,7 +47,7 @@ export function ActiveTradeCard({
   const [squaringOff, setSquaringOff] = useState(false);
   const [chartExpanded, setChartExpanded] = useState(false);
   const isProfitable = (trade.currentPnl || 0) >= 0;
-  const isNearStopLoss = trade.stopLossPrice && trade.currentPrice && 
+  const isNearStopLoss = trade.stopLossPrice && trade.currentPrice &&
     Math.abs(trade.currentPrice - trade.stopLossPrice) / trade.stopLossPrice < 0.05;
   const isNearTarget = trade.takeProfitPrice && trade.currentPrice &&
     Math.abs(trade.currentPrice - trade.takeProfitPrice) / trade.takeProfitPrice < 0.05;
@@ -92,13 +92,13 @@ export function ActiveTradeCard({
       )} />
 
       <CardHeader className="pb-3">
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between pt-3">
           <div className="space-y-1">
             <div className="flex items-center gap-3 flex-wrap">
               <CardTitle className="text-2xl font-bold">{trade.symbol}</CardTitle>
-              <ActionSignal 
-                action={trade.action} 
-                confidence={trade.confidence || 0} 
+              <ActionSignal
+                action={trade.action}
+                confidence={trade.confidence || 0}
                 size="sm"
               />
               {trade.riskGrade && (
@@ -119,22 +119,12 @@ export function ActiveTradeCard({
           </div>
           <div className="flex items-center gap-2">
             {getStatusBadge()}
-            {onCancel && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => onCancel(trade.id)}
-                className="h-8 w-8"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            )}
           </div>
         </div>
       </CardHeader>
 
       <CardContent className="space-y-4">
-        
+
         {/* P&L Display - Prominent */}
         <div className={cn(
           "p-4 rounded-lg border-2 transition-all duration-300",
@@ -229,7 +219,7 @@ export function ActiveTradeCard({
 
         {/* Countdown Timer */}
         {trade.expectedExitTime && (
-          <CountdownTimer 
+          <CountdownTimer
             targetTime={trade.expectedExitTime}
             label="Holding Period"
             size="md"
@@ -291,7 +281,7 @@ export function ActiveTradeCard({
             <span>Holding Period:</span>
             <span className="font-medium">
               {trade.holdingPeriod === 'none' || (!trade.holdingPeriod && !trade.aiRecommendedHoldPeriod)
-                ? 'Unlimited ∞' 
+                ? 'Unlimited ∞'
                 : (trade.holdingPeriod || trade.aiRecommendedHoldPeriod)
               }
             </span>
@@ -342,7 +332,7 @@ export function ActiveTradeCard({
           )}
 
           {/* Square Off via Broker — places a real SELL order via TradeBrainX trading engine */}
-          {onSquareOff && (
+          {/* {onSquareOff && (
             <Button
               variant="default"
               className="w-full bg-orange-600 hover:bg-orange-700 text-white"
@@ -363,17 +353,17 @@ export function ActiveTradeCard({
                 <><LogOut className="h-4 w-4 mr-2" />Square Off via Broker</>
               )}
             </Button>
-          )}
+          )} */}
 
           <div className="grid grid-cols-2 gap-2">
             {onClose && (
               <Button
                 variant="outline"
-                className="border-green-600 text-green-600 hover:bg-green-50"
+                className="border-green-600 text-green-600 hover:bg-green-600"
                 onClick={() => onClose(trade.id)}
               >
                 <CheckCircle className="h-4 w-4 mr-2" />
-                Close (track only)
+                Sell
               </Button>
             )}
             {onCancel && (

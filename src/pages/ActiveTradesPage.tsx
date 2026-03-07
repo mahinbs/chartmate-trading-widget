@@ -5,12 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ActiveTradeCard } from "@/components/tracking/ActiveTradeCard";
 import { ActionSignal } from "@/components/prediction/ActionSignal";
 import { PerformanceDashboard } from "@/components/performance/PerformanceDashboard";
 import { tradeTrackingService, ActiveTrade } from "@/services/tradeTrackingService";
 import { getTradingViewSymbol, isUsdDenominatedSymbol } from "@/lib/tradingview-symbols";
-import { RefreshCw, TrendingUp, Activity, CheckCircle, Bell, BarChart3, Home } from "lucide-react";
+import { RefreshCw, TrendingUp, TrendingDown, Activity, CheckCircle, Bell, BarChart3, Home } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function ActiveTradesPage() {
@@ -94,7 +93,7 @@ export default function ActiveTradesPage() {
     }
 
     const result = await tradeTrackingService.cancelTrade(tradeId);
-    
+
     if (result.error) {
       toast({
         title: "Error",
@@ -116,7 +115,7 @@ export default function ActiveTradesPage() {
     }
 
     const result = await tradeTrackingService.closeTrade(tradeId, currentPrice);
-    
+
     if (result.error) {
       toast({
         title: "Error",
@@ -295,15 +294,15 @@ export default function ActiveTradesPage() {
 
   return (
     <div className="container max-w-7xl mx-auto p-6 space-y-6">
-      
+
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Active Trades</h1>
           <p className="text-muted-foreground">Track your live positions in real-time</p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1 rounded-full border px-2 py-1 text-xs bg-muted/60">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 rounded-full border px-2 text-xs bg-muted/60 py-2">
             <span className="text-muted-foreground">Currency:</span>
             <button
               className={`px-2 py-0.5 rounded-full ${displayCurrency === "INR" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
@@ -414,31 +413,65 @@ export default function ActiveTradesPage() {
               </AlertDescription>
             </Alert>
           ) : (
-            <div className="grid md:grid-cols-2 gap-6">
-              {activeTrades.map((trade) => (
-                <ActiveTradeCard
-                  key={trade.id}
-                  trade={trade}
-                  displayCurrency={displayCurrency}
-                  usdPerInr={usdPerInr}
-                  onCancel={handleCancelTrade}
-                  onSquareOff={trade.brokerOrderId ? handleSquareOff : undefined}
-                  onClose={(id) => {
-                    const tradeData = activeTrades.find(t => t.id === id);
-                    if (tradeData) {
-                      handleCloseTrade(id, tradeData.currentPrice || tradeData.entryPrice);
-                    }
-                  }}
-                  onViewDetails={(id) => {
-                    const tradeData = activeTrades.find(t => t.id === id);
-                    if (tradeData) {
-                      const tvSymbol = getTradingViewSymbol(tradeData.symbol);
-                      window.open(`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(tvSymbol)}`, '_blank');
-                    }
-                  }}
-                />
-              ))}
-            </div>
+            <>
+              <div className="rounded-xl border border-border/50 bg-card overflow-hidden">
+                {/* Table Header */}
+                <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 px-4 py-2.5 border-b border-border/50 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider bg-muted/20">
+                  <div>Market</div>
+                  <div className="text-right w-24 sm:w-32">Entry</div>
+                  <div className="text-right w-24 sm:w-32">Current</div>
+                </div>
+
+                {/* Table Rows */}
+                <div className="divide-y divide-border/50">
+                  {activeTrades.map((trade) => {
+                    const pnl = convertAmount(trade.currentPnl ?? 0, trade.symbol);
+                    const pnlPct = trade.currentPnlPercentage ?? 0;
+                    const isPositive = pnl >= 0;
+
+                    return (
+                      <div
+                        key={trade.id}
+                        className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center px-4 py-3.5 hover:bg-muted/30 cursor-pointer transition-colors border-b border-border/30 last:border-0"
+                        onClick={() => navigate(`/trade/${trade.id}`)}
+                      >
+                        {/* Market Column */}
+                        <div className="flex flex-col gap-0.5 min-w-0">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="font-bold text-sm tracking-tight truncate">
+                              {trade.symbol.replace('-USD', '')}
+                            </span>
+                            <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded leading-none uppercase font-bold ${trade.action === 'BUY' ? 'bg-green-500/15 text-green-500' : 'bg-red-500/15 text-red-500'
+                              }`}>
+                              {trade.action}
+                            </span>
+                          </div>
+                          <div className={`flex items-center gap-1 text-[11px] font-medium ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
+                            {isPositive ? <TrendingUp className="h-3 w-3 shrink-0" /> : <TrendingDown className="h-3 w-3 shrink-0" />}
+                            <span className="truncate">
+                              {isPositive ? '+' : ''}{currencySymbol}{Math.abs(pnl).toFixed(2)}
+                              <span className="text-[10px] ml-1 opacity-80">({isPositive ? '+' : ''}{pnlPct.toFixed(2)}%)</span>
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Entry Price Column */}
+                        <div className="text-right w-24 sm:w-32">
+                          <span className="text-xs sm:text-sm font-semibold text-muted-foreground tabular-nums">
+                            {currencySymbol}{convertAmount(trade.entryPrice, trade.symbol).toFixed(2)}
+                          </span>
+                        </div>
+
+                        {/* Current Price Column */}
+                        <div className={`text-right w-24 sm:w-32 text-xs sm:text-sm font-bold tabular-nums ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
+                          {currencySymbol}{convertAmount(trade.currentPrice || trade.entryPrice, trade.symbol).toFixed(2)}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
           )}
         </TabsContent>
 
@@ -459,9 +492,9 @@ export default function ActiveTradesPage() {
                     <div className="flex-1">
                       <div className="flex items-center gap-3">
                         <h3 className="text-xl font-bold">{trade.symbol}</h3>
-                        <ActionSignal 
-                          action={trade.action} 
-                          confidence={trade.confidence || 0} 
+                        <ActionSignal
+                          action={trade.action}
+                          confidence={trade.confidence || 0}
                           size="sm"
                         />
                       </div>

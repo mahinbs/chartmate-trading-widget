@@ -45,46 +45,50 @@ export function AIReasoningDisplay({
   deepAnalysis,
   marketContext
 }: AIReasoningDisplayProps) {
-  
+
   const [showBullBear, setShowBullBear] = useState(true);
   const [showMarketContext, setShowMarketContext] = useState(true);
-  
+
   // Generate one-line explanation if not provided
   const generateOneLiner = () => {
     if (oneLineSummary) return oneLineSummary;
-    
-    const primaryDriver = keyDrivers[0] ? formatKeyDriver(keyDrivers[0]) : 
-                         technicalFactors[0] ? formatTechnicalFactor(technicalFactors[0]) : 
-                         'favorable market conditions';
+
+    const primaryDriver = keyDrivers[0] ? formatKeyDriver(keyDrivers[0]) :
+      technicalFactors[0] ? formatTechnicalFactor(technicalFactors[0]) :
+        'favorable market conditions';
     const confidenceLevel = confidence >= 80 ? 'strong' : confidence >= 60 ? 'moderate' : 'weak';
-    
+
     return `${action} signal generated with ${confidenceLevel} confidence due to ${primaryDriver.toLowerCase()}.`;
   };
 
   return (
-    <Card className="border-primary/20">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Lightbulb className="h-5 w-5 text-primary" />
-          AI Reasoning
+    <Card className="glass-card overflow-hidden border-white/5 bg-gradient-to-br from-card/60 to-background/60 relative backdrop-blur-xl shadow-xl">
+      <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-primary/50 to-transparent opacity-70" />
+      <CardHeader className="pb-4">
+        <CardTitle className="flex items-center gap-3 text-xl tracking-tight">
+          <div className="p-2 rounded-lg bg-primary/10 ring-1 ring-primary/20">
+            <Lightbulb className="h-5 w-5 text-primary animate-pulse" />
+          </div>
+          AI Reasoning Engine
         </CardTitle>
-        <p className="text-sm text-muted-foreground">
-          Why the AI made this analysis
+        <p className="text-sm text-muted-foreground/80 pl-11">
+          Algorithmic rationale and core drivers behind this signal
         </p>
       </CardHeader>
-      
-      <CardContent className="space-y-4">
-        
+
+      <CardContent className="space-y-6">
+
         {/* One-Line Summary */}
-        <div className="p-4 bg-primary/10 rounded-lg border border-primary/20">
-          <p className="font-semibold text-base leading-relaxed">
+        <div className="p-5 bg-gradient-to-r from-primary/10 to-transparent border-l-4 border-primary rounded-r-xl shadow-sm relative overflow-hidden">
+          <div className="absolute inset-0 bg-[url('/noise.png')] opacity-[0.03] mix-blend-overlay"></div>
+          <p className="font-medium text-lg leading-relaxed text-foreground relative z-10">
             "{generateOneLiner()}"
           </p>
         </div>
 
         {/* Detailed Breakdown */}
         <div className="grid md:grid-cols-2 gap-4">
-          
+
           {/* Technical Factors */}
           {technicalFactors.length > 0 && (
             <div className="space-y-2">
@@ -258,7 +262,7 @@ export function AIReasoningDisplay({
               <Shield className="h-5 w-5 text-primary" />
               Market Context
             </h3>
-            
+
             <Collapsible open={showMarketContext} onOpenChange={setShowMarketContext}>
               <CollapsibleTrigger className="text-sm font-semibold hover:text-primary">
                 Correlation, Sector & Macro Analysis

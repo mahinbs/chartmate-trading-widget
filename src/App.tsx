@@ -8,6 +8,7 @@ import PredictPage from "./pages/PredictPage";
 import PredictionsPage from "./pages/PredictionsPage";
 import IntradayPage from "./pages/IntradayPage";
 import ActiveTradesPage from "./pages/ActiveTradesPage";
+import ActiveTradeDetailsPage from "./pages/ActiveTradeDetailsPage";
 import AuthPage from "./pages/AuthPage";
 import BrokerCallbackPage from "./pages/BrokerCallbackPage";
 import { ProtectedRoute } from "./components/ProtectedRoute";
@@ -82,6 +83,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <ActiveTradesPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/trade/:id"
+              element={
+                <ProtectedRoute>
+                  <ActiveTradeDetailsPage />
                 </ProtectedRoute>
               }
             />

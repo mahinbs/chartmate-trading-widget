@@ -79,7 +79,7 @@ export function AdvancedPredictLoader({ isVisible, symbol, timeframe, ready, onC
       if (stepIndex >= ANALYSIS_STEPS.length) {
         // Hold at 95% until ready becomes true
         if (!ready) {
-          setProgress(95);
+          setProgress(prev => Math.max(prev, 95));
           setTelemetryLines(prev => {
             const newLines = [...prev, {
               id: `waiting-${Date.now()}`,
@@ -91,7 +91,7 @@ export function AdvancedPredictLoader({ isVisible, symbol, timeframe, ready, onC
           // Check every 500ms if ready
           setTimeout(() => {
             if (ready) {
-              setProgress(100);
+              setProgress(prev => Math.max(prev, 100));
               setTimeout(onComplete, 300);
             } else {
               processStep();
@@ -99,7 +99,7 @@ export function AdvancedPredictLoader({ isVisible, symbol, timeframe, ready, onC
           }, 500);
           return;
         }
-        setProgress(100);
+        setProgress(prev => Math.max(prev, 100));
         setTimeout(onComplete, 300);
         return;
       }
@@ -122,7 +122,7 @@ export function AdvancedPredictLoader({ isVisible, symbol, timeframe, ready, onC
       const stepProgressInterval = setInterval(() => {
         const stepProgress = (step.duration / totalDuration) * maxProgressForStep / 30; // 30 updates per step
         overallProgress += stepProgress;
-        setProgress(Math.min(overallProgress, maxProgressForStep));
+        setProgress(prev => Math.max(prev, Math.min(overallProgress, maxProgressForStep)));
       }, step.duration / 30);
 
       setTimeout(() => {
@@ -189,7 +189,7 @@ export function AdvancedPredictLoader({ isVisible, symbol, timeframe, ready, onC
         </div>
 
         {/* Analysis Steps */}
-        <div className="mb-6 space-y-2 max-h-64 overflow-y-auto">
+        <div className="mb-6 space-y-2 max-h-64 overflow-y-auto no-scrollbar">
           {ANALYSIS_STEPS.map((step, index) => {
             const Icon = step.icon;
             const isCompleted = completedSteps.has(index);
@@ -199,17 +199,15 @@ export function AdvancedPredictLoader({ isVisible, symbol, timeframe, ready, onC
             return (
               <div
                 key={step.id}
-                className={`flex items-center gap-3 p-2.5 rounded-lg transition-all duration-300 ${
-                  isCurrent ? 'bg-primary/10 border border-primary/20' : 
+                className={`flex items-center gap-3 p-2.5 rounded-lg transition-all duration-300 ${isCurrent ? 'bg-primary/10 border border-primary/20' :
                   isCompleted ? 'bg-green-500/10 border border-green-500/20' :
-                  'bg-muted/30'
-                }`}
+                    'bg-muted/30'
+                  }`}
               >
-                <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all duration-300 ${
-                  isCompleted ? 'bg-green-500 text-white' :
+                <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all duration-300 ${isCompleted ? 'bg-green-500 text-white' :
                   isCurrent ? 'bg-primary text-primary-foreground animate-pulse' :
-                  'bg-muted text-muted-foreground'
-                }`}>
+                    'bg-muted text-muted-foreground'
+                  }`}>
                   {isCompleted ? (
                     <Check className="h-3.5 w-3.5" />
                   ) : (
@@ -217,11 +215,10 @@ export function AdvancedPredictLoader({ isVisible, symbol, timeframe, ready, onC
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-medium transition-colors duration-300 ${
-                    isCompleted ? 'text-green-600 dark:text-green-400' :
+                  <p className={`text-sm font-medium transition-colors duration-300 ${isCompleted ? 'text-green-600 dark:text-green-400' :
                     isCurrent ? 'text-primary' :
-                    isPending ? 'text-muted-foreground' : 'text-foreground'
-                  }`}>
+                      isPending ? 'text-muted-foreground' : 'text-foreground'
+                    }`}>
                     {step.label}
                   </p>
                   <p className="text-xs text-muted-foreground truncate">

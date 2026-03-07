@@ -23,6 +23,7 @@ import { StepContainer } from "@/components/ui/step-container";
 import { SummaryHeader } from "@/components/prediction/SummaryHeader";
 import { ForecastTable } from "@/components/prediction/ForecastTable";
 import { KeyLevels } from "@/components/prediction/KeyLevels";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Insights } from "@/components/prediction/Insights";
 import { NewsAnalysis } from "@/components/news/NewsAnalysis";
 import { MarketStatus } from "@/components/market/MarketStatus";
@@ -212,15 +213,15 @@ const PredictPage = () => {
   const [presetChecked, setPresetChecked] = useState(false);
   // Have we already asked \"use previous details?\" in this flow (after symbol + investment)?
   const [presetPromptShown, setPresetPromptShown] = useState(false);
-  
+
   const { signOut, user } = useAuth();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const { hasIntegration, save: saveTradingIntegration, refresh: refreshTradingIntegration } = useTradingIntegration();
   const [showIntegrationModal, setShowIntegrationModal] = useState(false);
-  const [showStrategyDialog, setShowStrategyDialog]     = useState(false);
+  const [showStrategyDialog, setShowStrategyDialog] = useState(false);
   const [showPreviousOrNewDialog, setShowPreviousOrNewDialog] = useState(false);
-  const [lastUsedStrategy, setLastUsedStrategy]         = useState<{ strategyType: string; product: string; label: string } | null>(null);
+  const [lastUsedStrategy, setLastUsedStrategy] = useState<{ strategyType: string; product: string; label: string } | null>(null);
   const [displayCurrency, setDisplayCurrency] = useState<"INR" | "USD">("INR");
   const [isPaperTrade, setIsPaperTrade] = useState(false);
 
@@ -232,7 +233,7 @@ const PredictPage = () => {
     const action = result.geminiForecast?.action_signal?.action === 'SELL' ? 'SELL' : 'BUY';
     const shares = Math.floor(result.positionSize?.shares || 0) || 1;
     const aiRecommendedPeriod = result.geminiForecast?.positioning_guidance?.recommended_hold_period;
-    const userChosenPeriod    = userProfile.userHoldingPeriod;
+    const userChosenPeriod = userProfile.userHoldingPeriod;
     const effectiveHoldingPeriod = !userChosenPeriod || userChosenPeriod === 'ai_recommendation'
       ? aiRecommendedPeriod
       : userChosenPeriod === 'none' ? null : userChosenPeriod;
@@ -241,26 +242,26 @@ const PredictPage = () => {
     try {
       const { tradeTrackingService } = await import("@/services/tradeTrackingService");
       const response = await tradeTrackingService.startTradeSession({
-        symbol:                  result.symbol,
+        symbol: result.symbol,
         action,
-        confidence:              result.geminiForecast?.action_signal?.confidence || result.confidence || 0,
-        riskGrade:               result.geminiForecast?.risk_grade || 'MEDIUM',
-        entryPrice:              result.currentPrice,
+        confidence: result.geminiForecast?.action_signal?.confidence || result.confidence || 0,
+        riskGrade: result.geminiForecast?.risk_grade || 'MEDIUM',
+        entryPrice: result.currentPrice,
         shares,
-        investmentAmount:        parseFloat(investment),
-        leverage:                userProfile.leverage,
-        marginType:              userProfile.marginType,
-        exchange:                'NSE',
+        investmentAmount: parseFloat(investment),
+        leverage: userProfile.leverage,
+        marginType: userProfile.marginType,
+        exchange: 'NSE',
         product,
-        brokerOrderId:           mockOrderId,
-        strategyType:            strategyCode,
-        stopLossPercentage:      userProfile.stopLossPercentage || 5,
-        targetProfitPercentage:  userProfile.targetProfitPercentage || 15,
-        holdingPeriod:           effectiveHoldingPeriod,
+        brokerOrderId: mockOrderId,
+        strategyType: strategyCode,
+        stopLossPercentage: userProfile.stopLossPercentage || 5,
+        targetProfitPercentage: userProfile.targetProfitPercentage || 15,
+        holdingPeriod: effectiveHoldingPeriod,
         aiRecommendedHoldPeriod: aiRecommendedPeriod,
-        expectedRoiBest:         result.geminiForecast?.expected_roi?.best_case,
-        expectedRoiLikely:       result.geminiForecast?.expected_roi?.likely_case,
-        expectedRoiWorst:        result.geminiForecast?.expected_roi?.worst_case,
+        expectedRoiBest: result.geminiForecast?.expected_roi?.best_case,
+        expectedRoiLikely: result.geminiForecast?.expected_roi?.likely_case,
+        expectedRoiWorst: result.geminiForecast?.expected_roi?.worst_case,
       });
       if (response.error) {
         toast.error('Tracking failed: ' + response.error, { id: 'trade-start' });
@@ -285,7 +286,7 @@ const PredictPage = () => {
 
       try {
         const { data, error } = await supabase.functions.invoke('get-market-status', {
-          body: { 
+          body: {
             symbol: selectedSymbol.full_symbol || selectedSymbol.symbol,
             exchange: selectedSymbol.exchange,
             type: selectedSymbol.type
@@ -432,7 +433,7 @@ const PredictPage = () => {
   const savePrediction = async (predictionData: PredictionResult) => {
     try {
       if (!user?.id) return;
-      
+
       const { error } = await supabase
         .from('predictions' as any)
         .insert({
@@ -546,10 +547,10 @@ const PredictPage = () => {
       setResult(data);
       setAnalysisReady(true);
       setPredictedAt(new Date()); // Capture stable timestamp
-      
+
       // Fetch market status for the symbol
       await fetchMarketStatus(symbol.split(':')[1] || symbol, selectedSymbol?.exchange, selectedSymbol?.type);
-      
+
       // Auto-save the prediction
       await savePrediction(data);
       await saveLatestPreset();
@@ -686,7 +687,7 @@ const PredictPage = () => {
               Sign Out
             </Button>
           </div>
-          
+
           <div className="text-center space-y-2">
             <h1 className={`${isMobile ? 'text-2xl' : 'text-3xl md:text-4xl'} font-bold`}>
               Probability-Based Analysis Software
@@ -703,7 +704,7 @@ const PredictPage = () => {
 
           {/* Progress Stepper */}
           <div className={`${isMobile ? 'mt-4' : 'mt-8'}`}>
-            <Stepper 
+            <Stepper
               steps={steps}
               currentStep={currentStep}
               completedSteps={completedSteps}
@@ -720,7 +721,7 @@ const PredictPage = () => {
           <div className={`space-y-6 ${!isMobile ? 'lg:col-span-7 xl:col-span-8' : ''}`}>
             {/* Step 1: Choose Asset */}
             {currentStep === "choose-asset" && (
-              <StepContainer 
+              <StepContainer
                 title="Choose Your Asset"
                 description="Search and select the stock, crypto, or forex pair you want to analyze"
                 isActive={true}
@@ -737,7 +738,7 @@ const PredictPage = () => {
                       placeholder="Search stocks, crypto, forex... (e.g., AAPL, BTC-USD)"
                     />
                   </div>
-                  
+
                   {symbol && (
                     <div className="space-y-3">
                       <div className="p-4 bg-muted/30 rounded-lg border">
@@ -801,7 +802,7 @@ const PredictPage = () => {
                           {timeframe === 'custom' && '✏️ Custom timeframe: Enter your desired analysis window'}
                         </p>
                       </div>
-                      
+
                       {selectedSymbol && (
                         <MarketStatus
                           symbol={selectedSymbol.full_symbol}
@@ -812,8 +813,8 @@ const PredictPage = () => {
                       )}
                     </div>
                   )}
-                  
-                  <Button 
+
+                  <Button
                     onClick={handleNextStep}
                     disabled={!symbol}
                     className="w-full"
@@ -828,7 +829,7 @@ const PredictPage = () => {
 
             {/* Step 2: Set Investment */}
             {currentStep === "set-investment" && (
-              <StepContainer 
+              <StepContainer
                 title="Set Investment Amount"
                 description="Enter the amount you want to invest for position sizing calculations"
                 isActive={true}
@@ -873,7 +874,7 @@ const PredictPage = () => {
                       />
                     </div>
                   </div>
-                  
+
                   {investment && (
                     <div className="p-4 bg-muted/30 rounded-lg border">
                       <div className="flex items-center gap-2">
@@ -882,8 +883,8 @@ const PredictPage = () => {
                       </div>
                     </div>
                   )}
-                  
-                  <Button 
+
+                  <Button
                     onClick={handleNextStep}
                     disabled={!investment || parseFloat(investment) <= 0}
                     className="w-full"
@@ -898,32 +899,32 @@ const PredictPage = () => {
 
             {/* Step 3: Trading Profile */}
             {currentStep === "trading-profile" && (
-              <StepContainer 
+              <StepContainer
                 title="Your Trading Profile"
                 description="Tell us about your trading style and risk preferences for personalized AI analysis"
                 isActive={true}
               >
                 <div className="space-y-6">
-                  <UserProfileForm 
+                  <UserProfileForm
                     profile={userProfile}
                     onChange={setUserProfile}
                     investmentAmount={parseFloat(investment || "0")}
                     marketClosed={marketClosed}
                     marketOpenTime={marketStatus?.nextRegularOpen ? new Date(marketStatus.nextRegularOpen).toLocaleString() : undefined}
                   />
-                  
+
                   <div className="p-4 bg-primary/10 rounded-lg border border-primary/20">
                     <h4 className="font-medium mb-2 flex items-center gap-2">
                       <BrainCircuit className="h-5 w-5" />
                       AI Personalization
                     </h4>
                     <p className="text-sm text-muted-foreground">
-AI will use your trading profile to provide tailored probability-based analysis,
+                      AI will use your trading profile to provide tailored probability-based analysis,
                       risk assessments, and recommendations that match your strategy and goals.
                     </p>
                   </div>
-                  
-                  <Button 
+
+                  <Button
                     onClick={handleNextStep}
                     className="w-full"
                     size="lg"
@@ -943,7 +944,7 @@ AI will use your trading profile to provide tailored probability-based analysis,
 
             {/* Step 4: Review & Start */}
             {currentStep === "review" && (
-              <StepContainer 
+              <StepContainer
                 title="Review & Start Analysis"
                 description="Confirm your analysis parameters before starting the AI analysis"
                 isActive={true}
@@ -995,7 +996,7 @@ AI will use your trading profile to provide tailored probability-based analysis,
                       )}
                     </div>
                   </div>
-                  
+
                   {selectedSymbol && (
                     <MarketStatus
                       symbol={selectedSymbol.full_symbol}
@@ -1004,7 +1005,7 @@ AI will use your trading profile to provide tailored probability-based analysis,
                       type={selectedSymbol.type}
                     />
                   )}
-                  
+
                   <div className="p-4 bg-primary/10 rounded-lg border border-primary/20">
                     <h4 className="font-medium mb-2 flex items-center gap-2">
                       <BrainCircuit className="h-5 w-5" />
@@ -1018,8 +1019,8 @@ AI will use your trading profile to provide tailored probability-based analysis,
                       <li>• Tailored entry/exit strategies for your trading style</li>
                     </ul>
                   </div>
-                  
-                  <Button 
+
+                  <Button
                     onClick={handleNextStep}
                     disabled={loading}
                     className="w-full"
@@ -1043,7 +1044,7 @@ AI will use your trading profile to provide tailored probability-based analysis,
 
             {/* Step 5: Live Analysis */}
             {currentStep === "analysis" && (
-              <StepContainer 
+              <StepContainer
                 title="Live AI Analysis"
                 description="Our AI is analyzing market data and generating your probability-based analysis"
                 isActive={true}
@@ -1062,8 +1063,11 @@ AI will use your trading profile to provide tailored probability-based analysis,
 
             {/* Step 6: Results */}
             {currentStep === "results" && result && (
-              <div className="space-y-6">
-                
+              <div className="space-y-6 relative z-10 w-full animate-in fade-in slide-in-from-bottom-4 duration-700">
+                {/* Ambient glow effects behind results */}
+                <div className="pointer-events-none absolute -inset-32 bg-primary/5 blur-[120px] -z-10 rounded-[100%]" />
+                <div className="pointer-events-none absolute top-1/4 -right-32 w-96 h-96 bg-accent/5 blur-[120px] -z-10 rounded-[100%]" />
+
                 {/* AI Reasoning - Why this signal? (MOVED TO TOP) */}
                 {result.geminiForecast && (
                   <AIReasoningDisplay
@@ -1106,8 +1110,9 @@ AI will use your trading profile to provide tailored probability-based analysis,
                 )}
 
                 {/* START TRACKING BUTTON - Primary CTA */}
-                <Card className="border-2 border-primary bg-gradient-to-br from-primary/5 to-background">
-                  <CardContent className="p-6">
+                <Card className="glass-card border border-primary/30 bg-gradient-to-br from-background/80 to-primary/5 shadow-2xl relative overflow-hidden group">
+                  <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                  <CardContent className="p-8 relative z-10">
                     <div className="space-y-4">
                       <div className="text-center space-y-2">
                         <h3 className="text-2xl font-bold">Ready to Track This Trade?</h3>
@@ -1115,7 +1120,7 @@ AI will use your trading profile to provide tailored probability-based analysis,
                           Start monitoring this position in real-time with AI-powered tracking
                         </p>
                       </div>
-                      
+
                       {/* Context-aware label for the action buttons */}
                       {result.geminiForecast?.action_signal?.action === 'HOLD' ? (
                         <Alert className="border-yellow-500/50 bg-yellow-500/10">
@@ -1133,7 +1138,7 @@ AI will use your trading profile to provide tailored probability-based analysis,
                       )}
 
                       {/* Real trade button */}
-                      <Button 
+                      <Button
                         onClick={async () => {
                           setIsPaperTrade(false);
                           const { tradeTrackingService } = await import("@/services/tradeTrackingService");
@@ -1146,17 +1151,16 @@ AI will use your trading profile to provide tailored probability-based analysis,
                             setShowStrategyDialog(true);
                           }
                         }}
-                        className={`w-full text-lg py-6 shadow-lg ${
-                          result.geminiForecast?.action_signal?.action === 'HOLD' 
-                            ? 'bg-gradient-to-r from-yellow-600 to-yellow-500 hover:from-yellow-700 hover:to-yellow-600' 
-                            : 'bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600'
-                        }`}
+                        className={`w-full text-lg py-6 shadow-lg ${result.geminiForecast?.action_signal?.action === 'HOLD'
+                          ? 'bg-gradient-to-r from-yellow-600 to-yellow-500 hover:from-yellow-700 hover:to-yellow-600'
+                          : 'bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600'
+                          }`}
                         size="lg"
                       >
                         <Timer className="mr-2 h-5 w-5" />
-                        {result.geminiForecast?.action_signal?.action === 'HOLD' 
-                          ? '💰 Place Real Order Anyway (Real Money)' 
-                          : '🎯 Place Real Order & Track Trade'
+                        {result.geminiForecast?.action_signal?.action === 'HOLD'
+                          ? 'Place Order'
+                          : 'Place Order'
                         }
                       </Button>
 
@@ -1179,7 +1183,7 @@ AI will use your trading profile to provide tailored probability-based analysis,
                         size="lg"
                       >
                         <FlaskConical className="mr-2 h-5 w-5" />
-                        🧪 Paper Trade — Simulate (No Real Money)
+                        Paper Trade
                       </Button>
 
                       {/* Use previous strategy or choose new */}
@@ -1229,115 +1233,151 @@ AI will use your trading profile to provide tailored probability-based analysis,
                   </CardContent>
                 </Card>
 
-                {/* Capital Scenarios - Small vs Large investors */}
-                {result.geminiForecast?.expected_roi && (
-                  <CapitalScenarios
-                    currentPrice={result.currentPrice}
-                    expectedROI={{
-                      best:   result.geminiForecast.expected_roi.best_case   || 0.5,
-                      likely: result.geminiForecast.expected_roi.likely_case || 0.2,
-                      worst:  result.geminiForecast.expected_roi.worst_case  || -2.0
-                    }}
-                    stopLossPercentage={userProfile.stopLossPercentage || 5}
-                    leverage={userProfile.leverage}
-                    allowFractionalShares={true} // Modern brokers support fractional shares (Robinhood, Webull, etc.)
-                  />
-                )}
+                {/* Analytical Deep Dives - Grouped in Tabs to reduce scrolling */}
+                {/* Secondary Analytics - Grouped into Tabs */}
+                <div className="mt-8 animate-in fade-in delay-200 fill-mode-both duration-700">
+                  <Tabs defaultValue="action-plan" className="w-full">
+                    <TabsList className="grid w-full grid-cols-3 mb-8 bg-black/40 backdrop-blur-xl border border-white/10 p-1.5 rounded-full shadow-lg">
+                      <TabsTrigger
+                        value="action-plan"
+                        className="rounded-full data-[state=active]:bg-primary/20 data-[state=active]:text-primary transition-all duration-300"
+                      >
+                        Action Plan
+                      </TabsTrigger>
+                      <TabsTrigger
+                        value="market-context"
+                        className="rounded-full data-[state=active]:bg-primary/20 data-[state=active]:text-primary transition-all duration-300"
+                      >
+                        Market Context
+                      </TabsTrigger>
+                      <TabsTrigger
+                        value="deep-insights"
+                        className="rounded-full data-[state=active]:bg-primary/20 data-[state=active]:text-primary transition-all duration-300"
+                      >
+                        Deep Insights
+                      </TabsTrigger>
+                    </TabsList>
 
-                {/* Leverage Simulator */}
-                {(userProfile.leverage && userProfile.leverage > 1) || userProfile.marginType !== 'cash' ? (
-                  <LeverageSimulator
-                    investment={parseFloat(investment)}
-                    expectedMove={result.geminiForecast?.forecasts?.[0]?.expected_return_bp ? 
-                      result.geminiForecast.forecasts[0].expected_return_bp / 100 : 5}
-                    currentLeverage={userProfile.leverage || 1}
-                  />
-                ) : null}
+                    {/* TAB 1: Action Plan & Risk Mgmt */}
+                    <TabsContent value="action-plan" className="space-y-6 mt-0">
+                      {/* Capital Scenarios - Small vs Large investors */}
+                      {result.geminiForecast?.expected_roi && (
+                        <CapitalScenarios
+                          currentPrice={result.currentPrice}
+                          expectedROI={{
+                            best: result.geminiForecast.expected_roi.best_case || 0.5,
+                            likely: result.geminiForecast.expected_roi.likely_case || 0.2,
+                            worst: result.geminiForecast.expected_roi.worst_case || -2.0
+                          }}
+                          stopLossPercentage={userProfile.stopLossPercentage || 5}
+                          leverage={userProfile.leverage}
+                          allowFractionalShares={true}
+                        />
+                      )}
 
-                {/* Market Conditions Dashboard */}
-                <MarketConditionsDashboard />
+                      {/* Leverage Simulator */}
+                      {(userProfile.leverage && userProfile.leverage > 1) || userProfile.marginType !== 'cash' ? (
+                        <LeverageSimulator
+                          investment={parseFloat(investment)}
+                          expectedMove={result.geminiForecast?.forecasts?.[0]?.expected_return_bp ?
+                            result.geminiForecast.forecasts[0].expected_return_bp / 100 : 5}
+                          currentLeverage={userProfile.leverage || 1}
+                        />
+                      ) : null}
 
-                {/* Multi-Horizon Forecasts */}
-                {result.geminiForecast?.forecasts && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <BarChart3 className="h-5 w-5" />
-                        Multi-Horizon Forecasts
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <ForecastTable 
-                        forecasts={result.geminiForecast.forecasts} 
+                      {/* Key Levels */}
+                      {result.geminiForecast?.support_resistance && (
+                        <Card>
+                          <CardHeader>
+                            <CardTitle>Key Price Levels</CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <KeyLevels
+                              supportLevels={result.geminiForecast.support_resistance.supports}
+                              resistanceLevels={result.geminiForecast.support_resistance.resistances}
+                              currentPrice={result.currentPrice}
+                            />
+                          </CardContent>
+                        </Card>
+                      )}
+                    </TabsContent>
+
+                    {/* TAB 2: Market Context & Forecasts */}
+                    <TabsContent value="market-context" className="space-y-6 mt-0">
+                      {/* Market Conditions Dashboard */}
+                      <MarketConditionsDashboard />
+
+                      {/* Multi-Horizon Forecasts */}
+                      {result.geminiForecast?.forecasts && (
+                        <Card>
+                          <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                              <BarChart3 className="h-5 w-5" />
+                              Multi-Horizon Forecasts
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <ForecastTable
+                              forecasts={result.geminiForecast.forecasts}
+                              predictedAt={predictedAt}
+                              marketTimeZone={marketTimeZone}
+                              marketStatus={marketStatus}
+                            />
+                          </CardContent>
+                        </Card>
+                      )}
+                    </TabsContent>
+
+                    {/* TAB 3: Deep Insights & Timeline */}
+                    <TabsContent value="deep-insights" className="space-y-6 mt-0">
+                      {/* AI Insights */}
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>AI Insights & Analysis</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <Insights
+                            keyDrivers={result.geminiForecast?.forecasts?.[0]?.key_drivers}
+                            riskFlags={result.geminiForecast?.forecasts?.[0]?.risk_flags}
+                            opportunities={result.opportunities}
+                            rationale={result.rationale}
+                            patterns={result.patterns}
+                          />
+                        </CardContent>
+                      </Card>
+
+                      {/* News & AI Sentiment */}
+                      <NewsAnalysis
+                        symbol={result.symbol}
                         predictedAt={predictedAt}
-                        marketTimeZone={marketTimeZone}
-                        marketStatus={marketStatus}
                       />
-                    </CardContent>
-                  </Card>
-                )}
 
-                {/* Key Levels */}
-                {result.geminiForecast?.support_resistance && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Key Price Levels</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <KeyLevels
-                        supportLevels={result.geminiForecast.support_resistance.supports}
-                        resistanceLevels={result.geminiForecast.support_resistance.resistances}
-                        currentPrice={result.currentPrice}
-                      />
-                    </CardContent>
-                  </Card>
-                )}
-
-                {/* AI Insights */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle>AI Insights & Analysis</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <Insights
-                      keyDrivers={result.geminiForecast?.forecasts?.[0]?.key_drivers}
-                      riskFlags={result.geminiForecast?.forecasts?.[0]?.risk_flags}
-                      opportunities={result.opportunities}
-                      rationale={result.rationale}
-                      patterns={result.patterns}
-                    />
-                  </CardContent>
-                </Card>
-
-                {/* News & AI Sentiment */}
-                <NewsAnalysis 
-                  symbol={result.symbol} 
-                  predictedAt={predictedAt} 
-                />
-
-                {/* Pipeline Timeline */}
-                {result.meta?.pipeline && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Analysis Timeline</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <PredictionTimeline
-                        pipeline={result.meta.pipeline}
-                        forecasts={result.geminiForecast?.forecasts?.map(f => ({
-                          horizon: f.horizon,
-                          direction: f.direction,
-                          probabilities: f.probabilities,
-                          expected_return_bp: f.expected_return_bp,
-                          confidence: f.confidence
-                        })) || []}
-                        predictedAt={predictedAt || new Date()}
-                        marketTimeZone={marketTimeZone}
-                        marketStatus={marketStatus}
-                      />
-                    </CardContent>
-                  </Card>
-                )}
+                      {/* Pipeline Timeline */}
+                      {result.meta?.pipeline && (
+                        <Card>
+                          <CardHeader>
+                            <CardTitle>Analysis Timeline</CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <PredictionTimeline
+                              pipeline={result.meta.pipeline}
+                              forecasts={result.geminiForecast?.forecasts?.map(f => ({
+                                horizon: f.horizon,
+                                direction: f.direction,
+                                probabilities: f.probabilities,
+                                expected_return_bp: f.expected_return_bp,
+                                confidence: f.confidence
+                              })) || []}
+                              predictedAt={predictedAt || new Date()}
+                              marketTimeZone={marketTimeZone}
+                              marketStatus={marketStatus}
+                            />
+                          </CardContent>
+                        </Card>
+                      )}
+                    </TabsContent>
+                  </Tabs>
+                </div>
 
                 {/* Regulatory Disclaimer */}
                 <RegulatoryDisclaimer />
@@ -1345,13 +1385,13 @@ AI will use your trading profile to provide tailored probability-based analysis,
                 {/* Action Buttons */}
                 <div className="flex flex-col gap-4">
                   <div className="grid grid-cols-2 gap-4">
-                    <Button 
+                    <Button
                       onClick={startNewPredictionFlow}
                       variant="outline"
                     >
                       New Analysis
                     </Button>
-                    <Button 
+                    <Button
                       onClick={() => navigate('/predictions')}
                       variant="outline"
                     >
@@ -1359,7 +1399,7 @@ AI will use your trading profile to provide tailored probability-based analysis,
                     </Button>
                   </div>
 
-                  <Button 
+                  <Button
                     onClick={() => navigate('/active-trades')}
                     variant="secondary"
                     className="w-full"
@@ -1373,54 +1413,55 @@ AI will use your trading profile to provide tailored probability-based analysis,
 
           {/* Right Column - Live Chart */}
           {!isMobile && (
-            <div className="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-8 space-y-6">
-            <Card>
-              <CardHeader className={`${isMobile ? 'pb-2' : 'pb-4'}`}>
-                <div className="flex items-center justify-between">
-                  <CardTitle className={`${isMobile ? 'text-base' : 'text-lg'}`}>Live Chart</CardTitle>
-                  {symbol && (
-                    <Badge variant="outline" className="text-xs">
-                      {symbol}
-                    </Badge>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent className="p-0">
-                <div className={`${isMobile ? 'h-[300px]' : 'h-[600px]'}`}>
-                  <ChartPanel
-                    syncSymbol={symbol ? getTradingViewSymbol(selectedSymbol?.full_symbol || symbol) : undefined}
-                    defaultSymbol="NASDAQ:AAPL"
-                    defaultInterval="D"
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Chart Analysis */}
-            {chartAnalysis && (
-              <Card className={`${isMobile ? 'mt-4' : 'mt-6'}`}>
-                <CardHeader className={isMobile ? 'pb-2' : ''}>
-                  <CardTitle className={`${isMobile ? 'text-base' : 'text-lg'}`}>Chart Analysis</CardTitle>
-                </CardHeader>
-                <CardContent className={isMobile ? 'pt-2' : ''}>
-                  <div className="space-y-3">
-                    <p className={`leading-relaxed ${isMobile ? 'text-sm' : 'text-sm'}`}>{chartAnalysis}</p>
-                    {chartDataSource && (
-                      <p className="text-xs text-muted-foreground">
-                        Data source: {chartDataSource}
-                      </p>
+            <div className="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-8 space-y-6 h-[calc(100vh-8rem)] animate-in fade-in slide-in-from-right-8 duration-700">
+              <Card className="glass-card overflow-hidden border-white/10 bg-gradient-to-b from-card/80 to-background/90 shadow-2xl h-[85vh] flex flex-col">
+                <CardHeader className={`${isMobile ? 'pb-2' : 'pb-4'} border-b border-white/5`}>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className={`${isMobile ? 'text-base' : 'text-lg'}`}>Live Chart</CardTitle>
+                    {symbol && (
+                      <Badge variant="outline" className="text-xs">
+                        {symbol}
+                      </Badge>
                     )}
+                  </div>
+                </CardHeader>
+                <CardContent className="p-0 flex-1 relative">
+                  <div className="absolute inset-0">
+                    <ChartPanel
+                      syncSymbol={symbol ? getTradingViewSymbol(selectedSymbol?.full_symbol || symbol) : undefined}
+                      defaultSymbol="NASDAQ:AAPL"
+                      defaultInterval="D"
+                    />
                   </div>
                 </CardContent>
               </Card>
-            )}
+
+              {/* Chart Analysis */}
+              {chartAnalysis && (
+                <Card className={`${isMobile ? 'mt-4' : 'mt-6'}`}>
+                  <CardHeader className={isMobile ? 'pb-2' : ''}>
+                    <CardTitle className={`${isMobile ? 'text-base' : 'text-lg'}`}>Chart Analysis</CardTitle>
+                  </CardHeader>
+                  <CardContent className={isMobile ? 'pt-2' : ''}>
+                    <div className="space-y-3">
+                      <p className={`leading-relaxed ${isMobile ? 'text-sm' : 'text-sm'}`}>{chartAnalysis}</p>
+                      {chartDataSource && (
+                        <p className="text-xs text-muted-foreground">
+                          Data source: {chartDataSource}
+                        </p>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
-          )}
-        </div>
-      </Container>
+          )
+          }
+        </div >
+      </Container >
 
       {/* Disclaimer */}
-      <div className="border-t bg-muted/20">
+      < div className="border-t bg-muted/20" >
         <Container className="py-4">
           <Alert>
             <AlertTriangle className="h-4 w-4" />
@@ -1430,8 +1471,8 @@ AI will use your trading profile to provide tailored probability-based analysis,
             </AlertDescription>
           </Alert>
         </Container>
-      </div>
-    </div>
+      </div >
+    </div >
   );
 };
 

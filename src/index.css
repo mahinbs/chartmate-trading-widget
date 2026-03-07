@@ -236,3 +236,48 @@ All colors MUST be HSL.
   animation: drop linear forwards;
 }
 
+/* ─── Custom Scrollbar ──────────────────────────────────────────────────────── */
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(217 91% 60% / 0.6) hsl(0 0% 10%);
+}
+
+/* Webkit (Chrome, Edge, Safari) */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(0 0% 8%);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(217 91% 60% / 0.5);
+  border-radius: 999px;
+  transition: background 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(217 91% 60% / 0.85);
+}
+
+::-webkit-scrollbar-corner {
+  background: hsl(0 0% 8%);
+}
+
+/* ─── Hide Scrollbar Utility ────────────────────────────────────────────────── */
+/* Use .no-scrollbar to visually hide the scrollbar while keeping scroll behaviour */
+
+.no-scrollbar {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE / Edge legacy */
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none; /* Chrome / Safari */
+}
+

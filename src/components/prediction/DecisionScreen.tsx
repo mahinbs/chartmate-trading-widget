@@ -4,10 +4,10 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ActionSignal } from "./ActionSignal";
 import { RiskGrade } from "./RiskGrade";
 import { formatCurrency, formatPercentage } from "@/lib/display-utils";
-import { 
-  TrendingUp, 
-  TrendingDown, 
-  DollarSign, 
+import {
+  TrendingUp,
+  TrendingDown,
+  DollarSign,
   Target,
   AlertTriangle,
   Clock,
@@ -103,51 +103,53 @@ export function DecisionScreen({
   const recommendation = getActionRecommendation();
 
   return (
-    <Card className="border-2 border-primary/20 bg-gradient-to-br from-primary/5 to-background">
-      <CardHeader className="pb-4">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-2xl">Investment Decision</CardTitle>
-          <div className="flex gap-2">
+    <Card className="glass-card border-none bg-gradient-to-br from-card/80 to-background/80 shadow-2xl relative overflow-hidden">
+      <div className={`absolute top-0 inset-x-0 h-1 ${action === 'BUY' ? 'bg-gradient-to-r from-green-500/0 via-green-500 to-green-500/0' :
+          action === 'SELL' ? 'bg-gradient-to-r from-red-500/0 via-red-500 to-red-500/0' :
+            'bg-gradient-to-r from-amber-500/0 via-amber-500 to-amber-500/0'
+        }`} />
+
+      <CardHeader className="pb-6 pt-8 px-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <CardTitle className="text-3xl font-bold tracking-tight">Investment Decision</CardTitle>
+          <div className="flex gap-3 bg-black/20 p-1.5 rounded-2xl backdrop-blur-sm border border-white/5">
             <ActionSignal action={action} confidence={confidence} size="lg" />
             <RiskGrade level={riskLevel} size="lg" />
           </div>
         </div>
-        
+
         {/* WHY THIS SIGNAL - Prominent Explanation */}
-        <Alert className={`mt-4 ${
-          action === 'BUY' ? 'border-green-500/30 bg-green-500/10' : 
-          action === 'SELL' ? 'border-red-500/30 bg-red-500/10' : 
-          'border-amber-500/30 bg-amber-500/10'
-        }`}>
-          <AlertTriangle className={`h-4 w-4 ${
-            action === 'BUY' ? 'text-green-600' : 
-            action === 'SELL' ? 'text-red-600' : 
-            'text-amber-600'
-          }`} />
-          <AlertDescription>
-            <p className={`font-bold text-sm mb-1 ${
-              action === 'BUY' ? 'text-green-700 dark:text-green-400' : 
-              action === 'SELL' ? 'text-red-700 dark:text-red-400' : 
-              'text-amber-700 dark:text-amber-400'
-            }`}>
+        <Alert className={`mt-6 backdrop-blur-md shadow-lg ${action === 'BUY' ? 'border-green-500/20 bg-green-500/5' :
+            action === 'SELL' ? 'border-red-500/20 bg-red-500/5' :
+              'border-amber-500/20 bg-amber-500/5'
+          }`}>
+          <AlertTriangle className={`h-5 w-5 ${action === 'BUY' ? 'text-green-500' :
+              action === 'SELL' ? 'text-red-500' :
+                'text-amber-500'
+            }`} />
+          <AlertDescription className="ml-2">
+            <p className={`font-semibold text-base mb-1 tracking-wide ${action === 'BUY' ? 'text-green-600 dark:text-green-400' :
+                action === 'SELL' ? 'text-red-600 dark:text-red-400' :
+                  'text-amber-600 dark:text-amber-400'
+              }`}>
               Why {action}?
             </p>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-muted-foreground leading-relaxed">
               {recommendation.explanation}
             </p>
           </AlertDescription>
         </Alert>
       </CardHeader>
-      
-      <CardContent className="space-y-6">
-        
+
+      <CardContent className="space-y-8 px-6 pb-8">
+
         {/* Main Investment Scenario */}
-        <div className="p-6 bg-muted/50 rounded-lg border-2 border-primary/20">
+        <div className="p-6 bg-gradient-to-br from-muted/30 to-muted/5 rounded-2xl border border-white/5 shadow-inner">
           <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
             <DollarSign className="h-5 w-5 text-primary" />
             If You Invest {fmt(investment, 0)} Today
           </h3>
-          
+
           <div className="grid grid-cols-3 gap-4">
             {/* Best Case - use 2 decimals so small investments (e.g. ₹10) don't show ₹0 */}
             <div className="text-center p-4 bg-green-500/10 rounded-lg border border-green-500/30">
@@ -247,33 +249,11 @@ export function DecisionScreen({
           <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription>
-              <span className="font-semibold">Leverage Warning:</span> {leverage}x leverage amplifies both 
-              gains and losses. A {(100/leverage).toFixed(1)}% adverse move could wipe out your position.
+              <span className="font-semibold">Leverage Warning:</span> {leverage}x leverage amplifies both
+              gains and losses. A {(100 / leverage).toFixed(1)}% adverse move could wipe out your position.
             </AlertDescription>
           </Alert>
         )}
-
-        {/* Action Button */}
-        <div className="space-y-3">
-          <Button 
-            className={`w-full text-lg py-6 ${recommendation.color}`}
-            size="lg"
-          >
-            {recommendation.text}
-          </Button>
-          <p className="text-center text-sm text-muted-foreground">
-            {recommendation.reason}
-          </p>
-        </div>
-
-        {/* One-Line Summary */}
-        <div className="p-4 bg-primary/10 rounded-lg border border-primary/20 text-center">
-          <p className="font-semibold text-sm">
-            {action === 'BUY' && `${action} ${symbol} at ${fmt(currentPrice, 2)} with ${recommendedHoldPeriod || '1 week'} hold for ${formatPercentage(expectedROI.likely, 0, false)} gain`}
-            {action === 'SELL' && `${action} ${symbol} - bearish outlook`}
-            {action === 'HOLD' && `${action} ${symbol} - wait for better opportunity`}
-          </p>
-        </div>
 
       </CardContent>
     </Card>
