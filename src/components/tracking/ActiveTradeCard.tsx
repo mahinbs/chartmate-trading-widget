@@ -76,6 +76,7 @@ export function ActiveTradeCard({
   const strategyLabel = trade.strategyType
     ? trade.strategyType.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
     : "Not specified";
+  const isPaperTrade = trade.brokerOrderId?.startsWith("PAPER-") ?? false;
 
   return (
     <Card className={cn(
@@ -93,7 +94,7 @@ export function ActiveTradeCard({
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="space-y-1">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <CardTitle className="text-2xl font-bold">{trade.symbol}</CardTitle>
               <ActionSignal 
                 action={trade.action} 
@@ -102,6 +103,11 @@ export function ActiveTradeCard({
               />
               {trade.riskGrade && (
                 <RiskGrade level={trade.riskGrade as any} size="sm" />
+              )}
+              {isPaperTrade && (
+                <Badge className="bg-violet-500/15 text-violet-700 border border-violet-500/40 text-[10px] uppercase tracking-wide">
+                  🧪 Paper Trade
+                </Badge>
               )}
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">

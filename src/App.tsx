@@ -17,6 +17,7 @@ import MarketPicksPage from "./pages/MarketPicksPage";
 import AdminUsersPage from "./pages/admin/AdminUsersPage";
 import AdminPredictionsPage from "./pages/admin/AdminPredictionsPage";
 import { AdminRoute } from "./components/AdminRoute";
+import { AdminLayout } from "./components/admin/AdminLayout";
 import { useEffect } from "react";
 
 // OpenAlgo ping temporarily disabled in mock-order mode to avoid CORS noise
@@ -88,23 +89,11 @@ const App = () => (
               path="/market-picks"
               element={<MarketPicksPage />}
             />
-            <Route
-              path="/admin/users"
-              element={
-                <AdminRoute>
-                  <AdminUsersPage />
-                </AdminRoute>
-              }
-            />
-            <Route
-              path="/admin/predictions"
-              element={
-                <AdminRoute>
-                  <AdminPredictionsPage />
-                </AdminRoute>
-              }
-            />
-            <Route path="/admin" element={<Navigate to="/admin/users" replace />} />
+            <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
+              <Route index element={<Navigate to="users" replace />} />
+              <Route path="users" element={<AdminUsersPage />} />
+              <Route path="predictions" element={<AdminPredictionsPage />} />
+            </Route>
             <Route path="*" element={<Navigate to="/home" replace />} />
           </Routes>
         </div>

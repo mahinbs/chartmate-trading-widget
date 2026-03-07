@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Users, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -17,7 +16,6 @@ interface AdminUser {
 }
 
 export default function AdminUsersPage() {
-  const navigate = useNavigate();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -42,27 +40,13 @@ export default function AdminUsersPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="border-b bg-card/50">
-        <div className="container mx-auto px-4 py-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-3 flex-wrap">
-            <Button variant="outline" size="sm" onClick={() => navigate("/admin/predictions")}>
-              <ArrowLeft className="h-4 w-4 mr-1" />
-              Admin Analyses
-            </Button>
-            <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
-              <Users className="h-6 w-6" />
-              Admin Users
-            </h1>
-          </div>
-          <Button variant="outline" onClick={loadUsers} disabled={loading} className="w-full md:w-auto">
-            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
-            Refresh
-          </Button>
-        </div>
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <Button variant="outline" onClick={loadUsers} disabled={loading} className="w-full md:w-auto">
+          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
+          Refresh
+        </Button>
       </div>
-
-      <div className="container mx-auto px-4 py-6">
         <Card>
           <CardHeader>
             <CardTitle>Registered Users ({users.length})</CardTitle>
@@ -101,7 +85,6 @@ export default function AdminUsersPage() {
             </Table>
           </CardContent>
         </Card>
-      </div>
     </div>
   );
 }

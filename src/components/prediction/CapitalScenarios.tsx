@@ -17,6 +17,16 @@ interface CapitalScenariosProps {
   allowFractionalShares?: boolean; // Some brokers allow, some don't
 }
 
+/** Returns a sensible number of decimal places so crypto/small amounts never show $0 */
+function smartDecimals(value: number): number {
+  const abs = Math.abs(value);
+  if (abs === 0) return 2;
+  if (abs < 0.01) return 6;
+  if (abs < 1) return 4;
+  if (abs < 10) return 2;
+  return 0;
+}
+
 export function CapitalScenarios({ 
   currentPrice, 
   expectedROI,
@@ -109,12 +119,12 @@ export function CapitalScenarios({
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  
+
                   {/* Best Case */}
                   <div className="text-center p-3 bg-green-500/10 rounded border border-green-500/30">
                     <p className="text-xs text-muted-foreground mb-1">Best Case</p>
                     <p className="text-lg font-bold text-green-600">
-                      {formatCurrency(scenario.bestCase, 0)}
+                      {formatCurrency(scenario.bestCase, smartDecimals(scenario.bestCase))}
                     </p>
                     <p className="text-xs text-green-600">{formatPercentage(expectedROI.best)}</p>
                   </div>
@@ -123,7 +133,7 @@ export function CapitalScenarios({
                   <div className="text-center p-3 bg-blue-500/10 rounded border border-blue-500/30">
                     <p className="text-xs text-muted-foreground mb-1">Likely</p>
                     <p className="text-lg font-bold text-blue-600">
-                      {formatCurrency(scenario.likelyCase, 0)}
+                      {formatCurrency(scenario.likelyCase, smartDecimals(scenario.likelyCase))}
                     </p>
                     <p className="text-xs text-blue-600">{formatPercentage(expectedROI.likely)}</p>
                   </div>
@@ -132,7 +142,7 @@ export function CapitalScenarios({
                   <div className="text-center p-3 bg-orange-500/10 rounded border border-orange-500/30">
                     <p className="text-xs text-muted-foreground mb-1">Worst Case</p>
                     <p className="text-lg font-bold text-orange-600">
-                      {formatCurrency(scenario.worstCase, 0)}
+                      {formatCurrency(scenario.worstCase, smartDecimals(scenario.worstCase), true)}
                     </p>
                     <p className="text-xs text-orange-600">{formatPercentage(expectedROI.worst, 2, false)}</p>
                   </div>
@@ -141,7 +151,7 @@ export function CapitalScenarios({
                   <div className="text-center p-3 bg-red-500/10 rounded border border-red-500/30">
                     <p className="text-xs text-muted-foreground mb-1">Max Loss</p>
                     <p className="text-lg font-bold text-red-600">
-                      -{formatCurrency(scenario.maxLoss, 0)}
+                      -{formatCurrency(scenario.maxLoss, smartDecimals(scenario.maxLoss))}
                     </p>
                     <p className="text-xs text-red-600">-{stopLossPercentage}%</p>
                   </div>
@@ -153,7 +163,7 @@ export function CapitalScenarios({
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Risk per trade:</span>
                     <span className="font-semibold">
-                      {formatCurrency(scenario.maxLoss, 0)} ({stopLossPercentage}% of capital)
+                      {formatCurrency(scenario.maxLoss, smartDecimals(scenario.maxLoss))} ({stopLossPercentage}% of capital)
                     </span>
                   </div>
                   <div className="flex justify-between text-sm mt-1">

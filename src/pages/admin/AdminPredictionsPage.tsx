@@ -1,21 +1,24 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, RefreshCw, Users } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { RefreshCw, BrainCircuit, Loader2, Upload, BarChart3, Search, TrendingUp, Shield, Sparkles, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { SymbolSearch } from "@/components/SymbolSearch";
+import type { SymbolData } from "@/components/SymbolSearch";
 
-interface WatchlistItem {
-  symbol: string;
-  display_name?: string;
-  timeframe?: string;
-  investment?: number;
-}
+// Same result components as PredictPage — full in-depth display
+import { AIReasoningDisplay } from "@/components/prediction/AIReasoningDisplay";
+import { DecisionScreen } from "@/components/prediction/DecisionScreen";
+import { ForecastTable } from "@/components/prediction/ForecastTable";
+import { KeyLevels } from "@/components/prediction/KeyLevels";
+import { Insights } from "@/components/prediction/Insights";
+import { CapitalScenarios } from "@/components/prediction/CapitalScenarios";
 
 interface BoardRow {
   id: string;
@@ -26,275 +29,550 @@ interface BoardRow {
   expires_at: string;
   generated_for_date: string;
   refresh_reason: string;
+  timeframe: string;
+  investment: number;
 }
 
-const DEFAULT_TIMEFRAME = "1d";
+const TIMEFRAMES = ["15m", "30m", "1h", "4h", "1d", "1w"];
+
+function getTimeframeMinutes(tf: string): number {
+  const match = tf.match(/^(\d+)([mhd]|w)$/);
+  if (!match) return 60;
+  const [, value, unit] = match;
+  const num = parseInt(value, 10);
+  switch (unit) {
+    case "m": return num;
+    case "h": return num * 60;
+    case "d": return num * 1440;
+    case "w": return num * 10080;
+    default: return 60;
+  }
+}
+
+const PIPELINE_STEPS = [
+  { icon: Search,     label: "Fetching Market Data",       desc: "Real-time price, volume, change data" },
+  { icon: BarChart3,  label: "Historical Analysis",         desc: "Full-year candles, fundamentals, earnings" },
+  { icon: TrendingUp, label: "Technical Indicators",        desc: "RSI, MACD, Bollinger Bands, regime detection" },
+  { icon: TrendingUp, label: "News & Sentiment",            desc: "Market news, macro events, sector correlation" },
+  { icon: BrainCircuit, label: "Gemini AI Processing",      desc: "Multi-horizon forecasts, positioning guidance" },
+  { icon: Shield,     label: "Risk Assessment",             desc: "Risk grade, stop-loss, take-profit targets" },
+  { icon: Sparkles,   label: "Compiling Full Report",       desc: "ROI scenarios, key levels, insights" },
+];
+
+// Default profile matching a normal user analysis — ensures same Gemini prompt and pipeline
+const DEFAULT_PROFILE = {
+  riskTolerance: "medium" as const,
+  tradingStyle: "swing_trading" as const,
+  investmentGoal: "growth" as const,
+  stopLossPercentage: 5,
+  targetProfitPercentage: 15,
+  leverage: 1,
+  marginType: "cash" as const,
+};
 
 export default function AdminPredictionsPage() {
-  const navigate = useNavigate();
-  const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [boardRows, setBoardRows] = useState<BoardRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [savingWatchlist, setSavingWatchlist] = useState(false);
-  const [generating, setGenerating] = useState(false);
-  const [newSymbol, setNewSymbol] = useState("");
-  const [newDisplayName, setNewDisplayName] = useState("");
-  const [newTimeframe, setNewTimeframe] = useState(DEFAULT_TIMEFRAME);
-  const [newInvestment, setNewInvestment] = useState("10000");
 
-  const watchlistInputs = useMemo(() => watchlist.slice(0, 10), [watchlist]);
+  const [symbol, setSymbol] = useState("");
+  const [selectedSymbol, setSelectedSymbol] = useState<SymbolData | null>(null);
+  const [investment, setInvestment] = useState("10000");
+  const [timeframe, setTimeframe] = useState("1d");
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analyzeStep, setAnalyzeStep] = useState(0);
+  const [publishing, setPublishing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<any>(null);
+  const [analysedAt, setAnalysedAt] = useState<Date | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [repredictingId, setRepredictingId] = useState<string | null>(null);
 
-  const loadData = async () => {
+  const loadBoard = async (silent = false) => {
     try {
-      setLoading(true);
-      const [{ data: watchData, error: watchError }, { data: boardData, error: boardError }] = await Promise.all([
-        supabase.functions.invoke("admin-watchlist", { method: "GET" }),
-        supabase.functions.invoke("admin-daily-board", { method: "GET" }),
-      ]);
-      if (watchError) throw watchError;
-      if (boardError) throw boardError;
-
-      setWatchlist((watchData?.items || []).map((item: any) => ({
-        symbol: item.symbol,
-        display_name: item.display_name || "",
-        timeframe: item.timeframe || DEFAULT_TIMEFRAME,
-        investment: item.investment || 10000,
-      })));
-      setBoardRows(boardData?.rows || []);
+      if (!silent) setLoading(true);
+      const { data, error } = await supabase.functions.invoke("admin-daily-board", { method: "GET" });
+      if (error) throw error;
+      setBoardRows(data?.rows || []);
     } catch (error: any) {
-      console.error("Failed to load admin data:", error);
-      toast.error(error?.message || "Failed to load admin data");
+      if (!silent) toast.error(error?.message || "Failed to load board");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
+    }
+  };
+
+  const deleteRow = async (id: string) => {
+    if (!confirm("Delete this prediction from the daily board?")) return;
+    setDeletingId(id);
+    try {
+      const { error } = await supabase.functions.invoke("admin-daily-board", {
+        body: { action: "delete", id },
+      });
+      if (error) throw error;
+      toast.success("Prediction deleted");
+      setBoardRows((prev) => prev.filter((r) => r.id !== id));
+    } catch (err: any) {
+      toast.error(err?.message || "Delete failed");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const repredictRow = async (row: BoardRow) => {
+    setRepredictingId(row.id);
+    try {
+      const { error } = await supabase.functions.invoke("admin-daily-board", {
+        body: {
+          action: "re_predict",
+          symbol: row.symbol,
+          display_name: row.display_name,
+          timeframe: row.timeframe || "1d",
+          investment: row.investment || 10000,
+        },
+      });
+      if (error) throw error;
+      toast.success(`Re-prediction for ${row.display_name || row.symbol} complete`);
+      await loadBoard(true);
+    } catch (err: any) {
+      toast.error(err?.message || "Re-predict failed");
+    } finally {
+      setRepredictingId(null);
     }
   };
 
   useEffect(() => {
-    loadData();
+    loadBoard();
+    // Poll every 30s and auto-refresh expired rows
+    const interval = setInterval(async () => {
+      await loadBoard(true);
+    }, 30_000);
+    return () => clearInterval(interval);
   }, []);
 
-  const updateWatchInput = (index: number, key: keyof WatchlistItem, value: string) => {
-    const next = [...watchlistInputs];
-    next[index] = { ...next[index], [key]: value };
-    setWatchlist(next);
-  };
+  // Auto-refresh expired rows when admin is on this page
+  useEffect(() => {
+    const expiredRows = boardRows.filter((r) => new Date(r.expires_at).getTime() < Date.now());
+    if (!expiredRows.length || repredictingId) return;
+    const timeout = setTimeout(() => {
+      expiredRows.forEach((r) => repredictRow(r));
+    }, 2_000);
+    return () => clearTimeout(timeout);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boardRows.map((r) => r.id + r.expires_at).join(",")]);
 
-  const addWatchItem = () => {
-    if (!newSymbol.trim()) {
-      toast.error("Enter a symbol first");
-      return;
-    }
-    if (watchlistInputs.length >= 10) {
-      toast.error("Maximum 10 symbols allowed");
-      return;
-    }
-    const normalized = newSymbol.trim().toUpperCase();
-    if (watchlistInputs.some((w) => w.symbol?.trim().toUpperCase() === normalized)) {
-      toast.error("Symbol already added");
-      return;
-    }
-    setWatchlist([
-      ...watchlistInputs,
-      {
-        symbol: normalized,
-        display_name: newDisplayName.trim() || normalized,
-        timeframe: newTimeframe || DEFAULT_TIMEFRAME,
-        investment: Number(newInvestment || 10000),
-      },
-    ]);
-    setNewSymbol("");
-    setNewDisplayName("");
-    setNewTimeframe(DEFAULT_TIMEFRAME);
-    setNewInvestment("10000");
-  };
+  const runAnalysis = async () => {
+    const rawSymbol = selectedSymbol?.full_symbol || symbol;
+    if (!rawSymbol?.trim()) { toast.error("Pick a symbol first"); return; }
+    if (!investment || Number(investment) <= 0) { toast.error("Enter a valid investment amount"); return; }
 
-  const removeWatchItem = (index: number) => {
-    setWatchlist(watchlistInputs.filter((_, i) => i !== index));
-  };
+    setAnalyzing(true);
+    setAnalyzeStep(0);
+    setAnalysisResult(null);
+    setAnalysedAt(null);
 
-  const saveWatchlist = async () => {
+    // Animate through pipeline steps to match user experience
+    const stepInterval = setInterval(() => {
+      setAnalyzeStep(prev => (prev < PIPELINE_STEPS.length - 1 ? prev + 1 : prev));
+    }, 3500);
+
     try {
-      setSavingWatchlist(true);
-      const cleaned = watchlistInputs
-        .map((item) => ({
-          symbol: item.symbol?.trim().toUpperCase() || "",
-          display_name: item.display_name?.trim() || item.symbol?.trim().toUpperCase() || "",
-          timeframe: item.timeframe?.trim() || DEFAULT_TIMEFRAME,
-          investment: Number(item.investment || 10000),
-        }))
-        .filter((item) => item.symbol);
-
-      const { data, error } = await supabase.functions.invoke("admin-watchlist", {
-        method: "PUT",
-        body: { items: cleaned },
+      const apiSymbol = rawSymbol.includes(":") ? rawSymbol.split(":")[1] : rawSymbol;
+      const primaryHorizon = getTimeframeMinutes(timeframe);
+      // Identical request to PredictPage.handlePredict — same pipeline, same Gemini prompt, same user context
+      const { data, error } = await supabase.functions.invoke("predict-movement", {
+        body: {
+          symbol: apiSymbol,
+          investment: Number(investment),
+          timeframe,
+          horizons: [primaryHorizon, 240, 1440, 10080],
+          ...DEFAULT_PROFILE,
+        },
       });
       if (error) throw error;
-
-      setWatchlist((data?.items || []).map((item: any) => ({
-        symbol: item.symbol,
-        display_name: item.display_name || "",
-        timeframe: item.timeframe || DEFAULT_TIMEFRAME,
-        investment: item.investment || 10000,
-      })));
-      toast.success("Watchlist saved");
+      setAnalysisResult(data);
+      setAnalysedAt(new Date());
+      setAnalyzeStep(PIPELINE_STEPS.length - 1);
+      toast.success("Full Gemini AI analysis complete — review then publish to Daily Board");
     } catch (error: any) {
-      console.error("Failed to save watchlist:", error);
-      toast.error(error?.message || "Failed to save watchlist");
+      console.error("Analysis error:", error);
+      toast.error(error?.message || "Analysis failed");
     } finally {
-      setSavingWatchlist(false);
+      clearInterval(stepInterval);
+      setAnalyzing(false);
     }
   };
 
-  const generateNow = async () => {
+  const publishToBoard = async () => {
+    if (!analysisResult) return;
+    const rawSymbol = selectedSymbol?.full_symbol || symbol;
+    const apiSymbol = rawSymbol?.includes(":") ? rawSymbol.split(":")[1] : rawSymbol;
+    const displayName = selectedSymbol?.symbol || selectedSymbol?.description || apiSymbol || symbol;
+    setPublishing(true);
     try {
-      setGenerating(true);
+      // Send only what the daily board needs — strip historical candles & large arrays
+      // to stay well within the edge function request body size limit.
+      const gf = analysisResult?.geminiForecast;
+      const slimPayload = {
+        symbol: analysisResult?.symbol,
+        currentPrice: analysisResult?.currentPrice,
+        change: analysisResult?.change,
+        changePercent: analysisResult?.changePercent,
+        rationale: analysisResult?.rationale,
+        patterns: analysisResult?.patterns,
+        opportunities: analysisResult?.opportunities,
+        geminiForecast: gf ? {
+          action_signal: gf.action_signal,
+          forecasts: gf.forecasts?.slice(0, 4),          // primary horizons only
+          support_resistance: gf.support_resistance,
+          positioning_guidance: gf.positioning_guidance,
+          expected_roi: gf.expected_roi,
+          risk_grade: gf.risk_grade,
+          deep_analysis: gf.deep_analysis,
+          market_context: gf.market_context,
+        } : undefined,
+      };
       const { error } = await supabase.functions.invoke("admin-daily-board", {
         method: "POST",
-        body: { action: "generate" },
+        body: {
+          action: "publish",
+          symbol: apiSymbol,
+          display_name: displayName,
+          timeframe,
+          investment: Number(investment),
+          prediction_payload: slimPayload,
+        },
       });
       if (error) throw error;
-      toast.success("Analyses generated");
-      await loadData();
+      toast.success("Published to Daily Board — visible to all users on Daily Analysis page");
+      setAnalysisResult(null);
+      setAnalysedAt(null);
+      await loadBoard();
     } catch (error: any) {
-      console.error("Failed to generate analyses:", error);
-      toast.error(error?.message || "Failed to generate analyses");
+      toast.error(error?.message || "Publish failed");
     } finally {
-      setGenerating(false);
+      setPublishing(false);
     }
   };
 
-  const refreshExpired = async () => {
-    try {
-      setGenerating(true);
-      const { error } = await supabase.functions.invoke("admin-daily-board", {
-        method: "POST",
-        body: { action: "refresh_expired" },
-      });
-      if (error) throw error;
-      toast.success("Expired analyses refreshed");
-      await loadData();
-    } catch (error: any) {
-      console.error("Failed to refresh expired analyses:", error);
-      toast.error(error?.message || "Failed to refresh expired analyses");
-    } finally {
-      setGenerating(false);
-    }
-  };
+  const gf = analysisResult?.geminiForecast;
+  const action: "BUY" | "SELL" | "HOLD" = gf?.action_signal?.action || "HOLD";
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="border-b bg-card/50">
-        <div className="container mx-auto px-4 py-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-3 flex-wrap">
-            <Button variant="outline" size="sm" onClick={() => navigate("/home")}>
-              <ArrowLeft className="h-4 w-4 mr-1" />
-              Home
-            </Button>
-            <h1 className="text-xl md:text-2xl font-bold">Admin Daily Analyses</h1>
-          </div>
-          <div className="flex flex-col w-full md:w-auto md:flex-row items-stretch md:items-center gap-2">
-            <Button variant="outline" onClick={() => navigate("/admin/users")} className="w-full md:w-auto">
-              <Users className="h-4 w-4 mr-2" />
-              Users
-            </Button>
-            <Button variant="outline" onClick={loadData} disabled={loading} className="w-full md:w-auto">
-              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
-              Reload
-            </Button>
-          </div>
-        </div>
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Button variant="outline" onClick={() => loadBoard()} disabled={loading} className="w-full md:w-auto">
+          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
+          Reload board
+        </Button>
       </div>
 
-      <div className="container mx-auto px-4 py-6 space-y-6">
-        <Card>
-          <CardHeader><CardTitle>Top 10 Symbols Watchlist</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
-            <div className="rounded-lg border p-3 grid grid-cols-1 md:grid-cols-5 gap-3">
-              <div>
-                <Label>Symbol</Label>
-                <Input placeholder="AAPL" value={newSymbol} onChange={(e) => setNewSymbol(e.target.value)} />
-              </div>
-              <div>
-                <Label>Display Name</Label>
-                <Input placeholder="Apple" value={newDisplayName} onChange={(e) => setNewDisplayName(e.target.value)} />
-              </div>
-              <div>
-                <Label>Timeframe</Label>
-                <Input placeholder="1d" value={newTimeframe} onChange={(e) => setNewTimeframe(e.target.value)} />
-              </div>
-              <div>
-                <Label>Investment</Label>
-                <Input type="number" value={newInvestment} onChange={(e) => setNewInvestment(e.target.value)} />
-              </div>
-              <div className="flex items-end">
-                <Button className="w-full" variant="secondary" onClick={addWatchItem}>Add Symbol</Button>
-              </div>
+      {/* ── Run analysis form ─────────────────────────────────────── */}
+      <Card className="border-2 border-primary/20">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <BrainCircuit className="h-5 w-5" />
+            Run real market analysis (same as users)
+          </CardTitle>
+          <CardDescription>
+            Same AI pipeline, same Gemini prompt, same in-depth result that normal users get. Review the full analysis below, then publish to Daily Board so all users see it on the Daily Analysis page.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="md:col-span-2">
+              <Label>Symbol</Label>
+              <SymbolSearch
+                value={symbol}
+                onValueChange={setSymbol}
+                onSelectSymbol={setSelectedSymbol}
+                placeholder="Search stocks, crypto, forex (e.g. AAPL, RELIANCE.NS, BTC-USD)"
+              />
             </div>
-
-            {watchlistInputs.length === 0 && (
-              <p className="text-sm text-muted-foreground">
-                Add symbols you want admin predictions for (up to 10), then click Analyze / Generate Now.
-              </p>
-            )}
-
-            {watchlistInputs.map((item, idx) => (
-              <div key={idx} className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <div>
-                  <Label>Symbol #{idx + 1}</Label>
-                  <Input placeholder="AAPL" value={item.symbol || ""} onChange={(e) => updateWatchInput(idx, "symbol", e.target.value)} />
-                </div>
-                <div>
-                  <Label>Display Name</Label>
-                  <Input placeholder="Apple" value={item.display_name || ""} onChange={(e) => updateWatchInput(idx, "display_name", e.target.value)} />
-                </div>
-                <div>
-                  <Label>Timeframe</Label>
-                  <Input placeholder="1d" value={item.timeframe || DEFAULT_TIMEFRAME} onChange={(e) => updateWatchInput(idx, "timeframe", e.target.value)} />
-                </div>
-                <div>
-                  <Label>Investment</Label>
-                  <Input type="number" value={item.investment || 10000} onChange={(e) => updateWatchInput(idx, "investment", e.target.value)} />
-                </div>
-                <div className="md:col-span-4 flex justify-end">
-                  <Button variant="ghost" size="sm" onClick={() => removeWatchItem(idx)}>
-                    Remove
+            <div>
+              <Label>Investment (USD)</Label>
+              <Input
+                type="number"
+                placeholder="10000"
+                value={investment}
+                onChange={(e) => setInvestment(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>Timeframe</Label>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {TIMEFRAMES.map((tf) => (
+                  <Button
+                    key={tf}
+                    variant={timeframe === tf ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setTimeframe(tf)}
+                  >
+                    {tf}
                   </Button>
-                </div>
+                ))}
               </div>
-            ))}
-            <div className="flex flex-wrap gap-2 pt-2">
-              <Button onClick={saveWatchlist} disabled={savingWatchlist}>{savingWatchlist ? "Saving..." : "Save Watchlist"}</Button>
-              <Button variant="secondary" onClick={generateNow} disabled={generating}>{generating ? "Generating..." : "Analyze / Generate Now"}</Button>
-              <Button variant="outline" onClick={refreshExpired} disabled={generating}>Refresh Expired</Button>
             </div>
-          </CardContent>
-        </Card>
+          </div>
 
-        <Card>
-          <CardHeader><CardTitle>Current Daily Board ({boardRows.length})</CardTitle></CardHeader>
-          <CardContent className="overflow-x-auto">
-            <Table>
-              <TableHeader>
+          <Button
+            onClick={runAnalysis}
+            disabled={analyzing || !(selectedSymbol?.full_symbol || symbol?.trim())}
+            size="lg"
+            className="w-full md:w-auto"
+          >
+            {analyzing ? (
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Running full Gemini AI analysis…</>
+            ) : (
+              <><BrainCircuit className="mr-2 h-4 w-4" />Run AI analysis</>
+            )}
+          </Button>
+
+          {/* Pipeline progress — same steps as the user's AdvancedPredictLoader */}
+          {analyzing && (
+            <div className="mt-4 rounded-lg border bg-muted/30 p-4 space-y-3">
+              <p className="text-sm font-semibold flex items-center gap-2">
+                <BrainCircuit className="h-4 w-4 animate-pulse text-primary" />
+                Running full in-depth AI analysis for <span className="text-primary">{selectedSymbol?.symbol || symbol}</span>…
+              </p>
+              <div className="space-y-2">
+                {PIPELINE_STEPS.map((step, i) => {
+                  const Icon = step.icon;
+                  const done = i < analyzeStep;
+                  const active = i === analyzeStep;
+                  return (
+                    <div key={i} className={`flex items-center gap-3 text-sm transition-opacity ${i > analyzeStep + 1 ? "opacity-30" : "opacity-100"}`}>
+                      <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${done ? "bg-green-500" : active ? "bg-primary animate-pulse" : "bg-muted border"}`}>
+                        {done ? <span className="text-white text-xs">✓</span> : <Icon className={`h-3 w-3 ${active ? "text-white" : "text-muted-foreground"}`} />}
+                      </div>
+                      <div className="flex-1">
+                        <p className={`font-medium ${active ? "text-primary" : done ? "text-green-600" : "text-muted-foreground"}`}>{step.label}</p>
+                        {active && <p className="text-xs text-muted-foreground animate-pulse">{step.desc}</p>}
+                      </div>
+                      {active && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── Full in-depth result — same components as PredictPage ─── */}
+      {analysisResult && (
+        <div className="space-y-4">
+          {/* Sticky publish bar */}
+          <Alert className="border-green-500/50 bg-green-500/10 flex items-center justify-between gap-4">
+            <AlertDescription className="text-green-700 font-medium">
+              ✅ Full in-depth analysis ready for <strong>{selectedSymbol?.symbol || symbol}</strong>. Review all sections below, then publish to the Daily Board so all users can see it.
+            </AlertDescription>
+            <Button
+              onClick={publishToBoard}
+              disabled={publishing}
+              className="shrink-0 bg-green-600 hover:bg-green-700 text-white"
+            >
+              {publishing ? (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Publishing…</>
+              ) : (
+                <><Upload className="mr-2 h-4 w-4" />Publish to Daily Board</>
+              )}
+            </Button>
+          </Alert>
+
+          {/* AI Reasoning — same as PredictPage (why this signal, deep analysis, market context) */}
+          {gf && (
+            <AIReasoningDisplay
+              symbol={analysisResult.symbol}
+              action={action}
+              confidence={gf.action_signal?.confidence || analysisResult.confidence || 50}
+              technicalFactors={analysisResult.patterns}
+              keyDrivers={gf.forecasts?.[0]?.key_drivers}
+              oneLineSummary={analysisResult.rationale}
+              deepAnalysis={gf.deep_analysis}
+              marketContext={gf.market_context}
+            />
+          )}
+
+          {/* Decision Screen — action, confidence, ROI scenarios, risk management */}
+          {gf && (
+            <DecisionScreen
+              symbol={analysisResult.symbol}
+              currentPrice={analysisResult.currentPrice}
+              investment={Number(investment)}
+              action={action}
+              confidence={gf.action_signal?.confidence || analysisResult.confidence || 50}
+              riskLevel={gf.risk_grade || "MEDIUM"}
+              expectedROI={{
+                best: gf.expected_roi?.best_case || 10,
+                likely: gf.expected_roi?.likely_case || 5,
+                worst: gf.expected_roi?.worst_case || -5,
+              }}
+              positionSize={{
+                shares: analysisResult.positionSize?.shares || 0,
+                costPerShare: analysisResult.positionSize?.costPerShare || analysisResult.currentPrice,
+                totalCost: analysisResult.positionSize?.totalCost || 0,
+              }}
+              recommendedHoldPeriod={gf.positioning_guidance?.recommended_hold_period}
+              stopLoss={DEFAULT_PROFILE.stopLossPercentage}
+              takeProfit={DEFAULT_PROFILE.targetProfitPercentage}
+              leverage={DEFAULT_PROFILE.leverage}
+              currency="USD"
+            />
+          )}
+
+          {/* Capital Scenarios */}
+          {gf?.expected_roi && (
+            <CapitalScenarios
+              currentPrice={analysisResult.currentPrice}
+              expectedROI={{
+                best: gf.expected_roi.best_case,
+                likely: gf.expected_roi.likely_case,
+                worst: gf.expected_roi.worst_case,
+              }}
+              stopLossPercentage={DEFAULT_PROFILE.stopLossPercentage}
+              leverage={DEFAULT_PROFILE.leverage}
+              allowFractionalShares={true}
+            />
+          )}
+
+          {/* Multi-Horizon Forecasts */}
+          {gf?.forecasts && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5" />
+                  Multi-Horizon Forecasts
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ForecastTable
+                  forecasts={gf.forecasts}
+                  predictedAt={analysedAt ?? new Date()}
+                  marketTimeZone={undefined}
+                  marketStatus={undefined}
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Key Price Levels */}
+          {gf?.support_resistance && (
+            <Card>
+              <CardHeader><CardTitle>Key Price Levels</CardTitle></CardHeader>
+              <CardContent>
+                <KeyLevels
+                  supportLevels={gf.support_resistance.supports}
+                  resistanceLevels={gf.support_resistance.resistances}
+                  currentPrice={analysisResult.currentPrice}
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          {/* AI Insights */}
+          <Card>
+            <CardHeader><CardTitle>AI Insights & Analysis</CardTitle></CardHeader>
+            <CardContent>
+              <Insights
+                keyDrivers={gf?.forecasts?.[0]?.key_drivers}
+                riskFlags={gf?.forecasts?.[0]?.risk_flags}
+                opportunities={analysisResult.opportunities}
+                rationale={analysisResult.rationale}
+                patterns={analysisResult.patterns}
+              />
+            </CardContent>
+          </Card>
+
+          {/* Bottom publish button */}
+          <Button
+            onClick={publishToBoard}
+            disabled={publishing}
+            size="lg"
+            className="w-full bg-green-600 hover:bg-green-700 text-white text-lg py-6"
+          >
+            {publishing ? (
+              <><Loader2 className="mr-2 h-5 w-5 animate-spin" />Publishing to Daily Board…</>
+            ) : (
+              <><Upload className="mr-2 h-5 w-5" />Publish to Daily Board</>
+            )}
+          </Button>
+        </div>
+      )}
+
+      {/* ── Current daily board ──────────────────────────────────── */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Current daily board ({boardRows.length})</CardTitle>
+          <p className="text-sm text-muted-foreground mt-1">
+            Analyses you published appear here and on the Daily Analysis page for all users.
+          </p>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Symbol</TableHead>
+                <TableHead>Action</TableHead>
+                <TableHead>Probability</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead>Expires</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {boardRows.length === 0 ? (
                 <TableRow>
-                  <TableHead>Symbol</TableHead><TableHead>Action</TableHead><TableHead>Probability</TableHead><TableHead>Date</TableHead><TableHead>Expires</TableHead><TableHead>Refresh Reason</TableHead>
+                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                    No analyses published yet. Run an analysis above and publish it.
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {boardRows.map((row) => (
-                  <TableRow key={row.id}>
-                    <TableCell className="font-medium">{row.display_name || row.symbol}</TableCell>
-                    <TableCell><Badge variant={row.action_signal === "BUY" ? "default" : row.action_signal === "SELL" ? "destructive" : "secondary"}>{row.action_signal || "HOLD"}</Badge></TableCell>
+              ) : boardRows.map((row) => {
+                const isExpired = new Date(row.expires_at).getTime() < Date.now();
+                return (
+                  <TableRow key={row.id} className={isExpired ? "opacity-60" : ""}>
+                    <TableCell className="font-medium">
+                      {row.display_name || row.symbol}
+                      {isExpired && <Badge variant="outline" className="ml-2 text-xs border-amber-500 text-amber-600">Expired</Badge>}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={row.action_signal === "BUY" ? "default" : row.action_signal === "SELL" ? "destructive" : "secondary"}>
+                        {row.action_signal || "HOLD"}
+                      </Badge>
+                    </TableCell>
                     <TableCell>{row.probability_score != null ? `${row.probability_score}%` : "-"}</TableCell>
                     <TableCell>{row.generated_for_date}</TableCell>
-                    <TableCell>{new Date(row.expires_at).toLocaleString()}</TableCell>
-                    <TableCell>{row.refresh_reason}</TableCell>
+                    <TableCell className="text-xs">{new Date(row.expires_at).toLocaleString()}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 text-xs text-blue-600 border-blue-500/40 hover:bg-blue-500/10"
+                          onClick={() => repredictRow(row)}
+                          disabled={repredictingId === row.id}
+                          title="Re-run AI analysis and update this row"
+                        >
+                          <RefreshCw className={`h-3 w-3 mr-1 ${repredictingId === row.id ? "animate-spin" : ""}`} />
+                          {repredictingId === row.id ? "…" : "Re-predict"}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 text-xs text-red-600 border-red-500/40 hover:bg-red-500/10"
+                          onClick={() => deleteRow(row.id)}
+                          disabled={deletingId === row.id}
+                          title="Remove from daily board"
+                        >
+                          <Trash2 className="h-3 w-3 mr-1" />
+                          {deletingId === row.id ? "…" : "Delete"}
+                        </Button>
+                      </div>
+                    </TableCell>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      </div>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </div>
   );
 }

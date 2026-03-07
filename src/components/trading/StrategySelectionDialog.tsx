@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
@@ -7,8 +7,9 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import {
-  TrendingUp, AlertTriangle, CheckCircle2, Lightbulb, Loader2, Zap,
-  ChevronDown, ChevronUp, BarChart3, Globe, Newspaper,
+  AlertTriangle, CheckCircle2, Lightbulb, Loader2, Zap,
+  ChevronDown, ChevronUp, BarChart3, Globe, Lock, ShieldCheck,
+  Activity, XCircle, FlaskConical,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
@@ -78,6 +79,30 @@ interface AiResult {
   ranked:        AiRankedStrategy[];
 }
 
+interface BacktestResult {
+  symbol:            string;
+  strategy:          string;
+  action:            string;
+  backtestPeriod:    string;
+  strategyAchieved:  boolean;
+  achievementReason: string;
+  totalTrades:       number;
+  wins:              number;
+  losses:            number;
+  winRate:           number;
+  avgReturn:         number;
+  totalReturn:       number;
+  maxDrawdown:       number;
+  profitFactor:      number;
+  currentIndicators: {
+    price:   number;
+    sma20:   number | null;
+    rsi14:   number | null;
+    high20d: number;
+    low20d:  number;
+  };
+}
+
 interface Props {
   open:            boolean;
   onOpenChange:    (v: boolean) => void;
@@ -86,18 +111,12 @@ interface Props {
   action:          "BUY" | "SELL";
   investment?:     number;
   timeframe?:      string;
+  /** When true this is a paper trade simulation — strategy conditions & AI verdict gates are disabled */
+  isPaperTrade?:   boolean;
   onConfirm:       (strategy: string, product: string) => void;
 }
 
 // ── Verdict helpers ────────────────────────────────────────────────────────────
-
-function verdictBorderClass(v?: string) {
-  if (v === "great")  return "border-green-500  bg-green-500/10  text-green-700";
-  if (v === "good")   return "border-blue-500   bg-blue-500/10   text-blue-700";
-  if (v === "poor" || v === "avoid") return "border-red-500 bg-red-500/10 text-red-700";
-  if (v === "neutral") return "border-yellow-500 bg-yellow-500/10 text-yellow-700";
-  return "border-muted bg-muted/30 text-muted-foreground";
-}
 
 function verdictLabel(v?: string) {
   if (v === "great")  return <Badge className="bg-green-600 text-white text-xs">AI: Great</Badge>;
@@ -116,10 +135,140 @@ function regimeBadge(regime?: string) {
   return <Badge variant="outline" className="capitalize">{r || "Analysing…"}</Badge>;
 }
 
+// ── Backtest results panel ─────────────────────────────────────────────────────
+
+function BacktestPanel({ result, loading, error }: {
+  result: BacktestResult | null;
+  loading: boolean;
+  error: string | null;
+}) {
+  if (loading) {
+    return (
+      <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+        <div className="flex items-center gap-2">
+          <Activity className="h-4 w-4 text-primary animate-pulse" />
+          <span className="text-sm font-medium">Running backtest on {100}+ days of historical data…</span>
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground ml-auto" />
+        </div>
+        <p className="text-xs text-muted-foreground">Simulating strategy entries & exits on real OHLCV data</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <Alert className="border-yellow-500/50 bg-yellow-500/10">
+        <AlertTriangle className="h-4 w-4 text-yellow-600" />
+        <AlertDescription className="text-xs text-yellow-700">
+          Backtest unavailable: {error}. You can still proceed but without historical validation.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  if (!result) return null;
+
+  const { strategyAchieved, achievementReason, totalTrades, winRate, avgReturn, totalReturn, maxDrawdown, profitFactor, backtestPeriod, currentIndicators } = result;
+
+  const winRateColor = winRate >= 55 ? "text-green-600" : winRate >= 45 ? "text-yellow-600" : "text-red-600";
+  const pfColor      = profitFactor >= 1.5 ? "text-green-600" : profitFactor >= 1.0 ? "text-yellow-600" : "text-red-600";
+
+  return (
+    <div className="rounded-lg border bg-muted/20 p-3 space-y-3">
+      {/* Strategy Achieved */}
+      <div className={cn(
+        "flex items-start gap-2 rounded-md p-2.5 text-sm",
+        strategyAchieved ? "bg-green-500/10 border border-green-500/30" : "bg-red-500/10 border border-red-500/30"
+      )}>
+        {strategyAchieved
+          ? <ShieldCheck className="h-4 w-4 text-green-600 mt-0.5 shrink-0" />
+          : <XCircle     className="h-4 w-4 text-red-600   mt-0.5 shrink-0" />
+        }
+        <div>
+          <p className={cn("font-semibold text-xs", strategyAchieved ? "text-green-700" : "text-red-700")}>
+            {strategyAchieved ? "Strategy Conditions Met" : "Strategy Conditions NOT Met"}
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{achievementReason}</p>
+        </div>
+      </div>
+
+      {/* Current Indicators */}
+      {currentIndicators && (
+        <div className="grid grid-cols-3 gap-2 text-center text-xs">
+          <div className="rounded bg-background border p-1.5">
+            <p className="text-muted-foreground">Price</p>
+            <p className="font-bold">{currentIndicators.price}</p>
+          </div>
+          <div className="rounded bg-background border p-1.5">
+            <p className="text-muted-foreground">SMA20</p>
+            <p className={cn("font-bold", currentIndicators.sma20 != null && currentIndicators.price > currentIndicators.sma20 ? "text-green-600" : "text-red-600")}>
+              {currentIndicators.sma20 ?? "N/A"}
+            </p>
+          </div>
+          <div className="rounded bg-background border p-1.5">
+            <p className="text-muted-foreground">RSI14</p>
+            <p className={cn("font-bold",
+              currentIndicators.rsi14 == null ? "" :
+              currentIndicators.rsi14 > 70 ? "text-red-600" :
+              currentIndicators.rsi14 < 30 ? "text-green-600" : "text-yellow-600"
+            )}>
+              {currentIndicators.rsi14 ?? "N/A"}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Backtest metrics */}
+      <div>
+        <p className="text-xs font-semibold text-muted-foreground mb-1.5 flex items-center gap-1">
+          <BarChart3 className="h-3.5 w-3.5" />
+          Backtest Results — {backtestPeriod}
+        </p>
+        {totalTrades === 0 ? (
+          <p className="text-xs text-muted-foreground">No trades triggered in the backtest window with current strategy rules.</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Trades simulated</span>
+              <span className="font-semibold">{totalTrades}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Win rate</span>
+              <span className={cn("font-semibold", winRateColor)}>{winRate.toFixed(1)}%</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Avg return/trade</span>
+              <span className={cn("font-semibold", avgReturn >= 0 ? "text-green-600" : "text-red-600")}>
+                {avgReturn >= 0 ? "+" : ""}{avgReturn.toFixed(2)}%
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Total return</span>
+              <span className={cn("font-semibold", totalReturn >= 0 ? "text-green-600" : "text-red-600")}>
+                {totalReturn >= 0 ? "+" : ""}{totalReturn.toFixed(1)}%
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Max drawdown</span>
+              <span className={cn("font-semibold", maxDrawdown >= -5 ? "text-yellow-600" : "text-red-600")}>
+                {maxDrawdown.toFixed(1)}%
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Profit factor</span>
+              <span className={cn("font-semibold", pfColor)}>{profitFactor.toFixed(2)}x</span>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function StrategySelectionDialog({
-  open, onOpenChange, currentStrategy, symbol, action, investment = 10000, timeframe = "1d", onConfirm,
+  open, onOpenChange, currentStrategy, symbol, action, investment = 10000, timeframe = "1d", isPaperTrade = false, onConfirm,
 }: Props) {
 
   const [userStats,        setUserStats]        = useState<Record<string, StrategyStats>>({});
@@ -131,15 +280,34 @@ export function StrategySelectionDialog({
   const [selected,         setSelected]          = useState(currentStrategy || "trend_following");
   const [expandedDetails,  setExpandedDetails]   = useState<string | null>(null);
 
+  // Backtest state
+  const [backtestResult,  setBacktestResult]   = useState<BacktestResult | null>(null);
+  const [backtestLoading, setBacktestLoading]  = useState(false);
+  const [backtestError,   setBacktestError]    = useState<string | null>(null);
+  const backtestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     if (!open) return;
     setSelected(currentStrategy || "trend_following");
     setAiResult(null);
     setAiError(null);
+    setBacktestResult(null);
+    setBacktestError(null);
     loadHistory();
     loadAiAnalysis();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Auto-run backtest whenever selected strategy changes (debounced 600ms)
+  useEffect(() => {
+    if (!open || !selected) return;
+    if (backtestTimerRef.current) clearTimeout(backtestTimerRef.current);
+    backtestTimerRef.current = setTimeout(() => {
+      runBacktest(selected);
+    }, 600);
+    return () => { if (backtestTimerRef.current) clearTimeout(backtestTimerRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, open]);
 
   // ── Load user's personal trade history ───────────────────────────────────────
   const loadHistory = useCallback(async () => {
@@ -195,34 +363,40 @@ export function StrategySelectionDialog({
         body: { symbol, action, investment, timeframe },
       });
       if (error) {
-        console.error("suggest-strategy edge error", error);
         setAiError(error.message);
         return;
       }
-      if (!data) {
-        setAiError("No AI data returned");
-        return;
-      }
-
-      if ((data as any).aiError) {
-        setAiError((data as any).aiError as string);
-      }
-
+      if (!data) { setAiError("No AI data returned"); return; }
+      if ((data as any).aiError) setAiError((data as any).aiError as string);
       if (data.ranked && data.ranked.length > 0) {
         setAiResult(data as AiResult);
-        // Auto-select AI's top pick
         if (data.topPick?.strategy) setSelected(data.topPick.strategy);
-      } else {
-        // No ranked list, but we still keep page working with history-only mode
-        setAiResult(null);
       }
     } catch (e: any) {
-      console.error("AI analysis error", e);
-      setAiError(e?.message ?? "AI analysis failed. Using historical data only.");
+      setAiError(e?.message ?? "AI analysis failed.");
     } finally {
       setAiLoading(false);
     }
   }, [symbol, action, investment, timeframe]);
+
+  // ── Run backtest for selected strategy ───────────────────────────────────────
+  const runBacktest = useCallback(async (strategyCode: string) => {
+    setBacktestLoading(true);
+    setBacktestResult(null);
+    setBacktestError(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("backtest-strategy", {
+        body: { symbol, strategy: strategyCode, action },
+      });
+      if (error) { setBacktestError(error.message); return; }
+      if ((data as any)?.error) { setBacktestError((data as any).error); return; }
+      setBacktestResult(data as BacktestResult);
+    } catch (e: any) {
+      setBacktestError(e?.message ?? "Backtest failed.");
+    } finally {
+      setBacktestLoading(false);
+    }
+  }, [symbol, action]);
 
   // Merge AI ranks into a lookup
   const aiByStrategy = Object.fromEntries(
@@ -237,21 +411,61 @@ export function StrategySelectionDialog({
     : STRATEGIES;
 
   const mc = aiResult?.marketContext;
+  const selectedAI = aiByStrategy[selected];
+
+  // ── Order placement gate logic ────────────────────────────────────────────────
+  // Rule 1: AI analysis must finish before any strategy can be selected or order placed.
+  // Rule 2: Strategy conditions (RSI, SMA, price levels) must be achieved in the current market.
+  // Rule 3: AI verdict must be "great", "good", or "neutral" — "poor" and "avoid" block the order.
+  // Rule 4: Backtest must complete and confirm the strategy is achievable.
+  // PAPER TRADE: all gates are bypassed — it's simulation only, no capital at risk.
+  const strategyNotAchieved = !isPaperTrade && backtestResult != null && !backtestResult.strategyAchieved;
+  const aiVerdictBlocked    = !isPaperTrade && (selectedAI?.verdict === "poor" || selectedAI?.verdict === "avoid");
+  const backtestPending     = !isPaperTrade && (backtestLoading || (!backtestResult && !backtestError));
+  // AI analysis must be done before strategy can be chosen or order placed
+  const aiAnalysisPending   = !isPaperTrade && (aiLoading || (!aiResult && !aiError));
+  const orderBlocked        = aiAnalysisPending || strategyNotAchieved || aiVerdictBlocked || backtestPending;
+
+  const getBlockReason = (): string | null => {
+    if (aiAnalysisPending) return "AI is analysing live market conditions — strategy selection is locked until this completes.";
+    if (backtestPending)   return "Running historical backtest on real price data… please wait.";
+    if (strategyNotAchieved) return `Strategy conditions not currently met in the market: ${backtestResult?.achievementReason}`;
+    if (aiVerdictBlocked) return `AI rates this strategy "${selectedAI?.verdict}" for current market conditions — order blocked to protect your capital. Choose a strategy rated Good or Great.`;
+    return null;
+  };
+
+  const blockReason = getBlockReason();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Zap className="h-5 w-5 text-primary" />
-            Choose Strategy — {action} {symbol}
-          </DialogTitle>
-          <DialogDescription>
-            AI analyses live price, RSI, MACD, news sentiment &amp; global macro right now to rank strategies for this exact trade.
-          </DialogDescription>
-        </DialogHeader>
+      {/* Fixed height dialog — ONE single scroll inside */}
+      <DialogContent className="sm:max-w-2xl max-h-[92vh] flex flex-col p-0 gap-0">
 
-        <div className="space-y-4">
+        {/* ── Fixed header ─────────────────────────────────────────────────── */}
+        <div className="shrink-0 px-6 pt-6 pb-3 border-b">
+          <DialogTitle className="flex items-center gap-2 text-base font-semibold">
+            {isPaperTrade
+              ? <FlaskConical className="h-5 w-5 text-violet-500" />
+              : <Zap className="h-5 w-5 text-primary" />
+            }
+            {isPaperTrade ? "Paper Trade" : "Choose Strategy"} — {action} {symbol}
+          </DialogTitle>
+          <DialogDescription className="text-xs mt-1">
+            {isPaperTrade
+              ? "Simulation only — no real capital. All strategy gates are bypassed. Pick any strategy and simulate freely."
+              : "AI ranks strategies using live RSI, MACD, news & macro. Backtest validates conditions on real historical data before any real order is placed."
+            }
+          </DialogDescription>
+          {isPaperTrade && (
+            <div className="mt-2 flex items-center gap-2 rounded-md bg-violet-500/10 border border-violet-500/30 px-3 py-2 text-xs text-violet-700 font-medium">
+              <FlaskConical className="h-3.5 w-3.5 shrink-0" />
+              Paper trade — simulated only, no real money. Track performance without risk.
+            </div>
+          )}
+        </div>
+
+        {/* ── Single scrollable body ────────────────────────────────────────── */}
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-3">
 
           {/* ── Live AI Market Context ── */}
           <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
@@ -266,10 +480,7 @@ export function StrategySelectionDialog({
                 AI is fetching live price, RSI, MACD, news &amp; global macro for <strong>{symbol}</strong>…
               </p>
             )}
-
-            {aiError && (
-              <p className="text-xs text-destructive">{aiError}</p>
-            )}
+            {aiError && <p className="text-xs text-destructive">{aiError}</p>}
 
             {mc && !aiLoading && (
               <div className="space-y-1.5">
@@ -277,35 +488,27 @@ export function StrategySelectionDialog({
                   <span className="text-xs font-medium text-muted-foreground">Regime:</span>
                   {regimeBadge(mc.regime)}
                   <span className="text-xs font-medium text-muted-foreground ml-2">News:</span>
-                  <Badge
-                    variant="outline"
-                    className={cn("text-xs capitalize",
-                      mc.newsSentiment === "bullish" ? "border-green-500 text-green-700" :
-                      mc.newsSentiment === "bearish" ? "border-red-500 text-red-700" : ""
-                    )}
-                  >
+                  <Badge variant="outline" className={cn("text-xs capitalize",
+                    mc.newsSentiment === "bullish" ? "border-green-500 text-green-700" :
+                    mc.newsSentiment === "bearish" ? "border-red-500 text-red-700" : ""
+                  )}>
                     {mc.newsSentiment}
                   </Badge>
                 </div>
                 <p className="text-xs text-muted-foreground leading-relaxed">{mc.summary}</p>
                 {mc.globalMacro && (
-                  <p className="text-xs text-muted-foreground italic">
-                    <strong>Macro:</strong> {mc.globalMacro}
-                  </p>
+                  <p className="text-xs text-muted-foreground italic"><strong>Macro:</strong> {mc.globalMacro}</p>
                 )}
                 {mc.riskWarnings?.length > 0 && (
                   <div className="flex flex-wrap gap-1 pt-0.5">
                     {mc.riskWarnings.map((w, i) => (
-                      <Badge key={i} variant="outline" className="text-xs border-orange-400 text-orange-700">
-                        ⚠ {w}
-                      </Badge>
+                      <Badge key={i} variant="outline" className="text-xs border-orange-400 text-orange-700">⚠ {w}</Badge>
                     ))}
                   </div>
                 )}
               </div>
             )}
 
-            {/* Fallback: user history best */}
             {!mc && !aiLoading && (
               <p className="text-xs text-muted-foreground">
                 {bestHistory
@@ -329,34 +532,51 @@ export function StrategySelectionDialog({
             </Alert>
           )}
 
-          {/* ── Strategy grid ── */}
-          <div className="grid sm:grid-cols-2 gap-2 max-h-[48vh] overflow-y-auto pr-1">
-            {(histLoading
-              ? STRATEGIES   // show all while loading
-              : sortedStrategies
-            ).map(s => {
+          {/* ── AI Analysis In Progress — inline banner (no blocking overlay) ── */}
+          {aiAnalysisPending && (
+            <div className="flex items-center gap-3 rounded-lg border-2 border-dashed border-primary/40 bg-primary/5 p-3">
+              <Loader2 className="h-5 w-5 animate-spin text-primary shrink-0" />
+              <div>
+                <p className="text-sm font-semibold">AI Analysis in Progress</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Fetching live RSI, MACD, news sentiment &amp; global macro for <strong>{symbol}</strong>.
+                  Strategy selection is locked until analysis completes.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* ── Strategy grid — 2-col, no inner scroll ── */}
+          <div className={cn(
+            "grid sm:grid-cols-2 gap-2",
+            aiAnalysisPending && "pointer-events-none select-none opacity-40",
+          )}>
+            {(histLoading ? STRATEGIES : sortedStrategies).map(s => {
               const st  = userStats[s.value];
               const ai  = aiByStrategy[s.value];
               const isTopPick = aiResult?.topPick?.strategy === s.value;
+              const isBlocked = ai?.verdict === "poor" || ai?.verdict === "avoid";
 
               return (
                 <button
                   key={s.value}
-                  onClick={() => setSelected(s.value)}
+                  disabled={aiAnalysisPending}
+                  onClick={() => { if (!aiAnalysisPending) setSelected(s.value); }}
                   className={cn(
                     "text-left p-3 rounded-lg border-2 transition-all",
                     selected === s.value
                       ? "border-primary bg-primary/10"
-                      : isTopPick
-                        ? "border-green-500 bg-green-500/5 hover:bg-green-500/10"
-                        : "border-muted hover:border-primary/50 bg-background",
+                      : isBlocked
+                        ? "border-red-300 bg-red-500/5 hover:bg-red-500/10"
+                        : isTopPick
+                          ? "border-green-500 bg-green-500/5 hover:bg-green-500/10"
+                          : "border-muted hover:border-primary/50 bg-background",
                   )}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-sm truncate">
-                        {isTopPick && "⭐ "}
-                        {s.label}
+                        {isTopPick && "⭐ "}{isBlocked && "🚫 "}{s.label}
                       </p>
                       <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{s.description}</p>
                     </div>
@@ -366,7 +586,6 @@ export function StrategySelectionDialog({
                     </div>
                   </div>
 
-                  {/* AI probability score */}
                   {ai && (
                     <div className="mt-2 space-y-1">
                       <div className="flex justify-between text-xs">
@@ -378,23 +597,15 @@ export function StrategySelectionDialog({
                           {ai.probabilityScore}%
                         </span>
                       </div>
-                      <Progress
-                        value={ai.probabilityScore}
-                        className={cn("h-1.5",
-                          ai.probabilityScore >= 65 ? "[&>div]:bg-green-500" :
-                          ai.probabilityScore >= 45 ? "[&>div]:bg-yellow-500" : "[&>div]:bg-red-500"
-                        )}
-                      />
-                      {ai.whyNow && (
-                        <p className="text-xs text-muted-foreground leading-snug mt-0.5">{ai.whyNow}</p>
-                      )}
-                      {ai.riskWarning && (
-                        <p className="text-xs text-orange-600 font-medium mt-0.5">⚠ {ai.riskWarning}</p>
-                      )}
+                      <Progress value={ai.probabilityScore} className={cn("h-1.5",
+                        ai.probabilityScore >= 65 ? "[&>div]:bg-green-500" :
+                        ai.probabilityScore >= 45 ? "[&>div]:bg-yellow-500" : "[&>div]:bg-red-500"
+                      )} />
+                      {ai.whyNow    && <p className="text-xs text-muted-foreground leading-snug mt-0.5">{ai.whyNow}</p>}
+                      {ai.riskWarning && <p className="text-xs text-orange-600 font-medium mt-0.5">⚠ {ai.riskWarning}</p>}
                     </div>
                   )}
 
-                  {/* User historical stats */}
                   {st && st.total > 0 && (
                     <div className="mt-2 space-y-0.5">
                       <div className="flex justify-between text-xs text-muted-foreground">
@@ -403,19 +614,15 @@ export function StrategySelectionDialog({
                           avg {st.avgPnlPct >= 0 ? "+" : ""}{st.avgPnlPct.toFixed(1)}%
                         </span>
                       </div>
-                      <Progress
-                        value={st.winRate}
-                        className={cn("h-1",
-                          st.winRate >= 50 ? "[&>div]:bg-green-400" : "[&>div]:bg-red-400"
-                        )}
-                      />
+                      <Progress value={st.winRate} className={cn("h-1",
+                        st.winRate >= 50 ? "[&>div]:bg-green-400" : "[&>div]:bg-red-400"
+                      )} />
                     </div>
                   )}
                   {st && st.total === 0 && !ai && (
                     <p className="text-xs text-muted-foreground mt-1">No personal history yet</p>
                   )}
 
-                  {/* Expandable static details */}
                   <div className="mt-2">
                     <button
                       type="button"
@@ -426,10 +633,7 @@ export function StrategySelectionDialog({
                       {expandedDetails === s.value ? "Hide" : "Show"} details
                     </button>
                     {expandedDetails === s.value && STRATEGY_DETAILS[s.value] && (
-                      <div
-                        className="mt-2 p-2 rounded bg-muted/50 text-xs space-y-1 text-left"
-                        onClick={e => e.stopPropagation()}
-                      >
+                      <div className="mt-2 p-2 rounded bg-muted/50 text-xs space-y-1 text-left" onClick={e => e.stopPropagation()}>
                         <p><strong>When to use:</strong> {STRATEGY_DETAILS[s.value].whenToUse}</p>
                         <p><strong>In trend when:</strong> {STRATEGY_DETAILS[s.value].inTrendWhen}</p>
                         <p><strong>Pros:</strong> {STRATEGY_DETAILS[s.value].pros.join("; ")}</p>
@@ -442,27 +646,92 @@ export function StrategySelectionDialog({
             })}
           </div>
 
-          {/* ── Confirm ── */}
-          <div className="flex gap-2 pt-2">
+          {/* ── Backtest Results Panel ── */}
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground mb-1.5 flex items-center gap-1">
+              <Activity className="h-3.5 w-3.5" />
+              Backtest & Strategy Validation —{" "}
+              <span className="text-primary">{STRATEGIES.find(s => s.value === selected)?.label}</span>
+            </p>
+            <BacktestPanel result={backtestResult} loading={backtestLoading} error={backtestError} />
+          </div>
+
+          {/* ── Order Gate: block reason ── */}
+          {blockReason && (
+            <Alert className="border-red-500/50 bg-red-500/10">
+              <Lock className="h-4 w-4 text-red-600" />
+              <AlertDescription className="text-red-700 text-sm leading-relaxed">
+                <strong>Order Blocked:</strong> {blockReason}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* ── Neutral AI warning ── */}
+          {!orderBlocked && selectedAI?.verdict === "neutral" && (
+            <Alert className="border-yellow-500/50 bg-yellow-500/10">
+              <AlertTriangle className="h-4 w-4 text-yellow-600" />
+              <AlertDescription className="text-yellow-700 text-sm">
+                AI rates this strategy <strong>Neutral</strong> for current conditions. Proceed with caution.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* ── Order allowed ── */}
+          {!orderBlocked && backtestResult?.strategyAchieved && !isPaperTrade && (
+            <Alert className="border-green-500/50 bg-green-500/10">
+              <ShieldCheck className="h-4 w-4 text-green-600" />
+              <AlertDescription className="text-green-700 text-sm">
+                Strategy conditions met & backtest complete. Cleared to place order.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* bottom spacer so last card isn't hidden behind sticky footer */}
+          <div className="h-2" />
+        </div>
+
+        {/* ── Sticky confirm footer ─────────────────────────────────────────── */}
+        <div className="shrink-0 border-t px-6 py-3 space-y-2 bg-background">
+          {orderBlocked && !aiAnalysisPending && !backtestPending && (
+            <p className="text-xs text-center text-muted-foreground">
+              Select a strategy rated <span className="font-semibold text-green-700">AI: Good</span> or <span className="font-semibold text-green-700">AI: Great</span> with conditions met to unlock order placement.
+            </p>
+          )}
+          <div className="flex gap-2">
             <Button variant="outline" className="flex-1" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
             <Button
-              className="flex-1"
+              className={cn(
+                "flex-1",
+                isPaperTrade ? "bg-violet-600 hover:bg-violet-700" : "",
+                orderBlocked ? "opacity-50 cursor-not-allowed" : ""
+              )}
+              disabled={orderBlocked}
               onClick={() => {
+                if (orderBlocked) return;
                 const product = STRATEGIES.find(s => s.value === selected)?.product ?? "CNC";
                 onConfirm(selected, product);
                 onOpenChange(false);
               }}
             >
-              {aiByStrategy[selected]?.verdict === "poor" || aiByStrategy[selected]?.verdict === "avoid" ? (
-                <><AlertTriangle className="h-4 w-4 mr-2" />Place Order Anyway</>
+              {aiAnalysisPending ? (
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Awaiting AI Analysis…</>
+              ) : backtestPending ? (
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Running Backtest…</>
+              ) : strategyNotAchieved ? (
+                <><Lock className="h-4 w-4 mr-2" />Strategy Not Achieved</>
+              ) : aiVerdictBlocked ? (
+                <><Lock className="h-4 w-4 mr-2" />Blocked — Choose Better Strategy</>
+              ) : isPaperTrade ? (
+                <><FlaskConical className="h-4 w-4 mr-2" />Start Paper Trade</>
               ) : (
-                <><CheckCircle2 className="h-4 w-4 mr-2" />Place Order</>
+                <><CheckCircle2 className="h-4 w-4 mr-2" />Place Real Order</>
               )}
             </Button>
           </div>
         </div>
+
       </DialogContent>
     </Dialog>
   );

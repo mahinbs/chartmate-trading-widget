@@ -7,6 +7,8 @@ import { BarChart3, Loader2 } from 'lucide-react';
 
 interface ChartPanelProps {
   defaultSymbol?: string;
+  /** When set, the chart automatically shows this symbol (e.g. from Predict page selection). Updates when value changes. */
+  syncSymbol?: string;
   defaultInterval?: string;
   onAnalyzeChart?: (symbol: string, interval: string) => void;
   isAnalyzing?: boolean;
@@ -36,9 +38,14 @@ const INTERVALS = [
   { value: "W", label: "1W" },
 ];
 
-export default function ChartPanel({ defaultSymbol = "NASDAQ:AAPL", defaultInterval = "D", onAnalyzeChart, isAnalyzing = false }: ChartPanelProps) {
-  const [symbol, setSymbol] = useState(defaultSymbol);
+export default function ChartPanel({ defaultSymbol = "NASDAQ:AAPL", syncSymbol, defaultInterval = "D", onAnalyzeChart, isAnalyzing = false }: ChartPanelProps) {
+  const [symbol, setSymbol] = useState(syncSymbol || defaultSymbol);
   const [interval, setInterval] = useState(defaultInterval);
+
+  // When parent passes a selected stock (e.g. from Predict page), keep chart in sync
+  React.useEffect(() => {
+    if (syncSymbol && syncSymbol.trim()) setSymbol(syncSymbol.trim());
+  }, [syncSymbol]);
 
   return (
     <Card className="h-full flex flex-col">

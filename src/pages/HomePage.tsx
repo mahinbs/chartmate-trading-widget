@@ -201,7 +201,7 @@ export default function HomePage() {
 
           {isAdmin && (
             <Card className="hover:shadow-md transition-shadow cursor-pointer"
-              onClick={() => navigate('/admin/users')}>
+              onClick={() => navigate('/admin')}>
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-lg">
                   <ShieldCheck className="h-5 w-5 text-primary" />

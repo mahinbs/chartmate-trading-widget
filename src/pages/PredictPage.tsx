@@ -45,9 +45,10 @@ import { TradingIntegrationModal } from "@/components/trading/TradingIntegration
 import { StrategySelectionDialog, STRATEGIES } from "@/components/trading/StrategySelectionDialog";
 import { UsePreviousOrNewStrategyDialog } from "@/components/trading/UsePreviousOrNewStrategyDialog";
 import { toast } from "sonner";
-import { Loader2, AlertTriangle, BrainCircuit, BarChart3, CheckCircle, ArrowRight, DollarSign, LogOut, History, Timer, Home } from "lucide-react";
+import { Loader2, AlertTriangle, BrainCircuit, BarChart3, CheckCircle, ArrowRight, DollarSign, LogOut, History, Timer, Home, FlaskConical } from "lucide-react";
 import { Container } from "@/components/layout/Container";
 import { formatCurrency } from "@/lib/display-utils";
+import { getTradingViewSymbol } from "@/lib/tradingview-symbols";
 
 interface GeminiForecast {
   symbol: string;
@@ -221,11 +222,13 @@ const PredictPage = () => {
   const [showPreviousOrNewDialog, setShowPreviousOrNewDialog] = useState(false);
   const [lastUsedStrategy, setLastUsedStrategy]         = useState<{ strategyType: string; product: string; label: string } | null>(null);
   const [displayCurrency, setDisplayCurrency] = useState<"INR" | "USD">("INR");
+  const [isPaperTrade, setIsPaperTrade] = useState(false);
 
-  // ── Mock order + track ────────────────────────────────────────────────────
+  // ── Mock / Paper order + track ────────────────────────────────────────────
   const placeMockOrderAndTrack = useCallback(async (strategyCode: string, product: string) => {
     if (!result) return;
-    const mockOrderId = `MOCK-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
+    const prefix = isPaperTrade ? 'PAPER' : 'MOCK';
+    const mockOrderId = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
     const action = result.geminiForecast?.action_signal?.action === 'SELL' ? 'SELL' : 'BUY';
     const shares = Math.floor(result.positionSize?.shares || 0) || 1;
     const aiRecommendedPeriod = result.geminiForecast?.positioning_guidance?.recommended_hold_period;
@@ -262,13 +265,14 @@ const PredictPage = () => {
       if (response.error) {
         toast.error('Tracking failed: ' + response.error, { id: 'trade-start' });
       } else {
-        toast.success(`Order placed (${mockOrderId}). Tracking started!`, { id: 'trade-start' });
+        const label = isPaperTrade ? `Paper trade started (${mockOrderId})` : `Order placed (${mockOrderId}). Tracking started!`;
+        toast.success(label, { id: 'trade-start' });
         setTimeout(() => navigate('/active-trades'), 1000);
       }
     } catch (e: any) {
       toast.error(e?.message || 'Failed', { id: 'trade-start' });
     }
-  }, [result, investment, userProfile, navigate]);
+  }, [result, investment, userProfile, navigate, isPaperTrade]);
 
   // Fetch market status when symbol is selected
   useEffect(() => {
@@ -1112,19 +1116,26 @@ AI will use your trading profile to provide tailored probability-based analysis,
                         </p>
                       </div>
                       
-                      {/* Warning for HOLD signals */}
-                      {result.geminiForecast?.action_signal?.action === 'HOLD' && (
+                      {/* Context-aware label for the action buttons */}
+                      {result.geminiForecast?.action_signal?.action === 'HOLD' ? (
                         <Alert className="border-yellow-500/50 bg-yellow-500/10">
                           <AlertTriangle className="h-4 w-4 text-yellow-600" />
                           <AlertDescription className="text-sm">
-                            <span className="font-semibold">⚠️ Override Warning:</span> AI recommends HOLD, but you can still track this trade manually. 
-                            Proceeding against AI recommendation increases risk.
+                            <span className="font-semibold">⚠️ AI recommends HOLD.</span>{" "}
+                            Conditions are unclear. You can still place a <strong>real order</strong> (all AI &amp; backtest gates apply) or use <strong>Paper Trade</strong> to simulate risk-free with no money at stake.
                           </AlertDescription>
                         </Alert>
+                      ) : (
+                        <div className="text-xs text-center text-muted-foreground px-2">
+                          <strong>Real Order</strong>: real money, all AI gates &amp; backtest must pass.{" "}
+                          <strong>Paper Trade</strong>: simulated, no money, gates bypassed.
+                        </div>
                       )}
-                      
+
+                      {/* Real trade button */}
                       <Button 
                         onClick={async () => {
+                          setIsPaperTrade(false);
                           const { tradeTrackingService } = await import("@/services/tradeTrackingService");
                           const last = await tradeTrackingService.getLastUsedStrategy();
                           if (last) {
@@ -1135,18 +1146,40 @@ AI will use your trading profile to provide tailored probability-based analysis,
                             setShowStrategyDialog(true);
                           }
                         }}
-                        className={`w-full text-lg py-8 shadow-lg ${
+                        className={`w-full text-lg py-6 shadow-lg ${
                           result.geminiForecast?.action_signal?.action === 'HOLD' 
                             ? 'bg-gradient-to-r from-yellow-600 to-yellow-500 hover:from-yellow-700 hover:to-yellow-600' 
                             : 'bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600'
                         }`}
                         size="lg"
                       >
-                        <Timer className="mr-2 h-6 w-6" />
+                        <Timer className="mr-2 h-5 w-5" />
                         {result.geminiForecast?.action_signal?.action === 'HOLD' 
-                          ? '⚠️ Override AI & Start Tracking Anyway' 
-                          : '🎯 Start Tracking This Trade'
+                          ? '💰 Place Real Order Anyway (Real Money)' 
+                          : '🎯 Place Real Order & Track Trade'
                         }
+                      </Button>
+
+                      {/* Paper Trade button */}
+                      <Button
+                        variant="outline"
+                        onClick={async () => {
+                          setIsPaperTrade(true);
+                          const { tradeTrackingService } = await import("@/services/tradeTrackingService");
+                          const last = await tradeTrackingService.getLastUsedStrategy();
+                          if (last) {
+                            const label = STRATEGIES.find(s => s.value === last.strategyType)?.label ?? last.strategyType;
+                            setLastUsedStrategy({ ...last, label });
+                            setShowPreviousOrNewDialog(true);
+                          } else {
+                            setShowStrategyDialog(true);
+                          }
+                        }}
+                        className="w-full text-base py-5 border-2 border-violet-500/50 text-violet-700 hover:bg-violet-500/10 hover:border-violet-500"
+                        size="lg"
+                      >
+                        <FlaskConical className="mr-2 h-5 w-5" />
+                        🧪 Paper Trade — Simulate (No Real Money)
                       </Button>
 
                       {/* Use previous strategy or choose new */}
@@ -1157,7 +1190,11 @@ AI will use your trading profile to provide tailored probability-based analysis,
                           lastStrategyLabel={lastUsedStrategy.label}
                           symbol={result.symbol}
                           action={result.geminiForecast?.action_signal?.action === 'SELL' ? 'SELL' : 'BUY'}
-                          onUsePrevious={() => placeMockOrderAndTrack(lastUsedStrategy.strategyType, lastUsedStrategy.product)}
+                          onUsePrevious={() => {
+                            // Route through StrategySelectionDialog for backtest + strategy achievement validation,
+                            // pre-selecting the previously used strategy so validation runs automatically.
+                            setShowStrategyDialog(true);
+                          }}
                           onChooseNew={() => setShowStrategyDialog(true)}
                         />
                       )}
@@ -1172,6 +1209,7 @@ AI will use your trading profile to provide tailored probability-based analysis,
                           action={result.geminiForecast?.action_signal?.action === 'SELL' ? 'SELL' : 'BUY'}
                           investment={investment ? parseFloat(investment) : 10000}
                           timeframe={timeframe === "custom" ? customTimeframe || "1d" : timeframe || "1d"}
+                          isPaperTrade={isPaperTrade}
                           onConfirm={placeMockOrderAndTrack}
                         />
                       )}
@@ -1196,9 +1234,9 @@ AI will use your trading profile to provide tailored probability-based analysis,
                   <CapitalScenarios
                     currentPrice={result.currentPrice}
                     expectedROI={{
-                      best: result.geminiForecast.expected_roi.best_case,
-                      likely: result.geminiForecast.expected_roi.likely_case,
-                      worst: result.geminiForecast.expected_roi.worst_case
+                      best:   result.geminiForecast.expected_roi.best_case   || 0.5,
+                      likely: result.geminiForecast.expected_roi.likely_case || 0.2,
+                      worst:  result.geminiForecast.expected_roi.worst_case  || -2.0
                     }}
                     stopLossPercentage={userProfile.stopLossPercentage || 5}
                     leverage={userProfile.leverage}
@@ -1349,7 +1387,11 @@ AI will use your trading profile to provide tailored probability-based analysis,
               </CardHeader>
               <CardContent className="p-0">
                 <div className={`${isMobile ? 'h-[300px]' : 'h-[600px]'}`}>
-                  <ChartPanel />
+                  <ChartPanel
+                    syncSymbol={symbol ? getTradingViewSymbol(selectedSymbol?.full_symbol || symbol) : undefined}
+                    defaultSymbol="NASDAQ:AAPL"
+                    defaultInterval="D"
+                  />
                 </div>
               </CardContent>
             </Card>

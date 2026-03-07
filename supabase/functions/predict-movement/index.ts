@@ -2318,22 +2318,32 @@ function calculateExpectedROI(
   confidence: number,
   volatility: number
 ): { best_case: number; likely_case: number; worst_case: number } {
-  const baseReturn = expectedReturnBp / 100; // Convert basis points to percentage
+  const vol  = Math.max(volatility, 1);   // floor: at least 1% vol
+  const conf = Math.max(confidence, 10);  // floor: at least 10% confidence
 
-  // Best case: higher confidence = higher upside
-  const bestCase = baseReturn * (1 + (confidence / 100) * 0.5);
+  let baseReturn = expectedReturnBp / 100; // basis points → percentage
 
-  // Likely case: the expected return
+  if (Math.abs(baseReturn) < 0.1) {
+    // Fallback when model returns 0 / near-zero expected move.
+    // Floor at 20 % of daily volatility so the UI never shows $0 for best/likely.
+    const volDerived = (vol * conf) / 100 / 3;
+    baseReturn = Math.max(volDerived, vol * 0.20);
+  }
+
+  // Best case: confidence boosts the upside
+  const bestCase   = baseReturn * (1 + (conf / 100) * 0.5);
+  // Likely case: the central expected return
   const likelyCase = baseReturn;
+  // Worst case: downside driven by volatility and lack of confidence
+  const downside   = vol * (100 - conf) / 100;
+  const worstCase  = -Math.max(Math.abs(downside), vol * 0.5);
 
-  // Worst case: account for volatility and confidence
-  const downside = volatility * (100 - confidence) / 100;
-  const worstCase = -Math.abs(downside);
-
+  // Round to 2 decimal places so small values (e.g. 0.04 %) never collapse to 0.0
+  const r2 = (n: number) => Math.round(n * 100) / 100;
   return {
-    best_case: Math.round(bestCase * 10) / 10,
-    likely_case: Math.round(likelyCase * 10) / 10,
-    worst_case: Math.round(worstCase * 10) / 10
+    best_case:   r2(bestCase),
+    likely_case: r2(likelyCase),
+    worst_case:  r2(worstCase),
   };
 }
 
@@ -3729,67 +3739,11 @@ serve(async (req) => {
     
     let geminiForecast: GeminiForecast;
     let predictionSource = 'gemini_ai';
-    
-    // 🌟 GODLY PLAN: Try Quantum Prediction First 🌟
+
+    // PRIMARY: Full Gemini AI analysis — news, fundamentals, multi-horizon, user context
+    // Quantum and ensemble are fallbacks only if Gemini is unavailable or times out.
     try {
-      console.log('Attempting quantum-level prediction...');
-      const quantumPrediction = generateQuantumPrediction(
-        symbol,
-        stockData,
-        technicalContext,
-        newsData,
-        marketRegime,
-        horizons
-      );
-      
-      // Convert quantum prediction to GeminiForecast format for compatibility
-      geminiForecast = {
-        symbol: quantumPrediction.symbol,
-        as_of: quantumPrediction.timestamp,
-        forecasts: [
-          {
-            horizon: `${quantumPrediction.predictions.shortTerm.timeHorizon}m`,
-            direction: quantumPrediction.predictions.shortTerm.direction,
-            probabilities: {
-              up: quantumPrediction.predictions.shortTerm.direction === 'up' ? quantumPrediction.predictions.shortTerm.probability : 0.1,
-              down: quantumPrediction.predictions.shortTerm.direction === 'down' ? quantumPrediction.predictions.shortTerm.probability : 0.1,
-              sideways: quantumPrediction.predictions.shortTerm.direction === 'sideways' ? quantumPrediction.predictions.shortTerm.probability : 0.8
-            },
-            expected_return_bp: Math.round(quantumPrediction.predictions.shortTerm.expectedMove * 100),
-            expected_range_bp: {
-              p10: Math.round(-quantumPrediction.predictions.shortTerm.expectedMove * 100),
-              p50: Math.round(quantumPrediction.predictions.shortTerm.expectedMove * 100),
-              p90: Math.round(quantumPrediction.predictions.shortTerm.expectedMove * 200)
-            },
-            key_drivers: quantumPrediction.predictions.shortTerm.keyFactors,
-            risk_flags: quantumPrediction.predictions.shortTerm.riskFactors,
-            confidence: Math.round(quantumPrediction.predictions.shortTerm.confidence * 100),
-            invalid_if: ['regime_change', 'extreme_volatility']
-          }
-        ],
-        support_resistance: {
-          supports: [{ level: marketRegime.support, strength: 0.9 }],
-          resistances: [{ level: marketRegime.resistance, strength: 0.9 }]
-        },
-        positioning_guidance: {
-          bias: quantumPrediction.predictions.shortTerm.direction === 'up' ? 'long' : 
-                quantumPrediction.predictions.shortTerm.direction === 'down' ? 'short' : 'flat',
-          notes: `Quantum prediction: ${(quantumPrediction.successProbability * 100).toFixed(1)}% success probability. ${quantumPrediction.alternativeScenarios[0]?.description || ''}`
-        }
-      };
-      
-      predictionSource = 'quantum_godly_plan';
-      updatePipelineStep(pipeline, 'ai_prediction', 'completed', 'Quantum prediction generated');
-      
-      console.log('🌟 QUANTUM PREDICTION SUCCESS! 🌟');
-      console.log(`Success Probability: ${(quantumPrediction.successProbability * 100).toFixed(1)}%`);
-      console.log(`Risk Score: ${(quantumPrediction.riskScore * 100).toFixed(1)}%`);
-      console.log(`Market Regime: ${marketRegime.type} (${(marketRegime.strength * 100).toFixed(0)}% strength)`);
-      
-    } catch (quantumError) {
-      console.log('Quantum prediction failed, falling back to standard methods:', quantumError.message);
-      
-      try {
+      console.log('🧠 Running full Gemini AI analysis...');
       geminiForecast = await generateEnhancedGeminiAnalysis(
         symbol,
         stockData,
@@ -3806,19 +3760,73 @@ serve(async (req) => {
           providerIntelligence
         }
       );
-      updatePipelineStep(pipeline, 'ai_prediction', 'completed', 'AI analysis completed');
-    } catch (error) {
-      console.log('Gemini AI failed, using enhanced ensemble prediction:', error.message);
-      geminiForecast = generateEnhancedEnsemblePrediction(
-        symbol,
-        stockData,
-        technicalContext,
-        newsData,
-        horizons
-      );
-      predictionSource = 'enhanced_ensemble_v2';
-      updatePipelineStep(pipeline, 'ai_prediction', 'completed', 'Enhanced ensemble prediction generated');
-    }
+      predictionSource = 'gemini_ai';
+      updatePipelineStep(pipeline, 'ai_prediction', 'completed', 'Gemini AI analysis completed');
+      console.log('✅ Gemini AI analysis succeeded');
+
+    } catch (geminiError) {
+      // FALLBACK 1: Quantum prediction (local rule-based model)
+      console.log('⚠️ Gemini AI failed, trying quantum prediction:', geminiError.message);
+      try {
+        const quantumPrediction = generateQuantumPrediction(
+          symbol,
+          stockData,
+          technicalContext,
+          newsData,
+          marketRegime,
+          horizons
+        );
+
+        geminiForecast = {
+          symbol: quantumPrediction.symbol,
+          as_of: quantumPrediction.timestamp,
+          forecasts: [
+            {
+              horizon: `${quantumPrediction.predictions.shortTerm.timeHorizon}m`,
+              direction: quantumPrediction.predictions.shortTerm.direction,
+              probabilities: {
+                up: quantumPrediction.predictions.shortTerm.direction === 'up' ? quantumPrediction.predictions.shortTerm.probability : 0.1,
+                down: quantumPrediction.predictions.shortTerm.direction === 'down' ? quantumPrediction.predictions.shortTerm.probability : 0.1,
+                sideways: quantumPrediction.predictions.shortTerm.direction === 'sideways' ? quantumPrediction.predictions.shortTerm.probability : 0.8
+              },
+              expected_return_bp: Math.round(quantumPrediction.predictions.shortTerm.expectedMove * 100),
+              expected_range_bp: {
+                p10: Math.round(-quantumPrediction.predictions.shortTerm.expectedMove * 100),
+                p50: Math.round(quantumPrediction.predictions.shortTerm.expectedMove * 100),
+                p90: Math.round(quantumPrediction.predictions.shortTerm.expectedMove * 200)
+              },
+              key_drivers: quantumPrediction.predictions.shortTerm.keyFactors,
+              risk_flags: quantumPrediction.predictions.shortTerm.riskFactors,
+              confidence: Math.round(quantumPrediction.predictions.shortTerm.confidence * 100),
+              invalid_if: ['regime_change', 'extreme_volatility']
+            }
+          ],
+          support_resistance: {
+            supports: [{ level: marketRegime.support, strength: 0.9 }],
+            resistances: [{ level: marketRegime.resistance, strength: 0.9 }]
+          },
+          positioning_guidance: {
+            bias: quantumPrediction.predictions.shortTerm.direction === 'up' ? 'long' :
+                  quantumPrediction.predictions.shortTerm.direction === 'down' ? 'short' : 'flat',
+            notes: `Technical model: ${(quantumPrediction.successProbability * 100).toFixed(1)}% success probability. ${quantumPrediction.alternativeScenarios[0]?.description || ''}`
+          }
+        };
+        predictionSource = 'quantum_fallback';
+        updatePipelineStep(pipeline, 'ai_prediction', 'completed', 'Technical model prediction (Gemini unavailable)');
+
+      } catch (quantumError) {
+        // FALLBACK 2: Statistical ensemble
+        console.log('⚠️ Quantum also failed, using ensemble:', quantumError.message);
+        geminiForecast = generateEnhancedEnsemblePrediction(
+          symbol,
+          stockData,
+          technicalContext,
+          newsData,
+          horizons
+        );
+        predictionSource = 'enhanced_ensemble_v2';
+        updatePipelineStep(pipeline, 'ai_prediction', 'completed', 'Statistical ensemble prediction generated');
+      }
     }
     
     updatePipelineStep(pipeline, 'multi_horizon_forecast', 'completed', 
@@ -3851,11 +3859,18 @@ serve(async (req) => {
     const volatilityPercent = (technicalContext.indicators.atr / stockData.currentPrice) * 100;
     
     // Calculate action signal (BUY/SELL/HOLD)
-    const actionSignal = deriveActionSignal(
-      primaryForecast.direction,
-      geminiForecast.positioning_guidance.bias,
-      primaryForecast.confidence
-    );
+    // Prefer Gemini's own action_signal if it explicitly returned BUY or SELL —
+    // it has full context (news, macro, multi-horizon). Only fall back to the
+    // rule-based derivation if Gemini returned HOLD or didn't return a signal.
+    const geminiReturnedSignal = geminiForecast.action_signal?.action;
+    const actionSignal =
+      geminiReturnedSignal === "BUY" || geminiReturnedSignal === "SELL"
+        ? geminiForecast.action_signal!  // trust Gemini's explicit BUY/SELL
+        : deriveActionSignal(
+            primaryForecast.direction,
+            geminiForecast.positioning_guidance.bias,
+            primaryForecast.confidence
+          );
     
     // Calculate risk grade
     const riskGrade = calculateRiskGrade(
