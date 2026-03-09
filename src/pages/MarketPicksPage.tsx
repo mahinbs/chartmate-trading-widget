@@ -317,17 +317,65 @@ export default function MarketPicksPage() {
   const handleRepredict = useCallback(async (row: BoardRow) => {
     setRepredictingId(row.id);
     try {
-      const { error } = await supabase.functions.invoke("admin-daily-board", {
+      const tf = (row as any).timeframe || "1d";
+      const inv = (row as any).investment || 10000;
+
+      // Step 1: call predict-movement directly from the browser (avoids edge→edge timeout)
+      const { data: predData, error: predError } = await supabase.functions.invoke("predict-movement", {
         body: {
-          action: "re_predict",
           symbol: row.symbol,
-          display_name: row.display_name,
-          timeframe: (row as any).timeframe || "1d",
-          investment: (row as any).investment || 10000,
+          investment: inv,
+          timeframe: tf,
+          horizons: [1440, 240, 1440, 10080],
+          riskTolerance: "medium",
+          tradingStyle: "swing_trading",
+          investmentGoal: "growth",
+          stopLossPercentage: 5,
+          targetProfitPercentage: 15,
+          leverage: 1,
+          marginType: "cash",
         },
       });
-      if (error) throw error;
-      toast.success(`Re-prediction for ${row.display_name || row.symbol} queued — refreshing…`);
+      if (predError) throw new Error(predError.message || "Prediction failed");
+
+      // Step 2: slim the payload and publish via admin-daily-board
+      const gf = predData?.geminiForecast;
+      const slimPayload = {
+        symbol: predData?.symbol,
+        currentPrice: predData?.currentPrice,
+        change: predData?.change,
+        changePercent: predData?.changePercent,
+        rationale: predData?.rationale,
+        patterns: predData?.patterns,
+        opportunities: predData?.opportunities,
+        geminiForecast: gf
+          ? {
+              action_signal: gf.action_signal,
+              forecasts: gf.forecasts?.slice(0, 4),
+              support_resistance: gf.support_resistance,
+              positioning_guidance: gf.positioning_guidance,
+              expected_roi: gf.expected_roi,
+              risk_grade: gf.risk_grade,
+              deep_analysis: gf.deep_analysis,
+              market_context: gf.market_context,
+            }
+          : undefined,
+      };
+
+      const { error: storeError } = await supabase.functions.invoke("admin-daily-board", {
+        body: {
+          action: "publish",
+          symbol: row.symbol,
+          display_name: row.display_name,
+          timeframe: tf,
+          investment: inv,
+          date: row.generated_for_date,
+          prediction_payload: slimPayload,
+        },
+      });
+      if (storeError) throw new Error(storeError.message || "Failed to store re-prediction");
+
+      toast.success(`Re-prediction for ${row.display_name || row.symbol} complete — refreshing…`);
       await loadBoard();
     } catch (err: any) {
       toast.error(err?.message || "Re-predict failed");

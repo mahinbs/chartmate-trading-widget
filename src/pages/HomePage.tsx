@@ -227,7 +227,7 @@ export default function HomePage() {
               <div>
                 <h4 className="font-semibold mb-2">🤖 AI Analysis</h4>
                 <ul className="space-y-1 text-muted-foreground">
-                  <li>• Gemini AI-powered probability-based analysis</li>
+                  <li>• AI-powered probability-based analysis</li>
                   <li>• Multi-timeframe forecasts</li>
                   <li>• Sentiment & news analysis</li>
                 </ul>
