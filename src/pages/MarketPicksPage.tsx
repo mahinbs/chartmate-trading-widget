@@ -260,7 +260,9 @@ export default function MarketPicksPage() {
   const loadBoard = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const { data, error } = await supabase.functions.invoke("public-daily-board");
+      const { data, error } = await supabase.functions.invoke("public-daily-board", {
+        method: "GET",
+      });
       if (error) throw error;
       const boardRows = data?.rows || [];
       setRows(boardRows);

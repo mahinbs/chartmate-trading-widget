@@ -7,13 +7,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-async function assertAuthenticated(req: Request, supabaseClient: ReturnType<typeof createClient>) {
-  const authHeader = req.headers.get("Authorization");
-  if (!authHeader) throw new Error("Missing authorization header");
-  const token = authHeader.replace("Bearer ", "");
-  const { data, error } = await supabaseClient.auth.getUser(token);
-  if (error || !data.user) throw new Error("Invalid or expired token");
-}
+// NOTE: This function intentionally does NOT require auth.
+// The daily predictions board is meant to be publicly visible to all users.
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -30,7 +25,6 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
       { auth: { autoRefreshToken: false, persistSession: false } },
     );
-    await assertAuthenticated(req, supabaseClient);
 
     const url = new URL(req.url);
     const date = url.searchParams.get("date");
