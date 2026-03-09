@@ -19,96 +19,99 @@ import AdminUsersPage from "./pages/admin/AdminUsersPage";
 import AdminPredictionsPage from "./pages/admin/AdminPredictionsPage";
 import { AdminRoute } from "./components/AdminRoute";
 import { AdminLayout } from "./components/admin/AdminLayout";
-import { useEffect } from "react";
+import MainLandingPage from "./pages/MainLandingPage";
+import { HelmetProvider } from "react-helmet-async";
 
 // OpenAlgo ping temporarily disabled in mock-order mode to avoid CORS noise
 
 const queryClient = new QueryClient();
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <div className="min-h-screen bg-background">
-          <Routes>
-            <Route path="/rsb-fintech-founder" element={<LandingPage />} />
-            <Route path="/dsn-fintech-founder" element={<LandingPage />} />
-            <Route path="/" element={<Navigate to="/rsb-fintech-founder" replace />} />
-            <Route path="/contact-us" element={<ContactUsPage />} />
-            <Route path="/auth" element={<AuthPage />} />
-            <Route
-              path="/broker-callback"
-              element={
-                <ProtectedRoute>
-                  <BrokerCallbackPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/home"
-              element={
-                <ProtectedRoute>
-                  <HomePage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/predict"
-              element={
-                <ProtectedRoute>
-                  <PredictPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/predictions"
-              element={
-                <ProtectedRoute>
-                  <PredictionsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/intraday"
-              element={
-                <ProtectedRoute>
-                  <IntradayPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/active-trades"
-              element={
-                <ProtectedRoute>
-                  <ActiveTradesPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/trade/:id"
-              element={
-                <ProtectedRoute>
-                  <ActiveTradeDetailsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/market-picks"
-              element={<MarketPicksPage />}
-            />
-            <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
-              <Route index element={<Navigate to="users" replace />} />
-              <Route path="users" element={<AdminUsersPage />} />
-              <Route path="predictions" element={<AdminPredictionsPage />} />
-            </Route>
-            <Route path="*" element={<Navigate to="/home" replace />} />
-          </Routes>
-        </div>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
+  <HelmetProvider>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <div className="min-h-screen bg-background">
+            <Routes>
+              <Route path="/rsb-fintech-founder" element={<LandingPage />} />
+              <Route path="/dsn-fintech-founder" element={<LandingPage />} />
+              <Route path="/" element={<MainLandingPage />} />
+              <Route path="/contact-us" element={<ContactUsPage />} />
+              <Route path="/auth" element={<AuthPage />} />
+              <Route
+                path="/broker-callback"
+                element={
+                  <ProtectedRoute>
+                    <BrokerCallbackPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/home"
+                element={
+                  <ProtectedRoute>
+                    <HomePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/predict"
+                element={
+                  <ProtectedRoute>
+                    <PredictPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/predictions"
+                element={
+                  <ProtectedRoute>
+                    <PredictionsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/intraday"
+                element={
+                  <ProtectedRoute>
+                    <IntradayPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/active-trades"
+                element={
+                  <ProtectedRoute>
+                    <ActiveTradesPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/trade/:id"
+                element={
+                  <ProtectedRoute>
+                    <ActiveTradeDetailsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/market-picks"
+                element={<MarketPicksPage />}
+              />
+              <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
+                <Route index element={<Navigate to="users" replace />} />
+                <Route path="users" element={<AdminUsersPage />} />
+                <Route path="predictions" element={<AdminPredictionsPage />} />
+              </Route>
+              <Route path="*" element={<Navigate to="/home" replace />} />
+            </Routes>
+          </div>
+        </BrowserRouter>
+      </TooltipProvider>
+    </QueryClientProvider>
+  </HelmetProvider>
 );
 
 export default App;

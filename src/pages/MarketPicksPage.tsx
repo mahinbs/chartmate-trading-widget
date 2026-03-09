@@ -378,7 +378,7 @@ export default function MarketPicksPage() {
       <div className="border-b bg-card/50">
         <div className="container mx-auto px-4 py-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3 flex-wrap">
-            <Button variant="outline" size="sm" onClick={() => navigate("/rsb-fintech-founder")}>
+            <Button variant="outline" size="sm" onClick={() => navigate("/")}>
               <ArrowLeft className="h-4 w-4 mr-1" />
               Home
             </Button>

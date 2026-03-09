@@ -45,6 +45,7 @@ import { useTradingIntegration } from "@/hooks/useTradingIntegration";
 import { TradingIntegrationModal } from "@/components/trading/TradingIntegrationModal";
 import { StrategySelectionDialog, STRATEGIES } from "@/components/trading/StrategySelectionDialog";
 import { UsePreviousOrNewStrategyDialog } from "@/components/trading/UsePreviousOrNewStrategyDialog";
+import { PRICING_PLANS } from "@/constants/pricing";
 import { toast } from "sonner";
 import { Loader2, AlertTriangle, BrainCircuit, BarChart3, CheckCircle, ArrowRight, DollarSign, LogOut, History, Timer, Home, FlaskConical } from "lucide-react";
 import { Container } from "@/components/layout/Container";
@@ -224,6 +225,7 @@ const PredictPage = () => {
   const [lastUsedStrategy, setLastUsedStrategy] = useState<{ strategyType: string; product: string; label: string } | null>(null);
   const [displayCurrency, setDisplayCurrency] = useState<"INR" | "USD">("INR");
   const [isPaperTrade, setIsPaperTrade] = useState(false);
+  const [showPremiumDialog, setShowPremiumDialog] = useState(false);
 
   // ── Mock / Paper order + track ────────────────────────────────────────────
   const placeMockOrderAndTrack = useCallback(async (strategyCode: string, product: string) => {
@@ -1139,18 +1141,7 @@ const PredictPage = () => {
 
                       {/* Real trade button */}
                       <Button
-                        onClick={async () => {
-                          setIsPaperTrade(false);
-                          const { tradeTrackingService } = await import("@/services/tradeTrackingService");
-                          const last = await tradeTrackingService.getLastUsedStrategy();
-                          if (last) {
-                            const label = STRATEGIES.find(s => s.value === last.strategyType)?.label ?? last.strategyType;
-                            setLastUsedStrategy({ ...last, label });
-                            setShowPreviousOrNewDialog(true);
-                          } else {
-                            setShowStrategyDialog(true);
-                          }
-                        }}
+                        onClick={() => setShowPremiumDialog(true)}
                         className={`w-full text-lg py-6 shadow-lg ${result.geminiForecast?.action_signal?.action === 'HOLD'
                           ? 'bg-gradient-to-r from-yellow-600 to-yellow-500 hover:from-yellow-700 hover:to-yellow-600'
                           : 'bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600'
@@ -1168,7 +1159,7 @@ const PredictPage = () => {
                       <Button
                         variant="outline"
                         onClick={async () => {
-                          setIsPaperTrade(true);
+                          setIsPaperTrade(false);
                           const { tradeTrackingService } = await import("@/services/tradeTrackingService");
                           const last = await tradeTrackingService.getLastUsedStrategy();
                           if (last) {
@@ -1459,6 +1450,57 @@ const PredictPage = () => {
           }
         </div >
       </Container >
+
+      {/* Premium Plan Required Dialog */}
+      <Dialog open={showPremiumDialog} onOpenChange={setShowPremiumDialog}>
+        <DialogContent className="max-w-[95vw] md:max-w-5xl bg-zinc-950 border border-zinc-800 text-white p-5 sm:p-8 md:p-10 rounded-2xl md:rounded-3xl overflow-y-auto max-h-[90vh]">
+          <DialogHeader className="mb-8">
+            <DialogTitle className="text-2xl md:text-4xl font-black text-center tracking-tight">Premium Plan Required</DialogTitle>
+            <DialogDescription className="text-center text-zinc-400 text-base md:text-lg mt-2 max-w-2xl mx-auto">
+              Buy a premium plan to enable live trade execution and advanced AI insights.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {PRICING_PLANS.map((plan) => (
+              <div
+                key={plan.id}
+                className={`p-6 rounded-2xl flex flex-col relative transition-all border ${plan.recommended
+                    ? 'bg-gradient-to-b from-teal-950/40 to-black border-teal-500/30 shadow-[0_0_30px_rgba(20,184,166,0.1)] lg:-mt-2'
+                    : 'bg-black border-zinc-800 shadow-md'
+                  } ${plan.id === 'proPlan' && 'md:col-span-2 lg:col-span-1'}`}
+              >
+                {plan.recommended && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-teal-500 text-black text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest z-10">
+                    Recommended
+                  </div>
+                )}
+                <h3 className={`text-lg font-bold mb-2 ${plan.recommended ? 'text-teal-400' : 'text-zinc-200'}`}>{plan.name}</h3>
+                <div className="text-3xl font-black mb-4 tracking-tight text-white">
+                  ${plan.price}
+                  <span className="text-sm text-zinc-500 font-normal ml-1">/{plan.period}</span>
+                </div>
+                <ul className="space-y-3 mb-8 flex-1 text-sm text-zinc-300">
+                  {plan.features.slice(0, 6).map((feature, i) => (
+                    <li key={i} className="flex gap-3 items-start text-xs">
+                      <CheckCircle className={`h-4 w-4 shrink-0 mt-0.5 ${plan.recommended ? 'text-teal-400' : 'text-teal-500'}`} />
+                      <span className="leading-snug">{feature}</span>
+                    </li>
+                  ))}
+                </ul>
+                <Button
+                  className={`w-full py-5 rounded-xl ${plan.recommended ? 'bg-teal-500 hover:bg-teal-400 text-black shadow-lg shadow-teal-500/20' : 'bg-zinc-100 hover:bg-zinc-300 text-black'} font-bold transition-all`}
+                  onClick={() => {
+                    navigate('/#pricing');
+                    setShowPremiumDialog(false);
+                  }}
+                >
+                  {plan.recommended ? 'Get Pro Plan' : 'Get Started'}
+                </Button>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Disclaimer */}
       < div className="border-t bg-muted/20" >
