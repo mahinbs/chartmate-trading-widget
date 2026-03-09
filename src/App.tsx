@@ -17,10 +17,16 @@ import ContactUsPage from "./pages/ContactUs";
 import MarketPicksPage from "./pages/MarketPicksPage";
 import AdminUsersPage from "./pages/admin/AdminUsersPage";
 import AdminPredictionsPage from "./pages/admin/AdminPredictionsPage";
+import AdminBlogsPage from "./pages/admin/AdminBlogsPage";
+import AdminPublicDashboardPage from "./pages/admin/AdminPublicDashboardPage";
+import BlogsPage from "./pages/BlogsPage";
+import BlogDetailPage from "./pages/BlogDetailPage";
+import PublicDashboardPage from "./pages/PublicDashboardPage";
 import { AdminRoute } from "./components/AdminRoute";
 import { AdminLayout } from "./components/admin/AdminLayout";
 import MainLandingPage from "./pages/MainLandingPage";
 import { HelmetProvider } from "react-helmet-async";
+import { PlatformChatbot } from "./components/PlatformChatbot";
 
 // OpenAlgo ping temporarily disabled in mock-order mode to avoid CORS noise
 
@@ -34,11 +40,15 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <div className="min-h-screen bg-background">
+            <PlatformChatbot />
             <Routes>
               <Route path="/rsb-fintech-founder" element={<LandingPage />} />
               <Route path="/dsn-fintech-founder" element={<LandingPage />} />
               <Route path="/" element={<MainLandingPage />} />
               <Route path="/contact-us" element={<ContactUsPage />} />
+              <Route path="/blogs" element={<BlogsPage />} />
+              <Route path="/blogs/:slug" element={<BlogDetailPage />} />
+              <Route path="/dashboard" element={<PublicDashboardPage />} />
               <Route path="/auth" element={<AuthPage />} />
               <Route
                 path="/broker-callback"
@@ -104,6 +114,8 @@ const App = () => (
                 <Route index element={<Navigate to="users" replace />} />
                 <Route path="users" element={<AdminUsersPage />} />
                 <Route path="predictions" element={<AdminPredictionsPage />} />
+                <Route path="blogs" element={<AdminBlogsPage />} />
+                <Route path="public-dashboard" element={<AdminPublicDashboardPage />} />
               </Route>
               <Route path="*" element={<Navigate to="/home" replace />} />
             </Routes>

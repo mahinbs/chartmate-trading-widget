@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Menu, X } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
 
 const Navbar = () => {
     const [isScrolled, setIsScrolled] = useState(false);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    const [hasBlogs, setHasBlogs] = useState(false);
+    const [hasDashboard, setHasDashboard] = useState(false);
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -19,6 +22,23 @@ const Navbar = () => {
 
         window.addEventListener('scroll', handleScroll);
         return () => window.removeEventListener('scroll', handleScroll);
+    }, []);
+
+    // Determine if blogs / dashboard pages should be shown in nav
+    useEffect(() => {
+        const loadFlags = async () => {
+            try {
+                const [{ count: blogCount }, { count: dashCount }] = await Promise.all([
+                    supabase.from('blogs').select('id', { head: true, count: 'exact' }),
+                    supabase.from('public_dashboard_metrics').select('id', { head: true, count: 'exact' }),
+                ]);
+                setHasBlogs((blogCount ?? 0) > 0);
+                setHasDashboard((dashCount ?? 0) > 0);
+            } catch (e) {
+                console.error('Navbar flags error', e);
+            }
+        };
+        loadFlags();
     }, []);
 
     const scrollToSection = (sectionId: string) => {
@@ -103,14 +123,19 @@ const Navbar = () => {
 
                 {/* Desktop Menu */}
                 <div className="hidden md:flex items-center space-x-8">
-                    {/* <ScrollLink to="features">Features</ScrollLink>
-                    <NavLink to="/intraday">Intraday</NavLink>
-                    <NavLink to="/predictions">Probabilities</NavLink>
-                    <ScrollLink to="testimonials">Testimonials</ScrollLink>
-                    <ScrollLink to="faq">FAQ</ScrollLink> */}
                     <Link to="/market-picks" className="text-heading hover:text-primary font-medium transition-colors text-sm">
                         Daily Analyses
                     </Link>
+                    {hasBlogs && (
+                        <Link to="/blogs" className="text-heading hover:text-primary font-medium transition-colors text-sm">
+                            Blogs
+                        </Link>
+                    )}
+                    {hasDashboard && (
+                        <Link to="/dashboard" className="text-heading hover:text-primary font-medium transition-colors text-sm">
+                            Dashboard
+                        </Link>
+                    )}
                     <Link to="/contact-us" className="bg-primary hover:bg-primary-hover text-white px-6 py-2.5 rounded text-sm font-bold transition-colors shadow-sm">
                         Launch App
                     </Link>
@@ -130,12 +155,13 @@ const Navbar = () => {
             {/* Mobile Menu */}
             {isMobileMenuOpen && (
                 <div className="md:hidden bg-white absolute top-full left-0 w-full shadow-lg py-4 px-4 flex flex-col space-y-4 border-t">
-                    <MobileScrollLink to="features">Features</MobileScrollLink>
                     <Link to="/market-picks" className="text-heading font-medium" onClick={() => setIsMobileMenuOpen(false)}>Daily Analyses</Link>
-                    <Link to="/intraday" className="text-heading font-medium" onClick={() => setIsMobileMenuOpen(false)}>Intraday</Link>
-                    <Link to="/predictions" className="text-heading font-medium" onClick={() => setIsMobileMenuOpen(false)}>Probabilities</Link>
-                    <MobileScrollLink to="testimonials">Testimonials</MobileScrollLink>
-                    <MobileScrollLink to="faq">FAQ</MobileScrollLink>
+                    {hasBlogs && (
+                        <Link to="/blogs" className="text-heading font-medium" onClick={() => setIsMobileMenuOpen(false)}>Blogs</Link>
+                    )}
+                    {hasDashboard && (
+                        <Link to="/dashboard" className="text-heading font-medium" onClick={() => setIsMobileMenuOpen(false)}>Dashboard</Link>
+                    )}
                     <Link to="/predict" className="bg-primary text-white py-3 rounded text-center font-bold" onClick={() => setIsMobileMenuOpen(false)}>Launch App</Link>
                 </div>
             )}

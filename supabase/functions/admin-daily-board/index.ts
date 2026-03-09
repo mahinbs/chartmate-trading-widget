@@ -70,13 +70,31 @@ async function callPredictMovement(symbol: string, timeframe: string, investment
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   const horizons = [parseTimeframeMinutes(timeframe), 240, 1440, 10080];
-  const response = await fetch(`${supabaseUrl}/functions/v1/predict-movement`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceRoleKey}`, apikey: serviceRoleKey },
-    body: JSON.stringify({ symbol, investment, timeframe, horizons, ...profile }),
-  });
-  const payload = await response.json();
-  if (!response.ok) throw new Error(payload?.error || `predict-movement failed for ${symbol}`);
+
+  let response: Response;
+  try {
+    response = await fetch(`${supabaseUrl}/functions/v1/predict-movement`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceRoleKey}`, apikey: serviceRoleKey },
+      body: JSON.stringify({ symbol, investment, timeframe, horizons, ...profile }),
+    });
+  } catch (networkErr) {
+    throw new Error(`Network error calling predict-movement for ${symbol}: ${networkErr?.message ?? networkErr}`);
+  }
+
+  let payload: Record<string, unknown>;
+  try {
+    payload = await response.json();
+  } catch {
+    const text = await response.text().catch(() => "(empty body)");
+    throw new Error(`predict-movement returned non-JSON (status ${response.status}) for ${symbol}: ${text.slice(0, 300)}`);
+  }
+
+  if (!response.ok) {
+    const detail = payload?.details ?? payload?.error ?? `status ${response.status}`;
+    throw new Error(`predict-movement failed for ${symbol}: ${detail}`);
+  }
+
   return payload;
 }
 
@@ -191,8 +209,25 @@ serve(async (req) => {
         is_active: true,
         generated_at: new Date().toISOString(),
       };
-      const { data: existing } = await supabaseClient.from("daily_predictions_board").select("sort_order").eq("generated_for_date", generatedForDate).order("sort_order", { ascending: false }).limit(1).maybeSingle();
-      (row as any).sort_order = existing?.sort_order != null ? (existing as any).sort_order + 1 : 0;
+      // Preserve sort_order if this symbol already exists for this date, else append
+      const { data: existingForSymbol } = await supabaseClient
+        .from("daily_predictions_board")
+        .select("sort_order")
+        .eq("generated_for_date", generatedForDate)
+        .eq("symbol", symbolNorm)
+        .maybeSingle();
+      if (existingForSymbol?.sort_order != null) {
+        (row as any).sort_order = (existingForSymbol as any).sort_order;
+      } else {
+        const { data: lastRow } = await supabaseClient
+          .from("daily_predictions_board")
+          .select("sort_order")
+          .eq("generated_for_date", generatedForDate)
+          .order("sort_order", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        (row as any).sort_order = lastRow?.sort_order != null ? (lastRow as any).sort_order + 1 : 0;
+      }
       const { error: upsertError } = await supabaseClient.from("daily_predictions_board").upsert(row, { onConflict: "generated_for_date,symbol" });
       if (upsertError) throw new Error(`Failed to publish: ${upsertError.message}`);
       return new Response(JSON.stringify({ success: true, action: "publish", symbol: symbolNorm, generated_for_date: generatedForDate }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -217,56 +252,105 @@ serve(async (req) => {
     }
 
     if (action === "re_predict") {
-      // Re-run predict-movement for a specific symbol already on the board and upsert the result
-      const { symbol: repSymbol, display_name: repDisplayName, timeframe: repTimeframe, investment: repInvestment } = body;
+      const {
+        symbol: repSymbol,
+        display_name: repDisplayName,
+        timeframe: repTimeframe,
+        investment: repInvestment,
+        generated_for_date: repDate,
+      } = body;
+
       if (!repSymbol) {
         return new Response(JSON.stringify({ error: "Missing symbol for re_predict" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const prediction = await callPredictMovement(
-        repSymbol, repTimeframe || "1d", Number(repInvestment || 10000),
-        { riskTolerance: "medium", tradingStyle: "swing_trading", investmentGoal: "growth",
-          stopLossPercentage: 5, targetProfitPercentage: 15, leverage: 1, marginType: "cash" }
-      );
-      const forecast = prediction?.geminiForecast?.forecasts?.[0];
-      const probs = forecast?.probabilities || {};
+
+      // Use the date of the existing row if provided, otherwise today
+      const repForDate = (typeof repDate === "string" && repDate.trim()) ? repDate.trim() : generatedForDate;
+      const repTf = repTimeframe || "1d";
+      const repInv = Number(repInvestment || 10000);
+      const repSymNorm = String(repSymbol).trim().toUpperCase();
+
+      // Fetch existing row's sort_order so we don't reset it to 0
+      const { data: existingRow } = await supabaseClient
+        .from("daily_predictions_board")
+        .select("sort_order, profile")
+        .eq("generated_for_date", repForDate)
+        .eq("symbol", repSymNorm)
+        .maybeSingle();
+
+      const repProfile: Record<string, unknown> = (existingRow as any)?.profile || {};
+      const baseProfile = {
+        riskTolerance: repProfile.riskTolerance ?? "medium",
+        tradingStyle: repProfile.tradingStyle ?? "swing_trading",
+        investmentGoal: repProfile.investmentGoal ?? "growth",
+        stopLossPercentage: repProfile.stopLossPercentage ?? 5,
+        targetProfitPercentage: repProfile.targetProfitPercentage ?? 15,
+        leverage: repProfile.leverage ?? 1,
+        marginType: repProfile.marginType ?? "cash",
+      };
+
+      let prediction: Record<string, unknown>;
+      try {
+        prediction = await callPredictMovement(repSymNorm, repTf, repInv, baseProfile);
+      } catch (predErr) {
+        const msg = predErr instanceof Error ? predErr.message : String(predErr);
+        console.error(`re_predict: callPredictMovement failed — ${msg}`);
+        return new Response(JSON.stringify({ error: `Prediction failed: ${msg}` }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const gf = prediction?.geminiForecast as Record<string, unknown> | undefined;
+      const forecast = (gf?.forecasts as any[])?.[0];
+      const probs: Record<string, number> = forecast?.probabilities || {};
       const maxProb = Math.max(Number(probs.up ?? 0), Number(probs.down ?? 0), Number(probs.sideways ?? 0));
-      // Slim the payload before storing
-      const gf = prediction?.geminiForecast;
+
       const slimPayload = {
-        symbol: prediction?.symbol, currentPrice: prediction?.currentPrice,
-        change: prediction?.change, changePercent: prediction?.changePercent,
-        rationale: prediction?.rationale, patterns: prediction?.patterns, opportunities: prediction?.opportunities,
+        symbol: prediction?.symbol,
+        currentPrice: prediction?.currentPrice,
+        change: prediction?.change,
+        changePercent: prediction?.changePercent,
+        rationale: prediction?.rationale,
+        patterns: prediction?.patterns,
+        opportunities: prediction?.opportunities,
         geminiForecast: gf ? {
-          action_signal: gf.action_signal, forecasts: gf.forecasts?.slice(0, 4),
-          support_resistance: gf.support_resistance, positioning_guidance: gf.positioning_guidance,
-          expected_roi: gf.expected_roi, risk_grade: gf.risk_grade,
-          deep_analysis: gf.deep_analysis, market_context: gf.market_context,
+          action_signal: gf.action_signal,
+          forecasts: (gf.forecasts as any[])?.slice(0, 4),
+          support_resistance: gf.support_resistance,
+          positioning_guidance: gf.positioning_guidance,
+          expected_roi: gf.expected_roi,
+          risk_grade: gf.risk_grade,
+          deep_analysis: gf.deep_analysis,
+          market_context: gf.market_context,
         } : undefined,
       };
-      const row = {
-        generated_for_date: generatedForDate,
-        symbol: repSymbol.toUpperCase(),
-        display_name: repDisplayName || repSymbol.toUpperCase(),
-        sort_order: 0,
-        timeframe: repTimeframe || "1d",
-        investment: Number(repInvestment || 10000),
-        profile: {},
+
+      const repRow = {
+        generated_for_date: repForDate,
+        symbol: repSymNorm,
+        display_name: repDisplayName || repSymNorm,
+        sort_order: (existingRow as any)?.sort_order ?? 0,
+        timeframe: repTf,
+        investment: repInv,
+        profile: baseProfile,
         prediction_payload: slimPayload,
         probability_score: normalizeProbability(maxProb),
-        action_signal: prediction?.geminiForecast?.action_signal?.action || null,
-        expires_at: computeExpiryIso(repTimeframe || "1d"),
+        action_signal: (gf?.action_signal as any)?.action || null,
+        expires_at: computeExpiryIso(repTf),
         generated_by: auth.userId,
         refresh_reason: "re_predict",
         is_active: true,
         generated_at: new Date().toISOString(),
       };
+
       const { error: upsertError } = await supabaseClient
         .from("daily_predictions_board")
-        .upsert(row, { onConflict: "generated_for_date,symbol" });
+        .upsert(repRow, { onConflict: "generated_for_date,symbol" });
       if (upsertError) throw new Error(`Failed to re_predict upsert: ${upsertError.message}`);
-      return new Response(JSON.stringify({ success: true, action: "re_predict", symbol: repSymbol }), {
+
+      return new Response(JSON.stringify({ success: true, action: "re_predict", symbol: repSymNorm, generated_for_date: repForDate }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

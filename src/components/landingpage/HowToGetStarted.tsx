@@ -80,7 +80,7 @@ const HowToGetStarted = () => {
                                         <h3 className="text-2xl md:text-3xl font-bold text-white group-hover:text-purple-400 transition-colors">3. Get Analysis</h3>
                                     </div>
                                     <p className="text-gray-400 text-lg leading-relaxed max-w-lg font-light">
-                                        Receive instant, AI-generated price probabilities, entry/exit points, and risk metrics powered by Gemini.
+                                        Receive instant, AI-generated price probabilities, entry/exit points, and risk metrics powered by our in-house AI engine.
                                     </p>
                                 </div>
                             </ScrollReveal>

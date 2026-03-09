@@ -54,12 +54,12 @@ const PIPELINE_STEPS = [
   { icon: BarChart3,  label: "Historical Analysis",         desc: "Full-year candles, fundamentals, earnings" },
   { icon: TrendingUp, label: "Technical Indicators",        desc: "RSI, MACD, Bollinger Bands, regime detection" },
   { icon: TrendingUp, label: "News & Sentiment",            desc: "Market news, macro events, sector correlation" },
-  { icon: BrainCircuit, label: "Gemini AI Processing",      desc: "Multi-horizon forecasts, positioning guidance" },
+  { icon: BrainCircuit, label: "AI Model Processing",       desc: "Multi-horizon forecasts, positioning guidance" },
   { icon: Shield,     label: "Risk Assessment",             desc: "Risk grade, stop-loss, take-profit targets" },
   { icon: Sparkles,   label: "Compiling Full Report",       desc: "ROI scenarios, key levels, insights" },
 ];
 
-// Default profile matching a normal user analysis — ensures same Gemini prompt and pipeline
+// Default profile matching a normal user analysis — ensures same AI prompt and pipeline
 const DEFAULT_PROFILE = {
   riskTolerance: "medium" as const,
   tradingStyle: "swing_trading" as const,
@@ -119,16 +119,62 @@ export default function AdminPredictionsPage() {
   const repredictRow = async (row: BoardRow) => {
     setRepredictingId(row.id);
     try {
-      const { error } = await supabase.functions.invoke("admin-daily-board", {
+      const tf = row.timeframe || "1d";
+      const inv = row.investment || 10000;
+
+      // Step 1: call predict-movement from the browser (avoids edge→edge chain)
+      const { data: predData, error: predError } = await supabase.functions.invoke("predict-movement", {
         body: {
-          action: "re_predict",
           symbol: row.symbol,
-          display_name: row.display_name,
-          timeframe: row.timeframe || "1d",
-          investment: row.investment || 10000,
+          investment: inv,
+          timeframe: tf,
+          horizons: [1440, 240, 1440, 10080],
+          riskTolerance: "medium",
+          tradingStyle: "swing_trading",
+          investmentGoal: "growth",
+          stopLossPercentage: 5,
+          targetProfitPercentage: 15,
+          leverage: 1,
+          marginType: "cash",
         },
       });
-      if (error) throw error;
+      if (predError) throw new Error(predError.message || "Prediction failed");
+
+      // Step 2: slim and store via publish
+      const gf = predData?.geminiForecast;
+      const slimPayload = {
+        symbol: predData?.symbol,
+        currentPrice: predData?.currentPrice,
+        change: predData?.change,
+        changePercent: predData?.changePercent,
+        rationale: predData?.rationale,
+        patterns: predData?.patterns,
+        opportunities: predData?.opportunities,
+        geminiForecast: gf ? {
+          action_signal: gf.action_signal,
+          forecasts: gf.forecasts?.slice(0, 4),
+          support_resistance: gf.support_resistance,
+          positioning_guidance: gf.positioning_guidance,
+          expected_roi: gf.expected_roi,
+          risk_grade: gf.risk_grade,
+          deep_analysis: gf.deep_analysis,
+          market_context: gf.market_context,
+        } : undefined,
+      };
+
+      const { error: storeError } = await supabase.functions.invoke("admin-daily-board", {
+        body: {
+          action: "publish",
+          symbol: row.symbol,
+          display_name: row.display_name,
+          timeframe: tf,
+          investment: inv,
+          date: row.generated_for_date,
+          prediction_payload: slimPayload,
+        },
+      });
+      if (storeError) throw new Error(storeError.message || "Failed to store re-prediction");
+
       toast.success(`Re-prediction for ${row.display_name || row.symbol} complete`);
       await loadBoard(true);
     } catch (err: any) {
@@ -176,7 +222,7 @@ export default function AdminPredictionsPage() {
     try {
       const apiSymbol = rawSymbol.includes(":") ? rawSymbol.split(":")[1] : rawSymbol;
       const primaryHorizon = getTimeframeMinutes(timeframe);
-      // Identical request to PredictPage.handlePredict — same pipeline, same Gemini prompt, same user context
+      // Identical request to PredictPage.handlePredict — same pipeline, same prompt, same user context
       const { data, error } = await supabase.functions.invoke("predict-movement", {
         body: {
           symbol: apiSymbol,
@@ -190,7 +236,7 @@ export default function AdminPredictionsPage() {
       setAnalysisResult(data);
       setAnalysedAt(new Date());
       setAnalyzeStep(PIPELINE_STEPS.length - 1);
-      toast.success("Full Gemini AI analysis complete — review then publish to Daily Board");
+      toast.success("Full AI analysis complete — review then publish to Daily Board");
     } catch (error: any) {
       console.error("Analysis error:", error);
       toast.error(error?.message || "Analysis failed");
@@ -272,7 +318,7 @@ export default function AdminPredictionsPage() {
             Run real market analysis (same as users)
           </CardTitle>
           <CardDescription>
-            Same AI pipeline, same Gemini prompt, same in-depth result that normal users get. Review the full analysis below, then publish to Daily Board so all users see it on the Daily Analysis page.
+            Same AI pipeline and prompt that normal users get. Review the full analysis below, then publish to the Daily Board so all users see it on the Daily Analysis page.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -319,7 +365,7 @@ export default function AdminPredictionsPage() {
             className="w-full md:w-auto"
           >
             {analyzing ? (
-              <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Running full Gemini AI analysis…</>
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Running full AI analysis…</>
             ) : (
               <><BrainCircuit className="mr-2 h-4 w-4" />Run AI analysis</>
             )}
