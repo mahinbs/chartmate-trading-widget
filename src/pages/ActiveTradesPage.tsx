@@ -87,67 +87,6 @@ export default function ActiveTradesPage() {
     }
   };
 
-  const handleCancelTrade = async (tradeId: string) => {
-    if (!confirm("Are you sure you want to cancel this trade tracking? This will not close the position, only stop tracking.")) {
-      return;
-    }
-
-    const result = await tradeTrackingService.cancelTrade(tradeId);
-
-    if (result.error) {
-      toast({
-        title: "Error",
-        description: "Failed to cancel trade",
-        variant: "destructive"
-      });
-    } else {
-      toast({
-        title: "Trade Cancelled",
-        description: "Trade tracking has been stopped"
-      });
-      await loadTrades();
-    }
-  };
-
-  const handleCloseTrade = async (tradeId: string, currentPrice: number) => {
-    if (!confirm("Close this trade in the app only (no order placed on broker)?")) {
-      return;
-    }
-
-    const result = await tradeTrackingService.closeTrade(tradeId, currentPrice);
-
-    if (result.error) {
-      toast({
-        title: "Error",
-        description: "Failed to close trade",
-        variant: "destructive"
-      });
-    } else {
-      toast({
-        title: "Trade Closed",
-        description: "Trade has been closed in the app"
-      });
-      await loadTrades();
-    }
-  };
-
-  const handleSquareOff = async (tradeId: string) => {
-    const result = await tradeTrackingService.squareOff(tradeId);
-    if (result.error) {
-      toast({
-        title: "Square Off Failed",
-        description: result.error,
-        variant: "destructive",
-      });
-    } else {
-      toast({
-        title: "Squared Off",
-        description: `Exit order placed${result.exitOrderId ? ` (Order ID: ${result.exitOrderId})` : ""}. Position closed.`,
-      });
-      await loadTrades();
-    }
-  };
-
   useEffect(() => {
     loadTrades();
 
@@ -296,22 +235,22 @@ export default function ActiveTradesPage() {
     <div className="container max-w-7xl mx-auto p-6 space-y-6">
 
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Active Trades</h1>
+          <h1 className="text-3xl font-bold text-gradient">Active Trades</h1>
           <p className="text-muted-foreground">Track your live positions in real-time</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 rounded-full border px-2 text-xs bg-muted/60 py-2">
+          <div className="flex items-center gap-1 rounded-full border border-white/10 px-2 text-xs bg-zinc-900/50 py-2">
             <span className="text-muted-foreground">Currency:</span>
             <button
-              className={`px-2 py-0.5 rounded-full ${displayCurrency === "INR" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+              className={`px-2 py-0.5 rounded-full ${displayCurrency === "INR" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
               onClick={() => setDisplayCurrency("INR")}
             >
               INR
             </button>
             <button
-              className={`px-2 py-0.5 rounded-full ${displayCurrency === "USD" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+              className={`px-2 py-0.5 rounded-full ${displayCurrency === "USD" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
               onClick={() => setDisplayCurrency("USD")}
             >
               USD
@@ -320,6 +259,7 @@ export default function ActiveTradesPage() {
           <Button
             variant="ghost"
             onClick={() => navigate('/home')}
+            className="hover:bg-white/5"
           >
             <Home className="h-4 w-4 mr-2" />
             Home
@@ -328,11 +268,12 @@ export default function ActiveTradesPage() {
             variant="outline"
             onClick={handleRefresh}
             disabled={refreshing}
+            className="border-white/10 hover:bg-white/5"
           >
             <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          <Button onClick={() => navigate('/predict')}>
+          <Button onClick={() => navigate('/predict')} className="shadow-[0_0_20px_rgba(20,184,166,0.2)] hover:shadow-[0_0_25px_rgba(20,184,166,0.4)]">
             <TrendingUp className="h-4 w-4 mr-2" />
             New Analysis
           </Button>
@@ -342,28 +283,28 @@ export default function ActiveTradesPage() {
       {/* Portfolio Summary */}
       {activeTrades.length > 0 && (
         <div className="grid md:grid-cols-3 gap-4">
-          <Card>
+          <Card className="glass-panel">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+              <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
                 Total Invested
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold">
+              <p className="text-2xl font-bold text-white">
                 {currencySymbol}
                 {stats.totalInvested.toFixed(2)}
               </p>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="glass-panel">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+              <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
                 Total P&L
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className={`text-2xl font-bold ${stats.totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              <p className={`text-2xl font-bold ${stats.totalPnL >= 0 ? 'text-teal-400' : 'text-red-500'}`}>
                 {stats.totalPnL >= 0 ? '+' : ''}
                 {currencySymbol}
                 {stats.totalPnL.toFixed(2)}
@@ -371,14 +312,14 @@ export default function ActiveTradesPage() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="glass-panel">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+              <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
                 Portfolio Return
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className={`text-2xl font-bold ${stats.totalPnLPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              <p className={`text-2xl font-bold ${stats.totalPnLPercentage >= 0 ? 'text-teal-400' : 'text-red-500'}`}>
                 {stats.totalPnLPercentage >= 0 ? '+' : ''}{stats.totalPnLPercentage.toFixed(2)}%
               </p>
             </CardContent>
@@ -406,24 +347,24 @@ export default function ActiveTradesPage() {
         {/* Active Trades */}
         <TabsContent value="active" className="space-y-4 mt-6">
           {activeTrades.length === 0 ? (
-            <Alert>
-              <Bell className="h-4 w-4" />
+            <Alert className="border-white/10 bg-white/5">
+              <Bell className="h-4 w-4 text-primary" />
               <AlertDescription>
-                No active trades. Start by making a <a href="/predict" className="underline font-medium">new analysis</a> and clicking "Start Tracking".
+                No active trades. Start by making a <a href="/predict" className="underline font-medium text-primary">new analysis</a> and clicking "Start Tracking".
               </AlertDescription>
             </Alert>
           ) : (
             <>
-              <div className="rounded-xl border border-border/50 bg-card overflow-hidden">
+              <div className="minimal-panel rounded-xl overflow-hidden">
                 {/* Table Header */}
-                <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 px-4 py-2.5 border-b border-border/50 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider bg-muted/20">
+                <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 px-4 py-3 border-b border-white/5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider bg-black/20">
                   <div>Market</div>
                   <div className="text-right w-24 sm:w-32">Entry</div>
                   <div className="text-right w-24 sm:w-32">Current</div>
                 </div>
 
                 {/* Table Rows */}
-                <div className="divide-y divide-border/50">
+                <div className="divide-y divide-white/5">
                   {activeTrades.map((trade) => {
                     const pnl = convertAmount(trade.currentPnl ?? 0, trade.symbol);
                     const pnlPct = trade.currentPnlPercentage ?? 0;
@@ -432,38 +373,38 @@ export default function ActiveTradesPage() {
                     return (
                       <div
                         key={trade.id}
-                        className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center px-4 py-3.5 hover:bg-muted/30 cursor-pointer transition-colors border-b border-border/30 last:border-0"
+                        className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center px-4 py-4 hover:bg-white/5 cursor-pointer transition-colors"
                         onClick={() => navigate(`/trade/${trade.id}`)}
                       >
                         {/* Market Column */}
-                        <div className="flex flex-col gap-0.5 min-w-0">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="font-bold text-sm tracking-tight truncate">
+                        <div className="flex flex-col gap-1 min-w-0">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="font-bold text-sm tracking-tight truncate text-white">
                               {trade.symbol.replace('-USD', '')}
                             </span>
-                            <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded leading-none uppercase font-bold ${trade.action === 'BUY' ? 'bg-green-500/15 text-green-500' : 'bg-red-500/15 text-red-500'
+                            <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded leading-none uppercase font-bold ${trade.action === 'BUY' ? 'bg-teal-500/10 text-teal-400' : 'bg-red-500/10 text-red-400'
                               }`}>
                               {trade.action}
                             </span>
                           </div>
-                          <div className={`flex items-center gap-1 text-[11px] font-medium ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
+                          <div className={`flex items-center gap-1 text-[11px] font-medium ${isPositive ? 'text-teal-400' : 'text-red-400'}`}>
                             {isPositive ? <TrendingUp className="h-3 w-3 shrink-0" /> : <TrendingDown className="h-3 w-3 shrink-0" />}
                             <span className="truncate">
                               {isPositive ? '+' : ''}{currencySymbol}{Math.abs(pnl).toFixed(2)}
-                              <span className="text-[10px] ml-1 opacity-80">({isPositive ? '+' : ''}{pnlPct.toFixed(2)}%)</span>
+                              <span className="text-[10px] ml-1 opacity-80 text-muted-foreground">({isPositive ? '+' : ''}{pnlPct.toFixed(2)}%)</span>
                             </span>
                           </div>
                         </div>
 
                         {/* Entry Price Column */}
                         <div className="text-right w-24 sm:w-32">
-                          <span className="text-xs sm:text-sm font-semibold text-muted-foreground tabular-nums">
+                          <span className="text-xs sm:text-sm font-medium text-muted-foreground tabular-nums">
                             {currencySymbol}{convertAmount(trade.entryPrice, trade.symbol).toFixed(2)}
                           </span>
                         </div>
 
                         {/* Current Price Column */}
-                        <div className={`text-right w-24 sm:w-32 text-xs sm:text-sm font-bold tabular-nums ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
+                        <div className={`text-right w-24 sm:w-32 text-xs sm:text-sm font-bold tabular-nums ${isPositive ? 'text-teal-400' : 'text-red-400'}`}>
                           {currencySymbol}{convertAmount(trade.currentPrice || trade.entryPrice, trade.symbol).toFixed(2)}
                         </div>
                       </div>
@@ -478,8 +419,8 @@ export default function ActiveTradesPage() {
         {/* Completed Trades */}
         <TabsContent value="completed" className="space-y-4 mt-6">
           {completedTrades.length === 0 ? (
-            <Alert>
-              <CheckCircle className="h-4 w-4" />
+            <Alert className="border-white/10 bg-white/5">
+              <CheckCircle className="h-4 w-4 text-primary" />
               <AlertDescription>
                 No completed trades yet. Tracked trades will appear here after they finish.
               </AlertDescription>
@@ -487,11 +428,11 @@ export default function ActiveTradesPage() {
           ) : (
             <div className="space-y-4">
               {completedTrades.map((trade) => (
-                <Card key={trade.id} className="p-6">
+                <Card key={trade.id} className="p-6 border-white/5 bg-card hover:bg-white/5 transition-colors">
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-3">
-                        <h3 className="text-xl font-bold">{trade.symbol}</h3>
+                        <h3 className="text-xl font-bold text-white">{trade.symbol}</h3>
                         <ActionSignal
                           action={trade.action}
                           confidence={trade.confidence || 0}
@@ -504,7 +445,7 @@ export default function ActiveTradesPage() {
                       <div className="mt-2 text-sm text-muted-foreground">
                         <p>
                           Invested:{" "}
-                          <span className="font-semibold">
+                          <span className="font-semibold text-zinc-300">
                             {currencySymbol}
                             {convertAmount(trade.investmentAmount || 0, trade.symbol).toFixed(2)}
                           </span>
@@ -519,21 +460,21 @@ export default function ActiveTradesPage() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className={`text-2xl font-bold ${(trade.actualPnl || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      <p className={`text-2xl font-bold ${(trade.actualPnl || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                         {(trade.actualPnl || 0) >= 0 ? '+' : ''}
                         {currencySymbol}
                         {convertAmount(trade.actualPnl || 0, trade.symbol).toFixed(2)}
                       </p>
-                      <p className={`text-sm font-medium ${(trade.actualPnlPercentage || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      <p className={`text-sm font-medium ${(trade.actualPnlPercentage || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                         {(trade.actualPnlPercentage || 0) >= 0 ? '+' : ''}{trade.actualPnlPercentage?.toFixed(2) || '0.00'}%
                       </p>
                     </div>
                   </div>
                   <div className="mt-4 flex items-center gap-2">
-                    <Badge variant="outline" className="capitalize">
+                    <Badge variant="outline" className="capitalize border-white/10 text-muted-foreground">
                       {trade.exitReason?.replace(/_/g, ' ')}
                     </Badge>
-                    <Badge variant="secondary">
+                    <Badge variant="secondary" className="bg-white/10 text-zinc-300 hover:bg-white/20">
                       {trade.shares} shares
                     </Badge>
                   </div>

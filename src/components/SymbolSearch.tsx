@@ -121,7 +121,7 @@ export function SymbolSearch({ value, onValueChange, onSelectSymbol, placeholder
                   <CommandItem
                     key={symbol.full_symbol}
                     value={symbol.full_symbol}
-                    className="px-4 py-3 cursor-pointer hover:bg-accent/50 data-[selected]:bg-accent"
+                    className="px-4 py-3 cursor-pointer hover:!bg-accent/50"
                     onSelect={(currentValue) => {
                       onValueChange(currentValue === value ? "" : currentValue);
                       onSelectSymbol?.(symbol);
@@ -136,7 +136,7 @@ export function SymbolSearch({ value, onValueChange, onSelectSymbol, placeholder
                     />
                     <div className="flex items-center gap-2 flex-1">
                       <Avatar className="h-6 w-6">
-                        <AvatarFallback className="text-xs bg-gradient-to-br from-blue-500 to-purple-500 text-white">
+                        <AvatarFallback className="text-xs bg-gradient-to-br from-blue-500 to-primary text-white">
                           {symbol.symbol.charAt(0)}
                         </AvatarFallback>
                       </Avatar>

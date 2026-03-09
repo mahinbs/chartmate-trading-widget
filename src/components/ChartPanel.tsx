@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -43,16 +43,16 @@ export default function ChartPanel({ defaultSymbol = "NASDAQ:AAPL", syncSymbol, 
   const [interval, setInterval] = useState(defaultInterval);
 
   // When parent passes a selected stock (e.g. from Predict page), keep chart in sync
-  React.useEffect(() => {
+  useEffect(() => {
     if (syncSymbol && syncSymbol.trim()) setSymbol(syncSymbol.trim());
   }, [syncSymbol]);
 
   return (
-    <Card className="h-full flex flex-col">
+    <Card className="glass-panel h-full flex flex-col border-white/5">
       <CardHeader className="pb-2 sm:pb-3 relative z-10">
         <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center mb-2">
           <Select value={symbol} onValueChange={setSymbol}>
-            <SelectTrigger className="flex-1">
+            <SelectTrigger className="flex-1 bg-zinc-950/50 border-white/10">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -64,7 +64,7 @@ export default function ChartPanel({ defaultSymbol = "NASDAQ:AAPL", syncSymbol, 
             </SelectContent>
           </Select>
           <Select value={interval} onValueChange={setInterval}>
-            <SelectTrigger className="w-full sm:w-20">
+            <SelectTrigger className="w-full sm:w-20 bg-zinc-950/50 border-white/10">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -82,7 +82,7 @@ export default function ChartPanel({ defaultSymbol = "NASDAQ:AAPL", syncSymbol, 
             disabled={isAnalyzing}
             variant="outline"
             size="sm"
-            className="w-full"
+            className="w-full border-white/10 hover:bg-white/5"
           >
             {isAnalyzing ? (
               <>
@@ -99,7 +99,7 @@ export default function ChartPanel({ defaultSymbol = "NASDAQ:AAPL", syncSymbol, 
         )}
       </CardHeader>
       <CardContent className="flex-1 p-0">
-        <div className="h-full bg-background">
+        <div className="h-full bg-background/50 backdrop-blur-sm">
           <TradingViewWidget symbol={symbol} interval={interval} />
         </div>
       </CardContent>

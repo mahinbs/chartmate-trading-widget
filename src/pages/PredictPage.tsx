@@ -20,7 +20,6 @@ import { AdvancedPredictLoader } from "@/components/AdvancedPredictLoader";
 import { PredictionTimeline } from "@/components/PredictionTimeline";
 import { Stepper } from "@/components/ui/stepper";
 import { StepContainer } from "@/components/ui/step-container";
-import { SummaryHeader } from "@/components/prediction/SummaryHeader";
 import { ForecastTable } from "@/components/prediction/ForecastTable";
 import { KeyLevels } from "@/components/prediction/KeyLevels";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -31,12 +30,9 @@ import { UserProfileForm, UserProfile } from "@/components/prediction/UserProfil
 import { DecisionScreen } from "@/components/prediction/DecisionScreen";
 import { LeverageSimulator } from "@/components/prediction/LeverageSimulator";
 import { RegulatoryDisclaimer } from "@/components/prediction/RegulatoryDisclaimer";
-import { ActionSignal } from "@/components/prediction/ActionSignal";
-import { RiskGrade } from "@/components/prediction/RiskGrade";
 import { AIReasoningDisplay } from "@/components/prediction/AIReasoningDisplay";
 import { CapitalScenarios } from "@/components/prediction/CapitalScenarios";
 import { MarketConditionsDashboard } from "@/components/market/MarketConditionsDashboard";
-import { PerformanceDashboard } from "@/components/performance/PerformanceDashboard";
 import { supabase } from "@/integrations/supabase/client";
 import type { SymbolData } from "@/components/SymbolSearch";
 import { useAuth } from "@/hooks/useAuth";
@@ -47,7 +43,7 @@ import { StrategySelectionDialog, STRATEGIES } from "@/components/trading/Strate
 import { UsePreviousOrNewStrategyDialog } from "@/components/trading/UsePreviousOrNewStrategyDialog";
 import { PRICING_PLANS } from "@/constants/pricing";
 import { toast } from "sonner";
-import { Loader2, AlertTriangle, BrainCircuit, BarChart3, CheckCircle, ArrowRight, DollarSign, LogOut, History, Timer, Home, FlaskConical } from "lucide-react";
+import { Loader2, AlertTriangle, BrainCircuit, BarChart3, CheckCircle, ArrowRight, LogOut, History, Timer, Home, FlaskConical } from "lucide-react";
 import { Container } from "@/components/layout/Container";
 import { formatCurrency } from "@/lib/display-utils";
 import { getTradingViewSymbol } from "@/lib/tradingview-symbols";
@@ -192,7 +188,6 @@ const PredictPage = () => {
     marginType: 'cash',
     leverage: 1
   });
-  const [chartInterval, setChartInterval] = useState("15");
   const [timeframe, setTimeframe] = useState("1h"); // User-selectable timeframe
   const [customTimeframe, setCustomTimeframe] = useState(""); // For custom timeframe input
   const [currentStep, setCurrentStep] = useState("choose-asset");
@@ -201,9 +196,7 @@ const PredictPage = () => {
   const [showAdvancedLoader, setShowAdvancedLoader] = useState(false);
   const [analysisReady, setAnalysisReady] = useState(false);
   const [result, setResult] = useState<PredictionResult | null>(null);
-  const [chartAnalysisLoading, setChartAnalysisLoading] = useState(false);
   const [chartAnalysis, setChartAnalysis] = useState<string | null>(null);
-  const [chartSymbol, setChartSymbol] = useState("NASDAQ:AAPL");
   const [chartDataSource, setChartDataSource] = useState<string | null>(null);
   const [marketStatus, setMarketStatus] = useState<any>(null);
   const [marketClosed, setMarketClosed] = useState(false);
@@ -218,7 +211,7 @@ const PredictPage = () => {
   const { signOut, user } = useAuth();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
-  const { hasIntegration, save: saveTradingIntegration, refresh: refreshTradingIntegration } = useTradingIntegration();
+  const { save: saveTradingIntegration, refresh: refreshTradingIntegration } = useTradingIntegration();
   const [showIntegrationModal, setShowIntegrationModal] = useState(false);
   const [showStrategyDialog, setShowStrategyDialog] = useState(false);
   const [showPreviousOrNewDialog, setShowPreviousOrNewDialog] = useState(false);
@@ -589,7 +582,7 @@ const PredictPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background text-foreground">
       <Dialog open={showPresetDialog} onOpenChange={setShowPresetDialog}>
         <DialogContent>
           <DialogHeader>
@@ -644,38 +637,38 @@ const PredictPage = () => {
       </Dialog>
 
       {/* Header */}
-      <div className="border-b bg-card/50 backdrop-blur-sm">
+      <div className="border-b border-white/5 bg-background/80 backdrop-blur-xl sticky top-0 z-50">
         <Container className="py-3 sm:py-4">
           <div className={`flex ${isMobile ? 'flex-col gap-2' : 'justify-between items-center'} mb-4`}>
             <Button
-              variant="outline"
+              variant="ghost"
               size={isMobile ? "sm" : "sm"}
               onClick={() => navigate('/home')}
-              className={`flex items-center gap-2 ${isMobile ? 'w-full justify-center' : ''}`}
+              className={`flex items-center gap-2 hover:bg-white/5 ${isMobile ? 'w-full justify-center' : ''}`}
             >
               <Home className="h-4 w-4" />
               Home
             </Button>
             <Button
-              variant="outline"
+              variant="ghost"
               size={isMobile ? "sm" : "sm"}
               onClick={() => navigate('/predictions')}
-              className={`flex items-center gap-2 ${isMobile ? 'w-full justify-center' : ''}`}
+              className={`flex items-center gap-2 hover:bg-white/5 ${isMobile ? 'w-full justify-center' : ''}`}
             >
               <History className="h-4 w-4" />
               {isMobile ? "History" : "My Analyses"}
             </Button>
             <Button
-              variant="outline"
+              variant="ghost"
               size={isMobile ? "sm" : "sm"}
               onClick={() => navigate('/intraday')}
-              className={`flex items-center gap-2 ${isMobile ? 'w-full justify-center' : ''}`}
+              className={`flex items-center gap-2 hover:bg-white/5 ${isMobile ? 'w-full justify-center' : ''}`}
             >
               <Timer className="h-4 w-4" />
               {isMobile ? "Intraday" : "Intraday Trading"}
             </Button>
             <Button
-              variant="outline"
+              variant="ghost"
               size={isMobile ? "sm" : "sm"}
               onClick={async () => {
                 const { error } = await signOut();
@@ -683,7 +676,7 @@ const PredictPage = () => {
                   toast.error("Failed to sign out");
                 }
               }}
-              className={`flex items-center gap-2 ${isMobile ? 'w-full justify-center' : ''}`}
+              className={`flex items-center gap-2 hover:bg-white/5 ${isMobile ? 'w-full justify-center' : ''}`}
             >
               <LogOut className="h-4 w-4" />
               Sign Out
@@ -691,7 +684,7 @@ const PredictPage = () => {
           </div>
 
           <div className="text-center space-y-2">
-            <h1 className={`${isMobile ? 'text-2xl' : 'text-3xl md:text-4xl'} font-bold`}>
+            <h1 className={`${isMobile ? 'text-2xl' : 'text-3xl md:text-4xl'} font-bold text-gradient`}>
               Probability-Based Analysis Software
             </h1>
             <p className={`text-muted-foreground ${isMobile ? 'text-sm' : ''}`}>
@@ -1112,12 +1105,12 @@ const PredictPage = () => {
                 )}
 
                 {/* START TRACKING BUTTON - Primary CTA */}
-                <Card className="glass-card border border-primary/30 bg-gradient-to-br from-background/80 to-primary/5 shadow-2xl relative overflow-hidden group">
+                <Card className="glass-panel border border-primary/30 bg-gradient-to-br from-background/80 to-primary/5 shadow-2xl relative overflow-hidden group">
                   <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                   <CardContent className="p-8 relative z-10">
                     <div className="space-y-4">
                       <div className="text-center space-y-2">
-                        <h3 className="text-2xl font-bold">Ready to Track This Trade?</h3>
+                        <h3 className="text-2xl font-bold text-white">Ready to trade this trade?</h3>
                         <p className="text-muted-foreground">
                           Start monitoring this position in real-time with AI-powered tracking
                         </p>
@@ -1278,9 +1271,9 @@ const PredictPage = () => {
 
                       {/* Key Levels */}
                       {result.geminiForecast?.support_resistance && (
-                        <Card>
+                        <Card className="glass-panel">
                           <CardHeader>
-                            <CardTitle>Key Price Levels</CardTitle>
+                            <CardTitle className="text-white">Key Price Levels</CardTitle>
                           </CardHeader>
                           <CardContent>
                             <KeyLevels
@@ -1300,9 +1293,9 @@ const PredictPage = () => {
 
                       {/* Multi-Horizon Forecasts */}
                       {result.geminiForecast?.forecasts && (
-                        <Card>
+                        <Card className="glass-panel">
                           <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
+                            <CardTitle className="flex items-center gap-2 text-white">
                               <BarChart3 className="h-5 w-5" />
                               Multi-Horizon Forecasts
                             </CardTitle>
@@ -1322,9 +1315,9 @@ const PredictPage = () => {
                     {/* TAB 3: Deep Insights & Timeline */}
                     <TabsContent value="deep-insights" className="space-y-6 mt-0">
                       {/* AI Insights */}
-                      <Card>
+                      <Card className="glass-panel">
                         <CardHeader>
-                          <CardTitle>AI Insights & Analysis</CardTitle>
+                          <CardTitle className="text-white">AI Insights & Analysis</CardTitle>
                         </CardHeader>
                         <CardContent>
                           <Insights
@@ -1345,9 +1338,9 @@ const PredictPage = () => {
 
                       {/* Pipeline Timeline */}
                       {result.meta?.pipeline && (
-                        <Card>
+                        <Card className="glass-panel">
                           <CardHeader>
-                            <CardTitle>Analysis Timeline</CardTitle>
+                            <CardTitle className="text-white">Analysis Timeline</CardTitle>
                           </CardHeader>
                           <CardContent>
                             <PredictionTimeline
@@ -1379,12 +1372,14 @@ const PredictPage = () => {
                     <Button
                       onClick={startNewPredictionFlow}
                       variant="outline"
+                      className="border-white/10 hover:bg-white/5"
                     >
                       New Analysis
                     </Button>
                     <Button
                       onClick={() => navigate('/predictions')}
                       variant="outline"
+                      className="border-white/10 hover:bg-white/5"
                     >
                       View All Analyses
                     </Button>
@@ -1403,51 +1398,48 @@ const PredictPage = () => {
           </div>
 
           {/* Right Column - Live Chart */}
-          {!isMobile && (
-            <div className="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-8 space-y-6 h-[calc(100vh-8rem)] animate-in fade-in slide-in-from-right-8 duration-700">
-              <Card className="glass-card overflow-hidden border-white/10 bg-gradient-to-b from-card/80 to-background/90 shadow-2xl h-[85vh] flex flex-col">
-                <CardHeader className={`${isMobile ? 'pb-2' : 'pb-4'} border-b border-white/5`}>
-                  <div className="flex items-center justify-between">
-                    <CardTitle className={`${isMobile ? 'text-base' : 'text-lg'}`}>Live Chart</CardTitle>
-                    {symbol && (
-                      <Badge variant="outline" className="text-xs">
-                        {symbol}
-                      </Badge>
-                    )}
-                  </div>
+          <div className={`lg:col-span-5 xl:col-span-4 lg:sticky lg:top-24 space-y-6 ${isMobile ? 'h-[500px] order-first mb-6' : 'h-[calc(100vh-8rem)]'} animate-in fade-in slide-in-from-right-8 duration-700`}>
+            <Card className="glass-panel overflow-hidden border-white/5 bg-gradient-to-b from-card/80 to-background/90 shadow-2xl h-full flex flex-col">
+              <CardHeader className={`${isMobile ? 'pb-2' : 'pb-4'} border-b border-white/5`}>
+                <div className="flex items-center justify-between">
+                  <CardTitle className={`${isMobile ? 'text-base' : 'text-lg'} text-white`}>Live Chart</CardTitle>
+                  {symbol && (
+                    <Badge variant="outline" className="text-xs border-white/10">
+                      {symbol}
+                    </Badge>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="p-0 flex-1 relative">
+                <div className="absolute inset-0">
+                  <ChartPanel
+                    syncSymbol={symbol ? getTradingViewSymbol(selectedSymbol?.full_symbol || symbol) : undefined}
+                    defaultSymbol="NASDAQ:AAPL"
+                    defaultInterval="D"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Chart Analysis */}
+            {chartAnalysis && (
+              <Card className="glass-panel">
+                <CardHeader className={isMobile ? 'pb-2' : ''}>
+                  <CardTitle className={`${isMobile ? 'text-base' : 'text-lg'} text-white`}>Chart Analysis</CardTitle>
                 </CardHeader>
-                <CardContent className="p-0 flex-1 relative">
-                  <div className="absolute inset-0">
-                    <ChartPanel
-                      syncSymbol={symbol ? getTradingViewSymbol(selectedSymbol?.full_symbol || symbol) : undefined}
-                      defaultSymbol="NASDAQ:AAPL"
-                      defaultInterval="D"
-                    />
+                <CardContent className={isMobile ? 'pt-2' : ''}>
+                  <div className="space-y-3">
+                    <p className={`leading-relaxed ${isMobile ? 'text-sm' : 'text-sm'} text-muted-foreground`}>{chartAnalysis}</p>
+                    {chartDataSource && (
+                      <p className="text-xs text-muted-foreground/60">
+                        Data source: {chartDataSource}
+                      </p>
+                    )}
                   </div>
                 </CardContent>
               </Card>
-
-              {/* Chart Analysis */}
-              {chartAnalysis && (
-                <Card className={`${isMobile ? 'mt-4' : 'mt-6'}`}>
-                  <CardHeader className={isMobile ? 'pb-2' : ''}>
-                    <CardTitle className={`${isMobile ? 'text-base' : 'text-lg'}`}>Chart Analysis</CardTitle>
-                  </CardHeader>
-                  <CardContent className={isMobile ? 'pt-2' : ''}>
-                    <div className="space-y-3">
-                      <p className={`leading-relaxed ${isMobile ? 'text-sm' : 'text-sm'}`}>{chartAnalysis}</p>
-                      {chartDataSource && (
-                        <p className="text-xs text-muted-foreground">
-                          Data source: {chartDataSource}
-                        </p>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          )
-          }
+            )}
+          </div>
         </div >
       </Container >
 

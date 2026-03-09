@@ -1,9 +1,10 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { FaBars, FaTimes } from "react-icons/fa";
 import { Link } from "react-router-dom";
 import logoImg from "@/assets/logo.png";
+import { supabase } from "@/integrations/supabase/client";
 
-const NAV_ITEMS = [
+const BASE_NAV_ITEMS = [
   { id: "hero", label: "Overview" },
   { id: "how-it-works", label: "How it works" },
   { id: "pricing", label: "Pricing" },
@@ -26,6 +27,30 @@ const scrollToSection = (id: string) => {
 
 const AiPredictionHeader: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const [hasBlogs, setHasBlogs] = useState(false);
+  const [hasDashboard, setHasDashboard] = useState(false);
+
+  useEffect(() => {
+    const loadFlags = async () => {
+      try {
+        const [{ count: blogCount }, { count: dashCount }] = await Promise.all([
+          supabase.from('blogs').select('id', { head: true, count: 'exact' }),
+          supabase.from('public_dashboard_metrics').select('id', { head: true, count: 'exact' }),
+        ]);
+        setHasBlogs((blogCount ?? 0) > 0);
+        setHasDashboard((dashCount ?? 0) > 0);
+      } catch (e) {
+        console.error('Navbar flags error', e);
+      }
+    };
+    loadFlags();
+  }, []);
+
+  const navItems = [
+    ...BASE_NAV_ITEMS,
+    ...(hasBlogs ? [{ id: "blogs", label: "Blogs", isRoute: true }] : []),
+    ...(hasDashboard ? [{ id: "dashboard", label: "Dashboard", isRoute: true }] : []),
+  ];
 
   const handleNavClick = (id: string) => {
     scrollToSection(id);
@@ -57,7 +82,7 @@ const AiPredictionHeader: React.FC = () => {
 
           {/* Desktop nav */}
           <nav className="hidden gap-12 text-sm font-medium text-gray-300 lg:flex">
-            {NAV_ITEMS.map((item) => (
+            {navItems.map((item) => (
               item.isRoute ? (
                 <Link
                   key={item.id}
@@ -123,7 +148,7 @@ const AiPredictionHeader: React.FC = () => {
           </div>
 
           <nav className="flex flex-col gap-2 px-6 py-4 text-sm">
-            {NAV_ITEMS.map((item) => (
+            {navItems.map((item) => (
               item.isRoute ? (
                 <Link
                   key={item.id}

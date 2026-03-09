@@ -16,15 +16,15 @@ export function AdminLayout() {
     : "users";
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="border-b bg-card/50">
+    <div className="min-h-screen bg-background text-foreground">
+      <div className="border-b border-white/5 bg-background/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4 flex flex-col gap-3">
           <div className="flex items-center gap-3 flex-wrap">
-            <Button variant="outline" size="sm" onClick={() => navigate("/home")}>
+            <Button variant="ghost" size="sm" onClick={() => navigate("/home")} className="hover:bg-white/5">
               <ArrowLeft className="h-4 w-4 mr-1" />
               Home
             </Button>
-            <h1 className="text-xl md:text-2xl font-bold">Admin Panel</h1>
+            <h1 className="text-xl md:text-2xl font-bold text-gradient">Admin Panel</h1>
           </div>
           <Tabs
             value={currentTab}

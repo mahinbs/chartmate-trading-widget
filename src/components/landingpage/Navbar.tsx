@@ -84,7 +84,7 @@ const Navbar = () => {
     }
 
     const NavLink: React.FC<NavLinkProps> = ({ to, children, hasDropdown }) => (
-        <Link to={to} className="text-heading hover:text-primary font-medium transition-colors flex items-center gap-1 text-sm">
+        <Link to={to} className="text-black hover:text-primary font-medium transition-colors flex items-center gap-1 text-sm">
             {children}
             {hasDropdown && (
                 <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -97,7 +97,7 @@ const Navbar = () => {
     const ScrollLink = ({ to, children }: { to: string, children: React.ReactNode }) => (
         <button
             onClick={() => scrollToSection(to)}
-            className="text-heading hover:text-primary font-medium transition-colors flex items-center gap-1 text-sm bg-transparent border-none cursor-pointer"
+            className="text-black hover:text-primary font-medium transition-colors flex items-center gap-1 text-sm bg-transparent border-none cursor-pointer"
         >
             {children}
         </button>
@@ -106,7 +106,7 @@ const Navbar = () => {
     const MobileScrollLink = ({ to, children }: { to: string, children: React.ReactNode }) => (
         <button
             onClick={() => scrollToSection(to)}
-            className="text-heading font-medium text-left bg-transparent border-none cursor-pointer"
+            className="text-black font-medium text-left bg-transparent border-none cursor-pointer"
         >
             {children}
         </button>
@@ -118,21 +118,21 @@ const Navbar = () => {
                 {/* Logo */}
                 <Link to="/" className="flex items-center gap-1" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
                     <img src="/boostmysite-logo.png" alt="BoostMySites Logo" className="h-10 w-auto" />
-                    <span className="text-2xl font-bold font-heading text-heading tracking-widest uppercase">BOOSTMYSITES</span>
+                    <span className="text-2xl font-bold font-heading text-black tracking-widest uppercase">BOOSTMYSITES</span>
                 </Link>
 
                 {/* Desktop Menu */}
                 <div className="hidden md:flex items-center space-x-8">
-                    <Link to="/market-picks" className="text-heading hover:text-primary font-medium transition-colors text-sm">
+                    <Link to="/market-picks" className="text-black hover:text-primary font-medium transition-colors text-sm">
                         Daily Analyses
                     </Link>
                     {hasBlogs && (
-                        <Link to="/blogs" className="text-heading hover:text-primary font-medium transition-colors text-sm">
+                        <Link to="/blogs" className="text-black hover:text-primary font-medium transition-colors text-sm">
                             Blogs
                         </Link>
                     )}
                     {hasDashboard && (
-                        <Link to="/dashboard" className="text-heading hover:text-primary font-medium transition-colors text-sm">
+                        <Link to="/dashboard" className="text-black hover:text-primary font-medium transition-colors text-sm">
                             Dashboard
                         </Link>
                     )}
@@ -145,7 +145,7 @@ const Navbar = () => {
                 <div className="md:hidden">
                     <button
                         onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                        className="text-heading focus:outline-none"
+                        className="text-black focus:outline-none"
                     >
                         {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
                     </button>
@@ -155,12 +155,12 @@ const Navbar = () => {
             {/* Mobile Menu */}
             {isMobileMenuOpen && (
                 <div className="md:hidden bg-white absolute top-full left-0 w-full shadow-lg py-4 px-4 flex flex-col space-y-4 border-t">
-                    <Link to="/market-picks" className="text-heading font-medium" onClick={() => setIsMobileMenuOpen(false)}>Daily Analyses</Link>
+                    <Link to="/market-picks" className="text-black font-medium" onClick={() => setIsMobileMenuOpen(false)}>Daily Analyses</Link>
                     {hasBlogs && (
-                        <Link to="/blogs" className="text-heading font-medium" onClick={() => setIsMobileMenuOpen(false)}>Blogs</Link>
+                        <Link to="/blogs" className="text-black font-medium" onClick={() => setIsMobileMenuOpen(false)}>Blogs</Link>
                     )}
                     {hasDashboard && (
-                        <Link to="/dashboard" className="text-heading font-medium" onClick={() => setIsMobileMenuOpen(false)}>Dashboard</Link>
+                        <Link to="/dashboard" className="text-black font-medium" onClick={() => setIsMobileMenuOpen(false)}>Dashboard</Link>
                     )}
                     <Link to="/predict" className="bg-primary text-white py-3 rounded text-center font-bold" onClick={() => setIsMobileMenuOpen(false)}>Launch App</Link>
                 </div>

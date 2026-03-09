@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ArrowLeft, Clock, ChevronDown, Plus } from "lucide-react";
+import { ArrowLeft, Clock, ChevronDown, Plus, History } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { PredictionTimeline } from "@/components/PredictionTimeline";
@@ -16,7 +15,6 @@ import { ActionBar } from "@/components/prediction/ActionBar";
 import { KeyLevels } from "@/components/prediction/KeyLevels";
 import { Insights } from "@/components/prediction/Insights";
 import { PostPredictionReport } from "@/components/prediction/PostPredictionReport";
-import { asNumber } from "@/lib/utils";
 import { formatCurrency, formatPercentage } from "@/lib/display-utils";
 import { Container } from "@/components/layout/Container";
 import { getEffectiveStart, getEffectiveTarget } from "@/lib/market-hours";
@@ -436,34 +434,37 @@ export default function PredictionsPage() {
       <div className="min-h-screen bg-background">
         <Container className="p-6">
           <div className="flex items-center gap-4 mb-8">
-            <Button variant="ghost" onClick={() => navigate('/home')}>
+            <Button variant="ghost" onClick={() => navigate('/home')} className="hover:bg-white/5">
               <ArrowLeft className="h-4 w-4 mr-2" />
               Home
             </Button>
           </div>
-          <div className="text-center">Loading analyses...</div>
+          <div className="text-center text-muted-foreground">Loading analyses...</div>
         </Container>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background text-foreground">
       {/* Header */}
-      <div className="border-b bg-card/50 backdrop-blur-sm">
+      <div className="border-b border-white/5 bg-background/80 backdrop-blur-xl sticky top-0 z-50">
         <Container className="py-4">
           <div className="flex items-center justify-between mb-4">
-            <Button variant="ghost" onClick={() => navigate('/home')}>
+            <Button variant="ghost" onClick={() => navigate('/home')} className="hover:bg-white/5">
               <ArrowLeft className="h-4 w-4 mr-2" />
               Home
             </Button>
-            <Button onClick={() => navigate('/predict')}>
+            <Button onClick={() => navigate('/predict')} className="shadow-[0_0_20px_rgba(20,184,166,0.2)]">
               <Plus className="h-4 w-4 mr-2" />
               New Analysis
             </Button>
           </div>
           <div>
-            <h1 className="text-3xl font-bold">My Analyses</h1>
+            <h1 className="text-3xl font-bold text-gradient flex items-center gap-2">
+              <History className="h-8 w-8 text-primary" />
+              My Analyses
+            </h1>
             <p className="text-muted-foreground mt-1">
               Track your AI-powered probability-based analyses and their outcomes
             </p>
@@ -474,14 +475,14 @@ export default function PredictionsPage() {
       {/* Main Content */}
       <Container className="py-8">
         {predictions.length === 0 ? (
-          <Card className="max-w-md mx-auto text-center">
+          <Card className="glass-panel max-w-md mx-auto text-center">
             <CardContent className="p-8">
               <div className="space-y-4">
-                <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto">
-                  <Plus className="h-8 w-8 text-muted-foreground" />
+                <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto">
+                  <Plus className="h-8 w-8 text-primary" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold">No analyses yet</h3>
+                  <h3 className="text-lg font-semibold text-white">No analyses yet</h3>
                   <p className="text-muted-foreground text-sm">
                     Create your first AI-powered probability-based analysis to get started
                   </p>
@@ -505,7 +506,7 @@ export default function PredictionsPage() {
               const isAnalyzing = analysisStates[prediction.id]?.loading;
 
               return (
-                <Card key={prediction.id} className="overflow-hidden flex flex-col">
+                <Card key={prediction.id} className="glass-panel overflow-hidden flex flex-col">
                   {/* Header with Summary */}
                   <CardHeader className="pb-4">
                     <div className="flex items-start justify-between">
@@ -549,28 +550,28 @@ export default function PredictionsPage() {
 
                   <CardContent className="space-y-6">
                     {/* Investment Details */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-lg">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-black/20 rounded-lg border border-white/5">
                       <div>
                         <p className="text-xs text-muted-foreground">Investment</p>
-                        <p className="font-semibold">{prediction.investment ? formatCurrency(prediction.investment, 0) : 'N/A'}</p>
+                        <p className="font-semibold text-white">{prediction.investment ? formatCurrency(prediction.investment, 0) : 'N/A'}</p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Timeframe</p>
-                        <p className="font-semibold">{prediction.timeframe}</p>
+                        <p className="font-semibold text-white">{prediction.timeframe}</p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Expected Move</p>
                         <p className={`font-semibold ${
-                          prediction.expected_move_direction === 'up' ? 'text-green-600' : 
-                          prediction.expected_move_direction === 'down' ? 'text-red-600' : 
-                          'text-yellow-600'
+                          prediction.expected_move_direction === 'up' ? 'text-green-400' : 
+                          prediction.expected_move_direction === 'down' ? 'text-red-400' : 
+                          'text-yellow-400'
                         }`}>
                           {prediction.expected_move_percent ? formatPercentage(prediction.expected_move_percent, 1, false) : 'N/A'}
                         </p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Price Target</p>
-                        <p className="font-semibold">
+                        <p className="font-semibold text-white">
                           {prediction.price_target_min && prediction.price_target_max ? 
                             `${formatCurrency(prediction.price_target_min, 2)} - ${formatCurrency(prediction.price_target_max, 2)}` : 'N/A'}
                         </p>
@@ -581,9 +582,9 @@ export default function PredictionsPage() {
                     {prediction.raw_response?.geminiForecast?.forecasts && (
                       <Collapsible>
                         <CollapsibleTrigger asChild>
-                          <Button variant="ghost" className="w-full justify-between p-0 h-auto">
-                            <h3 className="text-sm font-medium">Multi-Horizon Forecasts</h3>
-                            <ChevronDown className="h-4 w-4" />
+                          <Button variant="ghost" className="w-full justify-between p-0 h-auto hover:bg-white/5">
+                            <h3 className="text-sm font-medium text-white">Multi-Horizon Forecasts</h3>
+                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
                           </Button>
                         </CollapsibleTrigger>
                         <CollapsibleContent className="mt-3">
@@ -600,9 +601,9 @@ export default function PredictionsPage() {
                     {prediction.raw_response?.geminiForecast?.support_resistance && (
                       <Collapsible>
                         <CollapsibleTrigger asChild>
-                          <Button variant="ghost" className="w-full justify-between p-0 h-auto">
-                            <h3 className="text-sm font-medium">Key Price Levels</h3>
-                            <ChevronDown className="h-4 w-4" />
+                          <Button variant="ghost" className="w-full justify-between p-0 h-auto hover:bg-white/5">
+                            <h3 className="text-sm font-medium text-white">Key Price Levels</h3>
+                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
                           </Button>
                         </CollapsibleTrigger>
                         <CollapsibleContent className="mt-3">
@@ -618,9 +619,9 @@ export default function PredictionsPage() {
                     {/* AI Insights */}
                     <Collapsible>
                       <CollapsibleTrigger asChild>
-                        <Button variant="ghost" className="w-full justify-between p-0 h-auto">
-                          <h3 className="text-sm font-medium">AI Insights & Analysis</h3>
-                          <ChevronDown className="h-4 w-4" />
+                        <Button variant="ghost" className="w-full justify-between p-0 h-auto hover:bg-white/5">
+                          <h3 className="text-sm font-medium text-white">AI Insights & Analysis</h3>
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
                         </Button>
                       </CollapsibleTrigger>
                       <CollapsibleContent className="mt-3">
@@ -638,9 +639,9 @@ export default function PredictionsPage() {
                     {analysisStates[prediction.id]?.data && (
                       <Collapsible>
                         <CollapsibleTrigger asChild>
-                          <Button variant="ghost" className="w-full justify-between p-0 h-auto">
-                            <h3 className="text-sm font-medium">Probability Outcome</h3>
-                            <ChevronDown className="h-4 w-4" />
+                          <Button variant="ghost" className="w-full justify-between p-0 h-auto hover:bg-white/5">
+                            <h3 className="text-sm font-medium text-white">Probability Outcome</h3>
+                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
                           </Button>
                         </CollapsibleTrigger>
                         <CollapsibleContent className="mt-3">
@@ -660,9 +661,9 @@ export default function PredictionsPage() {
                     {prediction.raw_response?.meta?.pipeline && (
                       <Collapsible>
                         <CollapsibleTrigger asChild>
-                          <Button variant="ghost" className="w-full justify-between p-0 h-auto">
-                            <h3 className="text-sm font-medium">Analysis Timeline</h3>
-                            <ChevronDown className="h-4 w-4" />
+                          <Button variant="ghost" className="w-full justify-between p-0 h-auto hover:bg-white/5">
+                            <h3 className="text-sm font-medium text-white">Analysis Timeline</h3>
+                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
                           </Button>
                         </CollapsibleTrigger>
                         <CollapsibleContent className="mt-3">

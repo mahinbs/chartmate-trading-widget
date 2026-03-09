@@ -304,20 +304,20 @@ export default function AdminPredictionsPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button variant="outline" onClick={() => loadBoard()} disabled={loading} className="w-full md:w-auto">
+        <Button variant="outline" onClick={() => loadBoard()} disabled={loading} className="w-full md:w-auto border-white/10 hover:bg-white/5">
           <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
           Reload board
         </Button>
       </div>
 
       {/* ── Run analysis form ─────────────────────────────────────── */}
-      <Card className="border-2 border-primary/20">
+      <Card className="glass-panel border-primary/20">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <BrainCircuit className="h-5 w-5" />
+          <CardTitle className="flex items-center gap-2 text-white">
+            <BrainCircuit className="h-5 w-5 text-primary" />
             Run real market analysis (same as users)
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="text-muted-foreground">
             Same AI pipeline and prompt that normal users get. Review the full analysis below, then publish to the Daily Board so all users see it on the Daily Analysis page.
           </CardDescription>
         </CardHeader>
@@ -339,6 +339,7 @@ export default function AdminPredictionsPage() {
                 placeholder="10000"
                 value={investment}
                 onChange={(e) => setInvestment(e.target.value)}
+                className="bg-zinc-950/50 border-white/10"
               />
             </div>
             <div>
@@ -350,6 +351,7 @@ export default function AdminPredictionsPage() {
                     variant={timeframe === tf ? "default" : "outline"}
                     size="sm"
                     onClick={() => setTimeframe(tf)}
+                    className={timeframe !== tf ? "border-white/10 hover:bg-white/5" : ""}
                   >
                     {tf}
                   </Button>
@@ -362,7 +364,7 @@ export default function AdminPredictionsPage() {
             onClick={runAnalysis}
             disabled={analyzing || !(selectedSymbol?.full_symbol || symbol?.trim())}
             size="lg"
-            className="w-full md:w-auto"
+            className="w-full md:w-auto shadow-[0_0_20px_rgba(20,184,166,0.2)]"
           >
             {analyzing ? (
               <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Running full AI analysis…</>
@@ -373,8 +375,8 @@ export default function AdminPredictionsPage() {
 
           {/* Pipeline progress — same steps as the user's AdvancedPredictLoader */}
           {analyzing && (
-            <div className="mt-4 rounded-lg border bg-muted/30 p-4 space-y-3">
-              <p className="text-sm font-semibold flex items-center gap-2">
+            <div className="mt-4 rounded-lg border border-white/10 bg-black/20 p-4 space-y-3">
+              <p className="text-sm font-semibold flex items-center gap-2 text-white">
                 <BrainCircuit className="h-4 w-4 animate-pulse text-primary" />
                 Running full in-depth AI analysis for <span className="text-primary">{selectedSymbol?.symbol || symbol}</span>…
               </p>
@@ -385,11 +387,11 @@ export default function AdminPredictionsPage() {
                   const active = i === analyzeStep;
                   return (
                     <div key={i} className={`flex items-center gap-3 text-sm transition-opacity ${i > analyzeStep + 1 ? "opacity-30" : "opacity-100"}`}>
-                      <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${done ? "bg-green-500" : active ? "bg-primary animate-pulse" : "bg-muted border"}`}>
+                      <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${done ? "bg-green-500" : active ? "bg-primary animate-pulse" : "bg-muted border border-white/10"}`}>
                         {done ? <span className="text-white text-xs">✓</span> : <Icon className={`h-3 w-3 ${active ? "text-white" : "text-muted-foreground"}`} />}
                       </div>
                       <div className="flex-1">
-                        <p className={`font-medium ${active ? "text-primary" : done ? "text-green-600" : "text-muted-foreground"}`}>{step.label}</p>
+                        <p className={`font-medium ${active ? "text-primary" : done ? "text-green-500" : "text-muted-foreground"}`}>{step.label}</p>
                         {active && <p className="text-xs text-muted-foreground animate-pulse">{step.desc}</p>}
                       </div>
                       {active && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />}
@@ -404,16 +406,16 @@ export default function AdminPredictionsPage() {
 
       {/* ── Full in-depth result — same components as PredictPage ─── */}
       {analysisResult && (
-        <div className="space-y-4">
+        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
           {/* Sticky publish bar */}
-          <Alert className="border-green-500/50 bg-green-500/10 flex items-center justify-between gap-4">
-            <AlertDescription className="text-green-700 font-medium">
+          <Alert className="border-green-500/50 bg-green-500/10 flex items-center justify-between gap-4 backdrop-blur-md sticky top-32 z-40 shadow-lg">
+            <AlertDescription className="text-green-400 font-medium">
               ✅ Full in-depth analysis ready for <strong>{selectedSymbol?.symbol || symbol}</strong>. Review all sections below, then publish to the Daily Board so all users can see it.
             </AlertDescription>
             <Button
               onClick={publishToBoard}
               disabled={publishing}
-              className="shrink-0 bg-green-600 hover:bg-green-700 text-white"
+              className="shrink-0 bg-green-600 hover:bg-green-700 text-white shadow-[0_0_15px_rgba(22,163,74,0.4)]"
             >
               {publishing ? (
                 <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Publishing…</>
@@ -481,9 +483,9 @@ export default function AdminPredictionsPage() {
 
           {/* Multi-Horizon Forecasts */}
           {gf?.forecasts && (
-            <Card>
+            <Card className="glass-panel">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
+                <CardTitle className="flex items-center gap-2 text-white">
                   <BarChart3 className="h-5 w-5" />
                   Multi-Horizon Forecasts
                 </CardTitle>
@@ -501,8 +503,8 @@ export default function AdminPredictionsPage() {
 
           {/* Key Price Levels */}
           {gf?.support_resistance && (
-            <Card>
-              <CardHeader><CardTitle>Key Price Levels</CardTitle></CardHeader>
+            <Card className="glass-panel">
+              <CardHeader><CardTitle className="text-white">Key Price Levels</CardTitle></CardHeader>
               <CardContent>
                 <KeyLevels
                   supportLevels={gf.support_resistance.supports}
@@ -514,8 +516,8 @@ export default function AdminPredictionsPage() {
           )}
 
           {/* AI Insights */}
-          <Card>
-            <CardHeader><CardTitle>AI Insights & Analysis</CardTitle></CardHeader>
+          <Card className="glass-panel">
+            <CardHeader><CardTitle className="text-white">AI Insights & Analysis</CardTitle></CardHeader>
             <CardContent>
               <Insights
                 keyDrivers={gf?.forecasts?.[0]?.key_drivers}
@@ -532,7 +534,7 @@ export default function AdminPredictionsPage() {
             onClick={publishToBoard}
             disabled={publishing}
             size="lg"
-            className="w-full bg-green-600 hover:bg-green-700 text-white text-lg py-6"
+            className="w-full bg-green-600 hover:bg-green-700 text-white text-lg py-6 shadow-lg"
           >
             {publishing ? (
               <><Loader2 className="mr-2 h-5 w-5 animate-spin" />Publishing to Daily Board…</>
@@ -544,9 +546,9 @@ export default function AdminPredictionsPage() {
       )}
 
       {/* ── Current daily board ──────────────────────────────────── */}
-      <Card>
+      <Card className="glass-panel">
         <CardHeader>
-          <CardTitle>Current daily board ({boardRows.length})</CardTitle>
+          <CardTitle className="text-white">Current daily board ({boardRows.length})</CardTitle>
           <p className="text-sm text-muted-foreground mt-1">
             Analyses you published appear here and on the Daily Analysis page for all users.
           </p>
@@ -554,13 +556,13 @@ export default function AdminPredictionsPage() {
         <CardContent className="overflow-x-auto">
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>Symbol</TableHead>
-                <TableHead>Action</TableHead>
-                <TableHead>Probability</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Expires</TableHead>
-                <TableHead>Actions</TableHead>
+              <TableRow className="border-white/10 hover:bg-transparent">
+                <TableHead className="text-muted-foreground">Symbol</TableHead>
+                <TableHead className="text-muted-foreground">Action</TableHead>
+                <TableHead className="text-muted-foreground">Probability</TableHead>
+                <TableHead className="text-muted-foreground">Date</TableHead>
+                <TableHead className="text-muted-foreground">Expires</TableHead>
+                <TableHead className="text-muted-foreground">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -573,25 +575,25 @@ export default function AdminPredictionsPage() {
               ) : boardRows.map((row) => {
                 const isExpired = new Date(row.expires_at).getTime() < Date.now();
                 return (
-                  <TableRow key={row.id} className={isExpired ? "opacity-60" : ""}>
-                    <TableCell className="font-medium">
+                  <TableRow key={row.id} className={`border-white/5 hover:bg-white/5 ${isExpired ? "opacity-60" : ""}`}>
+                    <TableCell className="font-medium text-zinc-300">
                       {row.display_name || row.symbol}
-                      {isExpired && <Badge variant="outline" className="ml-2 text-xs border-amber-500 text-amber-600">Expired</Badge>}
+                      {isExpired && <Badge variant="outline" className="ml-2 text-xs border-amber-500 text-amber-500">Expired</Badge>}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={row.action_signal === "BUY" ? "default" : row.action_signal === "SELL" ? "destructive" : "secondary"}>
+                      <Badge variant={row.action_signal === "BUY" ? "default" : row.action_signal === "SELL" ? "destructive" : "secondary"} className="border-white/10">
                         {row.action_signal || "HOLD"}
                       </Badge>
                     </TableCell>
-                    <TableCell>{row.probability_score != null ? `${row.probability_score}%` : "-"}</TableCell>
-                    <TableCell>{row.generated_for_date}</TableCell>
-                    <TableCell className="text-xs">{new Date(row.expires_at).toLocaleString()}</TableCell>
+                    <TableCell className="text-zinc-300">{row.probability_score != null ? `${row.probability_score}%` : "-"}</TableCell>
+                    <TableCell className="text-zinc-400">{row.generated_for_date}</TableCell>
+                    <TableCell className="text-xs text-zinc-500">{new Date(row.expires_at).toLocaleString()}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
                         <Button
                           variant="outline"
                           size="sm"
-                          className="h-7 px-2 text-xs text-blue-600 border-blue-500/40 hover:bg-blue-500/10"
+                          className="h-7 px-2 text-xs text-blue-400 border-blue-500/40 hover:bg-blue-500/10"
                           onClick={() => repredictRow(row)}
                           disabled={repredictingId === row.id}
                           title="Re-run AI analysis and update this row"
@@ -602,7 +604,7 @@ export default function AdminPredictionsPage() {
                         <Button
                           variant="outline"
                           size="sm"
-                          className="h-7 px-2 text-xs text-red-600 border-red-500/40 hover:bg-red-500/10"
+                          className="h-7 px-2 text-xs text-red-400 border-red-500/40 hover:bg-red-500/10"
                           onClick={() => deleteRow(row.id)}
                           disabled={deletingId === row.id}
                           title="Remove from daily board"

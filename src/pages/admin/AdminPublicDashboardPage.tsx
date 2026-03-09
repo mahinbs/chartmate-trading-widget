@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Loader2, PlusCircle, Save, Trash2, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, PlusCircle, Save, Trash2, ChevronDown, ChevronUp, BarChart3, TrendingUp, Activity, LayoutDashboard } from "lucide-react";
 
 const CHART_TYPES = ["area", "line", "bar"] as const;
 type ChartType = (typeof CHART_TYPES)[number];
@@ -196,186 +198,279 @@ export default function AdminPublicDashboardPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <Card>
+    <div className="space-y-8">
+      {/* Metrics List Card */}
+      <Card className="glass-panel border-white/10">
         <CardHeader>
-          <CardTitle className="text-lg">Public Dashboard Metrics</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Edit the numbers, chart types, and 7-day data points shown on the public dashboard. Expand any row to edit individual daily data points.
-          </p>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {loading ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading metrics…
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <CardTitle className="text-xl text-white flex items-center gap-2">
+                <LayoutDashboard className="h-5 w-5 text-primary" />
+                Public Dashboard Metrics
+              </CardTitle>
+              <CardDescription className="text-zinc-400 mt-1">
+                Manage the key performance indicators shown on the public dashboard.
+              </CardDescription>
             </div>
-          ) : metrics.length === 0 ? (
-            <div className="flex items-center justify-between gap-4 flex-wrap">
-              <p className="text-sm text-muted-foreground">
-                No metrics yet. Add your own below or create a default set.
-              </p>
-              <Button size="sm" onClick={seedDefaults}>
+            {metrics.length === 0 && !loading && (
+              <Button size="sm" onClick={seedDefaults} className="bg-primary/20 text-primary hover:bg-primary/30 border border-primary/20">
                 <PlusCircle className="h-4 w-4 mr-1" /> Create default metrics
               </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
+              <Loader2 className="h-6 w-6 animate-spin mr-2 text-primary" /> Loading metrics…
+            </div>
+          ) : metrics.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground border border-dashed border-white/10 rounded-xl bg-white/5">
+              <p>No metrics found. Add your first metric below.</p>
             </div>
           ) : (
-            <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Key</TableHead>
-                    <TableHead>Label</TableHead>
-                    <TableHead>Current Value</TableHead>
-                    <TableHead>Unit</TableHead>
-                    <TableHead>Chart</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Data</TableHead>
-                    <TableHead />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {metrics.map((m) => {
-                    const isExpanded = expandedId === m.id;
-                    const pts = getPoints(m);
-                    return (
-                      <>
-                        <TableRow key={m.id}>
-                          <TableCell className="text-xs font-mono">{m.key}</TableCell>
-                          <TableCell>
-                            <Input value={m.label} onChange={(e) => handleMetricChange(m.id, "label", e.target.value)} className="min-w-[110px]" />
-                          </TableCell>
-                          <TableCell>
-                            <Input value={m.value} onChange={(e) => handleMetricChange(m.id, "value", e.target.value)} className="min-w-[100px]" />
-                          </TableCell>
-                          <TableCell className="w-[90px]">
-                            <Input value={m.unit || ""} onChange={(e) => handleMetricChange(m.id, "unit", e.target.value)} placeholder="USD / %" />
-                          </TableCell>
-                          <TableCell className="w-[110px]">
-                            <select
-                              className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                              value={m.chart_type || "area"}
-                              onChange={(e) => handleMetricChange(m.id, "chart_type", e.target.value)}
-                            >
-                              {CHART_TYPES.map((t) => (
-                                <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
-                              ))}
-                            </select>
-                          </TableCell>
-                          <TableCell className="max-w-[160px]">
-                            <Textarea rows={2} value={m.description || ""} onChange={(e) => handleMetricChange(m.id, "description", e.target.value)} />
-                          </TableCell>
-                          <TableCell>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="text-xs gap-1"
-                              onClick={() => {
-                                if (!isExpanded) initPoints(m.id);
-                                setExpandedId(isExpanded ? null : m.id);
-                              }}
-                            >
-                              {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                              7 days
-                            </Button>
-                          </TableCell>
-                          <TableCell>
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              className="h-8 w-8 text-red-600 border-red-300 hover:bg-red-50"
-                              onClick={() => deleteMetric(m.id)}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-
-                        {isExpanded && (
-                          <TableRow key={`${m.id}-points`} className="bg-muted/30">
-                            <TableCell colSpan={8} className="py-3 px-4">
-                              <p className="text-xs font-semibold text-muted-foreground mb-2">
-                                7-day data points — edit any value (auto-generated from current total if blank)
-                              </p>
-                              <div className="grid grid-cols-7 gap-2">
-                                {pts.map((pt, idx) => (
-                                  <div key={idx} className="space-y-1">
-                                    <p className="text-[10px] text-muted-foreground text-center">{pt.date}</p>
-                                    <Input
-                                      type="number"
-                                      value={pt.value}
-                                      onChange={(e) => handlePointChange(m.id, idx, e.target.value)}
-                                      className="text-xs text-center px-1"
-                                    />
-                                  </div>
-                                ))}
-                              </div>
-                              <p className="text-[10px] text-muted-foreground mt-2">
-                                These are displayed on the public &ldquo;Last 7 days&rdquo; chart. Click &ldquo;Save changes&rdquo; to persist.
-                              </p>
+            <div className="space-y-4">
+              <div className="rounded-xl border border-white/10 overflow-hidden bg-zinc-950/30">
+                <Table>
+                  <TableHeader className="bg-white/5">
+                    <TableRow className="border-white/10 hover:bg-transparent">
+                      <TableHead className="text-zinc-400 font-medium">Key</TableHead>
+                      <TableHead className="text-zinc-400 font-medium">Label</TableHead>
+                      <TableHead className="text-zinc-400 font-medium">Value</TableHead>
+                      <TableHead className="text-zinc-400 font-medium">Unit</TableHead>
+                      <TableHead className="text-zinc-400 font-medium">Chart</TableHead>
+                      <TableHead className="text-zinc-400 font-medium">Description</TableHead>
+                      <TableHead className="text-zinc-400 font-medium">Data</TableHead>
+                      <TableHead className="w-[50px]"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {metrics.map((m) => {
+                      const isExpanded = expandedId === m.id;
+                      const pts = getPoints(m);
+                      return (
+                        <>
+                          <TableRow key={m.id} className="border-white/5 hover:bg-white/5 transition-colors">
+                            <TableCell className="text-xs font-mono text-zinc-500">{m.key}</TableCell>
+                            <TableCell>
+                              <Input 
+                                value={m.label} 
+                                onChange={(e) => handleMetricChange(m.id, "label", e.target.value)} 
+                                className="min-w-[120px] bg-zinc-950/50 border-white/10 h-8 text-sm focus-visible:ring-primary/50" 
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Input 
+                                value={m.value} 
+                                onChange={(e) => handleMetricChange(m.id, "value", e.target.value)} 
+                                className="min-w-[100px] bg-zinc-950/50 border-white/10 h-8 text-sm focus-visible:ring-primary/50" 
+                              />
+                            </TableCell>
+                            <TableCell className="w-[100px]">
+                              <Input 
+                                value={m.unit || ""} 
+                                onChange={(e) => handleMetricChange(m.id, "unit", e.target.value)} 
+                                placeholder="Unit"
+                                className="bg-zinc-950/50 border-white/10 h-8 text-sm focus-visible:ring-primary/50" 
+                              />
+                            </TableCell>
+                            <TableCell className="w-[130px]">
+                              <Select
+                                value={m.chart_type || "area"}
+                                onValueChange={(val) => handleMetricChange(m.id, "chart_type", val)}
+                              >
+                                <SelectTrigger className="h-8 bg-zinc-950/50 border-white/10 text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {CHART_TYPES.map((t) => (
+                                    <SelectItem key={t} value={t} className="text-xs">
+                                      <div className="flex items-center gap-2">
+                                        {t === 'area' && <Activity className="h-3 w-3 text-primary" />}
+                                        {t === 'line' && <TrendingUp className="h-3 w-3 text-blue-400" />}
+                                        {t === 'bar' && <BarChart3 className="h-3 w-3 text-green-400" />}
+                                        {t.charAt(0).toUpperCase() + t.slice(1)}
+                                      </div>
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </TableCell>
+                            <TableCell className="max-w-[200px]">
+                              <Input 
+                                value={m.description || ""} 
+                                onChange={(e) => handleMetricChange(m.id, "description", e.target.value)} 
+                                className="bg-zinc-950/50 border-white/10 h-8 text-sm focus-visible:ring-primary/50 truncate"
+                                title={m.description || ""}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className={`text-xs h-8 px-2 border border-white/10 ${isExpanded ? 'bg-primary/10 text-primary border-primary/20' : 'text-zinc-400 hover:text-white'}`}
+                                onClick={() => {
+                                  if (!isExpanded) initPoints(m.id);
+                                  setExpandedId(isExpanded ? null : m.id);
+                                }}
+                              >
+                                {isExpanded ? <ChevronUp className="h-3 w-3 mr-1" /> : <ChevronDown className="h-3 w-3 mr-1" />}
+                                7 days
+                              </Button>
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-zinc-500 hover:text-red-400 hover:bg-red-500/10"
+                                onClick={() => deleteMetric(m.id)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
                             </TableCell>
                           </TableRow>
-                        )}
-                      </>
-                    );
-                  })}
-                </TableBody>
-              </Table>
 
-              <div className="flex justify-end">
-                <Button size="sm" onClick={saveMetrics} disabled={saving}>
-                  {saving ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Saving…</> : <><Save className="h-4 w-4 mr-1" />Save changes</>}
+                          {isExpanded && (
+                            <TableRow key={`${m.id}-points`} className="bg-white/[0.02] hover:bg-white/[0.02]">
+                              <TableCell colSpan={8} className="p-0 border-b border-white/5">
+                                <div className="p-4 bg-zinc-950/30 inner-shadow">
+                                  <div className="flex items-center justify-between mb-3">
+                                    <p className="text-xs font-semibold text-zinc-400 flex items-center gap-2">
+                                      <Activity className="h-3 w-3 text-primary" />
+                                      7-day trend data points
+                                    </p>
+                                    <span className="text-[10px] text-zinc-500">Auto-generated from current value if blank</span>
+                                  </div>
+                                  <div className="grid grid-cols-7 gap-3">
+                                    {pts.map((pt, idx) => (
+                                      <div key={idx} className="space-y-1.5">
+                                        <p className="text-[10px] text-zinc-500 text-center uppercase tracking-wider">{pt.date}</p>
+                                        <Input
+                                          type="number"
+                                          value={pt.value}
+                                          onChange={(e) => handlePointChange(m.id, idx, e.target.value)}
+                                          className="text-xs text-center px-1 h-8 bg-zinc-900 border-white/10 focus-visible:ring-primary/30"
+                                        />
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <Button 
+                  onClick={saveMetrics} 
+                  disabled={saving}
+                  className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20"
+                >
+                  {saving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving Changes…</> : <><Save className="h-4 w-4 mr-2" />Save All Changes</>}
                 </Button>
               </div>
-            </>
+            </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Add new metric */}
-      <Card>
+      {/* Add New Metric Card */}
+      <Card className="glass-panel border-white/10">
         <CardHeader>
-          <CardTitle className="text-base">Add new metric</CardTitle>
+          <CardTitle className="text-xl text-white flex items-center gap-2">
+            <PlusCircle className="h-5 w-5 text-primary" />
+            Add New Metric
+          </CardTitle>
+          <CardDescription className="text-zinc-400">
+            Create a new key performance indicator for the dashboard.
+          </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid gap-3 md:grid-cols-5">
-            <div className="space-y-1.5">
-              <p className="text-xs font-medium text-muted-foreground">Key</p>
-              <Input value={newMetric.key || ""} onChange={(e) => setNewMetric((p) => ({ ...p, key: e.target.value }))} placeholder="unique_key" />
+        <CardContent className="space-y-6">
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+            <div className="space-y-2">
+              <Label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Metric Key</Label>
+              <Input 
+                value={newMetric.key || ""} 
+                onChange={(e) => setNewMetric((p) => ({ ...p, key: e.target.value }))} 
+                placeholder="e.g. total_profit" 
+                className="bg-zinc-950/50 border-white/10 focus-visible:ring-primary/50"
+              />
             </div>
-            <div className="space-y-1.5 md:col-span-2">
-              <p className="text-xs font-medium text-muted-foreground">Label</p>
-              <Input value={newMetric.label || ""} onChange={(e) => setNewMetric((p) => ({ ...p, label: e.target.value }))} placeholder="Total Profit" />
+            <div className="space-y-2">
+              <Label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Display Label</Label>
+              <Input 
+                value={newMetric.label || ""} 
+                onChange={(e) => setNewMetric((p) => ({ ...p, label: e.target.value }))} 
+                placeholder="e.g. Total Profit" 
+                className="bg-zinc-950/50 border-white/10 focus-visible:ring-primary/50"
+              />
             </div>
-            <div className="space-y-1.5">
-              <p className="text-xs font-medium text-muted-foreground">Value</p>
-              <Input value={newMetric.value || ""} onChange={(e) => setNewMetric((p) => ({ ...p, value: e.target.value }))} placeholder="1250000" />
+            <div className="space-y-2">
+              <Label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Current Value</Label>
+              <Input 
+                value={newMetric.value || ""} 
+                onChange={(e) => setNewMetric((p) => ({ ...p, value: e.target.value }))} 
+                placeholder="e.g. 1250000" 
+                className="bg-zinc-950/50 border-white/10 focus-visible:ring-primary/50"
+              />
             </div>
-            <div className="space-y-1.5">
-              <p className="text-xs font-medium text-muted-foreground">Chart type</p>
-              <select
-                className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+            <div className="space-y-2">
+              <Label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Unit</Label>
+              <Input 
+                value={newMetric.unit || ""} 
+                onChange={(e) => setNewMetric((p) => ({ ...p, unit: e.target.value }))} 
+                placeholder="e.g. USD, %, Users" 
+                className="bg-zinc-950/50 border-white/10 focus-visible:ring-primary/50"
+              />
+            </div>
+          </div>
+          
+          <div className="grid gap-6 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Chart Type</Label>
+              <Select
                 value={newMetric.chart_type || "area"}
-                onChange={(e) => setNewMetric((p) => ({ ...p, chart_type: e.target.value as ChartType }))}
+                onValueChange={(val) => setNewMetric((p) => ({ ...p, chart_type: val as ChartType }))}
               >
-                {CHART_TYPES.map((t) => (
-                  <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
-                ))}
-              </select>
+                <SelectTrigger className="bg-zinc-950/50 border-white/10 focus-visible:ring-primary/50">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CHART_TYPES.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      <div className="flex items-center gap-2">
+                        {t === 'area' && <Activity className="h-4 w-4 text-primary" />}
+                        {t === 'line' && <TrendingUp className="h-4 w-4 text-blue-400" />}
+                        {t === 'bar' && <BarChart3 className="h-4 w-4 text-green-400" />}
+                        <span className="capitalize">{t} Chart</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Description</Label>
+              <Input 
+                value={newMetric.description || ""} 
+                onChange={(e) => setNewMetric((p) => ({ ...p, description: e.target.value }))} 
+                placeholder="Short description shown on hover" 
+                className="bg-zinc-950/50 border-white/10 focus-visible:ring-primary/50"
+              />
             </div>
           </div>
-          <div className="grid gap-3 md:grid-cols-4">
-            <div className="space-y-1.5">
-              <p className="text-xs font-medium text-muted-foreground">Unit</p>
-              <Input value={newMetric.unit || ""} onChange={(e) => setNewMetric((p) => ({ ...p, unit: e.target.value }))} placeholder="USD / % / users" />
-            </div>
-            <div className="space-y-1.5 md:col-span-3">
-              <p className="text-xs font-medium text-muted-foreground">Description</p>
-              <Textarea rows={2} value={newMetric.description || ""} onChange={(e) => setNewMetric((p) => ({ ...p, description: e.target.value }))} placeholder="Short description shown on the public dashboard." />
-            </div>
-          </div>
-          <div className="flex justify-end">
-            <Button size="sm" onClick={addMetric}>
-              <PlusCircle className="h-4 w-4 mr-1" /> Add metric
+
+          <div className="flex justify-end pt-2">
+            <Button 
+              onClick={addMetric}
+              className="bg-white/10 hover:bg-white/20 text-white border border-white/10"
+            >
+              <PlusCircle className="h-4 w-4 mr-2" /> Add Metric
             </Button>
           </div>
         </CardContent>

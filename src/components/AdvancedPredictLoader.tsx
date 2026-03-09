@@ -145,14 +145,14 @@ export function AdvancedPredictLoader({ isVisible, symbol, timeframe, ready, onC
 
   return (
     <div className="fixed inset-x-0 top-0 bottom-0 z-50 flex items-start justify-center bg-background/80 backdrop-blur-md pt-24 sm:pt-32">
-      <div className="w-full max-w-xl mx-4 p-6 bg-card/95 backdrop-blur-xl border border-border/50 rounded-2xl shadow-2xl max-h-[70vh] overflow-y-auto">
+      <div className="w-full max-w-xl mx-4 p-6 glass-panel rounded-2xl shadow-2xl max-h-[70vh] overflow-y-auto border-white/10">
         {/* Header */}
         <div className="text-center mb-6">
           <div className="relative inline-block">
             <BrainCircuit className="h-10 w-10 text-primary mx-auto mb-3 animate-pulse" />
             <div className="absolute -inset-1 bg-primary/20 rounded-full blur animate-pulse"></div>
           </div>
-          <h2 className="text-xl font-bold mb-2">AI Analysis in Progress</h2>
+          <h2 className="text-xl font-bold mb-2 text-white">AI Analysis in Progress</h2>
           <p className="text-sm text-muted-foreground">
             Generating multi-horizon analysis for <span className="font-mono text-primary">{symbol}</span>
           </p>
@@ -168,7 +168,7 @@ export function AdvancedPredictLoader({ isVisible, symbol, timeframe, ready, onC
                   fill="none"
                   stroke="currentColor"
                   strokeWidth="2"
-                  className="text-muted stroke-current"
+                  className="text-muted/20 stroke-current"
                 />
                 <path
                   d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
@@ -181,11 +181,11 @@ export function AdvancedPredictLoader({ isVisible, symbol, timeframe, ready, onC
                 />
               </svg>
               <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-base font-bold">{Math.round(progress)}%</span>
+                <span className="text-base font-bold text-white">{Math.round(progress)}%</span>
               </div>
             </div>
           </div>
-          <Progress value={progress} className="h-2" />
+          <Progress value={progress} className="h-2 bg-muted/20" />
         </div>
 
         {/* Analysis Steps */}
@@ -200,11 +200,11 @@ export function AdvancedPredictLoader({ isVisible, symbol, timeframe, ready, onC
               <div
                 key={step.id}
                 className={`flex items-center gap-3 p-2.5 rounded-lg transition-all duration-300 ${isCurrent ? 'bg-primary/10 border border-primary/20' :
-                  isCompleted ? 'bg-green-500/10 border border-green-500/20' :
-                    'bg-muted/30'
+                  isCompleted ? 'bg-teal-500/10 border border-teal-500/20' :
+                    'bg-white/5 border border-transparent'
                   }`}
               >
-                <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all duration-300 ${isCompleted ? 'bg-green-500 text-white' :
+                <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all duration-300 ${isCompleted ? 'bg-teal-500 text-white' :
                   isCurrent ? 'bg-primary text-primary-foreground animate-pulse' :
                     'bg-muted text-muted-foreground'
                   }`}>
@@ -215,7 +215,7 @@ export function AdvancedPredictLoader({ isVisible, symbol, timeframe, ready, onC
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-medium transition-colors duration-300 ${isCompleted ? 'text-green-600 dark:text-green-400' :
+                  <p className={`text-sm font-medium transition-colors duration-300 ${isCompleted ? 'text-teal-400' :
                     isCurrent ? 'text-primary' :
                       isPending ? 'text-muted-foreground' : 'text-foreground'
                     }`}>
@@ -236,8 +236,8 @@ export function AdvancedPredictLoader({ isVisible, symbol, timeframe, ready, onC
         </div>
 
         {/* Live Telemetry */}
-        <div className="bg-muted/30 rounded-xl p-3">
-          <h3 className="text-xs font-medium mb-2 text-muted-foreground">Live Analysis Feed</h3>
+        <div className="bg-black/40 rounded-xl p-3 border border-white/5">
+          <h3 className="text-xs font-medium mb-2 text-muted-foreground uppercase tracking-wider">Live Analysis Feed</h3>
           <div className="space-y-1 font-mono text-xs max-h-20 overflow-y-auto">
             {telemetryLines.map((line) => (
               <div
@@ -245,7 +245,7 @@ export function AdvancedPredictLoader({ isVisible, symbol, timeframe, ready, onC
                 className="flex items-center gap-2 text-muted-foreground animate-fade-in"
               >
                 <span className="text-primary">›</span>
-                <span className="flex-1">{line.text}</span>
+                <span className="flex-1 text-zinc-300">{line.text}</span>
                 <span className="text-xs opacity-60">
                   {new Date(line.timestamp).toLocaleTimeString([], { minute: '2-digit', second: '2-digit' })}
                 </span>

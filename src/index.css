@@ -1,120 +1,75 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
-
-*{
-  font-family: 'Inter', sans-serif;
-}
-
 @layer base {
   :root {
-    --background: 0 0% 6%;
-    --foreground: 0 0% 95%;
+    /* Base HSL values */
+    --background: 240 10% 4%; /* Deep Black #09090b */
+    --foreground: 0 0% 98%;
 
-    --card: 0 0% 8%;
-    --card-foreground: 0 0% 95%;
+    --card: 240 10% 6%; /* Slightly lighter black #18181b */
+    --card-foreground: 0 0% 98%;
 
-    --popover: 0 0% 8%;
-    --popover-foreground: 0 0% 95%;
+    --popover: 240 10% 6%;
+    --popover-foreground: 0 0% 98%;
 
-    --primary: 217 91% 60%;
+    /* Teal Green Primary #14B8A6 */
+    --primary: 174 77% 40%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 0 0% 12%;
-    --secondary-foreground: 0 0% 95%;
+    /* Teal Blue Secondary #0EA5E9 */
+    --secondary: 199 89% 48%;
+    --secondary-foreground: 0 0% 100%;
 
-    --muted: 0 0% 12%;
-    --muted-foreground: 0 0% 60%;
+    --muted: 240 4% 16%;
+    --muted-foreground: 240 5% 65%;
 
-    --accent: 142 76% 36%;
+    --accent: 174 77% 40%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 0 0% 15%;
-    --input: 0 0% 15%;
-    --ring: 217 91% 60%;
+    --border: 240 4% 16%;
+    --input: 240 4% 16%;
+    --ring: 174 77% 40%;
 
-    --trading-green: 142 76% 36%;
-    --trading-red: 0 84% 60%;
-    --trading-blue: 217 91% 60%;
-    --trading-dark: 0 0% 6%;
-    --chart-bg: 0 0% 6%;
+    --radius: 0.75rem;
 
-    --radius: 0.5rem;
-
-    /* Gradient definitions for vibrant effects */
-    --gradient-primary: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--primary)/0.8) 100%);
-    --gradient-success: linear-gradient(135deg, hsl(var(--trading-green)) 0%, hsl(var(--trading-green)/0.8) 100%);
-    --gradient-danger: linear-gradient(135deg, hsl(var(--trading-red)) 0%, hsl(var(--trading-red)/0.8) 100%);
-    --gradient-glass: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%);
-
-    --sidebar-background: 0 0% 98%;
-
-    --sidebar-foreground: 240 5.3% 26.1%;
-
-    --sidebar-primary: 240 5.9% 10%;
-
-    --sidebar-primary-foreground: 0 0% 98%;
-
-    --sidebar-accent: 240 4.8% 95.9%;
-
-    --sidebar-accent-foreground: 240 5.9% 10%;
-
-    --sidebar-border: 220 13% 91%;
-
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    /* Sidebar specific */
+    --sidebar-background: 240 10% 4%;
+    --sidebar-foreground: 240 5% 65%;
+    --sidebar-primary: 174 77% 40%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 4% 16%;
+    --sidebar-accent-foreground: 0 0% 98%;
+    --sidebar-border: 240 4% 16%;
+    --sidebar-ring: 174 77% 40%;
   }
 
   .dark {
-    --background: 0 0% 4%;
+    --background: 240 10% 4%;
     --foreground: 0 0% 98%;
-
-    --card: 0 0% 6%;
+    --card: 240 10% 6%;
     --card-foreground: 0 0% 98%;
-
-    --popover: 0 0% 6%;
+    --popover: 240 10% 6%;
     --popover-foreground: 0 0% 98%;
-
-    --primary: 217 91% 65%;
+    --primary: 174 77% 40%;
     --primary-foreground: 0 0% 100%;
-
-    --secondary: 0 0% 10%;
-    --secondary-foreground: 0 0% 98%;
-
-    --muted: 0 0% 10%;
-    --muted-foreground: 0 0% 65%;
-
-    --accent: 142 76% 40%;
+    --secondary: 199 89% 48%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 240 4% 16%;
+    --muted-foreground: 240 5% 65%;
+    --accent: 174 77% 40%;
     --accent-foreground: 0 0% 100%;
-
-    --destructive: 0 84% 65%;
-    --destructive-foreground: 0 0% 100%;
-
-    --border: 0 0% 12%;
-    --input: 0 0% 12%;
-    --ring: 217 91% 65%;
-
-    --trading-green: 142 76% 40%;
-    --trading-red: 0 84% 65%;
-    --trading-blue: 217 91% 65%;
-    --trading-dark: 0 0% 4%;
-    --chart-bg: 0 0% 4%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --destructive: 0 62% 30%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 4% 16%;
+    --input: 240 4% 16%;
+    --ring: 174 77% 40%;
   }
 }
 
@@ -122,162 +77,57 @@ All colors MUST be HSL.
   * {
     @apply border-border;
   }
-
   body {
-    @apply bg-background text-foreground;
-    overflow-x: hidden;
+    @apply bg-background text-foreground font-sans antialiased;
   }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-semibold tracking-tight;
+  }
+  h1 { @apply text-3xl md:text-4xl; }
+  h2 { @apply text-2xl md:text-3xl; }
+  h3 { @apply text-xl md:text-2xl; }
+  h4 { @apply text-lg md:text-xl; }
 }
 
 @layer components {
- .text-heading{
-  @apply text-[#181B22]
- }
- .text-content{
-  @apply text-[#2A3452]
- }
-
- .btn-primary {
-    @apply bg-primary text-white px-6 py-3 rounded-full font-semibold transition-colors hover:bg-primary-hover;
-  }
-  .container-custom {
-    @apply max-w-[88rem] mx-auto px-4 sm:px-6 lg:px-8;
+  /* Premium Glass Panel - Use for analytics/insights */
+  .glass-panel {
+    @apply bg-zinc-900/40 backdrop-blur-xl border border-white/5 shadow-xl;
   }
 
-  /* Glassmorphism utility classes */
-  .glass-card {
-    @apply bg-card/50 backdrop-blur-sm border border-white/10;
+  /* Minimal Panel - Use for forms/tables */
+  .minimal-panel {
+    @apply bg-card border border-border shadow-sm;
   }
-  
-  .glass-effect {
-    @apply relative overflow-hidden;
-  }
-  
-  .glass-effect::before {
-    @apply absolute inset-0 bg-gradient-to-br from-white/5 to-transparent pointer-events-none;
-    content: '';
-  }
-  
-  /* Sheen animation for advanced cards */
-  .sheen {
-    @apply relative overflow-hidden;
-  }
-  
-  .sheen::after {
-    @apply absolute inset-0 opacity-0 transition-opacity duration-300;
-    content: '';
-    background: linear-gradient(
-      45deg,
-      transparent 30%,
-      rgba(255, 255, 255, 0.1) 50%,
-      transparent 70%
-    );
-    transform: translateX(-100%);
-    animation: sheen 2s infinite;
-  }
-  
-  .sheen:hover::after {
-    @apply opacity-100;
-  }
-  
-  @keyframes sheen {
-    0% { transform: translateX(-100%); }
-    100% { transform: translateX(100%); }
-}
-}
 
-/* Mobile optimizations */
-@media (max-width: 768px) {
-  .mobile-stepper {
-    -webkit-overflow-scrolling: touch;
+  /* Text Gradient */
+  .text-gradient {
+    @apply bg-gradient-to-r from-teal-400 to-teal-200 bg-clip-text text-transparent pb-1;
+  }
+
+  /* Glow Effects - Use sparingly */
+  .glow-primary {
+    @apply shadow-[0_0_20px_rgba(20,184,166,0.3)];
   }
   
-  /* Ensure touch targets are at least 44px */
-  button, [role="button"], input, select {
-    min-height: 44px;
+  .glow-text {
+    @apply drop-shadow-[0_0_10px_rgba(20,184,166,0.5)];
   }
-  
-  /* Safe area support for mobile devices */
-  .container {
-    padding-left: max(1rem, env(safe-area-inset-left));
-    padding-right: max(1rem, env(safe-area-inset-right));
-  }
-  
-  /* Improved touch scrolling */
-  * {
-    -webkit-overflow-scrolling: touch;
+
+  /* Mobile Optimizations */
+  .mobile-container {
+    @apply px-4 py-4 md:px-8 md:py-8 max-w-7xl mx-auto;
   }
 }
 
-@keyframes scroll {
-  0% { transform: translateX(0); }
-  100% { transform: translateX(-50%); }
-}
-
-.animate-scroll {
-  animation: scroll 30s linear infinite;
-}
-
-@keyframes drop {
-  0% {
-    transform: translateY(-100%);
-    opacity: 0;
-  }
-  50% {
-    opacity: 1;
-  }
-  100% {
-    transform: translateY(1000px);
-    opacity: 0;
-  }
-}
-
-.animate-drop {
-  animation: drop linear forwards;
-}
-
-/* ─── Custom Scrollbar ──────────────────────────────────────────────────────── */
-
-/* Firefox */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: hsl(217 91% 60% / 0.6) hsl(0 0% 10%);
-}
-
-/* Webkit (Chrome, Edge, Safari) */
+/* Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
-
 ::-webkit-scrollbar-track {
-  background: hsl(0 0% 8%);
-  border-radius: 999px;
+  @apply bg-zinc-950;
 }
-
 ::-webkit-scrollbar-thumb {
-  background: hsl(217 91% 60% / 0.5);
-  border-radius: 999px;
-  transition: background 0.2s ease;
+  @apply bg-zinc-800 rounded-full hover:bg-zinc-700 transition-colors;
 }
-
-::-webkit-scrollbar-thumb:hover {
-  background: hsl(217 91% 60% / 0.85);
-}
-
-::-webkit-scrollbar-corner {
-  background: hsl(0 0% 8%);
-}
-
-/* ─── Hide Scrollbar Utility ────────────────────────────────────────────────── */
-/* Use .no-scrollbar to visually hide the scrollbar while keeping scroll behaviour */
-
-.no-scrollbar {
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE / Edge legacy */
-}
-
-.no-scrollbar::-webkit-scrollbar {
-  display: none; /* Chrome / Safari */
-}
-

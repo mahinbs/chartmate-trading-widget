@@ -39,7 +39,7 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          <div className="min-h-screen bg-background">
+          <div className="min-h-screen bg-background text-foreground">
             <PlatformChatbot />
             <Routes>
               <Route path="/rsb-fintech-founder" element={<LandingPage />} />

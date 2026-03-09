@@ -42,41 +42,41 @@ export default function AdminUsersPage() {
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <Button variant="outline" onClick={loadUsers} disabled={loading} className="w-full md:w-auto">
+        <Button variant="outline" onClick={loadUsers} disabled={loading} className="w-full md:w-auto border-white/10 hover:bg-white/5">
           <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
           Refresh
         </Button>
       </div>
-        <Card>
+        <Card className="glass-panel">
           <CardHeader>
-            <CardTitle>Registered Users ({users.length})</CardTitle>
+            <CardTitle className="text-white">Registered Users ({users.length})</CardTitle>
           </CardHeader>
           <CardContent className="overflow-x-auto">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead>Last Sign In</TableHead>
+                <TableRow className="border-white/10 hover:bg-transparent">
+                  <TableHead className="text-muted-foreground">Email</TableHead>
+                  <TableHead className="text-muted-foreground">Role</TableHead>
+                  <TableHead className="text-muted-foreground">Created</TableHead>
+                  <TableHead className="text-muted-foreground">Last Sign In</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {users.map((user) => (
-                  <TableRow key={user.id}>
-                    <TableCell className="font-medium">{user.email || "-"}</TableCell>
+                  <TableRow key={user.id} className="border-white/5 hover:bg-white/5">
+                    <TableCell className="font-medium text-zinc-300">{user.email || "-"}</TableCell>
                     <TableCell>
-                      <Badge variant={user.role === "admin" ? "default" : "secondary"}>
+                      <Badge variant={user.role === "admin" ? "default" : "secondary"} className="border-white/10">
                         {user.role}
                       </Badge>
                     </TableCell>
-                    <TableCell>{new Date(user.created_at).toLocaleString()}</TableCell>
-                    <TableCell>{user.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleString() : "Never"}</TableCell>
+                    <TableCell className="text-muted-foreground">{new Date(user.created_at).toLocaleString()}</TableCell>
+                    <TableCell className="text-muted-foreground">{user.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleString() : "Never"}</TableCell>
                   </TableRow>
                 ))}
                 {!loading && users.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center text-muted-foreground">
+                    <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
                       No users found
                     </TableCell>
                   </TableRow>

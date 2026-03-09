@@ -24,19 +24,14 @@ import {
   Zap,
   Shield,
   Timer,
-  Calendar,
-  DollarSign,
-  Percent,
   ArrowRight,
   RefreshCw,
-  Play,
-  Pause,
-  Square
+  Play
 } from 'lucide-react';
 import { Container } from '@/components/layout/Container';
 import { useIsMobile } from '@/hooks/use-mobile';
 import IntradayPredictionService from '@/services/intradayPredictionService';
-import type { IntradayPrediction, HourlyPrediction } from '@/services/intradayPredictionService';
+import type { IntradayPrediction } from '@/services/intradayPredictionService';
 import { SymbolSearch } from '@/components/SymbolSearch';
 import type { SymbolData } from '@/components/SymbolSearch';
 import { TimingDisplay } from '@/components/market/TimingDisplay';
@@ -104,45 +99,37 @@ export default function IntradayPage() {
     }
   };
 
-
-
   const getDirectionIcon = (direction: string) => {
     switch (direction) {
-      case 'up': return <ArrowUpRight className="h-4 w-4 text-green-600" />;
-      case 'down': return <ArrowDownRight className="h-4 w-4 text-red-600" />;
-      default: return <Minus className="h-4 w-4 text-gray-600" />;
+      case 'up': return <ArrowUpRight className="h-4 w-4 text-green-400" />;
+      case 'down': return <ArrowDownRight className="h-4 w-4 text-red-400" />;
+      default: return <Minus className="h-4 w-4 text-zinc-400" />;
     }
   };
 
   const getDirectionColor = (direction: string) => {
     switch (direction) {
-      case 'up': return 'text-green-600 bg-green-50 border-green-200';
-      case 'down': return 'text-red-600 bg-red-50 border-red-200';
-      default: return 'text-gray-600 bg-gray-50 border-gray-200';
+      case 'up': return 'text-green-400 bg-green-500/10 border-green-500/20';
+      case 'down': return 'text-red-400 bg-red-500/10 border-red-500/20';
+      default: return 'text-zinc-400 bg-white/5 border-white/10';
     }
-  };
-
-  const getConfidenceColor = (confidence: number) => {
-    if (confidence >= 80) return 'text-green-600 bg-green-50 border-green-200';
-    if (confidence >= 60) return 'text-yellow-600 bg-yellow-50 border-yellow-200';
-    return 'text-red-600 bg-red-50 border-red-200';
   };
 
   const getRiskColor = (risk: string) => {
     switch (risk) {
-      case 'low': return 'text-green-600 bg-green-50 border-green-200';
-      case 'medium': return 'text-yellow-600 bg-yellow-50 border-yellow-200';
-      case 'high': return 'text-red-600 bg-red-50 border-red-200';
-      default: return 'text-gray-600 bg-gray-50 border-gray-200';
+      case 'low': return 'text-green-400 bg-green-500/10 border-green-500/20';
+      case 'medium': return 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20';
+      case 'high': return 'text-red-400 bg-red-500/10 border-red-500/20';
+      default: return 'text-zinc-400 bg-white/5 border-white/10';
     }
   };
 
   const getVolumeColor = (volume: string) => {
     switch (volume) {
-      case 'high': return 'text-blue-600 bg-blue-50 border-blue-200';
-      case 'normal': return 'text-green-600 bg-green-50 border-green-200';
-      case 'low': return 'text-gray-600 bg-gray-50 border-gray-200';
-      default: return 'text-gray-600 bg-gray-50 border-gray-200';
+      case 'high': return 'text-blue-400 bg-blue-500/10 border-blue-500/20';
+      case 'normal': return 'text-green-400 bg-green-500/10 border-green-500/20';
+      case 'low': return 'text-zinc-400 bg-white/5 border-white/10';
+      default: return 'text-zinc-400 bg-white/5 border-white/10';
     }
   };
 
@@ -155,16 +142,16 @@ export default function IntradayPage() {
   }) || [];
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background text-foreground">
       {/* Header */}
-      <div className="border-b bg-card/50 backdrop-blur-sm">
+      <div className="border-b border-white/5 bg-background/80 backdrop-blur-xl sticky top-0 z-50">
         <Container className="py-3 sm:py-4">
           <div className={`flex ${isMobile ? 'flex-col gap-2' : 'justify-between items-center'} mb-4`}>
             <Button
               variant="outline"
               size={isMobile ? "sm" : "sm"}
               onClick={() => navigate('/home')}
-              className={`flex items-center gap-2 ${isMobile ? 'w-full justify-center' : ''}`}
+              className={`flex items-center gap-2 border-white/10 hover:bg-white/5 ${isMobile ? 'w-full justify-center' : ''}`}
             >
               <ArrowRight className="h-4 w-4 rotate-180" />
               {isMobile ? "Home" : "Home"}
@@ -173,7 +160,7 @@ export default function IntradayPage() {
               variant="outline"
               size={isMobile ? "sm" : "sm"}
               onClick={() => navigate('/predictions')}
-              className={`flex items-center gap-2 ${isMobile ? 'w-full justify-center' : ''}`}
+              className={`flex items-center gap-2 border-white/10 hover:bg-white/5 ${isMobile ? 'w-full justify-center' : ''}`}
             >
               <BarChart3 className="h-4 w-4" />
               {isMobile ? "History" : "Analysis History"}
@@ -181,16 +168,16 @@ export default function IntradayPage() {
           </div>
           
           <div className="text-center space-y-2">
-            <h1 className={`${isMobile ? 'text-2xl' : 'text-3xl md:text-4xl'} font-bold`}>
+            <h1 className={`${isMobile ? 'text-2xl' : 'text-3xl md:text-4xl'} font-bold text-gradient`}>
               🚀 Intraday Trading
             </h1>
-            <p className={`text-gray-300 ${isMobile ? 'text-sm' : ''}`}>
+            <p className={`text-muted-foreground ${isMobile ? 'text-sm' : ''}`}>
               AI-powered hourly probability-based analyses for day traders - Real-time intraday analysis
             </p>
             {isLoading && (
               <div className="flex items-center justify-center gap-2 mt-2">
-                <RefreshCw className="h-4 w-4 animate-spin text-blue-500" />
-                <span className="text-sm text-blue-500">Generating AI analyses...</span>
+                <RefreshCw className="h-4 w-4 animate-spin text-primary" />
+                <span className="text-sm text-primary">Generating AI analyses...</span>
               </div>
             )}
           </div>
@@ -200,13 +187,13 @@ export default function IntradayPage() {
       {/* Main Content */}
       <Container className="py-6">
         {/* Symbol Search */}
-        <Card className="mb-6">
+        <Card className="glass-panel mb-6">
           <CardHeader>
-                            <CardTitle className="flex items-center gap-2 text-white">
-                  <Target className="h-5 w-5" />
-                  Symbol Analysis
-                </CardTitle>
-            <CardDescription className="text-gray-300">
+            <CardTitle className="flex items-center gap-2 text-white">
+              <Target className="h-5 w-5 text-primary" />
+              Symbol Analysis
+            </CardTitle>
+            <CardDescription className="text-muted-foreground">
               Enter a stock symbol to get intraday hourly analyses
             </CardDescription>
           </CardHeader>
@@ -224,7 +211,7 @@ export default function IntradayPage() {
                 <Button 
                   onClick={handleSymbolSearch}
                   disabled={isLoading || !selectedSymbol}
-                  className="min-w-[120px]"
+                  className="min-w-[120px] shadow-[0_0_20px_rgba(20,184,166,0.2)]"
                 >
                   {isLoading ? (
                     <RefreshCw className="h-4 w-4 animate-spin" />
@@ -239,7 +226,7 @@ export default function IntradayPage() {
                     variant="outline"
                     onClick={handleSymbolSearch}
                     disabled={isLoading}
-                    className="min-w-[120px]"
+                    className="min-w-[120px] border-white/10 hover:bg-white/5"
                   >
                     <RefreshCw className="h-4 w-4" />
                     Refresh
@@ -248,14 +235,14 @@ export default function IntradayPage() {
               </div>
               
               {selectedSymbolData && (
-                <div className="p-3 bg-muted/30 rounded-lg border">
+                <div className="p-3 bg-white/5 rounded-lg border border-white/10">
                   <div className="flex items-center gap-2">
-                    <CheckCircle className="h-5 w-5 text-green-600" />
+                    <CheckCircle className="h-5 w-5 text-green-500" />
                     <span className="font-medium text-white">Selected: {selectedSymbolData.symbol}</span>
-                    <Badge variant="outline" className="text-xs">
+                    <Badge variant="outline" className="text-xs border-white/10 text-muted-foreground">
                       {selectedSymbolData.type}
                     </Badge>
-                    <span className="text-sm text-gray-300">{selectedSymbolData.description}</span>
+                    <span className="text-sm text-muted-foreground">{selectedSymbolData.description}</span>
                   </div>
                 </div>
               )}
@@ -264,10 +251,10 @@ export default function IntradayPage() {
         </Card>
 
         {/* Current Status */}
-        <Card className="mb-6">
+        <Card className="glass-panel mb-6">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-white">
-              <Activity className="h-5 w-5" />
+              <Activity className="h-5 w-5 text-primary" />
               Current Status - {selectedSymbolData ? `${selectedSymbolData.symbol} (${selectedSymbolData.description})` : 'No Symbol Selected'}
             </CardTitle>
           </CardHeader>
@@ -277,7 +264,7 @@ export default function IntradayPage() {
                 <div className="text-muted-foreground mb-4">
                   <Target className="h-12 w-12 mx-auto mb-2 opacity-50" />
                   <p className="text-lg font-medium text-white">Select a symbol to analyze</p>
-                  <p className="text-sm text-gray-300">Choose a stock, crypto, or forex pair to get intraday analyses</p>
+                  <p className="text-sm text-muted-foreground">Choose a stock, crypto, or forex pair to get intraday analyses</p>
                 </div>
               </div>
             ) : !predictionData ? (
@@ -285,35 +272,35 @@ export default function IntradayPage() {
                 <div className="text-muted-foreground mb-4">
                   <RefreshCw className="h-12 w-12 mx-auto mb-2 opacity-50 animate-spin" />
                   <p className="text-lg font-medium text-white">Click "Analyze" to get analyses</p>
-                  <p className="text-sm text-gray-300">Real-time AI-powered intraday analysis will be generated</p>
+                  <p className="text-sm text-muted-foreground">Real-time AI-powered intraday analysis will be generated</p>
                 </div>
               </div>
             ) : (
               <div>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div className="text-center">
-                    <p className="text-2xl font-bold">${predictionData?.currentPrice?.toFixed(2) || '0.00'}</p>
-                    <p className="text-sm text-gray-300">Current Price</p>
+                  <div className="text-center p-4 bg-white/5 rounded-lg border border-white/5">
+                    <p className="text-2xl font-bold text-white">${predictionData?.currentPrice?.toFixed(2) || '0.00'}</p>
+                    <p className="text-sm text-muted-foreground">Current Price</p>
                   </div>
-                  <div className="text-center">
-                    <p className={`text-2xl font-bold ${predictionData?.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  <div className="text-center p-4 bg-white/5 rounded-lg border border-white/5">
+                    <p className={`text-2xl font-bold ${predictionData?.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                       {predictionData?.change >= 0 ? '+' : ''}{predictionData?.change?.toFixed(2) || '0.00'}
                     </p>
-                    <p className="text-sm text-gray-300">Change</p>
+                    <p className="text-sm text-muted-foreground">Change</p>
                   </div>
-                  <div className="text-center">
-                    <p className={`text-2xl font-bold ${predictionData?.changePercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  <div className="text-center p-4 bg-white/5 rounded-lg border border-white/5">
+                    <p className={`text-2xl font-bold ${predictionData?.changePercent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                       {predictionData?.changePercent >= 0 ? '+' : ''}{predictionData?.changePercent?.toFixed(2) || '0.00'}%
                     </p>
-                    <p className="text-sm text-gray-300">Change %</p>
+                    <p className="text-sm text-muted-foreground">Change %</p>
                   </div>
-                  <div className="text-center">
-                    <p className="text-2xl font-bold">{predictionData?.confidence || 0}%</p>
-                    <p className="text-sm text-gray-300">Confidence</p>
+                  <div className="text-center p-4 bg-white/5 rounded-lg border border-white/5">
+                    <p className="text-2xl font-bold text-white">{predictionData?.confidence || 0}%</p>
+                    <p className="text-sm text-muted-foreground">Confidence</p>
                   </div>
                 </div>
                 
-                <Separator className="my-4" />
+                <Separator className="my-4 bg-white/10" />
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="flex items-center gap-2">
@@ -324,7 +311,7 @@ export default function IntradayPage() {
                       {predictionData?.overallTrend === 'bullish' ? '📈 Bullish' : 
                        predictionData?.overallTrend === 'bearish' ? '📉 Bearish' : '➡️ Neutral'}
                     </Badge>
-                    <span className="text-sm text-gray-300">Overall Trend</span>
+                    <span className="text-sm text-muted-foreground">Overall Trend</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge 
@@ -334,25 +321,25 @@ export default function IntradayPage() {
                       <Shield className="h-3 w-3 mr-1" />
                       {predictionData?.riskLevel ? predictionData.riskLevel.charAt(0).toUpperCase() + predictionData.riskLevel.slice(1) : 'Medium'} Risk
                     </Badge>
-                    <span className="text-sm text-gray-300">Risk Level</span>
+                    <span className="text-sm text-muted-foreground">Risk Level</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-blue-600 bg-blue-50 border-blue-200">
+                    <Badge variant="outline" className="text-blue-400 bg-blue-500/10 border-blue-500/20">
                       <Timer className="h-3 w-3 mr-1" />
                       {predictionData ? 'AI-Powered' : 'Real-time'}
                     </Badge>
-                    <span className="text-sm text-gray-300">
+                    <span className="text-sm text-muted-foreground">
                       {predictionData ? 'Advanced Models' : 'Live Updates'}
                     </span>
                   </div>
                   
                   {predictionData && (
                     <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="text-green-600 bg-green-50 border-green-200">
+                      <Badge variant="outline" className="text-green-400 bg-green-500/10 border-green-500/20">
                         <CheckCircle className="h-3 w-3 mr-1" />
                         Fresh Data
                       </Badge>
-                      <span className="text-sm text-gray-300">Cache: Active</span>
+                      <span className="text-sm text-muted-foreground">Cache: Active</span>
                     </div>
                   )}
                 </div>
@@ -364,7 +351,7 @@ export default function IntradayPage() {
         {/* Main Analysis Tabs */}
         {selectedSymbolData && predictionData && (
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-5 bg-zinc-900/50 border border-white/5">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="hourly">Hourly</TabsTrigger>
             <TabsTrigger value="levels">Key Levels</TabsTrigger>
@@ -376,10 +363,10 @@ export default function IntradayPage() {
           <TabsContent value="overview" className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Hourly Summary */}
-              <Card>
+              <Card className="glass-panel">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-white">
-                    <Clock className="h-5 w-5" />
+                    <Clock className="h-5 w-5 text-primary" />
                     Hourly Summary
                   </CardTitle>
                 </CardHeader>
@@ -387,40 +374,40 @@ export default function IntradayPage() {
                   <div className="space-y-3">
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-white">Bullish Hours:</span>
-                      <Badge variant="outline" className="text-green-600 bg-green-50 border-green-200">
+                      <Badge variant="outline" className="text-green-400 bg-green-500/10 border-green-500/20">
                         {predictionData?.hourlyPredictions?.filter(p => p.direction === 'up').length || 0}
                       </Badge>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-white">Bearish Hours:</span>
-                      <Badge variant="outline" className="text-red-600 bg-red-50 border-red-200">
+                      <Badge variant="outline" className="text-red-400 bg-red-500/10 border-red-500/20">
                         {predictionData?.hourlyPredictions?.filter(p => p.direction === 'down').length || 0}
                       </Badge>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-white">Sideways Hours:</span>
-                      <Badge variant="outline" className="text-gray-600 bg-gray-50 border-gray-200">
+                      <Badge variant="outline" className="text-zinc-400 bg-white/5 border-white/10">
                         {predictionData?.hourlyPredictions?.filter(p => p.direction === 'sideways').length || 0}
                       </Badge>
                     </div>
-                    <Separator />
+                    <Separator className="bg-white/10" />
                     <div className="flex justify-between items-center">
                       <span className="text-sm font-medium text-white">Best Trading Hours:</span>
-                      <span className="text-sm text-green-600 font-medium">2:00 PM - 3:00 PM</span>
+                      <span className="text-sm text-green-400 font-medium">2:00 PM - 3:00 PM</span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm font-medium text-white">Avoid Trading:</span>
-                      <span className="text-sm text-red-600 font-medium">12:00 PM - 1:00 PM</span>
+                      <span className="text-sm text-red-400 font-medium">12:00 PM - 1:00 PM</span>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
               {/* Risk Assessment */}
-              <Card>
+              <Card className="glass-panel">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-white">
-                    <AlertTriangle className="h-5 w-5" />
+                    <AlertTriangle className="h-5 w-5 text-primary" />
                     Risk Assessment
                   </CardTitle>
                 </CardHeader>
@@ -433,7 +420,7 @@ export default function IntradayPage() {
                       </div>
                       <Progress 
                         value={predictionData?.riskLevel === 'low' ? 25 : predictionData?.riskLevel === 'medium' ? 50 : 75} 
-                        className="h-2"
+                        className="h-2 bg-white/10"
                       />
                     </div>
                     <div>
@@ -441,17 +428,17 @@ export default function IntradayPage() {
                         <span className="text-white">Market Volatility</span>
                         <span className="text-white">Medium</span>
                       </div>
-                      <Progress value={60} className="h-2" />
+                      <Progress value={60} className="h-2 bg-white/10" />
                     </div>
                     <div>
                       <div className="flex justify-between text-sm mb-2">
                         <span className="text-white">Liquidity</span>
                         <span className="text-white">High</span>
                       </div>
-                      <Progress value={85} className="h-2" />
+                      <Progress value={85} className="h-2 bg-white/10" />
                     </div>
-                    <Separator />
-                    <div className="text-sm text-gray-300">
+                    <Separator className="bg-white/10" />
+                    <div className="text-sm text-muted-foreground">
                       <p>• Use tight stop losses during volatile hours</p>
                       <p>• High volume periods offer better entry/exit</p>
                       <p>• Avoid low liquidity periods (lunch hour)</p>
@@ -465,20 +452,20 @@ export default function IntradayPage() {
           {/* Hourly Tab */}
           <TabsContent value="hourly" className="space-y-4">
             {/* Time Filter */}
-            <Card>
+            <Card className="glass-panel">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-white">
-                  <Timer className="h-5 w-5" />
+                  <Timer className="h-5 w-5 text-primary" />
                   Hourly Analyses
                 </CardTitle>
-                                  <CardDescription className="text-gray-300">
+                                  <CardDescription className="text-muted-foreground">
                     Detailed hourly analysis with probability and risk assessment
                   </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="flex gap-2 mb-4">
                   <Select value={timeFilter} onValueChange={setTimeFilter}>
-                    <SelectTrigger className="w-[180px]">
+                    <SelectTrigger className="w-[180px] bg-zinc-950/50 border-white/10">
                       <SelectValue placeholder="Filter by time" />
                     </SelectTrigger>
                     <SelectContent>
@@ -492,7 +479,7 @@ export default function IntradayPage() {
 
                 <div className="space-y-3">
                   {filteredPredictions.map((prediction, index) => (
-                    <Card key={index} className="border-l-4 border-l-blue-500">
+                    <Card key={index} className="border-l-4 border-l-blue-500 bg-white/5 border-y-0 border-r-0 border-white/5">
                       <CardContent className="p-4">
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-3">
@@ -507,21 +494,21 @@ export default function IntradayPage() {
                           </div>
                           <div className="text-right">
                             <div className="text-lg font-bold text-white">+{prediction.expectedMove.toFixed(1)}%</div>
-                            <div className="text-sm text-gray-300">Expected Move</div>
+                            <div className="text-sm text-muted-foreground">Expected Move</div>
                           </div>
                         </div>
 
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
                           <div>
-                            <div className="text-sm text-gray-300">Probability</div>
+                            <div className="text-sm text-muted-foreground">Probability</div>
                             <div className="text-lg font-semibold text-white">{(prediction.probability * 100).toFixed(0)}%</div>
                           </div>
                           <div>
-                            <div className="text-sm text-gray-300">Confidence</div>
+                            <div className="text-sm text-muted-foreground">Confidence</div>
                             <div className="text-lg font-semibold text-white">{prediction.confidence}%</div>
                           </div>
                           <div>
-                            <div className="text-sm text-gray-300">Volume</div>
+                            <div className="text-sm text-muted-foreground">Volume</div>
                             <Badge 
                               variant="outline" 
                               className={getVolumeColor(prediction.volume)}
@@ -530,12 +517,12 @@ export default function IntradayPage() {
                             </Badge>
                           </div>
                           <div>
-                            <div className="text-sm text-gray-300">Volatility</div>
+                            <div className="text-sm text-muted-foreground">Volatility</div>
                             <Badge 
                               variant="outline" 
-                              className={prediction.volatility === 'high' ? 'text-red-600 bg-red-50 border-red-200' : 
-                                       prediction.volatility === 'normal' ? 'text-yellow-600 bg-yellow-50 border-yellow-200' : 
-                                       'text-green-600 bg-green-50 border-green-200'}
+                              className={prediction.volatility === 'high' ? 'text-red-400 bg-red-500/10 border-red-500/20' : 
+                                       prediction.volatility === 'normal' ? 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20' : 
+                                       'text-green-400 bg-green-500/10 border-green-500/20'}
                             >
                               {prediction.volatility.charAt(0).toUpperCase() + prediction.volatility.slice(1)}
                             </Badge>
@@ -544,23 +531,23 @@ export default function IntradayPage() {
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
-                            <div className="text-sm font-medium text-green-600 mb-1">Key Factors</div>
+                            <div className="text-sm font-medium text-green-400 mb-1">Key Factors</div>
                             <div className="space-y-1">
                               {prediction.keyFactors.map((factor, idx) => (
                                 <div key={idx} className="flex items-center gap-1 text-sm">
-                                  <CheckCircle className="h-3 w-3 text-green-600" />
-                                  <span className="text-white">{factor}</span>
+                                  <CheckCircle className="h-3 w-3 text-green-500" />
+                                  <span className="text-zinc-300">{factor}</span>
                                 </div>
                               ))}
                             </div>
                           </div>
                           <div>
-                            <div className="text-sm font-medium text-red-600 mb-1">Risk Factors</div>
+                            <div className="text-sm font-medium text-red-400 mb-1">Risk Factors</div>
                             <div className="space-y-1">
                               {prediction.riskFactors.map((factor, idx) => (
                                 <div key={idx} className="flex items-center gap-1 text-sm">
-                                  <XCircle className="h-3 w-3 text-red-600" />
-                                  <span className="text-white">{factor}</span>
+                                  <XCircle className="h-3 w-3 text-red-500" />
+                                  <span className="text-zinc-300">{factor}</span>
                                 </div>
                               ))}
                             </div>
@@ -578,30 +565,30 @@ export default function IntradayPage() {
           <TabsContent value="levels" className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Support Levels */}
-              <Card>
+              <Card className="glass-panel">
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-green-600">
+                  <CardTitle className="flex items-center gap-2 text-green-400">
                     <TrendingUp className="h-5 w-5" />
                     Support Levels
                   </CardTitle>
-                  <CardDescription className="text-gray-300">
+                  <CardDescription className="text-muted-foreground">
                     Key price levels where the stock is likely to find support
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
                     {predictionData?.keyLevels?.support?.map((level, index) => (
-                      <div key={index} className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200">
+                      <div key={index} className="flex items-center justify-between p-3 bg-green-500/10 rounded-lg border border-green-500/20">
                         <div className="flex items-center gap-2">
                           <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                          <span className="font-medium text-green-900">${level.toFixed(2)}</span>
+                          <span className="font-medium text-green-400">${level.toFixed(2)}</span>
                         </div>
-                        <Badge variant="outline" className="text-green-600 bg-green-100 border-green-300 text-sm font-medium">
+                        <Badge variant="outline" className="text-green-400 bg-green-500/10 border-green-500/30 text-sm font-medium">
                           Strong
                         </Badge>
                       </div>
                     )) || (
-                      <div className="text-center py-4 text-gray-500">
+                      <div className="text-center py-4 text-muted-foreground">
                         <p>No support levels available</p>
                       </div>
                     )}
@@ -610,30 +597,30 @@ export default function IntradayPage() {
               </Card>
 
               {/* Resistance Levels */}
-              <Card>
+              <Card className="glass-panel">
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-red-600">
+                  <CardTitle className="flex items-center gap-2 text-red-400">
                     <TrendingDown className="h-5 w-5" />
                     Resistance Levels
                   </CardTitle>
-                  <CardDescription className="text-gray-300">
+                  <CardDescription className="text-muted-foreground">
                     Key price levels where the stock is likely to face resistance
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
                     {predictionData?.keyLevels?.resistance?.map((level, index) => (
-                      <div key={index} className="flex items-center justify-between p-3 bg-red-50 rounded-lg border border-red-200">
+                      <div key={index} className="flex items-center justify-between p-3 bg-red-500/10 rounded-lg border border-red-500/20">
                         <div className="flex items-center gap-2">
                           <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                          <span className="font-medium text-red-900">${level.toFixed(2)}</span>
+                          <span className="font-medium text-red-400">${level.toFixed(2)}</span>
                         </div>
-                        <Badge variant="outline" className="text-red-600 bg-red-100 border-red-300 text-sm font-medium">
+                        <Badge variant="outline" className="text-red-400 bg-red-500/10 border-red-500/30 text-sm font-medium">
                           Strong
                         </Badge>
                       </div>
                     )) || (
-                      <div className="text-center py-4 text-gray-500">
+                      <div className="text-center py-4 text-muted-foreground">
                         <p>No resistance levels available</p>
                       </div>
                     )}
@@ -643,47 +630,47 @@ export default function IntradayPage() {
             </div>
 
             {/* Volume Profile */}
-            <Card>
+            <Card className="glass-panel">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <BarChart3 className="h-5 w-5" />
+                <CardTitle className="flex items-center gap-2 text-white">
+                  <BarChart3 className="h-5 w-5 text-primary" />
                   Volume Profile
                 </CardTitle>
-                                  <CardDescription className="text-gray-300">
+                                  <CardDescription className="text-muted-foreground">
                     Price levels with high and low trading volume
                   </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <h4 className="font-medium text-blue-600 mb-3">High Volume Areas</h4>
+                    <h4 className="font-medium text-blue-400 mb-3">High Volume Areas</h4>
                     <div className="space-y-2">
                       {predictionData?.volumeProfile?.highVolume?.map((level, index) => (
-                        <div key={index} className="flex items-center justify-between p-2 bg-blue-50 rounded border border-blue-200">
-                          <span className="font-medium text-blue-900">${level.toFixed(2)}</span>
-                          <Badge variant="outline" className="text-blue-600 bg-blue-100 border-blue-300">
+                        <div key={index} className="flex items-center justify-between p-2 bg-blue-500/10 rounded border border-blue-500/20">
+                          <span className="font-medium text-blue-300">${level.toFixed(2)}</span>
+                          <Badge variant="outline" className="text-blue-400 bg-blue-500/10 border-blue-500/30">
                             High Volume
                           </Badge>
                         </div>
                       )) || (
-                        <div className="text-center py-2 text-gray-500">
+                        <div className="text-center py-2 text-muted-foreground">
                           <p>No high volume areas</p>
                         </div>
                       )}
                     </div>
                   </div>
                   <div>
-                    <h4 className="font-medium text-gray-600 mb-3">Low Volume Areas</h4>
+                    <h4 className="font-medium text-zinc-400 mb-3">Low Volume Areas</h4>
                     <div className="space-y-2">
                       {predictionData?.volumeProfile?.lowVolume?.map((level, index) => (
-                        <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-200">
-                          <span className="font-medium text-gray-900">${level.toFixed(2)}</span>
-                          <Badge variant="outline" className="text-gray-600 bg-gray-100 border-gray-300">
+                        <div key={index} className="flex items-center justify-between p-2 bg-white/5 rounded border border-white/10">
+                          <span className="font-medium text-zinc-300">${level.toFixed(2)}</span>
+                          <Badge variant="outline" className="text-zinc-400 bg-white/5 border-white/10">
                             Low Volume
                           </Badge>
                         </div>
                       )) || (
-                        <div className="text-center py-2 text-gray-500">
+                        <div className="text-center py-2 text-muted-foreground">
                           <p>No low volume areas</p>
                         </div>
                       )}
@@ -698,10 +685,10 @@ export default function IntradayPage() {
           <TabsContent value="momentum" className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Technical Indicators */}
-              <Card>
+              <Card className="glass-panel">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-white">
-                    <Zap className="h-5 w-5" />
+                    <Zap className="h-5 w-5 text-primary" />
                     Technical Indicators
                   </CardTitle>
                 </CardHeader>
@@ -714,9 +701,9 @@ export default function IntradayPage() {
                       </div>
                       <Progress 
                         value={predictionData?.momentum?.rsi || 50} 
-                        className="h-2"
+                        className="h-2 bg-white/10"
                       />
-                      <div className="text-xs text-gray-300 mt-1">
+                      <div className="text-xs text-muted-foreground mt-1">
                         {predictionData?.momentum?.rsi > 70 ? 'Overbought' : 
                          predictionData?.momentum?.rsi < 30 ? 'Oversold' : 'Neutral'}
                       </div>
@@ -726,10 +713,10 @@ export default function IntradayPage() {
                         <span className="text-white">MACD</span>
                         <span className="text-white">{predictionData?.momentum?.macd?.toFixed(3) || '0.000'}</span>
                       </div>
-                      <div className="text-xs text-gray-300">
+                      <div className="text-xs text-muted-foreground">
                         Signal: {predictionData?.momentum?.macdSignal?.toFixed(3) || '0.000'}
                       </div>
-                      <div className="text-xs text-gray-300">
+                      <div className="text-xs text-muted-foreground">
                         {predictionData?.momentum?.macd > predictionData?.momentum?.macdSignal ? 'Bullish' : 'Bearish'} Signal
                       </div>
                     </div>
@@ -738,41 +725,41 @@ export default function IntradayPage() {
                         <span className="text-white">Momentum Strength</span>
                         <span className="text-white">{((predictionData?.momentum?.strength || 0.5) * 100).toFixed(0)}%</span>
                       </div>
-                      <Progress value={(predictionData?.momentum?.strength || 0.5) * 100} className="h-2" />
+                      <Progress value={(predictionData?.momentum?.strength || 0.5) * 100} className="h-2 bg-white/10" />
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
               {/* Trading Recommendations */}
-              <Card>
+              <Card className="glass-panel">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-white">
-                    <Target className="h-5 w-5" />
+                    <Target className="h-5 w-5 text-primary" />
                     Trading Recommendations
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    <div className="p-3 bg-green-50 rounded-lg border border-green-200">
-                      <h4 className="font-medium text-green-800 mb-2">✅ Best Entry Points</h4>
-                      <ul className="text-sm text-green-700 space-y-1">
+                    <div className="p-3 bg-green-500/10 rounded-lg border border-green-500/20">
+                      <h4 className="font-medium text-green-400 mb-2">✅ Best Entry Points</h4>
+                      <ul className="text-sm text-green-300 space-y-1">
                         <li>• 2:00 PM - High volume, strong momentum</li>
                         <li>• 9:00 AM - Opening gap opportunities</li>
                         <li>• Support levels: ${predictionData?.keyLevels?.support?.[0]?.toFixed(2) || 'N/A'}</li>
                       </ul>
                     </div>
-                    <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-                      <h4 className="font-medium text-yellow-800 mb-2">⚠️ Caution Areas</h4>
-                      <ul className="text-sm text-yellow-700 space-y-1">
+                    <div className="p-3 bg-yellow-500/10 rounded-lg border border-yellow-500/20">
+                      <h4 className="font-medium text-yellow-400 mb-2">⚠️ Caution Areas</h4>
+                      <ul className="text-sm text-yellow-300 space-y-1">
                         <li>• 12:00 PM - Low volume, lunch hour</li>
                         <li>• Resistance at ${predictionData?.keyLevels?.resistance?.[0]?.toFixed(2) || 'N/A'}</li>
                         <li>• High volatility periods</li>
                       </ul>
                     </div>
-                    <div className="p-3 bg-red-50 rounded-lg border border-red-200">
-                      <h4 className="font-medium text-red-800 mb-2">❌ Avoid Trading</h4>
-                      <ul className="text-sm text-red-700 space-y-1">
+                    <div className="p-3 bg-red-500/10 rounded-lg border border-red-500/20">
+                      <h4 className="font-medium text-red-400 mb-2">❌ Avoid Trading</h4>
+                      <ul className="text-sm text-red-300 space-y-1">
                         <li>• Market open volatility (first 15 min)</li>
                         <li>• Low liquidity periods</li>
                         <li>• Major news events</li>
@@ -798,20 +785,20 @@ export default function IntradayPage() {
 
         {/* Analysis Prompt */}
         {selectedSymbolData && !predictionData && (
-          <Card className="mt-6">
+          <Card className="glass-panel mt-6">
             <CardContent className="p-8">
               <div className="text-center space-y-4">
                 <div className="text-muted-foreground">
-                  <Target className="h-16 w-16 mx-auto mb-4 opacity-50" />
+                  <Target className="h-16 w-16 mx-auto mb-4 opacity-50 text-primary" />
                   <h3 className="text-xl font-semibold text-white mb-2">Ready to Analyze {selectedSymbolData.symbol}?</h3>
-                  <p className="text-gray-300 mb-4">
+                  <p className="text-muted-foreground mb-4">
                     Click the "Analyze" button above to generate AI-powered intraday predictions
                   </p>
                   <Button 
                     onClick={handleSymbolSearch}
                     disabled={isLoading}
                     size="lg"
-                    className="min-w-[200px]"
+                    className="min-w-[200px] shadow-[0_0_20px_rgba(20,184,166,0.2)]"
                   >
                     {isLoading ? (
                       <RefreshCw className="h-4 w-4 animate-spin mr-2" />
@@ -828,9 +815,9 @@ export default function IntradayPage() {
 
         {/* Footer Info */}
         {predictionData && (
-          <Card className="mt-6">
+          <Card className="mt-6 bg-transparent border-none shadow-none">
             <CardContent className="p-4">
-              <div className="text-center text-sm text-gray-300">
+              <div className="text-center text-sm text-muted-foreground">
                 <p>🕐 Last updated: {predictionData?.timestamp ? new Date(predictionData.timestamp).toLocaleTimeString() : 'N/A'}</p>
                 <p>📊 Real-time AI predictions with 5-minute cache refresh</p>
                 <p>🚀 Powered by advanced ensemble prediction models</p>

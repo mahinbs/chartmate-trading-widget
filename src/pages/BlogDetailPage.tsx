@@ -71,107 +71,126 @@ export default function BlogDetailPage() {
   }, [slug]);
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background text-foreground">
       {/* Sticky nav */}
-      <div className="border-b bg-background/95 backdrop-blur sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 py-3 flex items-center gap-3">
+      <div className="border-b border-white/5 bg-background/80 backdrop-blur-xl sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <Link to="/blogs">
-            <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground hover:text-foreground">
+            <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground hover:text-white hover:bg-white/5">
               <ArrowLeft className="h-4 w-4" />
-              Back to all articles
+              Back to Insights
             </Button>
           </Link>
-          {blog?.category && (
-            <Badge variant="outline" className="text-[10px] uppercase tracking-wider">{blog.category}</Badge>
-          )}
-          {blog?.read_time && (
-            <span className="flex items-center gap-1 text-xs text-muted-foreground border border-border/40 rounded-full px-2.5 py-0.5">
-              <Clock className="h-3 w-3" />{blog.read_time}
-            </span>
-          )}
+          <div className="flex items-center gap-3">
+            {blog?.read_time && (
+              <span className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground bg-white/5 px-3 py-1 rounded-full border border-white/5">
+                <Clock className="h-3 w-3" />
+                {blog.read_time}
+              </span>
+            )}
+            {blog?.category && (
+              <Badge variant="outline" className="text-[10px] uppercase tracking-widest border-primary/20 text-primary bg-primary/5">
+                {blog.category}
+              </Badge>
+            )}
+          </div>
         </div>
       </div>
 
       {loading && (
-        <div className="max-w-4xl mx-auto px-6 py-20 space-y-4 animate-pulse">
-          <div className="h-10 bg-muted rounded w-3/4" />
-          <div className="h-4 bg-muted rounded w-1/3" />
-          <div className="h-80 bg-muted rounded" />
+        <div className="max-w-4xl mx-auto px-6 py-20 space-y-8 animate-pulse">
+          <div className="h-12 bg-white/5 rounded-lg w-3/4" />
+          <div className="h-6 bg-white/5 rounded-lg w-1/3" />
+          <div className="h-[400px] bg-white/5 rounded-2xl border border-white/5" />
+          <div className="space-y-4">
+            <div className="h-4 bg-white/5 rounded w-full" />
+            <div className="h-4 bg-white/5 rounded w-full" />
+            <div className="h-4 bg-white/5 rounded w-5/6" />
+          </div>
         </div>
       )}
 
       {!loading && !blog && (
-        <div className="max-w-4xl mx-auto px-6 py-20 text-center text-muted-foreground">
-          <p className="text-sm">This article could not be found or is no longer published.</p>
-          <Link to="/blogs" className="mt-4 inline-block text-primary text-sm underline">Back to blogs</Link>
+        <div className="max-w-4xl mx-auto px-6 py-32 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-white/5 mb-6">
+            <ArrowLeft className="h-6 w-6 text-muted-foreground" />
+          </div>
+          <h2 className="text-2xl font-bold text-white mb-2">Article not found</h2>
+          <p className="text-muted-foreground mb-8">This article could not be found or is no longer published.</p>
+          <Link to="/blogs">
+            <Button variant="outline" className="border-white/10 hover:bg-white/5 text-white">
+              Return to Insights
+            </Button>
+          </Link>
         </div>
       )}
 
       {blog && (
         <article>
           {/* Header section */}
-          <div className="max-w-4xl mx-auto px-6 pt-10 pb-6">
-            <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight leading-tight mb-6">
+          <div className="max-w-4xl mx-auto px-6 pt-12 pb-8">
+            <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight leading-[1.1] mb-8 text-white">
               {blog.title}
             </h1>
 
             {/* Author row */}
-            <div className="flex items-center gap-3 pb-6 border-b border-border/40">
+            <div className="flex items-center gap-4 pb-8 border-b border-white/10">
               {blog.author_image_url ? (
                 <img
                   src={blog.author_image_url}
                   alt={blog.author_name || "Author"}
-                  className="h-11 w-11 rounded-full object-cover border border-border"
+                  className="h-12 w-12 rounded-full object-cover border-2 border-background ring-2 ring-white/10"
                 />
               ) : (
-                <div className="h-11 w-11 rounded-full bg-primary/15 flex items-center justify-center text-sm font-bold text-primary">
+                <div className="h-12 w-12 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-lg font-bold text-primary">
                   {(blog.author_name || "T").charAt(0)}
                 </div>
               )}
               <div>
-                <p className="text-sm font-semibold leading-tight">{blog.author_name || "Trading Smart"}</p>
-                <p className="text-xs text-muted-foreground">{formatDate(blog.published_at || blog.created_at)}</p>
+                <p className="text-sm font-semibold leading-tight text-white">{blog.author_name || "Trading Smart Team"}</p>
+                <p className="text-xs text-muted-foreground mt-1">{formatDate(blog.published_at || blog.created_at)}</p>
               </div>
             </div>
           </div>
 
           {/* Full-bleed featured image */}
           {blog.cover_image_url && (
-            <div className="w-full overflow-hidden bg-muted mb-8" style={{ maxHeight: 560 }}>
-              <img
-                src={blog.cover_image_url}
-                alt={blog.title}
-                className="w-full object-cover"
-                style={{ maxHeight: 560 }}
-                loading="lazy"
-              />
+            <div className="w-full max-w-6xl mx-auto px-0 md:px-6 mb-12">
+              <div className="relative aspect-video md:aspect-[21/9] overflow-hidden md:rounded-3xl bg-zinc-900 border border-white/5 shadow-2xl">
+                <img
+                  src={blog.cover_image_url}
+                  alt={blog.title}
+                  className="w-full h-full object-cover"
+                  loading="lazy"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-background/40 to-transparent pointer-events-none" />
+              </div>
             </div>
           )}
 
           {/* Content body */}
-          <div className="max-w-4xl mx-auto px-6 pb-20">
+          <div className="max-w-3xl mx-auto px-6 pb-32">
             {blog.subtitle && (
-              <p className="text-lg md:text-xl text-muted-foreground leading-relaxed mb-8 font-medium">
+              <p className="text-xl md:text-2xl text-zinc-300 leading-relaxed mb-12 font-medium border-l-4 border-primary/50 pl-6 py-1">
                 {blog.subtitle}
               </p>
             )}
 
             <div
               className="
-                prose prose-neutral dark:prose-invert max-w-none text-base leading-relaxed
-                prose-headings:font-bold prose-headings:tracking-tight
-                prose-h1:text-3xl prose-h1:mt-8 prose-h1:mb-4
-                prose-h2:text-2xl prose-h2:mt-8 prose-h2:mb-3
-                prose-h3:text-xl prose-h3:mt-6 prose-h3:mb-2
-                prose-h4:text-lg prose-h4:mt-5 prose-h4:mb-2
-                prose-p:my-3 prose-p:text-foreground/90
-                prose-li:text-foreground/90 prose-li:my-1
-                prose-ul:my-3 prose-ol:my-3
-                prose-strong:text-foreground prose-strong:font-semibold
-                prose-a:text-primary prose-a:no-underline hover:prose-a:underline
-                prose-blockquote:border-primary prose-blockquote:text-muted-foreground
-                prose-img:rounded-xl prose-img:my-6
-                prose-hr:border-border/40
+                prose prose-invert max-w-none text-lg leading-relaxed
+                prose-headings:font-bold prose-headings:tracking-tight prose-headings:text-white
+                prose-h1:text-3xl prose-h1:mt-12 prose-h1:mb-6
+                prose-h2:text-2xl prose-h2:mt-12 prose-h2:mb-4
+                prose-h3:text-xl prose-h3:mt-8 prose-h3:mb-3
+                prose-p:text-zinc-300 prose-p:my-6
+                prose-li:text-zinc-300 prose-li:my-2
+                prose-strong:text-white prose-strong:font-semibold
+                prose-a:text-primary prose-a:no-underline hover:prose-a:underline hover:prose-a:text-primary/80 transition-colors
+                prose-blockquote:border-l-primary prose-blockquote:bg-white/5 prose-blockquote:py-2 prose-blockquote:px-6 prose-blockquote:rounded-r-lg prose-blockquote:not-italic prose-blockquote:text-zinc-400
+                prose-img:rounded-2xl prose-img:border prose-img:border-white/10 prose-img:shadow-xl prose-img:my-10
+                prose-hr:border-white/10 prose-hr:my-12
+                prose-code:text-primary prose-code:bg-primary/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-code:before:content-none prose-code:after:content-none
               "
               dangerouslySetInnerHTML={{ __html: blog.content_html || "" }}
             />
