@@ -130,12 +130,12 @@ export function CapitalScenarios({
                   </div>
 
                   {/* Likely Case */}
-                  <div className="text-center p-3 bg-blue-500/10 rounded border border-blue-500/20">
+                  <div className="text-center p-3 bg-primary/10 rounded border border-primary/20">
                     <p className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">Likely</p>
                     <p className="text-lg font-bold text-blue-400">
                       {formatCurrency(scenario.likelyCase, smartDecimals(scenario.likelyCase))}
                     </p>
-                    <p className="text-xs text-blue-500">{formatPercentage(expectedROI.likely)}</p>
+                    <p className="text-xs text-primary">{formatPercentage(expectedROI.likely)}</p>
                   </div>
 
                   {/* Worst Case */}
@@ -189,7 +189,7 @@ export function CapitalScenarios({
           )}
 
           {/* Investment Guidance */}
-          <div className="p-4 bg-blue-500/10 rounded-lg border border-blue-500/20">
+          <div className="p-4 bg-primary/10 rounded-lg border border-primary/20">
             <p className="font-semibold text-sm mb-2 text-blue-400">💡 Position Sizing Guidance:</p>
             <ul className="text-sm text-zinc-400 space-y-1">
               <li>• <strong>Conservative:</strong> Risk 1-2% of capital per trade</li>

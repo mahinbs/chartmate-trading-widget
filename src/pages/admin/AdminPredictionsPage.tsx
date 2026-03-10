@@ -593,7 +593,7 @@ export default function AdminPredictionsPage() {
                         <Button
                           variant="outline"
                           size="sm"
-                          className="h-7 px-2 text-xs text-blue-400 border-blue-500/40 hover:bg-blue-500/10"
+                          className="h-7 px-2 text-xs text-blue-400 border-primary/40 hover:bg-primary/10"
                           onClick={() => repredictRow(row)}
                           disabled={repredictingId === row.id}
                           title="Re-run AI analysis and update this row"

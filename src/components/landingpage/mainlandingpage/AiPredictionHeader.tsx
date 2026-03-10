@@ -9,6 +9,7 @@ const BASE_NAV_ITEMS = [
   { id: "how-it-works", label: "How it works" },
   { id: "pricing", label: "Pricing" },
   { id: "market-picks", label: "Daily Analysis", isRoute: true },
+  { id: "white-label", label: "White Label", isRoute: true },
 ];
 
 const scrollToSection = (id: string) => {
@@ -81,7 +82,7 @@ const AiPredictionHeader: React.FC = () => {
           </div>
 
           {/* Desktop nav */}
-          <nav className="hidden gap-12 text-sm font-medium text-gray-300 lg:flex">
+          <nav className="hidden 2xl:gap-12 gap-8 text-sm font-medium text-gray-300 lg:flex">
             {navItems.map((item) => (
               item.isRoute ? (
                 <Link
@@ -90,7 +91,7 @@ const AiPredictionHeader: React.FC = () => {
                   className="relative inline-flex items-center gap-1 text-xs uppercase tracking-[0.2em] hover:text-white transition-colors cursor-pointer group"
                 >
                   <span>{item.label}</span>
-                  <span className="absolute inset-x-0 -bottom-1 h-px scale-x-0 bg-linear-to-r from-cyan-400 to-purple-500 transition-transform duration-200 origin-center group-hover:scale-x-100" />
+                  <span className="absolute inset-x-0 -bottom-1 h-px scale-x-0 bg-linear-to-r from-primary to-secondary transition-transform duration-200 origin-center group-hover:scale-x-100" />
                 </Link>
               ) : (
                 <button
@@ -99,7 +100,7 @@ const AiPredictionHeader: React.FC = () => {
                   className="relative inline-flex items-center gap-1 text-xs uppercase tracking-[0.2em] hover:text-white transition-colors cursor-pointer group"
                 >
                   <span>{item.label}</span>
-                  <span className="absolute inset-x-0 -bottom-1 h-px scale-x-0 bg-linear-to-r from-cyan-400 to-purple-500 transition-transform duration-200 origin-center group-hover:scale-x-100" />
+                  <span className="absolute inset-x-0 -bottom-1 h-px scale-x-0 bg-linear-to-r from-primary to-secondary transition-transform duration-200 origin-center group-hover:scale-x-100" />
                 </button>
               )
             ))}
@@ -159,7 +160,7 @@ const AiPredictionHeader: React.FC = () => {
                   <span className="text-xs uppercase tracking-[0.2em]">
                     {item.label}
                   </span>
-                  <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.6)] group-hover:scale-125 transition-transform" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_10px_rgba(34,211,238,0.6)] group-hover:scale-125 transition-transform" />
                 </Link>
               ) : (
                 <button
@@ -170,7 +171,7 @@ const AiPredictionHeader: React.FC = () => {
                   <span className="text-xs uppercase tracking-[0.2em]">
                     {item.label}
                   </span>
-                  <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.6)] group-hover:scale-125 transition-transform" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_10px_rgba(34,211,238,0.6)] group-hover:scale-125 transition-transform" />
                 </button>
               )
             ))}

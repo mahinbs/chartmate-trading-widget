@@ -3,14 +3,14 @@ import { ScrollReveal } from '../ui/ScrollReveal';
 
 const DemoFeature = () => {
     return (
-        <section className="py-32 bg-black/50 relative">
+        <section className="py-16 bg-black/50 relative">
             <div className="container mx-auto px-4">
                 <div className="grid lg:grid-cols-2 gap-20 items-center">
                     <div className="order-2 lg:order-1">
                         <ScrollReveal direction="right">
                             {/* Mock UI Interface */}
                             <div className="bg-zinc-900/80 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden shadow-2xl relative transform hover:rotate-1 transition-transform duration-700 ease-out">
-                                <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 to-purple-500/5 pointer-events-none"></div>
+                                <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 to-secondary/5 pointer-events-none"></div>
                                 <div className="bg-zinc-950 p-4 border-b border-white/5 flex items-center justify-between">
                                     <div className="flex gap-2">
                                         <div className="w-3 h-3 rounded-full bg-red-500/80"></div>
@@ -38,7 +38,7 @@ const DemoFeature = () => {
                                         </div>
                                         <div className="bg-black/60 p-5 rounded-xl border border-white/5 shadow-inner">
                                             <div className="text-gray-500 text-[10px] tracking-widest mb-2">SENTIMENT</div>
-                                            <div className="text-3xl font-bold text-cyan-400">GREED <span className="text-xs text-cyan-500/70 align-top">78</span></div>
+                                            <div className="text-3xl font-bold text-primary">GREED <span className="text-xs text-cyan-500/70 align-top">78</span></div>
                                         </div>
                                     </div>
 
@@ -56,7 +56,7 @@ const DemoFeature = () => {
                                         </div>
                                         <div className="flex justify-between items-center text-xs">
                                             <span className="text-gray-500">Entry Zone</span>
-                                            <span className="text-cyan-400 font-bold bg-cyan-900/20 px-2 py-0.5 rounded">67,400 - 67,250</span>
+                                            <span className="text-primary font-bold bg-cyan-900/20 px-2 py-0.5 rounded">67,400 - 67,250</span>
                                         </div>
                                     </div>
                                 </div>
@@ -76,10 +76,10 @@ const DemoFeature = () => {
                                 ].map((item, i) => (
                                     <li key={i} className="flex gap-6 group">
                                         <div className="mt-1 w-8 h-8 rounded-full bg-cyan-900/20 border border-cyan-500/30 flex items-center justify-center flex-shrink-0 group-hover:bg-cyan-500/20 transition-colors">
-                                            <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.5)]"></div>
+                                            <div className="w-2.5 h-2.5 rounded-full bg-primary shadow-[0_0_10px_rgba(34,211,238,0.5)]"></div>
                                         </div>
                                         <div>
-                                            <h4 className="text-xl font-bold text-white mb-2 group-hover:text-cyan-400 transition-colors">{item.title}</h4>
+                                            <h4 className="text-xl font-bold text-white mb-2 group-hover:text-primary transition-colors">{item.title}</h4>
                                             <p className="text-gray-400 font-light leading-relaxed">{item.desc}</p>
                                         </div>
                                     </li>

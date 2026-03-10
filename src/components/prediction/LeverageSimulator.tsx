@@ -151,7 +151,7 @@ export function LeverageSimulator({
         )}
 
         {/* Educational Note */}
-        <div className="p-3 bg-blue-500/10 rounded-lg border border-blue-500/30 text-sm">
+        <div className="p-3 bg-primary/10 rounded-lg border border-primary/30 text-sm">
           <p className="font-semibold text-blue-600 mb-1">💡 Understanding Leverage:</p>
           <ul className="space-y-1 text-muted-foreground">
             <li>• <strong>1x (No Leverage)</strong>: Safest - you can only lose what you invest</li>

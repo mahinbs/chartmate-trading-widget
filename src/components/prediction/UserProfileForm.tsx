@@ -355,8 +355,8 @@ export const UserProfileForm = ({
 
           {/* Options have built-in leverage - show info instead */}
           {profile.marginType === 'options' && (
-            <Alert className="border-blue-500/30 bg-blue-500/10">
-              <AlertCircle className="h-4 w-4 text-blue-500" />
+            <Alert className="border-primary/30 bg-primary/10">
+              <AlertCircle className="h-4 w-4 text-primary" />
               <AlertDescription className="text-sm">
                 <span className="font-semibold">Options Trading:</span> Options contracts have built-in leverage
                 (typically 10x-100x) based on the contract specifications. You don't set leverage manually.
@@ -415,8 +415,8 @@ export const UserProfileForm = ({
           </RadioGroup>
 
           {marketClosed && (
-            <Alert className="mt-4 border-blue-500/30 bg-blue-500/10">
-              <AlertCircle className="h-4 w-4 text-blue-500" />
+            <Alert className="mt-4 border-primary/30 bg-primary/10">
+              <AlertCircle className="h-4 w-4 text-primary" />
               <AlertDescription className="text-xs">
                 Market is closed. "Immediate Entry" is disabled. Select "Wait for Confirmation" to enter when market opens.
               </AlertDescription>
@@ -648,8 +648,8 @@ export const UserProfileForm = ({
             )}
 
             {profile.userHoldingPeriod && profile.userHoldingPeriod !== 'ai_recommendation' && (
-              <Alert className="border-blue-500/30 bg-blue-500/10">
-                <AlertCircle className="h-4 w-4 text-blue-500" />
+              <Alert className="border-primary/30 bg-primary/10">
+                <AlertCircle className="h-4 w-4 text-primary" />
                 <AlertDescription className="text-sm">
                   You've set a specific holding period. AI will still provide its recommendation, 
                   but your chosen timeframe of <strong>{profile.userHoldingPeriod}</strong> will be used for tracking.

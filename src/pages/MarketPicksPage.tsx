@@ -129,7 +129,7 @@ function PredictionCard({
               <p className="text-muted-foreground">Best case</p>
               <p className="font-bold text-green-600">+{expectedRoi.best_case?.toFixed(1)}%</p>
             </div>
-            <div className="p-2 rounded bg-blue-500/10 border border-blue-500/20">
+            <div className="p-2 rounded bg-primary/10 border border-primary/20">
               <p className="text-muted-foreground">Likely</p>
               <p className="font-bold text-blue-600">+{expectedRoi.likely_case?.toFixed(1)}%</p>
             </div>
@@ -222,7 +222,7 @@ function PredictionCard({
             <Button
               variant="outline"
               size="sm"
-              className="flex-1 text-xs border-blue-500/40 text-blue-600 hover:bg-blue-500/10"
+              className="flex-1 text-xs border-primary/40 text-blue-600 hover:bg-primary/10"
               onClick={() => onRepredict(row)}
               disabled={repredicting}
             >

@@ -4,7 +4,7 @@ import { ScrollReveal } from '../ui/ScrollReveal';
 
 const features = [
     {
-        icon: <FaPalette className="w-8 h-8 text-cyan-400" />,
+        icon: <FaPalette className="w-8 h-8 text-primary" />,
         title: "Custom Branding",
         description: "Upload your logo, choose your brand colors, and set your own font.",
         bg: "bg-cyan-500/10",
@@ -14,15 +14,15 @@ const features = [
         icon: <FaUsers className="w-8 h-8 text-blue-400" />,
         title: "User Management",
         description: "Track your subscribers, manage access levels, and view churn rates.",
-        bg: "bg-blue-500/10",
-        border: "border-blue-500/30"
+        bg: "bg-primary/10",
+        border: "border-primary/30"
     },
     {
         icon: <FaTags className="w-8 h-8 text-purple-400" />,
         title: "Custom Pricing",
         description: "You decide what to charge—monthly, yearly, or lifetime access.",
-        bg: "bg-purple-500/10",
-        border: "border-purple-500/30"
+        bg: "bg-secondary/10",
+        border: "border-secondary/30"
     },
     {
         icon: <FaRocket className="w-8 h-8 text-pink-400" />,
@@ -40,7 +40,7 @@ const Services = () => {
                 <ScrollReveal>
                     <div className="text-center mb-16">
                         <h2 className="text-4xl md:text-5xl font-bold mb-6 text-white tracking-tight">
-                            Business <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">Management</span>
+                            Business <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-primary">Management</span>
                         </h2>
                         <p className="text-gray-400 max-w-2xl mx-auto text-xl font-light">
                             Fully control your trading platform.

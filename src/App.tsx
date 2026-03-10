@@ -13,6 +13,10 @@ import AuthPage from "./pages/AuthPage";
 import BrokerCallbackPage from "./pages/BrokerCallbackPage";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import LandingPage from "./pages/LandingPage";
+import WhiteLabelPage from "./pages/WhiteLabelPage";
+import TermsOfService from "./pages/TermsOfService";
+import RiskDisclaimer from "./pages/RiskDisclaimer";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
 import ContactUsPage from "./pages/ContactUs";
 import MarketPicksPage from "./pages/MarketPicksPage";
 import AdminUsersPage from "./pages/admin/AdminUsersPage";
@@ -52,6 +56,10 @@ const App = () => (
             <Routes>
               <Route path="/rsb-fintech-founder" element={<LandingPage />} />
               <Route path="/dsn-fintech-founder" element={<LandingPage />} />
+              <Route path="/white-label" element={<WhiteLabelPage />} />
+              <Route path="/terms" element={<TermsOfService />} />
+              <Route path="/risk-disclaimer" element={<RiskDisclaimer />} />
+              <Route path="/privacy-policy" element={<PrivacyPolicy />} />
               <Route path="/" element={<MainLandingPage />} />
               <Route path="/contact-us" element={<ContactUsPage />} />
               <Route path="/blogs" element={<BlogsPage />} />

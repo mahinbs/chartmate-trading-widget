@@ -126,7 +126,7 @@ export default function IntradayPage() {
 
   const getVolumeColor = (volume: string) => {
     switch (volume) {
-      case 'high': return 'text-blue-400 bg-blue-500/10 border-blue-500/20';
+      case 'high': return 'text-blue-400 bg-primary/10 border-primary/20';
       case 'normal': return 'text-green-400 bg-green-500/10 border-green-500/20';
       case 'low': return 'text-zinc-400 bg-white/5 border-white/10';
       default: return 'text-zinc-400 bg-white/5 border-white/10';
@@ -324,7 +324,7 @@ export default function IntradayPage() {
                     <span className="text-sm text-muted-foreground">Risk Level</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-blue-400 bg-blue-500/10 border-blue-500/20">
+                    <Badge variant="outline" className="text-blue-400 bg-primary/10 border-primary/20">
                       <Timer className="h-3 w-3 mr-1" />
                       {predictionData ? 'AI-Powered' : 'Real-time'}
                     </Badge>
@@ -479,7 +479,7 @@ export default function IntradayPage() {
 
                 <div className="space-y-3">
                   {filteredPredictions.map((prediction, index) => (
-                    <Card key={index} className="border-l-4 border-l-blue-500 bg-white/5 border-y-0 border-r-0 border-white/5">
+                    <Card key={index} className="border-l-4 border-l-primary bg-white/5 border-y-0 border-r-0 border-white/5">
                       <CardContent className="p-4">
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-3">
@@ -646,9 +646,9 @@ export default function IntradayPage() {
                     <h4 className="font-medium text-blue-400 mb-3">High Volume Areas</h4>
                     <div className="space-y-2">
                       {predictionData?.volumeProfile?.highVolume?.map((level, index) => (
-                        <div key={index} className="flex items-center justify-between p-2 bg-blue-500/10 rounded border border-blue-500/20">
+                        <div key={index} className="flex items-center justify-between p-2 bg-primary/10 rounded border border-primary/20">
                           <span className="font-medium text-blue-300">${level.toFixed(2)}</span>
-                          <Badge variant="outline" className="text-blue-400 bg-blue-500/10 border-blue-500/30">
+                          <Badge variant="outline" className="text-blue-400 bg-primary/10 border-primary/30">
                             High Volume
                           </Badge>
                         </div>

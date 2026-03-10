@@ -20,7 +20,7 @@ const FAQItem: React.FC<FAQItemProps> = ({ question, answer, isOpen, onClick }) 
                     <HelpCircle className="w-5 h-5 text-cyan-500 mr-4 opacity-70" />
                     {question}
                 </span>
-                <span className={`transform transition-transform duration-300 ${isOpen ? 'rotate-180 text-cyan-400' : 'text-gray-500'}`}>
+                <span className={`transform transition-transform duration-300 ${isOpen ? 'rotate-180 text-primary' : 'text-gray-500'}`}>
                     <ChevronDown className="w-5 h-5" />
                 </span>
             </button>
@@ -62,12 +62,12 @@ const FAQ = () => {
     };
 
     return (
-        <section id="faq" className="py-32 bg-zinc-950 relative">
+        <section id="faq" className="py-16 bg-zinc-950 relative">
             <div className="container mx-auto px-4 max-w-4xl relative z-10">
                 <ScrollReveal>
                     <div className="text-center mb-16">
                         <h2 className="text-4xl md:text-5xl font-bold text-white mb-6 tracking-tight">
-                            Frequently Asked <span className="text-cyan-400">Questions</span>
+                            Frequently Asked <span className="text-primary">Questions</span>
                         </h2>
                         <p className="text-xl text-gray-400 font-light">
                             Everything you need to know about trading with our ai probability software AI.

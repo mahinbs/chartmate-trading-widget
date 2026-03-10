@@ -55,7 +55,7 @@ export function ActiveTradeCard({
   const getStatusBadge = () => {
     switch (trade.status) {
       case 'active':
-        return <Badge variant="default" className="bg-blue-500">Active</Badge>;
+        return <Badge variant="default" className="bg-primary">Active</Badge>;
       case 'monitoring':
         return <Badge variant="default" className="bg-yellow-500">Monitoring</Badge>;
       case "exit_zone":
@@ -86,7 +86,7 @@ export function ActiveTradeCard({
       {/* Status Indicator Bar */}
       <div className={cn(
         "absolute top-0 left-0 right-0 h-1",
-        trade.status === 'active' && "bg-blue-500",
+        trade.status === 'active' && "bg-primary",
         trade.status === 'monitoring' && "bg-yellow-500",
         trade.status === 'exit_zone' && "bg-orange-500"
       )} />

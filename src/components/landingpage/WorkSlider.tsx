@@ -38,30 +38,30 @@ const WorkSlider = () => {
     ];
 
     return (
-        <section className="py-32 px-4 md:px-7 bg-black">
+        <section className="py-16 px-4 md:px-7 bg-black">
             <ScrollReveal>
                 <div className="container mx-auto !bg-zinc-950/80 border border-white/5 overflow-hidden py-16 !px-6 md:!px-12 rounded-[2.5rem] relative">
 
                     {/* Background glow */}
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-purple-500/10 rounded-full blur-[100px] pointer-events-none"></div>
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-secondary/10 rounded-full blur-[100px] pointer-events-none"></div>
 
                     {/* Header with Navigation */}
                     <div className="flex flex-col md:flex-row justify-between items-end mb-12 relative z-10">
                         <h2 className="text-4xl md:text-5xl font-bold mb-6 md:mb-0 text-white leading-tight tracking-tight">
-                            See The AI <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400">In Action</span>
+                            See The AI <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-primary">In Action</span>
                         </h2>
 
                         <div className="flex space-x-4">
                             <button
                                 onClick={() => swiperRef.current?.slidePrev()}
-                                className="w-14 h-14 rounded-full border border-white/10 bg-black/50 flex items-center justify-center hover:bg-cyan-500/10 hover:border-cyan-500/50 hover:text-cyan-400 transition-all text-white backdrop-blur-sm"
+                                className="w-14 h-14 rounded-full border border-white/10 bg-black/50 flex items-center justify-center hover:bg-cyan-500/10 hover:border-cyan-500/50 hover:text-primary transition-all text-white backdrop-blur-sm"
                                 aria-label="Previous slide"
                             >
                                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
                             </button>
                             <button
                                 onClick={() => swiperRef.current?.slideNext()}
-                                className="w-14 h-14 rounded-full border border-white/10 bg-black/50 flex items-center justify-center hover:bg-cyan-500/10 hover:border-cyan-500/50 hover:text-cyan-400 transition-all text-white backdrop-blur-sm"
+                                className="w-14 h-14 rounded-full border border-white/10 bg-black/50 flex items-center justify-center hover:bg-cyan-500/10 hover:border-cyan-500/50 hover:text-primary transition-all text-white backdrop-blur-sm"
                                 aria-label="Next slide"
                             >
                                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
@@ -88,14 +88,14 @@ const WorkSlider = () => {
                         {caseStudies.map((study) => (
                             <SwiperSlide key={study.id}>
                                 <div className="w-full h-full p-1">
-                                    <div className="bg-black/60 rounded-[2rem] border border-white/10 overflow-hidden flex flex-col lg:flex-row min-h-[500px] h-full backdrop-blur-md hover:border-purple-500/30 transition-colors group">
+                                    <div className="bg-black/60 rounded-[2rem] border border-white/10 overflow-hidden flex flex-col lg:flex-row min-h-[500px] h-full backdrop-blur-md hover:border-secondary/30 transition-colors group">
 
                                         {/* Image Side */}
                                         <div className="lg:w-[45%] relative p-4 md:p-6 lg:border-r border-white/5">
                                             <div className="relative w-full h-full rounded-xl overflow-hidden min-h-[300px]">
                                                 <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent z-10"></div>
                                                 <img src={study.image} alt={study.title} className="w-full h-full object-cover absolute inset-0 group-hover:scale-105 transition-transform duration-700" />
-                                                <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest text-cyan-400 border border-cyan-500/20 shadow-sm z-20">
+                                                <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest text-primary border border-cyan-500/20 shadow-sm z-20">
                                                     {study.client}
                                                 </div>
                                             </div>
@@ -104,8 +104,8 @@ const WorkSlider = () => {
                                         {/* Content Side */}
                                         <div className="lg:w-[55%] p-8 md:p-12 flex flex-col justify-center h-full">
                                             <div className="flex items-center space-x-2 mb-6 bg-cyan-900/20 w-fit px-3 py-1.5 rounded-full border border-cyan-500/20">
-                                                <TrendingUp className="w-4 h-4 text-cyan-400" />
-                                                <span className="text-cyan-400 font-bold text-xs uppercase tracking-widest">{study.tech}</span>
+                                                <TrendingUp className="w-4 h-4 text-primary" />
+                                                <span className="text-primary font-bold text-xs uppercase tracking-widest">{study.tech}</span>
                                             </div>
 
                                             <h3 className="text-3xl md:text-4xl font-bold text-white mb-6 leading-tight group-hover:text-purple-400 transition-colors">
@@ -115,7 +115,7 @@ const WorkSlider = () => {
                                                 {study.description}
                                             </p>
                                             <div>
-                                                <Link to="/contact-us" className="inline-flex items-center text-white font-bold text-base hover:text-cyan-400 transition-colors">
+                                                <Link to="/contact-us" className="inline-flex items-center text-white font-bold text-base hover:text-primary transition-colors">
                                                     Analyze This Asset
                                                     <ArrowRight className="w-5 h-5 ml-2 transform group-hover:translate-x-2 transition-transform" />
                                                 </Link>

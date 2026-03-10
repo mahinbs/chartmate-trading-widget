@@ -8,6 +8,7 @@ const BASE_NAV_ITEMS = [
   { id: "how-it-works", label: "How it works" },
   { id: "pricing", label: "Pricing" },
   { id: "market-picks", label: "Daily Analysis", isRoute: true },
+  { id: "white-label", label: "White Label", isRoute: true },
 ];
 
 const scrollToSection = (id: string) => {
@@ -58,7 +59,7 @@ const AiPredictionFooter: React.FC = () => {
   return (
     <footer className="border-t border-white/10 bg-black/90 py-8 text-xs text-gray-400">
       <div className="container flex flex-col items-center gap-4 text-center md:flex-row md:justify-between md:text-left">
-        <div className="space-y-2">
+        <div className="space-y-3 flex flex-col items-center md:items-start">
           <img
             src={logoImg}
             alt="TradingSmart.ai"

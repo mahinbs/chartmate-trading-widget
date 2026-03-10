@@ -181,7 +181,7 @@ const ContactUsPage = () => {
                     <ScrollReveal delay={0.2}>
                         <div className="text-center mb-12">
                             <h1 className="text-4xl md:text-5xl lg:text-6xl font-black tracking-tighter text-white mb-6">
-                                <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-600">Contact Us</span>
+                                <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary via-primary to-secondary">Contact Us</span>
                             </h1>
                             <p className="text-lg md:text-xl text-gray-400 font-light max-w-xl mx-auto">
                                 Fill out the form below and our team will get back to you as soon as possible to launch your platform.
@@ -287,7 +287,7 @@ const ContactUsPage = () => {
                                     />
                                     <Button
                                         type="submit"
-                                        className="w-full h-14 text-lg font-bold bg-cyan-500 text-black hover:bg-cyan-400 shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:shadow-[0_0_30px_rgba(6,182,212,0.5)] transition-all hover:-translate-y-1 rounded-xl mt-4"
+                                        className="w-full h-14 text-lg font-bold bg-cyan-500 text-black hover:bg-primary shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:shadow-[0_0_30px_rgba(6,182,212,0.5)] transition-all hover:-translate-y-1 rounded-xl mt-4"
                                         disabled={form.formState.isSubmitting}
                                     >
                                         {form.formState.isSubmitting ? 'Submitting...' : 'Submit Form'}
