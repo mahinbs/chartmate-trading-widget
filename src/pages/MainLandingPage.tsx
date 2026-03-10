@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { Helmet } from 'react-helmet-async';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
+import { useAffiliateRef } from '@/hooks/useAffiliateRef';
+import { supabase } from '@/integrations/supabase/client';
 import { motion, Variants } from 'framer-motion';
 import heroBg from '@/assets/premium_hero_bg.png';
 import abstractDataBg from '@/assets/abstract_data_bg.png';
@@ -49,12 +51,13 @@ const staggerContainer: Variants = {
 };
 
 const MainLandingPage = () => {
+    const { affiliateId } = useAffiliateRef();
     const [activeTab, setActiveTab] = useState('stocks');
     const [isEnquiryModalOpen, setIsEnquiryModalOpen] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isSubmitSuccess, setIsSubmitSuccess] = useState(false);
 
     const [api, setApi] = useState<CarouselApi>();
-    const navigate = useNavigate();
 
     interface FormData {
         name: string;
@@ -62,6 +65,7 @@ const MainLandingPage = () => {
         phone: string;
         message: string;
         plan: string;
+        referral_code: string;
     }
 
     const {
@@ -77,7 +81,8 @@ const MainLandingPage = () => {
             email: '',
             phone: '',
             message: '',
-            plan: ''
+            plan: '',
+            referral_code: '',
         }
     });
 
@@ -108,6 +113,15 @@ const MainLandingPage = () => {
 
             const emailBody = `Name : ${data.name}\nEmail : ${data.email}\nPhone : ${data.phone}\nInterested Plan : ${planNames[data.plan] || data.plan}\nMessage : \n ${data.message || 'N/A'}`;
 
+            await (supabase as any).from('contact_submissions').insert([{
+                name: data.name,
+                email: data.email,
+                phone: data.phone,
+                description: `Plan: ${planNames[data.plan as keyof typeof planNames] || data.plan}\n${data.message || ''}`,
+                ...(affiliateId && { affiliate_id: affiliateId }),
+                ...(data.referral_code?.trim() && { referral_code: data.referral_code.trim() }),
+            }]).then(() => {}).catch(() => {});
+
             const response = await fetch('https://send-mail-redirect-boostmysites.vercel.app/send-email', {
                 method: 'POST',
                 headers: {
@@ -123,8 +137,7 @@ const MainLandingPage = () => {
 
             if (response.ok) {
                 reset();
-                setIsEnquiryModalOpen(false);
-                navigate('/thank-you');
+                setIsSubmitSuccess(true);
             } else {
                 alert('Failed to submit form. Please try again.');
             }
@@ -517,8 +530,29 @@ const MainLandingPage = () => {
             <AiPredictionFooter />
 
             {/* Enquiry Form Modal */}
-            <Dialog open={isEnquiryModalOpen} onOpenChange={setIsEnquiryModalOpen}>
+            <Dialog open={isEnquiryModalOpen} onOpenChange={(open) => { setIsEnquiryModalOpen(open); if (!open) setIsSubmitSuccess(false); }}>
                 <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] bg-zinc-950 border border-zinc-800 text-white p-6 sm:p-8 rounded-3xl shadow-2xl overflow-y-auto">
+
+                    {isSubmitSuccess ? (
+                        <div className="flex flex-col items-center justify-center py-12 text-center gap-6">
+                            <div className="w-20 h-20 rounded-full bg-teal-500/15 flex items-center justify-center">
+                                <svg className="w-10 h-10 text-teal-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                            </div>
+                            <div>
+                                <DialogTitle className="text-2xl font-black text-white mb-2">Request Submitted!</DialogTitle>
+                                <p className="text-zinc-400 font-light">Thank you! Our partnerships team will reach out to you shortly.</p>
+                            </div>
+                            <Button
+                                onClick={() => { setIsEnquiryModalOpen(false); setIsSubmitSuccess(false); }}
+                                className="bg-teal-500 hover:bg-teal-400 text-black font-bold px-8 py-3 rounded-xl"
+                            >
+                                Close
+                            </Button>
+                        </div>
+                    ) : (
+                    <>
                     <div className="relative border-b border-zinc-800 pb-4 mb-6 pr-10">
                         <DialogTitle className="text-3xl font-black text-white text-left tracking-tight">
                             Start Now
@@ -624,6 +658,24 @@ const MainLandingPage = () => {
                             />
                         </div>
 
+                        {/* Referral Code Field */}
+                        <div className="space-y-2 text-left">
+                            <Label htmlFor="referral_code" className="text-zinc-300 font-medium">
+                                Referral Code
+                                <span className="ml-2 text-xs font-normal text-zinc-500">(Optional)</span>
+                            </Label>
+                            <Input
+                                id="referral_code"
+                                type="text"
+                                placeholder="e.g. john2024"
+                                {...register('referral_code')}
+                                className="bg-black border-zinc-800 text-white placeholder:text-zinc-600 focus:border-teal-500 focus:ring-teal-500/20 transition-all"
+                            />
+                            <p className="text-xs text-teal-400/70">
+                                💡 Have a referral code? Enter it for faster enquiry replies and priority support.
+                            </p>
+                        </div>
+
                         {/* Submit Button */}
                         <div className="flex gap-4 pt-4">
                             <Button
@@ -643,6 +695,8 @@ const MainLandingPage = () => {
                             </Button>
                         </div>
                     </form>
+                    </>
+                    )}
                 </DialogContent>
             </Dialog>
         </div>

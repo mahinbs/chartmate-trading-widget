@@ -19,12 +19,20 @@ import AdminUsersPage from "./pages/admin/AdminUsersPage";
 import AdminPredictionsPage from "./pages/admin/AdminPredictionsPage";
 import AdminBlogsPage from "./pages/admin/AdminBlogsPage";
 import AdminPublicDashboardPage from "./pages/admin/AdminPublicDashboardPage";
+import AdminAffiliatesPage from "./pages/admin/AdminAffiliatesPage";
+import AdminContactsPage from "./pages/admin/AdminContactsPage";
+import AdminWhitelabelsPage from "./pages/admin/AdminWhitelabelsPage";
 import BlogsPage from "./pages/BlogsPage";
 import BlogDetailPage from "./pages/BlogDetailPage";
 import PublicDashboardPage from "./pages/PublicDashboardPage";
+import WhitelabelLoginPage from "./pages/WhitelabelLoginPage";
+import WhitelabelDashboardPage from "./pages/WhitelabelDashboardPage";
 import { AdminRoute } from "./components/AdminRoute";
 import { AdminLayout } from "./components/admin/AdminLayout";
 import MainLandingPage from "./pages/MainLandingPage";
+import ChangePasswordPage from "./pages/ChangePasswordPage";
+import AffiliateDashboard from "./pages/AffiliateDashboard";
+import { AffiliateRoute } from "./components/AffiliateRoute";
 import { HelmetProvider } from "react-helmet-async";
 import { PlatformChatbot } from "./components/PlatformChatbot";
 
@@ -50,6 +58,8 @@ const App = () => (
               <Route path="/blogs/:slug" element={<BlogDetailPage />} />
               <Route path="/dashboard" element={<PublicDashboardPage />} />
               <Route path="/auth" element={<AuthPage />} />
+              <Route path="/auth/change-password" element={<ProtectedRoute><ChangePasswordPage /></ProtectedRoute>} />
+              <Route path="/affiliate/dashboard" element={<AffiliateRoute><AffiliateDashboard /></AffiliateRoute>} />
               <Route
                 path="/broker-callback"
                 element={
@@ -116,7 +126,12 @@ const App = () => (
                 <Route path="predictions" element={<AdminPredictionsPage />} />
                 <Route path="blogs" element={<AdminBlogsPage />} />
                 <Route path="public-dashboard" element={<AdminPublicDashboardPage />} />
+                <Route path="affiliates" element={<AdminAffiliatesPage />} />
+                <Route path="contacts" element={<AdminContactsPage />} />
+                <Route path="whitelabels" element={<AdminWhitelabelsPage />} />
               </Route>
+              <Route path="/wl/:slug" element={<WhitelabelLoginPage />} />
+              <Route path="/wl/:slug/dashboard" element={<WhitelabelDashboardPage />} />
               <Route path="*" element={<Navigate to="/home" replace />} />
             </Routes>
           </div>

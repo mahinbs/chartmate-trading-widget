@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/hooks/useAuth';
-import { useAdmin } from '@/hooks/useAdmin';
+import { useUserRole } from '@/hooks/useUserRole';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import { Container } from '@/components/layout/Container';
@@ -17,15 +17,21 @@ const AuthPage = () => {
   const [signUpData, setSignUpData] = useState({ email: '', password: '', confirmPassword: '' });
   
   const { signIn, signUp, user } = useAuth();
-  const { isAdmin, loading: adminLoading } = useAdmin();
+  const { role, loading: roleLoading } = useUserRole();
   const { toast } = useToast();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!adminLoading && user) {
-      navigate(isAdmin ? '/admin/users' : '/home');
+    if (!roleLoading && user) {
+      if ((user as any).user_metadata?.need_password_reset) {
+        navigate('/auth/change-password', { replace: true });
+        return;
+      }
+      if (role === 'admin') navigate('/admin/users', { replace: true });
+      else if (role === 'affiliate') navigate('/affiliate/dashboard', { replace: true });
+      else if (role === 'user') navigate('/home', { replace: true });
     }
-  }, [user, isAdmin, adminLoading, navigate]);
+  }, [user, role, roleLoading, navigate]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();

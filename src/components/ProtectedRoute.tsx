@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { useUserRole } from '@/hooks/useUserRole';
 import { Skeleton } from '@/components/ui/skeleton';
 
 interface ProtectedRouteProps {
@@ -8,9 +9,12 @@ interface ProtectedRouteProps {
 }
 
 export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
-  const { user, loading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const { role, loading: roleLoading } = useUserRole();
+  const location = useLocation();
+  const isChangePasswordPage = location.pathname === '/auth/change-password';
 
-  if (loading) {
+  if (authLoading || roleLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="space-y-4 w-full max-w-md">
@@ -24,6 +28,15 @@ export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
 
   if (!user) {
     return <Navigate to="/auth" replace />;
+  }
+
+  if ((user as any).user_metadata?.need_password_reset && !isChangePasswordPage) {
+    return <Navigate to="/auth/change-password" replace />;
+  }
+
+  // Affiliates must not access regular user pages — send them to their own dashboard
+  if (role === 'affiliate' && !isChangePasswordPage) {
+    return <Navigate to="/affiliate/dashboard" replace />;
   }
 
   return <>{children}</>;

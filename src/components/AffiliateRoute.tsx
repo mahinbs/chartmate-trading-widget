@@ -1,18 +1,19 @@
 import { ReactNode } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
-import { useAdmin } from "@/hooks/useAdmin";
+import { useUserRole } from "@/hooks/useUserRole";
 import { Skeleton } from "@/components/ui/skeleton";
 
-interface AdminRouteProps {
+interface AffiliateRouteProps {
   children: ReactNode;
 }
 
-export const AdminRoute = ({ children }: AdminRouteProps) => {
+export const AffiliateRoute = ({ children }: AffiliateRouteProps) => {
   const { user, loading: authLoading } = useAuth();
-  const { isAdmin, loading: adminLoading } = useAdmin();
+  const { role, loading: roleLoading } = useUserRole();
+  const location = useLocation();
 
-  if (authLoading || adminLoading) {
+  if (authLoading || roleLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="space-y-4 w-full max-w-md">
@@ -25,8 +26,15 @@ export const AdminRoute = ({ children }: AdminRouteProps) => {
   }
 
   if (!user) return <Navigate to="/auth" replace />;
-  if ((user as any).user_metadata?.need_password_reset) return <Navigate to="/auth/change-password" replace />;
-  if (!isAdmin) return <Navigate to="/home" replace />;
+
+  if ((user as any).user_metadata?.need_password_reset &&
+    location.pathname !== "/auth/change-password") {
+    return <Navigate to="/auth/change-password" replace />;
+  }
+
+  if (role !== "affiliate" && role !== "admin") {
+    return <Navigate to="/home" replace />;
+  }
 
   return <>{children}</>;
 };

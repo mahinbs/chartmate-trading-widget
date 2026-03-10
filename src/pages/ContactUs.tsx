@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useAffiliateRef } from '@/hooks/useAffiliateRef';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -17,9 +18,11 @@ const formSchema = z.object({
     phone: z.string().min(10, { message: 'Please enter a valid phone number.' }),
     telegram_id: z.string().optional(),
     description: z.string().optional(),
+    referral_code: z.string().optional(),
 });
 
 const ContactUsPage = () => {
+    const { affiliateId } = useAffiliateRef();
     const form = useForm<z.infer<typeof formSchema>>({
         resolver: zodResolver(formSchema),
         defaultValues: {
@@ -28,6 +31,7 @@ const ContactUsPage = () => {
             phone: '',
             telegram_id: '',
             description: '',
+            referral_code: '',
         },
     });
 
@@ -41,12 +45,14 @@ const ContactUsPage = () => {
                     phone: values.phone,
                     telegram_id: values.telegram_id || null,
                     description: values.description || null,
-                }]);
+                    ...(affiliateId && { affiliate_id: affiliateId }),
+                    ...(values.referral_code?.trim() && { referral_code: values.referral_code.trim() }),
+                }] as any);
 
             if (error) throw error;
 
             toast.success('Form submitted successfully! We will get back to you soon.');
-            form.reset();
+            form.reset({ referral_code: '' });
         } catch (error: any) {
             console.error('Error submitting form:', error);
             toast.error('Failed to submit form. Please try again later.');
@@ -252,6 +258,29 @@ const ContactUsPage = () => {
                                                         className="min-h-[140px] bg-white/5 text-white border-white/10 focus-visible:ring-cyan-500 focus-visible:border-cyan-500 placeholder:text-gray-500 rounded-xl resize-none py-4"
                                                     />
                                                 </FormControl>
+                                                <FormMessage className="text-red-400" />
+                                            </FormItem>
+                                        )}
+                                    />
+                                    <FormField
+                                        control={form.control}
+                                        name="referral_code"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel className="text-white font-medium">
+                                                    Referral Code
+                                                    <span className="ml-2 text-xs font-normal text-gray-400">(Optional)</span>
+                                                </FormLabel>
+                                                <FormControl>
+                                                    <Input
+                                                        placeholder="e.g. john2024"
+                                                        {...field}
+                                                        className="h-14 bg-white/5 text-white border-white/10 focus-visible:ring-cyan-500 focus-visible:border-cyan-500 placeholder:text-gray-500 rounded-xl"
+                                                    />
+                                                </FormControl>
+                                                <p className="text-xs text-cyan-400/70 mt-1">
+                                                    💡 Have a referral code? Enter it for faster enquiry replies and priority support.
+                                                </p>
                                                 <FormMessage className="text-red-400" />
                                             </FormItem>
                                         )}

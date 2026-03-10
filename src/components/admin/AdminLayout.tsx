@@ -1,7 +1,7 @@
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Users, BarChart3, FileText } from "lucide-react";
+import { ArrowLeft, Users, BarChart3, FileText, Globe, Link2, Mail } from "lucide-react";
 
 export function AdminLayout() {
   const navigate = useNavigate();
@@ -13,6 +13,12 @@ export function AdminLayout() {
     ? "blogs"
     : path.includes("/admin/public-dashboard")
     ? "stats"
+    : path.includes("/admin/affiliates")
+    ? "affiliates"
+    : path.includes("/admin/contacts")
+    ? "contacts"
+    : path.includes("/admin/whitelabels")
+    ? "whitelabels"
     : "users";
 
   return (
@@ -32,26 +38,43 @@ export function AdminLayout() {
               if (v === "daily") navigate("/admin/predictions");
               else if (v === "blogs") navigate("/admin/blogs");
               else if (v === "stats") navigate("/admin/public-dashboard");
+              else if (v === "affiliates") navigate("/admin/affiliates");
+              else if (v === "contacts") navigate("/admin/contacts");
+              else if (v === "whitelabels") navigate("/admin/whitelabels");
               else navigate("/admin/users");
             }}
           >
-            <TabsList className="grid w-full max-w-xl grid-cols-4">
-              <TabsTrigger value="users" className="flex items-center gap-2">
-                <Users className="h-4 w-4" />
+            <TabsList className="flex w-full max-w-3xl h-auto flex-wrap gap-1 bg-muted/40 p-1">
+              <TabsTrigger value="users" className="flex items-center gap-1.5 text-xs">
+                <Users className="h-3.5 w-3.5" />
                 List of Users
               </TabsTrigger>
-              <TabsTrigger value="daily" className="flex items-center gap-2">
-                <BarChart3 className="h-4 w-4" />
+              <TabsTrigger value="daily" className="flex items-center gap-1.5 text-xs">
+                <BarChart3 className="h-3.5 w-3.5" />
                 Daily Shares
               </TabsTrigger>
-              <TabsTrigger value="blogs" className="flex items-center gap-2">
-                <FileText className="h-4 w-4" />
+              <TabsTrigger value="blogs" className="flex items-center gap-1.5 text-xs">
+                <FileText className="h-3.5 w-3.5" />
                 Blogs
               </TabsTrigger>
-              <TabsTrigger value="stats" className="flex items-center gap-2">
-                <BarChart3 className="h-4 w-4" />
+              <TabsTrigger value="stats" className="flex items-center gap-1.5 text-xs">
+                <BarChart3 className="h-3.5 w-3.5" />
                 Public Dashboard
               </TabsTrigger>
+              <TabsTrigger value="affiliates" className="flex items-center gap-1.5 text-xs">
+                <Link2 className="h-3.5 w-3.5" />
+                Affiliates
+              </TabsTrigger>
+              <TabsTrigger value="contacts" className="flex items-center gap-1.5 text-xs">
+                <Mail className="h-3.5 w-3.5" />
+                Contacts
+              </TabsTrigger>
+              {/* White-label tab commented out for now
+              <TabsTrigger value="whitelabels" className="flex items-center gap-1.5 text-xs">
+                <Globe className="h-3.5 w-3.5" />
+                White-labels
+              </TabsTrigger>
+              */}
             </TabsList>
           </Tabs>
         </div>
