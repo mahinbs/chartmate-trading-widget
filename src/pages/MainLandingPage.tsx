@@ -624,7 +624,7 @@ const MainLandingPage = () => {
                                 key={plan.id}
                                 variants={fadeUp}
                                 className={`p-8 rounded-3xl flex flex-col relative transition-all shadow-lg hover:border-zinc-700 ${plan.recommended
-                                        ? "bg-gradient-to-b from-teal-950/40 to-black border border-teal-500/30 shadow-[0_0_40px_rgba(20,184,166,0.1)] lg:-mt-4 lg:mb-4"
+                                        ? "bg-gradient-to-b from-teal-950/40 to-black border border-teal-500/30 shadow-[0_0_40px_rgba(20,184,166,0.1)] lg:h-[110%] lg:-mt-[7%] lg:mb-[5%]"
                                         : "bg-black border border-zinc-800"
                                     }`}
                             >
