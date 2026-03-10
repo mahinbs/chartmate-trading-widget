@@ -39,6 +39,7 @@ import AffiliateDashboard from "./pages/AffiliateDashboard";
 import { AffiliateRoute } from "./components/AffiliateRoute";
 import { HelmetProvider } from "react-helmet-async";
 import { PlatformChatbot } from "./components/PlatformChatbot";
+import RegisterPage from "./pages/RegisterPage";
 
 // OpenAlgo ping temporarily disabled in mock-order mode to avoid CORS noise
 
@@ -65,6 +66,7 @@ const App = () => (
               <Route path="/blogs" element={<BlogsPage />} />
               <Route path="/blogs/:slug" element={<BlogDetailPage />} />
               <Route path="/dashboard" element={<PublicDashboardPage />} />
+              <Route path="/register" element={<RegisterPage />} />
               <Route path="/auth" element={<AuthPage />} />
               <Route path="/auth/change-password" element={<ProtectedRoute><ChangePasswordPage /></ProtectedRoute>} />
               <Route path="/affiliate/dashboard" element={<AffiliateRoute><AffiliateDashboard /></AffiliateRoute>} />

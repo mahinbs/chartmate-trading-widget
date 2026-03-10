@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, TrendingUp, TrendingDown, Users, BarChart3, Activity, Calendar, Globe, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, TrendingUp, TrendingDown, Users, BarChart3, Activity, Calendar, Globe, ChevronLeft, ChevronRight, DollarSign, Target, Zap, Clock } from "lucide-react";
 import { Link } from "react-router-dom";
 import {
   AreaChart,
@@ -19,7 +19,10 @@ import {
   ResponsiveContainer,
   Legend,
   Cell,
+  PieChart,
+  Pie,
 } from "recharts";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 interface Subscriber {
   id: string;
@@ -328,6 +331,8 @@ export default function PublicDashboardPage() {
 
   const growthMetrics = numericMetrics;
 
+  const [selectedMetric, setSelectedMetric] = useState<Metric | null>(null);
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -378,7 +383,11 @@ export default function PublicDashboardPage() {
               {metrics.map((m) => {
                 const colors = accentColors(m.key);
                 return (
-                  <Card key={m.id} className={`border ${colors.border} ${colors.bg} relative overflow-hidden`}>
+                  <Card 
+                    key={m.id} 
+                    className={`border ${colors.border} ${colors.bg} relative overflow-hidden cursor-pointer hover:bg-accent/20 transition-all hover:scale-[1.02] active:scale-[0.98]`}
+                    onClick={() => setSelectedMetric(m)}
+                  >
                     <CardContent className="pt-5 pb-4 px-5">
                       <div className="flex items-center gap-2 mb-2">
                         {metricIcon(m.key)}
@@ -592,6 +601,425 @@ export default function PublicDashboardPage() {
           </>
         )}
       </div>
+
+      {/* ── Metric Details Dialog ── */}
+      <Dialog open={!!selectedMetric} onOpenChange={(open) => !open && setSelectedMetric(null)}>
+        <DialogContent className="!max-w-4xl max-h-[90vh] overflow-y-auto bg-zinc-950 border-zinc-800 text-zinc-100">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold !text-start flex gap-3">
+              <div className="mt-1.5">
+              {selectedMetric && metricIcon(selectedMetric.key)}
+              </div>
+              {selectedMetric?.label} Details
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="mt-6 space-y-8">
+            {selectedMetric && selectedMetric.key.includes("profit") && (
+              <div className="space-y-8">
+                <div className="grid md:grid-cols-3 gap-6">
+                  <Card className="md:col-span-2 bg-zinc-900/50 border-zinc-800">
+                    <CardHeader>
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <TrendingUp className="h-4 w-4 text-emerald-500" />
+                        Profit Over Time
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="h-[300px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={[
+                            { month: 'Jan', value: 120000 },
+                            { month: 'Feb', value: 210000 },
+                            { month: 'Mar', value: 390000 },
+                            { month: 'Apr', value: 650000 },
+                            { month: 'May', value: 980000 },
+                            { month: 'Current', value: 1250000 },
+                          ]}>
+                            <defs>
+                              <linearGradient id="profitGradient" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                                <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeOpacity={0.2} />
+                            <XAxis dataKey="month" stroke="#6b7280" fontSize={12} tickLine={false} axisLine={false} />
+                            <YAxis stroke="#6b7280" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `$${v/1000}k`} />
+                            <Tooltip 
+                              contentStyle={{ backgroundColor: '#18181b', borderColor: '#27272a', color: '#f4f4f5' }}
+                              formatter={(value: number) => [`$${value.toLocaleString()}`, 'Profit']}
+                            />
+                            <Area type="monotone" dataKey="value" stroke="#10b981" strokeWidth={3} fill="url(#profitGradient)" />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <div className="flex flex-col justify-between gap-5">
+                    <Card className="bg-zinc-900/50 border-zinc-800">
+                      <CardContent className="pt-6">
+                        <div className="text-sm text-zinc-400 mb-1">Current Month</div>
+                        <div className="text-2xl font-bold text-emerald-400">$270,000</div>
+                        <div className="text-xs text-emerald-500 mt-1 flex items-center">
+                          <TrendingUp className="h-3 w-3 mr-1" /> +12.5% vs last month
+                        </div>
+                      </CardContent>
+                    </Card>
+                    <Card className="bg-zinc-900/50 border-zinc-800">
+                      <CardContent className="pt-6">
+                        <div className="text-sm text-zinc-400 mb-1">Avg. Daily Profit</div>
+                        <div className="text-2xl font-bold text-zinc-100">$8,920</div>
+                      </CardContent>
+                    </Card>
+                    <Card className="bg-zinc-900/50 border-zinc-800">
+                      <CardContent className="pt-6">
+                        <div className="text-sm text-zinc-400 mb-1">Profit Margin</div>
+                        <div className="text-2xl font-bold text-zinc-100">68%</div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {selectedMetric && selectedMetric.key.includes("revenue") && (
+              <div className="space-y-8">
+                <div className="grid md:grid-cols-2 gap-6">
+                  <Card className="bg-zinc-900/50 border-zinc-800">
+                    <CardHeader>
+                      <CardTitle className="text-lg">Revenue Sources</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="h-[300px] w-full flex items-center justify-center">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={[
+                                { name: 'License Sales', value: 1400000 },
+                                { name: 'Subscriptions', value: 450000 },
+                                { name: 'API Access', value: 180000 },
+                                { name: 'Enterprise', value: 70000 },
+                              ]}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={60}
+                              outerRadius={100}
+                              paddingAngle={5}
+                              dataKey="value"
+                            >
+                              {[
+                                '#6366f1', // Indigo
+                                '#8b5cf6', // Violet
+                                '#ec4899', // Pink
+                                '#06b6d4', // Cyan
+                              ].map((color, index) => (
+                                <Cell key={`cell-${index}`} fill={color} stroke="none" />
+                              ))}
+                            </Pie>
+                            <Tooltip 
+                              contentStyle={{ backgroundColor: '#18181b', borderColor: '#27272a', color: '#f4f4f5' }}
+                              formatter={(value: number) => `$${value.toLocaleString()}`}
+                            />
+                            <Legend verticalAlign="bottom" height={36} iconType="circle" />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="bg-zinc-900/50 border-zinc-800">
+                    <CardHeader>
+                      <CardTitle className="text-lg">Monthly Revenue</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="h-[300px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={[
+                            { month: 'Jan', value: 120000 },
+                            { month: 'Feb', value: 180000 },
+                            { month: 'Mar', value: 240000 },
+                            { month: 'Apr', value: 390000 },
+                            { month: 'May', value: 520000 },
+                            { month: 'Jun', value: 650000 },
+                          ]}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeOpacity={0.2} vertical={false} />
+                            <XAxis dataKey="month" stroke="#6b7280" fontSize={12} tickLine={false} axisLine={false} />
+                            <YAxis stroke="#6b7280" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `$${v/1000}k`} />
+                            <Tooltip 
+                              cursor={{ fill: '#27272a' }}
+                              contentStyle={{ backgroundColor: '#18181b', borderColor: '#27272a', color: '#f4f4f5' }}
+                              formatter={(value: number) => [`$${value.toLocaleString()}`, 'Revenue']}
+                            />
+                            <Bar dataKey="value" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <div className="grid md:grid-cols-3 gap-6">
+                  <Card className="bg-zinc-900/50 border-zinc-800">
+                    <CardHeader><CardTitle className="text-sm">Top Regions</CardTitle></CardHeader>
+                    <CardContent className="space-y-3">
+                      {[
+                        { region: 'USA', val: '$780k', pct: 37 },
+                        { region: 'India', val: '$420k', pct: 20 },
+                        { region: 'UK', val: '$310k', pct: 15 },
+                        { region: 'UAE', val: '$240k', pct: 11 },
+                        { region: 'Singapore', val: '$180k', pct: 9 },
+                      ].map((r, i) => (
+                        <div key={i} className="flex items-center justify-between text-sm">
+                          <span className="text-zinc-400">{r.region}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-zinc-200">{r.val}</span>
+                            <div className="w-16 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                              <div className="h-full bg-indigo-500" style={{ width: `${r.pct}%` }}></div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+
+                  <Card className="bg-zinc-900/50 border-zinc-800">
+                    <CardHeader><CardTitle className="text-sm">Recent Purchases</CardTitle></CardHeader>
+                    <CardContent className="space-y-4">
+                      {[
+                        { name: 'Carlos Mendes', action: 'purchased Pro License', time: '2m ago' },
+                        { name: 'Ahmed Hassan', action: 'purchased Basic License', time: '15m ago' },
+                        { name: 'Luca Romano', action: 'upgraded to Institutional', time: '1h ago' },
+                        { name: 'Sarah Chen', action: 'purchased Pro License', time: '2h ago' },
+                      ].map((item, i) => (
+                        <div key={i} className="flex flex-col gap-0.5 text-sm border-b border-zinc-800/50 last:border-0 pb-3 last:pb-0">
+                          <div className="font-medium text-zinc-200">{item.name}</div>
+                          <div className="text-xs text-zinc-500 flex justify-between">
+                            <span>{item.action}</span>
+                            <span>{item.time}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+
+                  <Card className="bg-zinc-900/50 border-zinc-800">
+                    <CardHeader><CardTitle className="text-sm">License Distribution</CardTitle></CardHeader>
+                    <CardContent className="space-y-4 pt-2">
+                      {[
+                        { type: 'Basic', count: 520, color: 'bg-zinc-500' },
+                        { type: 'Pro', count: 410, color: 'bg-indigo-500' },
+                        { type: 'Institutional', count: 270, color: 'bg-purple-500' },
+                      ].map((l, i) => (
+                        <div key={i} className="space-y-1">
+                          <div className="flex justify-between text-xs text-zinc-400">
+                            <span>{l.type}</span>
+                            <span>{l.count} users</span>
+                          </div>
+                          <div className="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
+                            <div className={`h-full ${l.color}`} style={{ width: `${(l.count / 1200) * 100}%` }}></div>
+                          </div>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+            )}
+
+            {selectedMetric && selectedMetric.key.includes("user") && (
+              <div className="space-y-8">
+                <Card className="bg-zinc-900/50 border-zinc-800">
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Users className="h-4 w-4 text-sky-500" />
+                      User Growth
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-[300px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={[
+                          { month: 'Jan', users: 120 },
+                          { month: 'Feb', users: 250 },
+                          { month: 'Mar', users: 430 },
+                          { month: 'Apr', users: 710 },
+                          { month: 'May', users: 980 },
+                          { month: 'Current', users: 1200 },
+                        ]}>
+                          <defs>
+                            <linearGradient id="userGradient" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.3}/>
+                              <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0}/>
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeOpacity={0.2} />
+                          <XAxis dataKey="month" stroke="#6b7280" fontSize={12} tickLine={false} axisLine={false} />
+                          <YAxis stroke="#6b7280" fontSize={12} tickLine={false} axisLine={false} />
+                          <Tooltip 
+                            contentStyle={{ backgroundColor: '#18181b', borderColor: '#27272a', color: '#f4f4f5' }}
+                          />
+                          <Area type="monotone" dataKey="users" stroke="#0ea5e9" strokeWidth={3} fill="url(#userGradient)" />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <div className="grid md:grid-cols-3 gap-6">
+                  <Card className="bg-zinc-900/50 border-zinc-800">
+                    <CardHeader><CardTitle className="text-sm">Users by Region</CardTitle></CardHeader>
+                    <CardContent className="space-y-3">
+                      {[
+                        { region: 'USA', count: 380 },
+                        { region: 'India', count: 290 },
+                        { region: 'Europe', count: 240 },
+                        { region: 'Middle East', count: 160 },
+                        { region: 'Asia Pacific', count: 130 },
+                      ].map((r, i) => (
+                        <div key={i} className="flex items-center justify-between text-sm">
+                          <span className="text-zinc-400">{r.region}</span>
+                          <span className="font-medium text-zinc-200">{r.count}</span>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+
+                  <Card className="bg-zinc-900/50 border-zinc-800">
+                    <CardHeader><CardTitle className="text-sm">User Activity</CardTitle></CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex justify-between items-center p-3 bg-zinc-900 rounded-lg border border-zinc-800">
+                        <div className="flex items-center gap-3">
+                          <Activity className="h-4 w-4 text-sky-500" />
+                          <span className="text-sm text-zinc-400">Daily Active</span>
+                        </div>
+                        <span className="font-bold text-white">740</span>
+                      </div>
+                      <div className="flex justify-between items-center p-3 bg-zinc-900 rounded-lg border border-zinc-800">
+                        <div className="flex items-center gap-3">
+                          <Clock className="h-4 w-4 text-sky-500" />
+                          <span className="text-sm text-zinc-400">Avg Session</span>
+                        </div>
+                        <span className="font-bold text-white">18 min</span>
+                      </div>
+                      <div className="flex justify-between items-center p-3 bg-zinc-900 rounded-lg border border-zinc-800">
+                        <div className="flex items-center gap-3">
+                          <Zap className="h-4 w-4 text-sky-500" />
+                          <span className="text-sm text-zinc-400">Trades/User</span>
+                        </div>
+                        <span className="font-bold text-white">12/day</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="bg-zinc-900/50 border-zinc-800">
+                    <CardHeader><CardTitle className="text-sm flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div> Live Users</CardTitle></CardHeader>
+                    <CardContent className="space-y-4">
+                      {[
+                        { name: 'Ethan Walker', action: 'executing trade' },
+                        { name: 'Arjun Mehta', action: 'viewing strategy' },
+                        { name: 'Sofia Martinez', action: 'placing order' },
+                        { name: 'Luca Romano', action: 'reviewing signals' },
+                      ].map((u, i) => (
+                        <div key={i} className="flex items-center gap-3 text-sm">
+                          <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-xs font-bold text-zinc-400">
+                            {u.name.split(' ').map(n => n[0]).join('')}
+                          </div>
+                          <div>
+                            <div className="font-medium text-zinc-200">{u.name}</div>
+                            <div className="text-xs text-zinc-500">{u.action}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+            )}
+
+            {selectedMetric && (selectedMetric.key.includes("accuracy") || selectedMetric.key.includes("signal")) && (
+              <div className="space-y-8">
+                <div className="grid md:grid-cols-2 gap-6">
+                  <Card className="bg-zinc-900/50 border-zinc-800">
+                    <CardHeader>
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <Target className="h-4 w-4 text-amber-500" />
+                        Win Rate Consistency
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="h-[300px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={[
+                            { period: '1 week', rate: 92 },
+                            { period: '1 month', rate: 93.5 },
+                            { period: '3 months', rate: 94 },
+                            { period: 'All time', rate: 94 },
+                          ]}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeOpacity={0.2} vertical={false} />
+                            <XAxis dataKey="period" stroke="#6b7280" fontSize={12} tickLine={false} axisLine={false} />
+                            <YAxis domain={[80, 100]} stroke="#6b7280" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} />
+                            <Tooltip 
+                              cursor={{ fill: '#27272a' }}
+                              contentStyle={{ backgroundColor: '#18181b', borderColor: '#27272a', color: '#f4f4f5' }}
+                              formatter={(value: number) => [`${value}%`, 'Win Rate']}
+                            />
+                            <Bar dataKey="rate" fill="#f59e0b" radius={[4, 4, 0, 0]} label={{ position: 'top', fill: '#fbbf24', fontSize: 12, formatter: (v: number) => `${v}%` }} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <div className="space-y-6">
+                    <Card className="bg-zinc-900/50 border-zinc-800">
+                      <CardHeader><CardTitle className="text-sm">Accuracy by Market</CardTitle></CardHeader>
+                      <CardContent className="space-y-4">
+                        {[
+                          { market: 'US Stocks', acc: 95 },
+                          { market: 'Crypto', acc: 92 },
+                          { market: 'Forex', acc: 93 },
+                          { market: 'Options', acc: 94 },
+                        ].map((m, i) => (
+                          <div key={i} className="space-y-1">
+                            <div className="flex justify-between text-sm">
+                              <span className="text-zinc-300">{m.market}</span>
+                              <span className="font-bold text-amber-400">{m.acc}%</span>
+                            </div>
+                            <div className="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
+                              <div className="h-full bg-amber-500" style={{ width: `${m.acc}%` }}></div>
+                            </div>
+                          </div>
+                        ))}
+                      </CardContent>
+                    </Card>
+
+                    <Card className="bg-zinc-900/50 border-zinc-800">
+                      <CardHeader><CardTitle className="text-sm">Strategy Accuracy</CardTitle></CardHeader>
+                      <CardContent className="space-y-3">
+                        {[
+                          { strat: 'Momentum AI', acc: 95 },
+                          { strat: 'Breakout AI', acc: 94 },
+                          { strat: 'Scalping AI', acc: 93 },
+                          { strat: 'Mean Reversion', acc: 92 },
+                        ].map((s, i) => (
+                          <div key={i} className="flex items-center justify-between p-2 bg-zinc-900 rounded-lg border border-zinc-800/50">
+                            <div className="flex items-center gap-2">
+                              <div className="w-1.5 h-1.5 rounded-full bg-amber-500"></div>
+                              <span className="text-sm text-zinc-300">{s.strat}</span>
+                            </div>
+                            <span className="text-sm font-bold text-white">{s.acc}%</span>
+                          </div>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

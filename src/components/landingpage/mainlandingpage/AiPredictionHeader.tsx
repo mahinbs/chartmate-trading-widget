@@ -82,13 +82,13 @@ const AiPredictionHeader: React.FC = () => {
           </div>
 
           {/* Desktop nav */}
-          <nav className="hidden 2xl:gap-12 gap-8 text-sm font-medium text-gray-300 lg:flex">
+          <nav className="hidden items-center 2xl:gap-12 gap-8 text-sm font-medium text-gray-300 lg:flex">
             {navItems.map((item) => (
               item.isRoute ? (
                 <Link
                   key={item.id}
                   to={`/${item.id}`}
-                  className="relative inline-flex items-center gap-1 text-xs uppercase tracking-[0.2em] hover:text-white transition-colors cursor-pointer group"
+                  className="relative inline-flex items-center gap-1 hover:text-white transition-colors cursor-pointer group"
                 >
                   <span>{item.label}</span>
                   <span className="absolute inset-x-0 -bottom-1 h-px scale-x-0 bg-linear-to-r from-primary to-secondary transition-transform duration-200 origin-center group-hover:scale-x-100" />
@@ -97,13 +97,21 @@ const AiPredictionHeader: React.FC = () => {
                 <button
                   key={item.id}
                   onClick={() => handleNavClick(item.id)}
-                  className="relative inline-flex items-center gap-1 text-xs uppercase tracking-[0.2em] hover:text-white transition-colors cursor-pointer group"
+                  className="relative inline-flex items-center gap-1 hover:text-white transition-colors cursor-pointer group"
                 >
                   <span>{item.label}</span>
                   <span className="absolute inset-x-0 -bottom-1 h-px scale-x-0 bg-linear-to-r from-primary to-secondary transition-transform duration-200 origin-center group-hover:scale-x-100" />
                 </button>
               )
             ))}
+
+            {/* Desktop login button */}
+            <Link
+              to="/auth"
+              className="ml-4 inline-flex items-center rounded-full bg-primary px-8 py-2 font-semibold bg-teal-500 hover:bg-teal-400 text-black text-sm shadow-[0_0_30px_rgba(20,184,166,0.3)] hover:shadow-[0_0_50px_rgba(20,184,166,0.5)] border border-teal-400/50 transition-all duration-300 hover:-translate-y-0.5"
+            >
+              Login
+            </Link>
           </nav>
 
           {/* Mobile menu button */}
@@ -157,7 +165,7 @@ const AiPredictionHeader: React.FC = () => {
                   onClick={() => setIsOpen(false)}
                   className="flex items-center justify-between rounded-xl px-3 py-3 text-left text-gray-200 hover:bg-white/5 hover:text-white transition-colors group"
                 >
-                  <span className="text-xs uppercase tracking-[0.2em]">
+                  <span className="text-sm">
                     {item.label}
                   </span>
                   <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_10px_rgba(34,211,238,0.6)] group-hover:scale-125 transition-transform" />
@@ -168,13 +176,22 @@ const AiPredictionHeader: React.FC = () => {
                   onClick={() => handleNavClick(item.id)}
                   className="flex items-center justify-between rounded-xl px-3 py-3 text-left text-gray-200 hover:bg-white/5 hover:text-white transition-colors group"
                 >
-                  <span className="text-xs uppercase tracking-[0.2em]">
+                  <span className="text-sm">
                     {item.label}
                   </span>
                   <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_10px_rgba(34,211,238,0.6)] group-hover:scale-125 transition-transform" />
                 </button>
               )
             ))}
+
+            {/* Mobile login button */}
+            <Link
+              to="/auth"
+              onClick={() => setIsOpen(false)}
+              className="mt-4 w-full rounded-xl bg-white text-black py-3 text-center text-sm font-bold tracking-wide hover:bg-primary hover:text-black transition-colors"
+            >
+              Login
+            </Link>
           </nav>
         </div>
       </div>
