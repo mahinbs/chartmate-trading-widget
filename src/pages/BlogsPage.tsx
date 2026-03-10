@@ -123,7 +123,7 @@ export default function BlogsPage() {
       {/* Header */}
       <div className="border-b border-white/5 bg-background/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4 flex items-center gap-3">
-          <Link to="/home">
+          <Link to="/">
             <Button variant="ghost" size="sm" className="hover:bg-white/5 text-muted-foreground hover:text-foreground">
               <ArrowLeft className="h-4 w-4 mr-1" />
               Home
