@@ -598,11 +598,11 @@ export function PlatformChatbot() {
               {/* Avatar */}
               <div className={cn(
                 "h-7 w-7 rounded-full flex items-center justify-center shrink-0 mt-0.5",
-                msg.role === "bot" ? "bg-primary/15" : "bg-secondary"
+                msg.role === "bot" ? "bg-primary/15" : "bg-primary/15"
               )}>
                 {msg.role === "bot"
                   ? <Bot className="h-4 w-4 text-primary" />
-                  : <User className="h-4 w-4 text-muted-foreground" />
+                  : <User className="h-4 w-4 text-primary" />
                 }
               </div>
 
