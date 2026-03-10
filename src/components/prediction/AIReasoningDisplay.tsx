@@ -204,7 +204,7 @@ export function AIReasoningDisplay({
 
             {/* Conviction Rationale */}
             {deepAnalysis.conviction_rationale && (
-              <div className="p-3 bg-blue-500/5 border border-blue-500/20 rounded-lg">
+              <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg">
                 <p className="font-semibold text-sm text-blue-400 mb-1 flex items-center gap-2">
                   <Target className="h-4 w-4" />
                   Why This Recommendation?

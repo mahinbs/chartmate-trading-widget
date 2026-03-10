@@ -163,12 +163,12 @@ export function DecisionScreen({
             </div>
 
             {/* Likely Case */}
-            <div className="text-center p-4 bg-blue-500/10 rounded-lg border-2 border-blue-500/30">
+            <div className="text-center p-4 bg-primary/10 rounded-lg border-2 border-primary/30">
               <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">Likely</div>
               <div className="text-2xl font-bold text-blue-400">
                 {fmt(likelyCaseAmount, 2)}
               </div>
-              <div className="text-sm text-blue-500 font-medium">
+              <div className="text-sm text-primary font-medium">
                 ({formatPercentage(expectedROI.likely)})
               </div>
             </div>

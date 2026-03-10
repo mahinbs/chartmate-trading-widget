@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { ScrollReveal } from '../ui/ScrollReveal';
 
@@ -78,7 +77,7 @@ const Hero = () => {
     return (
         <section id="hero" className="relative min-h-screen flex items-center justify-center pt-40 pb-20 px-4 overflow-hidden bg-black">
 
-            {/* Overlay Gradients for Depth (Put this below the grid/animations, or keep grid above) */}
+            {/* Overlay Gradients for Depth */}
             <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/50 to-black z-0 pointer-events-none"></div>
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-transparent via-black/60 to-black z-0 pointer-events-none"></div>
 
@@ -130,39 +129,40 @@ const Hero = () => {
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
                             <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
                         </span>
-                        Our AI Probability Software Now Live
+                        White-label the platform. You sell. You earn.
                     </div>
                 </ScrollReveal>
 
                 <ScrollReveal delay={0.4}>
                     <h1 className="text-5xl md:text-7xl lg:text-8xl font-black tracking-tighter mb-8 leading-[1.1] max-w-6xl mx-auto text-white drop-shadow-2xl">
-                        Launch Your Own AI Trading <br />
-                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary via-primary to-secondary animate-gradient">Fintech</span>
+                        Build Your <br />
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary via-primary to-secondary animate-gradient">Fintech Empire!</span>
                     </h1>
                 </ScrollReveal>
 
                 <ScrollReveal delay={0.6}>
-                    <p className="text-xl md:text-2xl text-gray-400 max-w-3xl mx-auto mb-12 font-light leading-relaxed">
-                        The world's first turnkey, probability-based trading platform. <br />
-                        <span className="text-white font-medium">Fully brandable. Deploy on your own domain.</span>
+                    <h2 className="text-2xl md:text-3xl text-white font-bold mb-6 max-w-4xl mx-auto">
+                        Launch your Branded AI probability based trading analysis platform.
+                    </h2>
+                    <p className="text-lg md:text-xl text-gray-400 max-w-3xl mx-auto mb-12 font-light leading-relaxed">
+                        Deploy a professional-grade ecosystem featuring AI-driven probabilities, <span className="text-white font-medium">custom algo-trading</span>, and deep backtesting. We handle the complex infrastructure. You own the brand and keep <span className="text-white font-medium">70% of the profits</span>.
                     </p>
                 </ScrollReveal>
 
                 <ScrollReveal delay={0.8}>
-                    <div className="flex flex-col sm:flex-row gap-6 justify-center items-center mb-16">
+                    <div className="grid grid-cols-1 sm:flex gap-6 justify-center items-center mb-16">
                         <Link
                             to="/contact-us"
                             className="bg-cyan-500 text-black hover:bg-primary text-lg px-10 py-7 rounded-full font-bold shadow-[0_0_40px_rgba(6,182,212,0.3)] hover:shadow-[0_0_60px_rgba(6,182,212,0.5)] transition-all duration-300 hover:-translate-y-1 flex items-center"
                         >
-                            Get Platform Demo
-                            <ArrowRight className="ml-2 w-5 h-5" />
+                            Acquire Your License
                         </Link>
-                        <Link
-                            to="/market-picks"
-                            className="border border-white/15 text-white hover:text-white hover:bg-white/10 bg-white/5 backdrop-blur-sm text-lg px-10 py-7 rounded-full font-bold transition-all duration-300 flex items-center"
+                        <a
+                            href="#features"
+                            className="border border-white/15 text-white hover:text-white hover:bg-white/10 bg-white/5 backdrop-blur-sm text-lg px-10 py-7 rounded-full font-bold transition-all duration-300 flex justify-center items-center"
                         >
-                            View Daily Analyses
-                        </Link>
+                            Explore Features
+                        </a>
                     </div>
                 </ScrollReveal>
 

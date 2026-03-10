@@ -263,7 +263,7 @@ export function TimingDisplay({
         <Card className="bg-gradient-to-r from-purple-50 to-pink-50 border-purple-200">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-lg">
-              <Target className="h-5 w-5 text-purple-600" />
+              <Target className="h-5 w-5 text-secondary" />
               Analysis Timing
             </CardTitle>
           </CardHeader>

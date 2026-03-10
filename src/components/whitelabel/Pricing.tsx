@@ -12,7 +12,7 @@ const Pricing = () => {
                             Simple, Transparent <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">Pricing</span>
                         </h2>
                         <p className="text-xl text-gray-400 font-light">
-                            Choose the plan that fits your business model. Whether you want to use it yourself or build a business around it.
+                            Your revenue. Your brand. Choose the plan that fits your business model and start selling under your name.
                         </p>
                     </div>
                 </ScrollReveal>
@@ -21,27 +21,31 @@ const Pricing = () => {
                     {[
                         {
                             name: "1 Year License",
-                            price: "$999",
-                            originalPrice: "$1,499",
+                            price: "$1,999",
+                            originalPrice: "$2,499",
                             duration: "/ 1 year",
+                            inrPrice: "₹1,81,909",
                             badge: "Standard",
                             badgeColor: "bg-gray-700",
-                            isRecommended: false
+                            isRecommended: false,
+                            tagline: "Start your own software business. Sell licenses and keep the profits."
                         },
                         {
                             name: "5 Year License",
                             price: "$3,399",
                             originalPrice: "$4,999",
                             duration: "/ 5 years",
+                            inrPrice: "₹3,09,500",
                             badge: "Best Value",
                             badgeColor: "bg-cyan-500 text-black",
                             isRecommended: true
                         },
                         {
                             name: "2 Year License",
-                            price: "$1,999",
-                            originalPrice: "$2,499",
+                            price: "$2,499",
+                            originalPrice: "$2,999",
                             duration: "/ 2 years",
+                            inrPrice: "₹2,27,409",
                             badge: "Popular",
                             badgeColor: "bg-secondary",
                             isRecommended: false
@@ -67,7 +71,11 @@ const Pricing = () => {
                                             <span className="text-5xl font-black text-white">{plan.price}</span>
                                             <span className="text-gray-400 font-medium text-sm">{plan.duration}</span>
                                         </div>
+                                        <span className="text-gray-500 text-sm mt-1">or {plan.inrPrice} {plan.duration}</span>
                                     </div>
+                                    {plan.tagline && (
+                                        <p className="text-gray-400 text-sm mt-4 italic max-w-xs mx-auto">{plan.tagline}</p>
+                                    )}
                                 </div>
 
                                 <div className="space-y-6 mb-8 flex-grow relative z-10">
@@ -80,7 +88,13 @@ const Pricing = () => {
                                                 "Fully designed landing page",
                                                 "Client login dashboard",
                                                 "Admin panel to manage users",
-                                                "Multi-factor trade analysis engine"
+                                                "Annual license system ($99/year model)",
+                                                "Multi-factor trade analysis engine",
+                                                "Risk–reward calculator",
+                                                "Strategy builder panel",
+                                                "Trade performance tracking",
+                                                "Basic backtesting module",
+                                                "Optional strategy automation"
                                             ].map((item, i) => (
                                                 <li key={i} className="flex items-start gap-3">
                                                     <Check className={`w-4 h-4 flex-shrink-0 mt-0.5 ${plan.isRecommended ? 'text-cyan-500' : 'text-gray-400'}`} />
@@ -101,6 +115,10 @@ const Pricing = () => {
                                             <li className="flex justify-between text-sm">
                                                 <span className="text-gray-400">Your Share</span>
                                                 <span className="text-green-400 font-bold">70%</span>
+                                            </li>
+                                            <li className="flex justify-between text-sm">
+                                                <span className="text-gray-400">Platform Share</span>
+                                                <span className="text-gray-500 font-medium">30%</span>
                                             </li>
                                         </ul>
                                     </div>

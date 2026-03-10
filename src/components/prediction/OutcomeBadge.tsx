@@ -37,7 +37,7 @@ export function OutcomeBadge({ outcome = 'pending', size = 'md' }: OutcomeBadgeP
         return {
           icon: Clock,
           text: 'In Progress',
-          className: 'bg-blue-500/10 text-blue-700 border-blue-500/30'
+          className: 'bg-primary/10 text-blue-700 border-primary/30'
         }
     }
   }

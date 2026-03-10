@@ -64,12 +64,12 @@ const Testimonial = () => {
     })
 
     return (
-        <section id="testimonials" className="py-32 bg-zinc-950 border-t border-white/5 overflow-hidden relative">
+        <section id="testimonials" className="py-16 bg-zinc-950 border-t border-white/5 overflow-hidden relative">
             <div className="container mx-auto px-4 relative z-10">
                 <ScrollReveal>
                     <div className="text-center mb-16">
                         <h2 className="text-4xl md:text-5xl font-bold text-white mb-4 tracking-tight">
-                            Trusted by <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-500">Smart Traders</span>
+                            Trusted by <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">Smart Traders</span>
                         </h2>
                     </div>
                 </ScrollReveal>
@@ -90,7 +90,7 @@ const Testimonial = () => {
                                 </div>
 
                                 <div className="flex items-center gap-4 mt-auto pt-6 border-t border-white/5">
-                                    <div className="w-12 h-12 min-w-12 bg-gradient-to-br from-cyan-900 to-black rounded-full flex items-center justify-center font-bold text-cyan-400 border border-cyan-500/20 shadow-[0_0_15px_rgba(6,182,212,0.2)]">
+                                    <div className="w-12 h-12 min-w-12 bg-gradient-to-br from-cyan-900 to-black rounded-full flex items-center justify-center font-bold text-primary border border-cyan-500/20 shadow-[0_0_15px_rgba(6,182,212,0.2)]">
                                         {item.author[0]}
                                     </div>
                                     <div>

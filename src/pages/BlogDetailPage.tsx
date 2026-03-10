@@ -111,7 +111,7 @@ export default function BlogDetailPage() {
       )}
 
       {!loading && !blog && (
-        <div className="max-w-4xl mx-auto px-6 py-32 text-center">
+        <div className="max-w-4xl mx-auto px-6 py-16 text-center">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-white/5 mb-6">
             <ArrowLeft className="h-6 w-6 text-muted-foreground" />
           </div>

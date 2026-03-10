@@ -255,7 +255,7 @@ export function PerformanceDashboard() {
                   </div>
 
                   <div className="flex items-start gap-2">
-                    <Lightbulb className="h-4 w-4 text-blue-500 mt-0.5" />
+                    <Lightbulb className="h-4 w-4 text-primary mt-0.5" />
                     <div>
                       <p className="font-semibold text-blue-600">What We Learned:</p>
                       <p className="text-muted-foreground">
@@ -277,7 +277,7 @@ export function PerformanceDashboard() {
             ))}
 
             {/* Key Learnings Summary */}
-            <Alert className="border-blue-500/30 bg-blue-500/10">
+            <Alert className="border-primary/30 bg-primary/10">
               <Lightbulb className="h-4 w-4 text-blue-600" />
               <AlertDescription>
                 <p className="font-semibold mb-2">Key Learnings from Losses:</p>

@@ -5,7 +5,7 @@ import { ScrollReveal } from '../ui/ScrollReveal';
 
 const HowToGetStarted = () => {
     return (
-        <section className="py-32 px-4 md:px-7 bg-zinc-950 relative overflow-hidden">
+        <section className="py-16 px-4 md:px-7 bg-zinc-950 relative overflow-hidden">
             {/* Background Effects */}
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(6,182,212,0.05)_0%,transparent_70%)] pointer-events-none"></div>
 
@@ -16,12 +16,12 @@ const HowToGetStarted = () => {
                         <ScrollReveal direction="right">
                             <h2 className="text-4xl md:text-5xl lg:text-6xl font-black text-white leading-[1.1] mb-8 tracking-tight">
                                 Start Trading<br />
-                                <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">Smarter In</span><br />
+                                <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-primary">Smarter In</span><br />
                                 Minutes
                             </h2>
                             <Link
                                 to="/contact-us"
-                                className="inline-flex items-center justify-center bg-cyan-500 text-black font-bold py-4 px-8 rounded-full shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:shadow-[0_0_30px_rgba(6,182,212,0.5)] hover:bg-cyan-400 hover:-translate-y-1 transition-all text-base w-full md:w-auto"
+                                className="inline-flex items-center justify-center bg-cyan-500 text-black font-bold py-4 px-8 rounded-full shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:shadow-[0_0_30px_rgba(6,182,212,0.5)] hover:bg-primary hover:-translate-y-1 transition-all text-base w-full md:w-auto"
                             >
                                 Get Instant Analysis
                             </Link>
@@ -35,13 +35,13 @@ const HowToGetStarted = () => {
                             <ScrollReveal delay={0.1} direction="up">
                                 <div className="relative group bg-zinc-900/50 p-6 rounded-2xl border border-white/5 hover:border-cyan-500/30 transition-all duration-300">
                                     <div className="absolute -left-[calc(1.25rem+1px+1.5rem)] lg:-left-[calc(3rem+1px+1.5rem)] top-8 bg-black border border-cyan-500 w-5 h-5 rounded-full flex items-center justify-center shadow-[0_0_10px_rgba(6,182,212,0.5)] group-hover:scale-125 transition-transform">
-                                        <div className="w-1.5 h-1.5 bg-cyan-400 rounded-full"></div>
+                                        <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
                                     </div>
                                     <div className="flex items-center mb-4">
                                         <div className="bg-cyan-500/10 p-3 rounded-xl mr-4 border border-cyan-500/20 group-hover:border-cyan-500/40 transition-colors">
-                                            <MousePointerClick className="w-6 h-6 text-cyan-400" />
+                                            <MousePointerClick className="w-6 h-6 text-primary" />
                                         </div>
-                                        <h3 className="text-2xl md:text-3xl font-bold text-white group-hover:text-cyan-400 transition-colors">1. Select Your Asset</h3>
+                                        <h3 className="text-2xl md:text-3xl font-bold text-white group-hover:text-primary transition-colors">1. Select Your Asset</h3>
                                     </div>
                                     <p className="text-gray-400 text-lg leading-relaxed max-w-lg font-light">
                                         Choose from hundreds of supported stocks, crypto pairs, and forex markets. Search by symbol or browse top movers.
@@ -51,12 +51,12 @@ const HowToGetStarted = () => {
 
                             {/* Step 2 */}
                             <ScrollReveal delay={0.2} direction="up">
-                                <div className="relative group bg-zinc-900/50 p-6 rounded-2xl border border-white/5 hover:border-blue-500/30 transition-all duration-300">
-                                    <div className="absolute -left-[calc(1.25rem+1px+1.5rem)] lg:-left-[calc(3rem+1px+1.5rem)] top-8 bg-black border border-blue-500 w-5 h-5 rounded-full flex items-center justify-center shadow-[0_0_10px_rgba(59,130,246,0.5)] group-hover:scale-125 transition-transform">
+                                <div className="relative group bg-zinc-900/50 p-6 rounded-2xl border border-white/5 hover:border-primary/30 transition-all duration-300">
+                                    <div className="absolute -left-[calc(1.25rem+1px+1.5rem)] lg:-left-[calc(3rem+1px+1.5rem)] top-8 bg-black border border-primary w-5 h-5 rounded-full flex items-center justify-center shadow-[0_0_10px_rgba(59,130,246,0.5)] group-hover:scale-125 transition-transform">
                                         <div className="w-1.5 h-1.5 bg-blue-400 rounded-full"></div>
                                     </div>
                                     <div className="flex items-center mb-4">
-                                        <div className="bg-blue-500/10 p-3 rounded-xl mr-4 border border-blue-500/20 group-hover:border-blue-500/40 transition-colors">
+                                        <div className="bg-primary/10 p-3 rounded-xl mr-4 border border-primary/20 group-hover:border-primary/40 transition-colors">
                                             <Settings className="w-6 h-6 text-blue-400" />
                                         </div>
                                         <h3 className="text-2xl md:text-3xl font-bold text-white group-hover:text-blue-400 transition-colors">2. Define Profile</h3>
@@ -69,12 +69,12 @@ const HowToGetStarted = () => {
 
                             {/* Step 3 */}
                             <ScrollReveal delay={0.3} direction="up">
-                                <div className="relative group bg-zinc-900/50 p-6 rounded-2xl border border-white/5 hover:border-purple-500/30 transition-all duration-300">
-                                    <div className="absolute -left-[calc(1.25rem+1px+1.5rem)] lg:-left-[calc(3rem+1px+1.5rem)] top-8 bg-black border border-purple-500 w-5 h-5 rounded-full flex items-center justify-center shadow-[0_0_10px_rgba(168,85,247,0.5)] group-hover:scale-125 transition-transform">
+                                <div className="relative group bg-zinc-900/50 p-6 rounded-2xl border border-white/5 hover:border-secondary/30 transition-all duration-300">
+                                    <div className="absolute -left-[calc(1.25rem+1px+1.5rem)] lg:-left-[calc(3rem+1px+1.5rem)] top-8 bg-black border border-secondary w-5 h-5 rounded-full flex items-center justify-center shadow-[0_0_10px_rgba(168,85,247,0.5)] group-hover:scale-125 transition-transform">
                                         <div className="w-1.5 h-1.5 bg-purple-400 rounded-full"></div>
                                     </div>
                                     <div className="flex items-center mb-4">
-                                        <div className="bg-purple-500/10 p-3 rounded-xl mr-4 border border-purple-500/20 group-hover:border-purple-500/40 transition-colors">
+                                        <div className="bg-secondary/10 p-3 rounded-xl mr-4 border border-secondary/20 group-hover:border-secondary/40 transition-colors">
                                             <LineChart className="w-6 h-6 text-purple-400" />
                                         </div>
                                         <h3 className="text-2xl md:text-3xl font-bold text-white group-hover:text-purple-400 transition-colors">3. Get Analysis</h3>
