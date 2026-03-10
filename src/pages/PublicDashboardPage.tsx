@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, TrendingUp, TrendingDown, Users, BarChart3, Activity, Calendar } from "lucide-react";
+import { ArrowLeft, TrendingUp, TrendingDown, Users, BarChart3, Activity, Calendar, Globe, ChevronLeft, ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import {
   AreaChart,
@@ -20,6 +20,14 @@ import {
   Legend,
   Cell,
 } from "recharts";
+
+interface Subscriber {
+  id: string;
+  name: string;
+  country: string;
+  payment_id: string | null;
+  subscribed_at: string;
+}
 
 interface Metric {
   id: string;
@@ -48,6 +56,95 @@ function parseNumeric(value: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function toFlag(code: string): string {
+  const cc = code.toUpperCase();
+  if (cc.length !== 2) return "";
+  const A = 0x1f1e6;
+  return String.fromCodePoint(A + (cc.charCodeAt(0) - 65), A + (cc.charCodeAt(1) - 65));
+}
+
+function countryFlag(country: string): string {
+  const c = country.trim();
+  if (!c) return "";
+
+  const map: Record<string, string> = {
+    Thailand: "TH",
+    USA: "US",
+    "United States": "US",
+    India: "IN",
+    Netherlands: "NL",
+    Brazil: "BR",
+    "South Korea": "KR",
+    Nigeria: "NG",
+    Kazakhstan: "KZ",
+    France: "FR",
+    UAE: "AE",
+    "United Arab Emirates": "AE",
+    Poland: "PL",
+    Sweden: "SE",
+    Japan: "JP",
+    Mexico: "MX",
+    Ireland: "IE",
+    Taiwan: "TW",
+    Ghana: "GH",
+    Bulgaria: "BG",
+    Italy: "IT",
+    Pakistan: "PK",
+    "New Zealand": "NZ",
+    Germany: "DE",
+    Spain: "ES",
+    Argentina: "AR",
+    "South Africa": "ZA",
+    Canada: "CA",
+    Egypt: "EG",
+    Serbia: "RS",
+    Fiji: "FJ",
+    Croatia: "HR",
+    UK: "GB",
+    "United Kingdom": "GB",
+    Chile: "CL",
+    Russia: "RU",
+    Australia: "AU",
+    Uzbekistan: "UZ",
+    Austria: "AT",
+    Oman: "OM",
+    Colombia: "CO",
+    Singapore: "SG",
+    Switzerland: "CH",
+    Ethiopia: "ET",
+    Peru: "PE",
+    "Cook Islands": "CK",
+    Nepal: "NP",
+    Belarus: "BY",
+    Vietnam: "VN",
+    Lebanon: "LB",
+    Uruguay: "UY",
+    Tonga: "TO",
+    Samoa: "WS",
+    Eswatini: "SZ",
+    Ukraine: "UA",
+    Jordan: "JO",
+    Somalia: "SO",
+    Morocco: "MA",
+    Zimbabwe: "ZW",
+    Montenegro: "ME",
+    Tunisia: "TN",
+    Iran: "IR",
+    Israel: "IL",
+    China: "CN",
+    Norway: "NO",
+  };
+
+  const mapped = map[c] || map[c.toUpperCase()];
+  if (mapped) return toFlag(mapped);
+
+  const parts = c.split(/\s+/);
+  const last = parts[parts.length - 1];
+  if (last.length === 2) return toFlag(last);
+
+  return "";
+}
+
 function formatValue(m: Metric, n?: number): string {
   const numeric = n ?? parseNumeric(m.value);
   if (m.unit === "USD") {
@@ -66,42 +163,54 @@ function seededRand(seed: number): number {
   return (x - Math.floor(x)) * 2 - 1;
 }
 
-/** Generate last-7-days data from the current total value */
+/** Generate last-7-days per-day data — always ignores saved cumulative chart_data.
+ *  Previous 6 days are stable (seeded). Today changes each calendar day. */
 function buildSevenDayData(m: Metric, tz: string): ChartPoint[] {
-  if (Array.isArray(m.chart_data) && m.chart_data.length >= 2) return m.chart_data;
-
   const base = parseNumeric(m.value);
   const now = new Date();
   const keySeed = m.key.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+  const dailyBase = base / 30;
+  const todaySeed = now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
 
   return Array.from({ length: 7 }, (_, i) => {
     const d = new Date(now);
     d.setDate(d.getDate() - (6 - i));
     const label = d.toLocaleDateString("en-US", { timeZone: tz, month: "short", day: "numeric" });
-    // Progressive growth: earlier days are smaller, latest ≈ current value
-    const progress = (i + 1) / 7;
-    const noise = seededRand(keySeed + i) * 0.07;
-    const value = Math.round(base * progress * (1 + noise));
+    const daySeed = i < 6 ? keySeed + i * 31 + 7777 : keySeed + todaySeed;
+    const factor = 1 + seededRand(daySeed) * 0.45;
+    const value = Math.max(0, Math.round(dailyBase * factor));
     return { date: label, value };
   });
 }
 
-/** Generate last-6-months growth data from current value */
-function buildMonthlyGrowth(metrics: Metric[], tz: string): { month: string; [key: string]: string | number }[] {
+/** Generate last-7-days % deviation from weekly mean for the combined area chart.
+ *  All metrics share the same ±% Y-axis so USD vs counts are all comparable. */
+function buildSevenDayPctGrowth(metrics: Metric[], tz: string): { date: string; [key: string]: string | number }[] {
   const now = new Date();
-  const months = Array.from({ length: 6 }, (_, i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
-    return d.toLocaleDateString("en-US", { timeZone: tz, month: "short", year: "2-digit" });
+  const todaySeed = now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
+
+  // Pre-compute raw daily values for each metric across all 7 days
+  const rawByMetric: Record<string, number[]> = {};
+  metrics.forEach((m) => {
+    const base = parseNumeric(m.value);
+    const keySeed = m.key.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+    const dailyBase = base / 30;
+    rawByMetric[m.label] = Array.from({ length: 7 }, (_, i) => {
+      const daySeed = i < 6 ? keySeed + i * 31 + 9999 : keySeed + todaySeed;
+      return Math.max(0, dailyBase * (1 + seededRand(daySeed) * 0.45));
+    });
   });
 
-  return months.map((month, idx) => {
-    const point: { month: string; [key: string]: string | number } = { month };
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(now);
+    d.setDate(d.getDate() - (6 - i));
+    const label = d.toLocaleDateString("en-US", { timeZone: tz, month: "short", day: "numeric" });
+    const point: { date: string; [key: string]: string | number } = { date: label };
     metrics.forEach((m) => {
-      const base = parseNumeric(m.value);
-      const keySeed = m.key.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
-      const progress = (idx + 1) / 6;
-      const noise = seededRand(keySeed + idx * 3) * 0.05;
-      point[m.label] = Math.round(base * progress * (1 + noise));
+      const vals = rawByMetric[m.label];
+      const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+      const pct = avg !== 0 ? ((vals[i] - avg) / avg) * 100 : 0;
+      point[m.label] = parseFloat(pct.toFixed(1));
     });
     return point;
   });
@@ -111,6 +220,7 @@ function accentColors(key: string) {
   if (key.includes("profit")) return { stroke: "#10b981", fill: "#10b981", border: "border-emerald-500/40", bg: "bg-emerald-500/5" };
   if (key.includes("loss")) return { stroke: "#ef4444", fill: "#ef4444", border: "border-red-500/40", bg: "bg-red-500/5" };
   if (key.includes("user")) return { stroke: "#0ea5e9", fill: "#0ea5e9", border: "border-sky-500/40", bg: "bg-sky-500/5" };
+  if (key.includes("accuracy")) return { stroke: "#f59e0b", fill: "#f59e0b", border: "border-amber-500/40", bg: "bg-amber-500/5" };
   if (key.includes("revenue")) return { stroke: "#6366f1", fill: "#6366f1", border: "border-indigo-500/40", bg: "bg-indigo-500/5" };
   return { stroke: "#8b5cf6", fill: "#8b5cf6", border: "border-violet-500/40", bg: "bg-violet-500/5" };
 }
@@ -171,23 +281,29 @@ function MetricSparkline({ m, data }: { m: Metric; data: ChartPoint[] }) {
   );
 }
 
+const SUB_PAGE_SIZE = 10;
+
 export default function PublicDashboardPage() {
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [loading, setLoading] = useState(true);
   const [tz] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
 
+  const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
+  const [subPage, setSubPage] = useState(1);
+
   useEffect(() => {
     const load = async () => {
       try {
         setLoading(true);
-        const { data, error } = await supabase
-          .from("public_dashboard_metrics")
-          .select("*")
-          .order("sort_order", { ascending: true });
-        if (error) throw error;
-        setMetrics((data as any[]) || []);
+        const [{ data: mData, error: mErr }, { data: sData }] = await Promise.all([
+          (supabase as any).from("public_dashboard_metrics").select("*").order("sort_order", { ascending: true }),
+          (supabase as any).from("recent_subscribers").select("id, name, country, payment_id, subscribed_at").order("subscribed_at", { ascending: false }),
+        ]);
+        if (mErr) throw mErr;
+        setMetrics((mData as any[]) || []);
+        setSubscribers((sData as any[]) || []);
       } catch (e) {
-        console.error("Failed to load public dashboard metrics", e);
+        console.error("Failed to load public dashboard", e);
       } finally {
         setLoading(false);
       }
@@ -205,12 +321,12 @@ export default function PublicDashboardPage() {
     [numericMetrics, tz]
   );
 
-  const monthlyGrowthData = useMemo(
-    () => buildMonthlyGrowth(numericMetrics.filter((m) => m.unit === "USD" || m.unit === ""), tz),
+  const sevenDayGrowthData = useMemo(
+    () => buildSevenDayPctGrowth(numericMetrics, tz),
     [numericMetrics, tz]
   );
 
-  const growthMetrics = numericMetrics.filter((m) => m.unit === "USD" || m.unit === "");
+  const growthMetrics = numericMetrics;
 
   return (
     <div className="min-h-screen bg-background">
@@ -290,9 +406,9 @@ export default function PublicDashboardPage() {
                   {numericMetrics.map((m) => {
                     const colors = accentColors(m.key);
                     const data = sevenDayDataMap[m.id] || [];
-                    const first = data[0]?.value ?? 0;
-                    const last = data[data.length - 1]?.value ?? 0;
-                    const growthPct = first !== 0 ? ((last - first) / Math.abs(first)) * 100 : 0;
+                    const prev = data[data.length - 2]?.value ?? 0;
+                    const curr = data[data.length - 1]?.value ?? 0;
+                    const growthPct = prev !== 0 ? ((curr - prev) / Math.abs(prev)) * 100 : 0;
 
                     return (
                       <Card key={m.id} className={`border ${colors.border}`}>
@@ -307,7 +423,7 @@ export default function PublicDashboardPage() {
                                 variant="outline"
                                 className={`text-[10px] ${growthPct >= 0 ? "border-emerald-500 text-emerald-600" : "border-red-500 text-red-500"}`}
                               >
-                                {growthPct >= 0 ? "+" : ""}{growthPct.toFixed(1)}% 7d
+                                {growthPct >= 0 ? "+" : ""}{growthPct.toFixed(1)}% today
                               </Badge>
                               <Badge variant="outline" className="text-[10px] uppercase">
                                 {m.chart_type || "area"}
@@ -325,35 +441,35 @@ export default function PublicDashboardPage() {
               </div>
             )}
 
-            {/* ── Monthly growth chart ── */}
-            {growthMetrics.length >= 1 && monthlyGrowthData.length > 0 && (
+            {/* ── 7-day % change chart — all metrics normalised to ±% ── */}
+            {growthMetrics.length >= 1 && sevenDayGrowthData.length > 0 && (
               <Card className="border-primary/30 bg-gradient-to-br from-primary/5 via-background to-background">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base flex items-center gap-2">
                     <TrendingUp className="h-4 w-4 text-primary" />
-                    Platform Growth — last 6 months
+                    Daily Performance — last 7 days (% vs weekly avg)
                   </CardTitle>
                   <p className="text-xs text-muted-foreground">
-                    Month-over-month cumulative growth across key metrics
+                    Each metric shown as % deviation from its own 7-day average — up/down every day
                   </p>
                 </CardHeader>
                 <CardContent className="pt-2">
                   <ResponsiveContainer width="100%" height={260}>
                     <AreaChart
-                      data={monthlyGrowthData}
+                      data={sevenDayGrowthData}
                       margin={{ top: 10, right: 16, left: 8, bottom: 0 }}
                     >
                       <defs>
                         {growthMetrics.map((m, idx) => (
                           <linearGradient key={m.id} id={`mgr-${m.id}`} x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor={GROWTH_PALETTE[idx % GROWTH_PALETTE.length]} stopOpacity={0.3} />
+                            <stop offset="5%" stopColor={GROWTH_PALETTE[idx % GROWTH_PALETTE.length]} stopOpacity={0.25} />
                             <stop offset="95%" stopColor={GROWTH_PALETTE[idx % GROWTH_PALETTE.length]} stopOpacity={0.02} />
                           </linearGradient>
                         ))}
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeOpacity={0.4} />
                       <XAxis
-                        dataKey="month"
+                        dataKey="date"
                         tick={{ fontSize: 11, fill: "#6b7280" }}
                         tickLine={false}
                         axisLine={false}
@@ -362,23 +478,14 @@ export default function PublicDashboardPage() {
                         tick={{ fontSize: 11, fill: "#6b7280" }}
                         tickLine={false}
                         axisLine={false}
-                        tickFormatter={(v) => {
-                          if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
-                          if (v >= 1_000) return `${(v / 1_000).toFixed(0)}K`;
-                          return String(v);
-                        }}
+                        tickFormatter={(v) => `${v > 0 ? "+" : ""}${v}%`}
                         width={52}
                       />
                       <Tooltip
                         contentStyle={{ background: "#1f2937", border: "none", borderRadius: "8px", color: "#f9fafb", fontSize: 12 }}
-                        formatter={(val: number, name: string) => {
-                          const metric = growthMetrics.find((m) => m.label === name);
-                          return metric ? [formatValue(metric, val), name] : [val.toLocaleString(), name];
-                        }}
+                        formatter={(val: number, name: string) => [`${val > 0 ? "+" : ""}${val}%`, name]}
                       />
-                      <Legend
-                        wrapperStyle={{ fontSize: 12, color: "#9ca3af", paddingTop: "8px" }}
-                      />
+                      <Legend wrapperStyle={{ fontSize: 12, color: "#9ca3af", paddingTop: "8px" }} />
                       {growthMetrics.map((m, idx) => (
                         <Area
                           key={m.id}
@@ -387,6 +494,7 @@ export default function PublicDashboardPage() {
                           stroke={GROWTH_PALETTE[idx % GROWTH_PALETTE.length]}
                           strokeWidth={2}
                           fill={`url(#mgr-${m.id})`}
+                          dot={false}
                         />
                       ))}
                     </AreaChart>
@@ -395,80 +503,92 @@ export default function PublicDashboardPage() {
               </Card>
             )}
 
-            {/* ── Combined snapshot bar chart ── */}
-            {numericMetrics.length >= 2 && (() => {
-              const snapshotData = numericMetrics.map((m) => ({
-                id: m.id,
-                label: m.label,
-                unit: m.unit,
-                value: parseNumeric(m.value),
-              }));
-
+            {/* ── Recent Subscribers ── */}
+            {subscribers.length > 0 && (() => {
+              const totalPages = Math.ceil(subscribers.length / SUB_PAGE_SIZE);
+              const pageSlice = subscribers.slice((subPage - 1) * SUB_PAGE_SIZE, subPage * SUB_PAGE_SIZE);
               return (
-              <Card className="border-border/50">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <BarChart3 className="h-4 w-4 text-primary" />
-                    Platform Snapshot — current totals
-                  </CardTitle>
-                  <p className="text-xs text-muted-foreground">Relative comparison of all metrics at a glance</p>
-                </CardHeader>
-                <CardContent className="pt-2">
-                  <ResponsiveContainer width="100%" height={200}>
-                    <BarChart
-                      data={snapshotData}
-                      margin={{ top: 4, right: 16, left: 8, bottom: 4 }}
-                      layout="vertical"
-                    >
-                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeOpacity={0.4} horizontal={false} />
-                      <XAxis
-                        type="number"
-                        tick={{ fontSize: 11, fill: "#6b7280" }}
-                        tickLine={false}
-                        axisLine={false}
-                        tickFormatter={(v) => {
-                          if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
-                          if (v >= 1_000) return `${(v / 1_000).toFixed(0)}K`;
-                          return String(v);
-                        }}
-                      />
-                      <YAxis
-                        type="category"
-                        dataKey="label"
-                        tick={{ fontSize: 11, fill: "#6b7280" }}
-                        tickLine={false}
-                        axisLine={false}
-                        width={120}
-                      />
-                      <Tooltip
-                        contentStyle={{ background: "#1f2937", border: "none", borderRadius: "8px", color: "#f9fafb", fontSize: 12 }}
-                        formatter={(val: number, _name: string, props: any) => {
-                          const label = props?.payload?.label as string | undefined;
-                          const metric = numericMetrics.find((m) => m.label === label);
-                          return metric
-                            ? [formatValue(metric, val), metric.label]
-                            : [val.toLocaleString(), label ?? ""];
-                        }}
-                      />
-                      <Legend
-                        wrapperStyle={{ fontSize: 12, color: "#9ca3af" }}
-                        formatter={(_, entry: any) => entry?.payload?.label || ""}
-                      />
-                      <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                        {snapshotData.map((row, idx) => (
-                          <Cell
-                            key={row.id}
-                            fill={GROWTH_PALETTE[idx % GROWTH_PALETTE.length]}
-                            fillOpacity={0.9}
-                          />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
+                <div>
+                  <h2 className="text-base font-semibold mb-4 flex items-center gap-2">
+                    <Globe className="h-4 w-4 text-primary" />
+                    Recent Members
+                    <Badge variant="outline" className="text-[10px] ml-1">{subscribers.length} total</Badge>
+                  </h2>
+                  <Card className="border-border/50">
+                    <CardContent className="p-0">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-border/50 bg-muted/30">
+                              <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">#</th>
+                              <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">Name</th>
+                              <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">Country</th>
+                              <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">Payment Ref</th>
+                              <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">Joined</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {pageSlice.map((s, idx) => {
+                              const globalIdx = (subPage - 1) * SUB_PAGE_SIZE + idx + 1;
+                              const joinedDate = new Date(s.subscribed_at).toLocaleDateString("en-US", {
+                                month: "short", day: "numeric", year: "numeric", timeZone: tz,
+                              });
+                              const maskedRef = s.payment_id
+                                ? s.payment_id.length > 8
+                                  ? `${s.payment_id.slice(0, 6)}••••`
+                                  : s.payment_id
+                                : "—";
+                              return (
+                                <tr key={s.id} className="border-b border-border/30 hover:bg-muted/20 transition-colors">
+                                  <td className="px-4 py-3 text-muted-foreground text-xs">{globalIdx}</td>
+                                  <td className="px-4 py-3 font-medium">{s.name}</td>
+                                  <td className="px-4 py-3">
+                                    {(() => {
+                                      const flag = countryFlag(s.country);
+                                      return (
+                                        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                                          {flag ? (
+                                            <span className="text-base leading-none">{flag}</span>
+                                          ) : (
+                                            <Globe className="h-3 w-3" />
+                                          )}
+                                          <span>{s.country}</span>
+                                        </span>
+                                      );
+                                    })()}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <code className="text-xs bg-muted/40 px-1.5 py-0.5 rounded font-mono">{maskedRef}</code>
+                                  </td>
+                                  <td className="px-4 py-3 text-xs text-muted-foreground">{joinedDate}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      {totalPages > 1 && (
+                        <div className="flex items-center justify-between px-4 py-3 border-t border-border/30">
+                          <p className="text-xs text-muted-foreground">
+                            Showing {(subPage - 1) * SUB_PAGE_SIZE + 1}–{Math.min(subPage * SUB_PAGE_SIZE, subscribers.length)} of {subscribers.length}
+                          </p>
+                          <div className="flex items-center gap-1">
+                            <Button variant="outline" size="icon" className="h-7 w-7" disabled={subPage === 1} onClick={() => setSubPage(p => p - 1)}>
+                              <ChevronLeft className="h-3 w-3" />
+                            </Button>
+                            <span className="text-xs px-2">{subPage} / {totalPages}</span>
+                            <Button variant="outline" size="icon" className="h-7 w-7" disabled={subPage === totalPages} onClick={() => setSubPage(p => p + 1)}>
+                              <ChevronRight className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
               );
             })()}
+
           </>
         )}
       </div>

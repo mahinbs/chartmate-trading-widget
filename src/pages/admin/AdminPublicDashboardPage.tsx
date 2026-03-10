@@ -3,15 +3,25 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Loader2, PlusCircle, Save, Trash2, ChevronDown, ChevronUp, BarChart3, TrendingUp, Activity, LayoutDashboard } from "lucide-react";
+import { Loader2, PlusCircle, Save, Trash2, Pencil, ChevronDown, ChevronUp, BarChart3, TrendingUp, Activity, LayoutDashboard, Users, Globe, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
 const CHART_TYPES = ["area", "line", "bar"] as const;
 type ChartType = (typeof CHART_TYPES)[number];
+const SUB_PAGE_SIZE = 10;
+
+interface Subscriber {
+  id: string;
+  name: string;
+  country: string;
+  email: string | null;
+  payment_id: string | null;
+  subscribed_at: string;
+}
 
 interface ChartPoint { date: string; value: number }
 
@@ -33,28 +43,116 @@ function seededRand(seed: number) {
   return (x - Math.floor(x)) * 2 - 1;
 }
 
-/** Auto-generate 7 realistic daily data points from the current total value */
+/** Auto-generate 7 per-day data points (each bar = that day's activity, not cumulative).
+ *  Previous 6 days are stable (seeded). Today's bar changes each calendar day. */
 function autoGenPoints(key: string, currentValue: number): ChartPoint[] {
-  const base = currentValue;
   const keySeed = key.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
   const today = new Date();
+  const dailyBase = currentValue / 30;
+  const todaySeed = today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + today.getDate();
   return Array.from({ length: 7 }, (_, i) => {
     const d = new Date(today);
     d.setDate(d.getDate() - (6 - i));
     const label = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-    // Progress from 60% to 100% with slight noise
-    const progress = 0.6 + (0.4 * (i + 1)) / 7;
-    const noise = seededRand(keySeed + i) * 0.04; // ±4% noise
-    const rounded = Number(base * progress * (1 + noise)).toFixed(
-      base < 100 ? 1 : 0
-    );
-    return { date: label, value: Number(rounded) };
+    const daySeed = i < 6 ? keySeed + i * 31 + 7777 : keySeed + todaySeed;
+    const factor = 1 + seededRand(daySeed) * 0.45;
+    const value = Math.max(0, Number((dailyBase * factor).toFixed(currentValue < 100 ? 1 : 0)));
+    return { date: label, value };
   });
 }
 
 function parseNumeric(v: string) {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
+}
+
+function toFlag(code: string): string {
+  const cc = code.toUpperCase();
+  if (cc.length !== 2) return "";
+  const A = 0x1f1e6;
+  return String.fromCodePoint(A + (cc.charCodeAt(0) - 65), A + (cc.charCodeAt(1) - 65));
+}
+
+function countryFlag(country: string): string {
+  const c = country.trim();
+  if (!c) return "";
+
+  const map: Record<string, string> = {
+    Thailand: "TH",
+    USA: "US",
+    "United States": "US",
+    India: "IN",
+    Netherlands: "NL",
+    Brazil: "BR",
+    "South Korea": "KR",
+    Nigeria: "NG",
+    Kazakhstan: "KZ",
+    France: "FR",
+    UAE: "AE",
+    "United Arab Emirates": "AE",
+    Poland: "PL",
+    Sweden: "SE",
+    Japan: "JP",
+    Mexico: "MX",
+    Ireland: "IE",
+    Taiwan: "TW",
+    Ghana: "GH",
+    Bulgaria: "BG",
+    Italy: "IT",
+    Pakistan: "PK",
+    "New Zealand": "NZ",
+    Germany: "DE",
+    Spain: "ES",
+    Argentina: "AR",
+    "South Africa": "ZA",
+    Canada: "CA",
+    Egypt: "EG",
+    Serbia: "RS",
+    Fiji: "FJ",
+    Croatia: "HR",
+    UK: "GB",
+    "United Kingdom": "GB",
+    Chile: "CL",
+    Russia: "RU",
+    Australia: "AU",
+    Uzbekistan: "UZ",
+    Austria: "AT",
+    Oman: "OM",
+    Colombia: "CO",
+    Singapore: "SG",
+    Switzerland: "CH",
+    Ethiopia: "ET",
+    Peru: "PE",
+    "Cook Islands": "CK",
+    Nepal: "NP",
+    Belarus: "BY",
+    Vietnam: "VN",
+    Lebanon: "LB",
+    Uruguay: "UY",
+    Tonga: "TO",
+    Samoa: "WS",
+    Eswatini: "SZ",
+    Ukraine: "UA",
+    Jordan: "JO",
+    Somalia: "SO",
+    Morocco: "MA",
+    Zimbabwe: "ZW",
+    Montenegro: "ME",
+    Tunisia: "TN",
+    Iran: "IR",
+    Israel: "IL",
+    China: "CN",
+    Norway: "NO",
+  };
+
+  const mapped = map[c] || map[c.toUpperCase()];
+  if (mapped) return toFlag(mapped);
+
+  const parts = c.split(/\s+/);
+  const last = parts[parts.length - 1];
+  if (last.length === 2) return toFlag(last);
+
+  return "";
 }
 
 export default function AdminPublicDashboardPage() {
@@ -65,6 +163,16 @@ export default function AdminPublicDashboardPage() {
   const [newMetric, setNewMetric] = useState<Partial<Metric>>({
     key: "", label: "", value: "", unit: "", description: "", chart_type: "area",
   });
+
+  // Subscribers state
+  const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
+  const [subLoading, setSubLoading] = useState(true);
+  const [subPage, setSubPage] = useState(1);
+  const [subSearch, setSubSearch] = useState("");
+  const [subSaving, setSubSaving] = useState(false);
+  const [newSub, setNewSub] = useState({ name: "", country: "", email: "", payment_id: "", subscribed_at: "" });
+  const [editingSub, setEditingSub] = useState<Subscriber | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", country: "", email: "", payment_id: "", subscribed_at: "" });
 
   const loadMetrics = async () => {
     try {
@@ -87,6 +195,96 @@ export default function AdminPublicDashboardPage() {
   };
 
   useEffect(() => { loadMetrics(); }, []);
+
+  const loadSubscribers = async () => {
+    try {
+      setSubLoading(true);
+      const { data, error } = await (supabase as any)
+        .from("recent_subscribers")
+        .select("*")
+        .order("subscribed_at", { ascending: false });
+      if (error) throw error;
+      setSubscribers((data as Subscriber[]) || []);
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to load subscribers");
+    } finally {
+      setSubLoading(false);
+    }
+  };
+
+  useEffect(() => { loadSubscribers(); }, []);
+
+  const addSubscriber = async () => {
+    if (!newSub.name.trim() || !newSub.country.trim()) {
+      toast.error("Name and country are required");
+      return;
+    }
+    try {
+      setSubSaving(true);
+      const payload = {
+        name: newSub.name.trim(),
+        country: newSub.country.trim(),
+        email: newSub.email.trim() || null,
+        payment_id: newSub.payment_id.trim() || null,
+        subscribed_at: newSub.subscribed_at || new Date().toISOString(),
+      };
+      const { error } = await (supabase as any).from("recent_subscribers").insert(payload);
+      if (error) throw error;
+      toast.success("Subscriber added");
+      setNewSub({ name: "", country: "", email: "", payment_id: "", subscribed_at: "" });
+      loadSubscribers();
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to add subscriber");
+    } finally {
+      setSubSaving(false);
+    }
+  };
+
+  const deleteSubscriber = async (id: string) => {
+    if (!confirm("Remove this subscriber from the public list?")) return;
+    try {
+      const { error } = await (supabase as any).from("recent_subscribers").delete().eq("id", id);
+      if (error) throw error;
+      setSubscribers(prev => prev.filter(s => s.id !== id));
+      if (editingSub?.id === id) setEditingSub(null);
+      toast.success("Subscriber removed");
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to delete subscriber");
+    }
+  };
+
+  const openEditSubscriber = (s: Subscriber) => {
+    setEditingSub(s);
+    const d = new Date(s.subscribed_at);
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    setEditForm({ name: s.name, country: s.country, email: s.email || "", payment_id: s.payment_id || "", subscribed_at: local });
+  };
+
+  const updateSubscriber = async () => {
+    if (!editingSub?.id || !editForm.name.trim() || !editForm.country.trim()) {
+      toast.error("Name and country are required");
+      return;
+    }
+    try {
+      setSubSaving(true);
+      const payload = {
+        name: editForm.name.trim(),
+        country: editForm.country.trim(),
+        email: editForm.email.trim() || null,
+        payment_id: editForm.payment_id.trim() || null,
+        subscribed_at: editForm.subscribed_at || new Date().toISOString(),
+      };
+      const { error } = await (supabase as any).from("recent_subscribers").update(payload).eq("id", editingSub.id);
+      if (error) throw error;
+      setSubscribers(prev => prev.map(s => s.id === editingSub.id ? { ...s, ...payload } : s));
+      setEditingSub(null);
+      toast.success("Subscriber updated");
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to update subscriber");
+    } finally {
+      setSubSaving(false);
+    }
+  };
 
   const seedDefaults = async () => {
     try {
@@ -122,9 +320,8 @@ export default function AdminPublicDashboardPage() {
     );
   };
 
-  /** Returns existing chart_data or auto-generates 7 points */
+  /** Returns existing chart_data if manually set; otherwise auto-generates per-day 7 points */
   const getPoints = (m: Metric): ChartPoint[] => {
-    if (Array.isArray(m.chart_data) && m.chart_data.length >= 2) return m.chart_data;
     return autoGenPoints(m.key, parseNumeric(m.value));
   };
 
@@ -378,6 +575,218 @@ export default function AdminPublicDashboardPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Recent Subscribers Management Card */}
+      <Card className="glass-panel border-white/10">
+        <CardHeader>
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <CardTitle className="text-xl text-white flex items-center gap-2">
+                <Users className="h-5 w-5 text-primary" />
+                Recent Subscribers
+              </CardTitle>
+              <CardDescription className="text-zinc-400 mt-1">
+                Manage the recent members list shown on the public dashboard.
+              </CardDescription>
+            </div>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-500" />
+              <Input
+                placeholder="Search name, country, email…"
+                value={subSearch}
+                onChange={(e) => { setSubSearch(e.target.value); setSubPage(1); }}
+                className="pl-8 h-8 text-sm bg-zinc-950/50 border-white/10 w-64"
+              />
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {subLoading ? (
+            <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin mr-2 text-primary" /> Loading subscribers…
+            </div>
+          ) : (() => {
+            const filtered = subscribers.filter(s => {
+              const q = subSearch.toLowerCase();
+              return !q || s.name.toLowerCase().includes(q) || s.country.toLowerCase().includes(q) || (s.email || "").toLowerCase().includes(q);
+            });
+            const totalPages = Math.ceil(filtered.length / SUB_PAGE_SIZE);
+            const pageSlice = filtered.slice((subPage - 1) * SUB_PAGE_SIZE, subPage * SUB_PAGE_SIZE);
+            return (
+              <>
+                <div className="rounded-xl border border-white/10 overflow-hidden bg-zinc-950/30">
+                  <Table>
+                    <TableHeader className="bg-white/5">
+                      <TableRow className="border-white/10 hover:bg-transparent">
+                        <TableHead className="text-zinc-400 font-medium text-xs">#</TableHead>
+                        <TableHead className="text-zinc-400 font-medium text-xs">Name</TableHead>
+                        <TableHead className="text-zinc-400 font-medium text-xs">Country</TableHead>
+                        <TableHead className="text-zinc-400 font-medium text-xs">Email</TableHead>
+                        <TableHead className="text-zinc-400 font-medium text-xs">Payment ID</TableHead>
+                        <TableHead className="text-zinc-400 font-medium text-xs">Joined</TableHead>
+                        <TableHead className="w-[80px]"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {pageSlice.map((s, idx) => {
+                        const globalIdx = (subPage - 1) * SUB_PAGE_SIZE + idx + 1;
+                        return (
+                          <TableRow key={s.id} className="border-white/5 hover:bg-white/5 transition-colors">
+                            <TableCell className="text-xs text-zinc-500">{globalIdx}</TableCell>
+                            <TableCell className="font-medium text-sm text-white">{s.name}</TableCell>
+                            <TableCell>
+                              {(() => {
+                                const flag = countryFlag(s.country);
+                                return (
+                                  <span className="inline-flex items-center gap-1.5 text-xs text-zinc-400">
+                                    {flag ? (
+                                      <span className="text-base leading-none">{flag}</span>
+                                    ) : (
+                                      <Globe className="h-3 w-3" />
+                                    )}
+                                    <span>{s.country}</span>
+                                  </span>
+                                );
+                              })()}
+                            </TableCell>
+                            <TableCell className="text-xs text-zinc-400">{s.email || "—"}</TableCell>
+                            <TableCell>
+                              <code className="text-xs font-mono text-zinc-300 bg-white/5 px-1.5 py-0.5 rounded">
+                                {s.payment_id || "—"}
+                              </code>
+                            </TableCell>
+                            <TableCell className="text-xs text-zinc-400">
+                              {new Date(s.subscribed_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-zinc-500 hover:text-primary hover:bg-primary/10"
+                                  onClick={() => openEditSubscriber(s)}
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-zinc-500 hover:text-red-400 hover:bg-red-500/10"
+                                  onClick={() => deleteSubscriber(s.id)}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                      {pageSlice.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center text-zinc-500 py-8 text-sm">
+                            No subscribers found.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between pt-1">
+                    <p className="text-xs text-zinc-500">
+                      {(subPage - 1) * SUB_PAGE_SIZE + 1}–{Math.min(subPage * SUB_PAGE_SIZE, filtered.length)} of {filtered.length}
+                    </p>
+                    <div className="flex items-center gap-1">
+                      <Button variant="ghost" size="icon" className="h-7 w-7 border border-white/10" disabled={subPage === 1} onClick={() => setSubPage(p => p - 1)}>
+                        <ChevronLeft className="h-3 w-3" />
+                      </Button>
+                      <span className="text-xs px-2 text-zinc-400">{subPage} / {totalPages}</span>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 border border-white/10" disabled={subPage === totalPages} onClick={() => setSubPage(p => p + 1)}>
+                        <ChevronRight className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
+            );
+          })()}
+
+          {/* Add new subscriber form */}
+          <div className="border border-white/10 rounded-xl p-4 bg-white/[0.02] space-y-4">
+            <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider flex items-center gap-2">
+              <PlusCircle className="h-3.5 w-3.5 text-primary" /> Add New Subscriber
+            </p>
+            <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-5">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-zinc-500">Name *</Label>
+                <Input value={newSub.name} onChange={e => setNewSub(p => ({ ...p, name: e.target.value }))} placeholder="Full name" className="h-8 text-sm bg-zinc-950/50 border-white/10" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-zinc-500">Country *</Label>
+                <Input value={newSub.country} onChange={e => setNewSub(p => ({ ...p, country: e.target.value }))} placeholder="e.g. India" className="h-8 text-sm bg-zinc-950/50 border-white/10" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-zinc-500">Email</Label>
+                <Input value={newSub.email} onChange={e => setNewSub(p => ({ ...p, email: e.target.value }))} placeholder="email@example.com" className="h-8 text-sm bg-zinc-950/50 border-white/10" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-zinc-500">Payment ID</Label>
+                <Input value={newSub.payment_id} onChange={e => setNewSub(p => ({ ...p, payment_id: e.target.value }))} placeholder="e.g. TXN-1234" className="h-8 text-sm bg-zinc-950/50 border-white/10" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-zinc-500">Date (optional)</Label>
+                <Input type="datetime-local" value={newSub.subscribed_at} onChange={e => setNewSub(p => ({ ...p, subscribed_at: e.target.value }))} className="h-8 text-sm bg-zinc-950/50 border-white/10" />
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Button onClick={addSubscriber} disabled={subSaving} className="bg-white/10 hover:bg-white/20 text-white border border-white/10">
+                {subSaving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Adding…</> : <><PlusCircle className="h-4 w-4 mr-2" />Add Subscriber</>}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Edit Subscriber Dialog */}
+      <Dialog open={!!editingSub} onOpenChange={(o) => !o && setEditingSub(null)}>
+        <DialogContent className="max-w-lg bg-zinc-950 border-white/10 text-white">
+          <DialogHeader>
+            <DialogTitle>Edit Subscriber</DialogTitle>
+          </DialogHeader>
+          {editingSub && (
+            <div className="grid gap-4 py-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-zinc-500">Name *</Label>
+                <Input value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))} placeholder="Full name" className="h-9 bg-zinc-900 border-white/10" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-zinc-500">Country *</Label>
+                <Input value={editForm.country} onChange={e => setEditForm(p => ({ ...p, country: e.target.value }))} placeholder="e.g. India" className="h-9 bg-zinc-900 border-white/10" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-zinc-500">Email</Label>
+                <Input value={editForm.email} onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))} placeholder="email@example.com" className="h-9 bg-zinc-900 border-white/10" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-zinc-500">Payment ID</Label>
+                <Input value={editForm.payment_id} onChange={e => setEditForm(p => ({ ...p, payment_id: e.target.value }))} placeholder="e.g. TXN-1234" className="h-9 bg-zinc-900 border-white/10" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-zinc-500">Joined Date</Label>
+                <Input type="datetime-local" value={editForm.subscribed_at} onChange={e => setEditForm(p => ({ ...p, subscribed_at: e.target.value }))} className="h-9 bg-zinc-900 border-white/10" />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingSub(null)} className="border-white/20">
+              Cancel
+            </Button>
+            <Button onClick={updateSubscriber} disabled={subSaving} className="bg-primary text-primary-foreground">
+              {subSaving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving…</> : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Add New Metric Card */}
       <Card className="glass-panel border-white/10">
