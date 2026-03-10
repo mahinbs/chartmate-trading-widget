@@ -786,20 +786,34 @@ export default function PublicDashboardPage() {
                   <Card className="bg-zinc-900/50 border-zinc-800">
                     <CardHeader><CardTitle className="text-sm">Recent Purchases</CardTitle></CardHeader>
                     <CardContent className="space-y-4">
-                      {[
-                        { name: 'Carlos Mendes', action: 'purchased Pro License', time: '2m ago' },
-                        { name: 'Ahmed Hassan', action: 'purchased Basic License', time: '15m ago' },
-                        { name: 'Luca Romano', action: 'upgraded to Institutional', time: '1h ago' },
-                        { name: 'Sarah Chen', action: 'purchased Pro License', time: '2h ago' },
-                      ].map((item, i) => (
-                        <div key={i} className="flex flex-col gap-0.5 text-sm border-b border-zinc-800/50 last:border-0 pb-3 last:pb-0">
-                          <div className="font-medium text-zinc-200">{item.name}</div>
-                          <div className="text-xs text-zinc-500 flex justify-between">
-                            <span>{item.action}</span>
-                            <span>{item.time}</span>
+                      {(() => {
+                        const licenseTypes = ['Pro License', 'Basic License', 'Pro License', 'Institutional License'];
+                        const actions = ['purchased', 'purchased', 'upgraded to', 'purchased'];
+                        const realNames = subscribers.slice(0, 2).map((s) => s.name);
+                        const fallbacks = ['Carlos Mendes', 'Ahmed Hassan', 'Luca Romano', 'Sarah Chen'];
+                        return Array.from({ length: 4 }, (_, i) => ({
+                          name: realNames[i] ?? fallbacks[i],
+                          action: `${actions[i]} ${licenseTypes[i]}`,
+                          isReal: i < realNames.length,
+                        }));
+                      })().map((item, i) => {
+                        const diffMs = [2 * 60000, 15 * 60000, 60 * 60000, 2 * 3600000][i];
+                        const timeLabel = item.isReal
+                          ? new Date(subscribers[i]?.subscribed_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+                          : ['2m ago', '15m ago', '1h ago', '2h ago'][i];
+                        return (
+                          <div key={i} className="flex flex-col gap-0.5 text-sm border-b border-zinc-800/50 last:border-0 pb-3 last:pb-0">
+                            <div className="font-medium text-zinc-200 flex items-center gap-1.5">
+                              {item.isReal && <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 inline-block" />}
+                              {item.name}
+                            </div>
+                            <div className="text-xs text-zinc-500 flex justify-between">
+                              <span>{item.action}</span>
+                              <span>{timeLabel}</span>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </CardContent>
                   </Card>
 
@@ -915,18 +929,27 @@ export default function PublicDashboardPage() {
                   <Card className="bg-zinc-900/50 border-zinc-800">
                     <CardHeader><CardTitle className="text-sm flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div> Live Users</CardTitle></CardHeader>
                     <CardContent className="space-y-4">
-                      {[
-                        { name: 'Ethan Walker', action: 'executing trade' },
-                        { name: 'Arjun Mehta', action: 'viewing strategy' },
-                        { name: 'Sofia Martinez', action: 'placing order' },
-                        { name: 'Luca Romano', action: 'reviewing signals' },
-                      ].map((u, i) => (
+                      {(() => {
+                        const liveActions = ['executing trade', 'viewing strategy', 'placing order', 'reviewing signals', 'analyzing charts', 'checking portfolio'];
+                        const fallbacks = ['Ethan Walker', 'Arjun Mehta', 'Sofia Martinez', 'Luca Romano'];
+                        const pool = subscribers.length > 0
+                          ? subscribers.slice(0, Math.max(4, subscribers.length)).map((s, i) => ({
+                              name: s.name,
+                              action: liveActions[i % liveActions.length],
+                              isReal: true,
+                            }))
+                          : fallbacks.map((name, i) => ({ name, action: liveActions[i], isReal: false }));
+                        return pool.slice(0, 6);
+                      })().map((u, i) => (
                         <div key={i} className="flex items-center gap-3 text-sm">
                           <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-xs font-bold text-zinc-400">
-                            {u.name.split(' ').map(n => n[0]).join('')}
+                            {u.name.split(' ').map((n: string) => n[0]).join('')}
                           </div>
-                          <div>
-                            <div className="font-medium text-zinc-200">{u.name}</div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-zinc-200 flex items-center gap-1.5 truncate">
+                              {u.name}
+                              {u.isReal && <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse flex-shrink-0" />}
+                            </div>
                             <div className="text-xs text-zinc-500">{u.action}</div>
                           </div>
                         </div>
