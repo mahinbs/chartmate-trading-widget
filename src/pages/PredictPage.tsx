@@ -297,7 +297,17 @@ const PredictPage = () => {
 
         if (!error && data) {
           setMarketStatus(data);
-          setMarketClosed(data.marketState === 'CLOSED' || data.marketState === 'PRE' || data.marketState === 'POST');
+          const isIndianExchange =
+            data.exchange === 'NSE' ||
+            data.exchange === 'BSE';
+          // For Indian stocks (NSE/BSE), always allow immediate entry
+          // and avoid showing \"Market closed\" banners in the UI.
+          setMarketClosed(
+            !isIndianExchange &&
+            (data.marketState === 'CLOSED' ||
+              data.marketState === 'PRE' ||
+              data.marketState === 'POST')
+          );
         }
       } catch (err) {
         console.error('Failed to fetch market status:', err);
