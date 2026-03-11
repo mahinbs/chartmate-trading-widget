@@ -3,6 +3,7 @@ import { FaBars, FaTimes } from "react-icons/fa";
 import { Link } from "react-router-dom";
 import logoImg from "@/assets/logo.png";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
 const BASE_NAV_ITEMS = [
   { id: "hero", label: "Overview" },
@@ -30,6 +31,7 @@ const AiPredictionHeader: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [hasBlogs, setHasBlogs] = useState(false);
   const [hasDashboard, setHasDashboard] = useState(false);
+  const { user } = useAuth();
 
   useEffect(() => {
     const loadFlags = async () => {
@@ -105,12 +107,12 @@ const AiPredictionHeader: React.FC = () => {
               )
             ))}
 
-            {/* Desktop login button */}
+            {/* Desktop login / dashboard button */}
             <Link
-              to="/auth"
+              to={user ? "/home" : "/auth"}
               className="ml-4 inline-flex items-center rounded-full bg-primary px-8 py-2 font-semibold bg-teal-500 hover:bg-teal-400 text-black text-sm shadow-[0_0_30px_rgba(20,184,166,0.3)] hover:shadow-[0_0_50px_rgba(20,184,166,0.5)] border border-teal-400/50 transition-all duration-300 hover:-translate-y-0.5"
             >
-              Login
+              {user ? "Dashboard" : "Login"}
             </Link>
           </nav>
 
@@ -184,13 +186,13 @@ const AiPredictionHeader: React.FC = () => {
               )
             ))}
 
-            {/* Mobile login button */}
+            {/* Mobile login / dashboard button */}
             <Link
-              to="/auth"
+              to={user ? "/home" : "/auth"}
               onClick={() => setIsOpen(false)}
-              className="mt-4 w-full rounded-xl bg-white text-black py-3 text-center text-sm font-bold tracking-wide hover:bg-primary hover:text-black transition-colors"
+              className="mt-4 w-full rounded-xl bg-teal-500 hover:bg-teal-400 text-black py-3 text-center text-sm font-bold tracking-wide transition-colors"
             >
-              Login
+              {user ? "Dashboard" : "Login"}
             </Link>
           </nav>
         </div>

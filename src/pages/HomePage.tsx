@@ -26,7 +26,7 @@ export default function HomePage() {
             onClick={() => navigate('/home')}
             className="flex items-center gap-2 hover:opacity-90 transition-opacity group"
           >
-            <img src={logo} alt="logo" className="md:w-[8rem] w-[6rem] object-contain" />
+            <img src={logo} alt="logo" className="w-[3rem] lg:w-[5rem] object-contain" />
           </button>
           <div className="flex items-center gap-4">
             <span className="text-sm text-muted-foreground hidden md:inline-block">{user?.email}</span>
@@ -131,7 +131,7 @@ export default function HomePage() {
         </div>
 
         {/* Additional Options */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <Card className="minimal-panel hover:bg-white/5 transition-colors cursor-pointer group"
             onClick={() => navigate('/predictions')}>
             <CardHeader className="pb-3">
@@ -165,10 +165,8 @@ export default function HomePage() {
               </p>
             </CardContent>
           </Card>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-          <Card className="minimal-panel hover:bg-white/5 transition-colors cursor-pointer group"
+        {/* <div className="grid grid-cols-1 sm:grid-cols-1 gap-4 mt-4"> */}
+          {/* <Card className="minimal-panel hover:bg-white/5 transition-colors cursor-pointer group"
             onClick={() => navigate('/market-picks')}>
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-3 text-lg">
@@ -183,7 +181,7 @@ export default function HomePage() {
                 View admin-curated top 10 symbols with live AI probability scores.
               </p>
             </CardContent>
-          </Card>
+          </Card> */}
 
           {isAdmin && (
             <Card className="minimal-panel hover:bg-white/5 transition-colors cursor-pointer group"
@@ -203,7 +201,9 @@ export default function HomePage() {
               </CardContent>
             </Card>
           )}
+        {/* </div> */}
         </div>
+
 
         {/* Features Highlight */}
         <Card className="mt-8 bg-zinc-900/30 border border-white/5 backdrop-blur-sm">
