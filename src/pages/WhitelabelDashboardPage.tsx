@@ -1,293 +1,322 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, AlertTriangle, Users, Link2, CalendarDays, LogOut, ArrowRight, Copy, CheckCircle2 } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertTriangle, Users, CalendarDays, LogOut, ArrowRight, Copy,
+  CheckCircle2, PlusCircle, RefreshCw, Link2
+} from "lucide-react";
+
+/* ── Hooks ── */
 import { useWhitelabelTenant, isTenantExpired, daysRemaining } from "@/hooks/useWhitelabel";
 import { useAuth } from "@/hooks/useAuth";
+import { useWhitelabelAffiliates, AffiliateRow } from "@/hooks/useWhitelabelAffiliates";
+import { useWhitelabelUsers } from "@/hooks/useWhitelabelUsers";
 import { toast } from "sonner";
 
-interface TenantUser {
-  id: string;
-  user_id: string;
-  role: string;
-  status: string;
-  created_at: string;
-  email?: string;
-}
+/* ── Components ── */
+import { DashboardStats } from "@/components/whitelabel/DashboardStats";
+import { AffiliateTable } from "@/components/whitelabel/AffiliateTable";
+import { BrandedLinkBoard } from "@/components/whitelabel/BrandedLinkBoard";
+import { UserTable } from "@/components/whitelabel/UserTable";
+import { AffiliateDetailDialog } from "@/components/whitelabel/AffiliateDetailDialog";
+import { CreateAffiliateDialog } from "@/components/whitelabel/CreateAffiliateDialog";
+
+const defaultAffForm = { code: "", name: "", email: "", commission_percent: 10, is_active: true };
 
 export default function WhitelabelDashboardPage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
-  const { user, loading: authLoading } = useAuth();
+  const { user: realUser, loading: authLoading } = useAuth();
   const { tenant, loading: tenantLoading } = useWhitelabelTenant(slug);
-  const [membership, setMembership] = useState<{ role: string; status: string } | null>(null);
-  const [users, setUsers] = useState<TenantUser[]>([]);
-  const [loadingUsers, setLoadingUsers] = useState(true);
-  const [copied, setCopied] = useState(false);
+
+  /* ── Demo / Dummy Mode State ── */
+  const isDummy = localStorage.getItem("wl_dummy_auth") === "true";
+  const user = isDummy ? { id: "dummy-123", email: "admin@admin.com", user_metadata: { full_name: "Demo Admin" } } : realUser;
+  const isWLAdmin = true; // For now assuming admin if they reach this page, can be refined based on membership role
+
+  /* ── Data Hooks ── */
+  const { affiliates, loading: loadingAffiliates, refresh: refreshAffiliates } = useWhitelabelAffiliates(user?.id, tenant?.id, isWLAdmin, isDummy);
+  const { users, loading: loadingUsers } = useWhitelabelUsers(tenant?.id, isWLAdmin, isDummy);
+
+  /* ── UI State ── */
+  const [mainTab, setMainTab] = useState<"overview" | "affiliates">("overview");
+  const [affDialogOpen, setAffDialogOpen] = useState(false);
+  const [affSaving, setAffSaving] = useState(false);
+  const [affEditingId, setAffEditingId] = useState<string | null>(null);
+  const [editingData, setEditingData] = useState(defaultAffForm);
+  const [detailAff, setDetailAff] = useState<any | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [tempCredentials, setTempCredentials] = useState<{ email: string; temp_password: string } | null>(null);
 
   const expired = isTenantExpired(tenant);
   const days = tenant ? daysRemaining(tenant.ends_on) : 0;
-  const color = tenant?.brand_primary_color ?? "#6366f1";
-  const loginLink = `${window.location.origin}/wl/${slug}`;
+  const color = tenant?.brand_primary_color ?? "#06b6d4";
 
-  // Auth guard
-  useEffect(() => {
-    if (authLoading || tenantLoading) return;
-    if (!user) { navigate(`/wl/${slug}`); return; }
-  }, [authLoading, tenantLoading, user, slug, navigate]);
+  /* ── Authentication & Security Guard ── */
+  if (authLoading || tenantLoading) {
+    return (
+      <div className="min-h-screen bg-background p-8 space-y-6">
+        <div className="flex justify-between items-center"><Skeleton className="h-10 w-48" /><Skeleton className="h-10 w-32" /></div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4"><Skeleton className="h-28 rounded-xl" /><Skeleton className="h-28 rounded-xl" /><Skeleton className="h-28 rounded-xl" /><Skeleton className="h-28 rounded-xl" /></div>
+        <Skeleton className="h-[400px] w-full rounded-2xl" />
+      </div>
+    );
+  }
 
-  // Load my membership for this tenant
-  useEffect(() => {
-    if (!user || !tenant) return;
-    (supabase as any)
-      .from("white_label_tenant_users")
-      .select("role, status")
-      .eq("tenant_id", tenant.id)
-      .eq("user_id", user.id)
-      .maybeSingle()
-      .then(({ data }: any) => {
-        setMembership(data ?? null);
-        // If not a member, add as user
-        if (!data) {
-          (supabase as any).from("white_label_tenant_users").insert({
-            tenant_id: tenant.id,
-            user_id: user.id,
-            role: tenant.owner_email === user.email ? "admin" : "user",
-            status: "active",
-          });
-        }
-      });
-  }, [user, tenant]);
+  if (!tenant && !isDummy) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background text-center px-4">
+        <div className="space-y-4 max-w-sm">
+          <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto" />
+          <h1 className="text-2xl font-bold text-white">Partner portal not found</h1>
+          <p className="text-muted-foreground text-sm">The white-label link is invalid or the portal has been deactivated. Please contact support.</p>
+          <Button asChild variant="outline" className="mt-4"><Link to="/">Back to Home</Link></Button>
+        </div>
+      </div>
+    );
+  }
 
-  // Load tenant users (only for whitelabel admin)
-  useEffect(() => {
-    if (!tenant || !membership || membership.role !== "admin") { setLoadingUsers(false); return; }
-    const load = async () => {
-      const { data } = await (supabase as any)
-        .from("white_label_tenant_users")
-        .select("*")
-        .eq("tenant_id", tenant.id)
-        .order("created_at", { ascending: false });
-      // Fetch emails from auth (best effort via user metadata)
-      setUsers(data ?? []);
-      setLoadingUsers(false);
-    };
-    load();
-  }, [tenant, membership]);
-
-  const signOut = async () => {
+  /* ── Business Logic Handlers ── */
+  const handleSignOut = async () => {
+    localStorage.removeItem("wl_dummy_auth");
     await supabase.auth.signOut();
     navigate(`/wl/${slug}`);
   };
 
-  const copyLink = () => {
-    navigator.clipboard.writeText(loginLink);
-    setCopied(true);
-    toast.success("Login link copied!");
-    setTimeout(() => setCopied(false), 2000);
+  const handleSaveAffiliate = async (formData: typeof defaultAffForm) => {
+    setAffSaving(true);
+    try {
+      if (isDummy) {
+        toast.success(affEditingId ? "Affiliate updated (Demo Mode)" : "Affiliate created (Demo Mode)");
+        if (!affEditingId) setTempCredentials({ email: formData.email, temp_password: "demo-password-123" });
+        setAffDialogOpen(false);
+        return;
+      }
+
+      if (affEditingId) {
+        const { error } = await (supabase as any).from("affiliates").update(formData).eq("id", affEditingId);
+        if (error) throw error;
+        toast.success("Affiliate updated successfully");
+      } else {
+        const { data, error } = await supabase.functions.invoke("wl-create-affiliate", {
+          body: { ...formData, tenant_id: tenant!.id, code: formData.code.toLowerCase().replace(/\s+/g, "") }
+        });
+        if (error) throw error;
+        setTempCredentials({ email: data.email, temp_password: data.temp_password });
+        toast.success("Affiliate created successfully");
+      }
+      setAffDialogOpen(false);
+      refreshAffiliates();
+    } catch (err: any) {
+      toast.error(err.message || "Operation failed");
+    } finally {
+      setAffSaving(false);
+    }
   };
 
-  if (authLoading || tenantLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
+  const handleResetPassword = async (id: string) => {
+    try {
+      if (isDummy) {
+        setTempCredentials({ email: "demo@partner.com", temp_password: "reset-demo-789" });
+        toast.success("Password reset simulated (Demo Mode)");
+        return;
+      }
+      const { data, error } = await supabase.functions.invoke("wl-reset-affiliate-password", { body: { affiliate_id: id } });
+      if (error) throw error;
+      setTempCredentials({ email: data.email, temp_password: data.temp_password });
+      toast.success("Temporary password generated");
+    } catch (err: any) {
+      toast.error("Password reset failed");
+    }
+  };
 
-  if (!tenant) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background text-center px-4">
-        <div className="space-y-3">
-          <AlertTriangle className="h-10 w-10 text-amber-500 mx-auto" />
-          <h1 className="text-xl font-bold">Partner portal not found</h1>
-          <Button asChild variant="outline" className="mt-4"><Link to="/">Go Home</Link></Button>
-        </div>
-      </div>
-    );
-  }
+  const handleToggleActive = async (aff: AffiliateRow) => {
+    try {
+      if (isDummy) {
+        toast.success(!aff.is_active ? "Affiliate activated (Demo)" : "Affiliate suspended (Demo)");
+        return;
+      }
+      const { error } = await (supabase as any).from("affiliates").update({ is_active: !aff.is_active }).eq("id", aff.id);
+      if (error) throw error;
+      toast.success(!aff.is_active ? "Affiliate activated" : "Affiliate suspended");
+      refreshAffiliates();
+    } catch (err: any) {
+      toast.error("Failed to update status");
+    }
+  };
 
-  const isWLAdmin = membership?.role === "admin" || tenant.owner_email === user?.email;
+  const handleDeleteAffiliate = async (aff: AffiliateRow) => {
+    if (!window.confirm(`Are you sure you want to delete ${aff.name}?`)) return;
+    try {
+      if (isDummy) {
+        toast.success("Affiliate deleted (Demo Mode)");
+        return;
+      }
+      const { error } = await (supabase as any).from("affiliates").delete().eq("id", aff.id);
+      if (error) throw error;
+      toast.success("Affiliate removed");
+      refreshAffiliates();
+    } catch (err: any) {
+      toast.error("Failed to delete affiliate");
+    }
+  };
 
+  const handleViewDetail = async (aff: AffiliateRow) => {
+    setDetailLoading(true);
+    setDetailAff(null);
+    try {
+      if (isDummy) {
+        setDetailAff({
+          affiliate: aff,
+          visitors: [{ visitor_ip: "192.168.1.1", visited_at: new Date().toISOString() }],
+          submissions: [{ id: "s1", name: "Lead Alpha", email: "alpha@lead.com", phone: "+12345", created_at: new Date().toISOString() }],
+          payments: [{ id: "p1", amount: 1000, currency: "INR", commission_amount: 100, status: "completed", created_at: new Date().toISOString() }]
+        });
+        return;
+      }
+      const [vRec, sRec, pRec] = await Promise.all([
+        (supabase as any).from("affiliate_visitors").select("*").eq("affiliate_id", aff.id).order("visited_at", { ascending: false }),
+        (supabase as any).from("contact_submissions").select("*").eq("affiliate_id", aff.id).order("created_at", { ascending: false }),
+        (supabase as any).from("user_payments").select("*").eq("affiliate_id", aff.id).order("created_at", { ascending: false })
+      ]);
+      setDetailAff({ affiliate: aff, visitors: vRec.data ?? [], submissions: sRec.data ?? [], payments: pRec.data ?? [] });
+    } catch (err: any) {
+      toast.error("Could not load details");
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  /* ── UI Render Bits ── */
   return (
-    <div className="min-h-screen bg-background">
-      {/* Top bar */}
-      <div className="border-b border-border/50 sticky top-0 z-40 bg-background/90 backdrop-blur">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            {tenant.brand_logo_url ? (
-              <img src={tenant.brand_logo_url} alt="" className="h-8 object-contain" />
-            ) : (
-              <div className="h-8 w-8 rounded-lg flex items-center justify-center text-white font-bold text-sm" style={{ background: color }}>
-                {tenant.brand_name.charAt(0)}
-              </div>
-            )}
-            <div>
-              <span className="font-bold text-foreground" style={{ color }}>{tenant.brand_name}</span>
-              {isWLAdmin && <Badge className="ml-2 text-[10px]" variant="outline">Partner Admin</Badge>}
-            </div>
+    <div className="min-h-screen bg-black text-white selection:bg-cyan-500/30">
+      {/* Top Navigation */}
+      <nav className="border-b border-white/5 bg-zinc-950/50 backdrop-blur-xl sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            {tenant?.brand_logo_url ? <img src={tenant.brand_logo_url} className="h-8 object-contain" /> : <div className="h-8 w-8 rounded-lg flex items-center justify-center font-bold" style={{ background: color }}>{tenant?.brand_name.charAt(0)}</div>}
+            <span className="font-bold text-lg tracking-tight" style={{ color }}>{tenant?.brand_name} <span className="text-zinc-500 font-medium ml-1">Portal</span></span>
+            {isDummy && <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/20 text-[10px] ml-2">Demo Mode</Badge>}
           </div>
-          <div className="flex items-center gap-2">
-            {/* Go to the main trading app */}
-            <Button variant="outline" size="sm" asChild className="gap-1 text-xs">
-              <Link to="/home">
-                Trading App <ArrowRight className="h-3 w-3" />
-              </Link>
-            </Button>
-            <Button variant="ghost" size="sm" onClick={signOut} className="gap-1 text-xs text-muted-foreground">
-              <LogOut className="h-3.5 w-3.5" /> Sign out
-            </Button>
+          <div className="flex items-center gap-4">
+             <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-zinc-500 hover:text-white gap-2 transition-colors"><LogOut className="h-4 w-4" /> Sign out</Button>
           </div>
         </div>
-      </div>
+      </nav>
 
-      <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
-
-        {/* Expired / suspended banner */}
+      <main className="max-w-7xl mx-auto px-6 py-10 space-y-8">
+        {/* Alerts & Notifications */}
         {expired && (
-          <div className="rounded-xl border border-red-500/50 bg-red-500/10 p-5 flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-semibold text-red-400">
-                {tenant.status === "suspended" ? "Account Suspended" : "Subscription Expired"}
-              </p>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                {tenant.status === "suspended"
-                  ? "Your white-label account has been suspended. Please contact Tradingsmart to resolve this."
-                  : `Your subscription ended on ${tenant.ends_on}. Renew to restore access for all users.`}
-              </p>
+          <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-5 flex items-start gap-4 animate-in fade-in slide-in-from-top-2">
+            <AlertTriangle className="h-6 w-6 text-red-500 shrink-0" />
+            <div className="space-y-1">
+              <p className="font-bold text-red-400">{tenant?.status === "suspended" ? "Portal Suspended" : "Subscription Expired"}</p>
+              <p className="text-sm text-zinc-400">Please contact support to renew your partner subscription for {tenant?.brand_name}.</p>
             </div>
           </div>
         )}
 
-        {/* Expiry warning */}
-        {!expired && days <= 30 && (
-          <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 flex items-center gap-3">
-            <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
-            <p className="text-sm text-amber-600">
-              Your subscription expires in <strong>{days} days</strong> on {tenant.ends_on}. Contact Tradingsmart to renew.
-            </p>
-          </div>
-        )}
+        <Tabs value={mainTab} onValueChange={(v) => setMainTab(v as any)} className="space-y-8">
+          <TabsList className="bg-zinc-900/50 border border-white/5 p-1 rounded-xl">
+            <TabsTrigger value="overview" className="rounded-lg data-[state=active]:bg-cyan-600 data-[state=active]:text-white transition-all text-xs font-medium px-6"><CalendarDays className="h-3.5 w-3.5 mr-2" /> Overview</TabsTrigger>
+            <TabsTrigger value="affiliates" className="rounded-lg data-[state=active]:bg-cyan-600 data-[state=active]:text-white transition-all text-xs font-medium px-6"><Users className="h-3.5 w-3.5 mr-2" /> Affiliate Management</TabsTrigger>
+          </TabsList>
 
-        {/* Subscription info cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[
-            { label: "Plan", value: tenant.subscription_plan === "2_year" ? "2 Years" : "1 Year", icon: CalendarDays },
-            { label: "Starts", value: tenant.starts_on, icon: CalendarDays },
-            { label: "Ends", value: tenant.ends_on, icon: CalendarDays },
-            { label: "Days Left", value: expired ? "—" : `${Math.max(days, 0)} days`, icon: CheckCircle2 },
-          ].map(({ label, value, icon: Icon }) => (
-            <Card key={label} className="border-border/50">
-              <CardContent className="pt-4 flex items-start gap-3">
-                <Icon className="h-4 w-4 mt-0.5" style={{ color }} />
-                <div>
-                  <p className="text-xs text-muted-foreground">{label}</p>
-                  <p className="font-semibold text-sm">{value}</p>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        {/* Login link — share with users */}
-        <Card className="border-border/50">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Link2 className="h-4 w-4" style={{ color }} />
-              Your Branded Login Link
-            </CardTitle>
-            <p className="text-xs text-muted-foreground mt-1">Share this link with your users. They'll see your brand when they sign in.</p>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-3 p-3 rounded-lg border border-border/50 bg-muted/30">
-              <code className="text-sm flex-1 break-all font-mono text-foreground/80">{loginLink}</code>
-              <Button size="sm" variant="outline" className="shrink-0 gap-1" onClick={copyLink}>
-                {copied ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
-                {copied ? "Copied!" : "Copy"}
-              </Button>
+          <TabsContent value="overview" className="space-y-8">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 space-y-6">
+                <BrandedLinkBoard slug={slug!} brandName={tenant?.brand_name!} brandColor={color} />
+                <Card className="glass-panel border-white/10 bg-white/5 backdrop-blur-sm overflow-hidden">
+                  <div className="p-6 border-b border-white/5 flex items-center justify-between">
+                    <h3 className="font-bold text-base flex items-center gap-2"><Users className="h-4 w-4 text-cyan-400" /> Users List</h3>
+                    <Badge variant="outline" className="border-cyan-500/20 text-cyan-400">{users.length} Total</Badge>
+                  </div>
+                  <UserTable users={users} loading={loadingUsers} />
+                </Card>
+              </div>
+              <div className="space-y-6">
+                <Card className="glass-panel border-white/10 bg-white/5 p-6 space-y-4">
+                  <h4 className="text-sm font-bold text-zinc-400 uppercase tracking-widest">Subscription Details</h4>
+                  <div className="space-y-4">
+                    <DetailItem label="Current Plan" value={tenant?.subscription_plan === "2_year" ? "Platinum (2 Year)" : "Standard (1 Year)"} />
+                    <DetailItem label="Start Date" value={new Date(tenant?.starts_on!).toLocaleDateString()} />
+                    <DetailItem label="Expiry Date" value={new Date(tenant?.ends_on!).toLocaleDateString()} />
+                    <DetailItem label="Status" value={<Badge className="bg-green-500/10 text-green-500 border-green-500/20">{tenant?.status}</Badge>} />
+                  </div>
+                </Card>
+              </div>
             </div>
-            <p className="text-[11px] text-muted-foreground mt-2">
-              Note: You can also point your own domain/subdomain to this platform and share your domain instead.
-            </p>
-          </CardContent>
-        </Card>
+          </TabsContent>
 
-        {/* Users table — only for whitelabel admin */}
-        {isWLAdmin && (
-          <Card className="border-border/50">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Users className="h-4 w-4" style={{ color }} />
-                Users ({users.length})
-              </CardTitle>
-              <p className="text-xs text-muted-foreground">All users who have signed in via your partner link.</p>
-            </CardHeader>
-            <CardContent>
-              {loadingUsers ? (
-                <div className="flex items-center gap-2 py-6 text-muted-foreground justify-center text-sm">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Loading users…
-                </div>
-              ) : users.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8 text-sm">No users yet. Share your login link to get started.</p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-border/30 hover:bg-transparent">
-                      <TableHead className="text-muted-foreground text-xs">User ID</TableHead>
-                      <TableHead className="text-muted-foreground text-xs">Role</TableHead>
-                      <TableHead className="text-muted-foreground text-xs">Status</TableHead>
-                      <TableHead className="text-muted-foreground text-xs">Joined</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {users.map((u) => (
-                      <TableRow key={u.id} className="border-border/20 hover:bg-muted/20">
-                        <TableCell className="font-mono text-xs text-muted-foreground">{u.user_id.slice(0, 16)}…</TableCell>
-                        <TableCell>
-                          <Badge variant={u.role === "admin" ? "default" : "outline"} className="text-[10px]">
-                            {u.role}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant="outline"
-                            className={`text-[10px] ${u.status === "active" ? "border-green-500 text-green-600" : "border-red-500 text-red-500"}`}
-                          >
-                            {u.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {new Date(u.created_at).toLocaleDateString()}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Quick-access to the platform */}
-        <Card className="border-border/50">
-          <CardContent className="pt-5 flex items-center justify-between gap-4 flex-wrap">
-            <div>
-              <p className="font-semibold">Access the Trading Platform</p>
-              <p className="text-sm text-muted-foreground">Use all AI predictions, analysis, and trading tools.</p>
+          <TabsContent value="affiliates" className="space-y-8">
+            <DashboardStats affiliates={affiliates} />
+            <div className="flex justify-between items-center bg-zinc-900/40 p-3 rounded-2xl border border-white/5 backdrop-blur-sm">
+                <Button variant="ghost" onClick={refreshAffiliates} size="sm" className="text-zinc-500 hover:text-cyan-400 transition-colors">
+                  <RefreshCw className={`h-4 w-4 mr-2 ${loadingAffiliates ? "animate-spin" : ""}`} /> Refresh Data
+                </Button>
+                <Button onClick={() => { setAffEditingId(null); setEditingData(defaultAffForm); setAffDialogOpen(true); }} className="bg-cyan-600 hover:bg-cyan-500 text-white shadow-lg shadow-cyan-900/20 gap-2">
+                  <PlusCircle className="h-4 w-4" /> Add New Affiliate
+                </Button>
             </div>
-            <Button asChild style={{ background: color }} className="text-white gap-2">
-              <Link to="/home">
-                Open Platform <ArrowRight className="h-4 w-4" />
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+            <AffiliateTable
+              affiliates={affiliates}
+              onViewDetail={handleViewDetail}
+              onEdit={(aff) => { setAffEditingId(aff.id); setEditingData({ ...aff }); setAffDialogOpen(true); }}
+              onResetPassword={handleResetPassword}
+              onToggleActive={handleToggleActive}
+              onDelete={handleDeleteAffiliate}
+            />
+          </TabsContent>
+        </Tabs>
+      </main>
+
+      {/* Modular Dialogs */}
+      <CreateAffiliateDialog
+        open={affDialogOpen}
+        onOpenChange={setAffDialogOpen}
+        editingId={affEditingId}
+        initialData={editingData}
+        onSave={handleSaveAffiliate}
+        saving={affSaving}
+      />
+      <AffiliateDetailDialog detail={detailAff} loading={detailLoading} onClose={() => setDetailAff(null)} />
+
+      {/* Temp Credentials Dialog */}
+      {tempCredentials && (
+        <Dialog open={!!tempCredentials} onOpenChange={(o) => !o && setTempCredentials(null)}>
+          <DialogContent className="bg-zinc-900 border-white/10 text-white max-w-sm">
+             <DialogHeader><DialogTitle className="flex items-center gap-2"><CheckCircle2 className="h-5 w-5 text-green-500" /> Success</DialogTitle></DialogHeader>
+             <div className="py-4 space-y-4">
+                <p className="text-sm text-zinc-400">Please share these temporary credentials with the affiliate:</p>
+                <div className="bg-black/40 p-4 rounded-xl border border-white/10 font-mono text-sm space-y-2">
+                   <p><span className="text-zinc-500">Email:</span> {tempCredentials.email}</p>
+                   <p><span className="text-zinc-500">Pass:</span> {tempCredentials.temp_password}</p>
+                </div>
+                <Button className="w-full bg-cyan-600 h-10" onClick={() => { navigator.clipboard.writeText(`Email: ${tempCredentials.email}\nPass: ${tempCredentials.temp_password}`); toast.success("Copied to clipboard"); }}>Copy Credentials</Button>
+             </div>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
+  );
+}
+
+function DetailItem({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-widest">{label}</span>
+      <span className="text-sm font-medium text-zinc-200">{value}</span>
     </div>
   );
 }
