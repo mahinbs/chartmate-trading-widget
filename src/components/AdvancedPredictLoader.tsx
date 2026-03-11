@@ -144,7 +144,7 @@ export function AdvancedPredictLoader({ isVisible, symbol, timeframe, ready, onC
   if (!isVisible) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-[999] flex items-center justify-center bg-background/90 backdrop-blur-sm p-4">
       <div className="w-full max-w-md bg-card border border-border rounded-xl shadow-xl overflow-hidden">
         {/* Header */}
         <div className="px-6 pt-6 pb-4 text-center border-b border-border">
@@ -167,7 +167,7 @@ export function AdvancedPredictLoader({ isVisible, symbol, timeframe, ready, onC
         </div>
 
         {/* Steps — simple list, no busy borders */}
-        <div className="px-6 pb-6 space-y-2">
+        <div className="px-6 pb-6 space-y-2 max-h-[200px] overflow-y-auto">
           {ANALYSIS_STEPS.map((step, index) => {
             const Icon = step.icon;
             const isCompleted = completedSteps.has(index);

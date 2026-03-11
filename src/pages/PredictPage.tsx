@@ -422,6 +422,11 @@ const PredictPage = () => {
     loadLatestPreset();
   }, [user?.id, presetChecked]);
 
+  // Scroll to top whenever currentStep changes
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [currentStep]);
+
   const steps = [
     { id: "choose-asset", title: "Choose Asset", description: "Select symbol" },
     { id: "set-investment", title: "Set Investment", description: "Amount to invest" },
@@ -598,27 +603,24 @@ const PredictPage = () => {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      {/* Analysis Loader — rendered at root level so fixed overlay works correctly */}
+      {showAdvancedLoader && (
+        <AdvancedPredictLoader
+          onComplete={handleLoaderComplete}
+          ready={analysisReady}
+          symbol={symbol}
+          isVisible={showAdvancedLoader}
+          timeframe={timeframe}
+        />
+      )}
+
       <Dialog open={showPresetDialog} onOpenChange={setShowPresetDialog}>
-        <DialogContent>
+        <DialogContent className="">
           <DialogHeader>
             <DialogTitle>Use previous analysis details?</DialogTitle>
-            <DialogDescription>
-              We found your recent preferences. Timeframe, investment, and profile can be reused for this analysis.
-            </DialogDescription>
           </DialogHeader>
 
-          {latestPreset && (
-            <div className="rounded-lg border p-3 text-sm space-y-1">
-              <p><strong>Symbol:</strong> {latestPreset.symbol || "-"}</p>
-              <p><strong>Timeframe:</strong> {latestPreset.timeframe || "-"}</p>
-              <p><strong>Investment:</strong> {latestPreset.investment != null
-                ? formatCurrency(Number(latestPreset.investment), 0, false, (latestPreset.profile as { displayCurrency?: "INR" | "USD" })?.displayCurrency ?? "INR")
-                : "-"}
-              </p>
-            </div>
-          )}
-
-          <DialogFooter>
+          <DialogFooter className="!pt-5">
             <Button
               variant="outline"
               onClick={() => {
@@ -723,6 +725,52 @@ const PredictPage = () => {
           </div>
         </Container>
       </div>
+
+      {/* Live Chart Section - Always at top */}
+      <Container className="py-4">
+        <div className={`transition-all duration-300 ${currentStep === 'analysis' ? 'hidden' : ''}`}>
+          <Card className="glass-panel overflow-hidden border-white/5 bg-gradient-to-b from-card/80 to-background/90 shadow-2xl h-[520px] sm:h-[580px] flex flex-col max-w-6xl mx-auto">
+            <CardHeader className="pb-3 border-b border-white/5">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base sm:text-lg text-white">Live Market Chart</CardTitle>
+                {symbol && (
+                  <Badge variant="outline" className="text-xs border-white/10">
+                    {symbol}
+                  </Badge>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 flex-1 relative">
+              <div className="absolute inset-0">
+                <YahooChartPanel
+                  symbol={selectedSymbol?.full_symbol || symbol || "BTC-USD"}
+                  displayName={selectedSymbol?.description || selectedSymbol?.symbol || symbol}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {chartAnalysis && (
+            <div className="max-w-4xl mx-auto mt-4">
+              <Card className="glass-panel">
+                <CardHeader className={isMobile ? 'pb-2' : ''}>
+                  <CardTitle className={`${isMobile ? 'text-base' : 'text-lg'} text-white`}>Chart Analysis</CardTitle>
+                </CardHeader>
+                <CardContent className={isMobile ? 'pt-2' : ''}>
+                  <div className="space-y-3">
+                    <p className={`leading-relaxed ${isMobile ? 'text-sm' : 'text-sm'} text-muted-foreground`}>{chartAnalysis}</p>
+                    {chartDataSource && (
+                      <p className="text-xs text-muted-foreground/60">
+                        Data source: {chartDataSource}
+                      </p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </div>
+      </Container>
 
       {/* Main Content */}
       <Container className="py-4 sm:py-8">
@@ -1075,15 +1123,9 @@ const PredictPage = () => {
                 description="Our AI is analyzing market data and generating your probability-based analysis"
                 isActive={true}
               >
-                {showAdvancedLoader && (
-                  <AdvancedPredictLoader
-                    onComplete={handleLoaderComplete}
-                    ready={analysisReady}
-                    symbol={symbol}
-                    isVisible={showAdvancedLoader}
-                    timeframe={timeframe}
-                  />
-                )}
+                <div className="py-8 text-center text-muted-foreground text-sm">
+                  Running AI analysis…
+                </div>
               </StepContainer>
             )}
 
@@ -1443,50 +1485,6 @@ const PredictPage = () => {
             )}
           </div>
         </div >
-
-        {/* Global Live Chart - hidden during analysis to avoid overlapping loader */}
-        <div className={`mt-10 transition-all duration-300 ${currentStep === 'analysis' ? 'hidden' : ''}`}>
-          <Card className="glass-panel overflow-hidden border-white/5 bg-gradient-to-b from-card/80 to-background/90 shadow-2xl h-[520px] sm:h-[580px] flex flex-col max-w-6xl mx-auto">
-            <CardHeader className="pb-3 border-b border-white/5">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base sm:text-lg text-white">Live Market Chart</CardTitle>
-                {symbol && (
-                  <Badge variant="outline" className="text-xs border-white/10">
-                    {symbol}
-                  </Badge>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent className="p-0 flex-1 relative">
-              <div className="absolute inset-0">
-                <YahooChartPanel
-                  symbol={selectedSymbol?.full_symbol || symbol || "BTC-USD"}
-                  displayName={selectedSymbol?.description || selectedSymbol?.symbol || symbol}
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          {chartAnalysis && (
-            <div className="max-w-4xl mx-auto mt-4">
-              <Card className="glass-panel">
-                <CardHeader className={isMobile ? 'pb-2' : ''}>
-                  <CardTitle className={`${isMobile ? 'text-base' : 'text-lg'} text-white`}>Chart Analysis</CardTitle>
-                </CardHeader>
-                <CardContent className={isMobile ? 'pt-2' : ''}>
-                  <div className="space-y-3">
-                    <p className={`leading-relaxed ${isMobile ? 'text-sm' : 'text-sm'} text-muted-foreground`}>{chartAnalysis}</p>
-                    {chartDataSource && (
-                      <p className="text-xs text-muted-foreground/60">
-                        Data source: {chartDataSource}
-                      </p>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          )}
-        </div>
       </Container >
 
       {/* Premium Plan Required Dialog */}
