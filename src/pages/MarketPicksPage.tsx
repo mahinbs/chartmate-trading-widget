@@ -42,6 +42,37 @@ function probColor(score: number | null) {
   return "text-red-500";
 }
 
+function actionLabel(action: string | null) {
+  if (action === "BUY") return "BUY setup";
+  if (action === "SELL") return "SELL setup";
+  // For HOLD / null: clearly say this is a wait/no-trade zone
+  return "NO TRADE zone";
+}
+
+function certaintyLabel(score: number | null): string | null {
+  if (score == null) return null;
+  if (score >= 75) return "High conviction setup based on current data.";
+  if (score >= 55) return "Balanced setup — conviction is moderate, manage risk carefully.";
+  return "Speculative idea — conviction is low, treat as high-risk only.";
+}
+
+function humanizeToken(token: string): string {
+  const map: Record<string, string> = {
+    quantum_ensemble: "multi-model ensemble agreement",
+    market_regime_awareness: "market regime analysis",
+    rsi_signal: "RSI momentum signal",
+    macd_signal: "MACD crossover",
+    volume_confirmation: "volume confirmation",
+    sma_crossover: "moving average crossover",
+    bollinger_squeeze: "Bollinger Band squeeze",
+    trend_following: "trend-following indicators",
+    mean_reversion: "mean-reversion signal",
+    market_volatility: "elevated market volatility",
+    regime_change: "possible market regime change",
+  };
+  return map[token] ?? token.replace(/_/g, " ");
+}
+
 function expiryLabel(expiresAt: string) {
   const diff = new Date(expiresAt).getTime() - Date.now();
   if (diff <= 0) return { label: "Expired", stale: true };
@@ -102,7 +133,7 @@ function PredictionCard({
             {/* Action signal */}
             <Badge className={`text-base px-3 py-1 border font-bold ${actionColor(action)}`}>
               <ActionIcon action={action} />
-              <span className="ml-1">{action || "HOLD"}</span>
+              <span className="ml-1">{actionLabel(action)}</span>
             </Badge>
           </div>
         </div>
@@ -120,6 +151,11 @@ function PredictionCard({
             value={prob ?? 0}
             className={`h-2.5 ${(prob ?? 0) >= 70 ? "[&>div]:bg-green-500" : (prob ?? 0) >= 50 ? "[&>div]:bg-yellow-500" : "[&>div]:bg-red-500"}`}
           />
+          {certaintyLabel(prob) && (
+            <p className="text-[11px] text-muted-foreground mt-1">
+              {certaintyLabel(prob)}
+            </p>
+          )}
         </div>
 
         {/* Expected ROI */}
@@ -182,7 +218,7 @@ function PredictionCard({
             <ul className="space-y-0.5">
               {keyDrivers.slice(0, 3).map((d, i) => (
                 <li key={i} className="text-xs text-muted-foreground flex items-start gap-1">
-                  <span className="text-green-500 mt-0.5">•</span> {d}
+                  <span className="text-green-500 mt-0.5">•</span> {humanizeToken(d)}
                 </li>
               ))}
             </ul>
@@ -193,7 +229,9 @@ function PredictionCard({
         {riskFlags.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {riskFlags.slice(0, 3).map((f, i) => (
-              <Badge key={i} variant="outline" className="text-xs border-orange-400 text-orange-600">⚠ {f}</Badge>
+              <Badge key={i} variant="outline" className="text-xs border-orange-400 text-orange-600">
+                ⚠ {humanizeToken(f)}
+              </Badge>
             ))}
           </div>
         )}

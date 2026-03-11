@@ -32,14 +32,16 @@ function TradingViewWidget({ symbol = "NASDAQ:AAPL", interval = "D" }: TradingVi
         "style": "1",
         "symbol": symbol,
         "theme": "dark",
-        "timezone": "Asia/Kolkata",
+        "timezone": "Etc/UTC",
         "backgroundColor": "#0F0F0F",
         "gridColor": "rgba(242, 242, 242, 0.06)",
         "watchlist": [],
         "withdateranges": false,
         "compareSymbols": [],
         "studies": [],
-        "autosize": true
+        "autosize": true,
+        "no_referral_id": true,
+        "container_id": `tv_chart_${Date.now()}`,
       });
       container.current.appendChild(script);
     }

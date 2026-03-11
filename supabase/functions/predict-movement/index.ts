@@ -3226,6 +3226,45 @@ function calculateRegimeConfidence(context: TechnicalContext): number {
   return Math.min(1, confidence);
 }
 
+/** Build human-readable key factor sentences from live technical context */
+function buildReadableKeyFactors(context: TechnicalContext, regime: MarketRegime): string[] {
+  const factors: string[] = [];
+  const ind = context.indicators;
+
+  if (ind.rsi < 30) factors.push(`RSI oversold at ${ind.rsi.toFixed(0)} — potential reversal zone`);
+  else if (ind.rsi > 70) factors.push(`RSI overbought at ${ind.rsi.toFixed(0)} — momentum may be exhausted`);
+  else factors.push(`RSI at ${ind.rsi.toFixed(0)} — neutral momentum territory`);
+
+  if (ind.ema12 > ind.ema26) factors.push('Short-term EMA crossed above long-term EMA — bullish crossover');
+  else factors.push('Short-term EMA below long-term EMA — bearish crossover');
+
+  if (context.volumeProfile === 'high') factors.push('Above-average volume confirming price move strength');
+  else if (context.volumeProfile === 'low') factors.push('Below-average volume — move may lack conviction');
+
+  if (regime.type === 'trending') factors.push(`Trending market regime (strength: ${(regime.strength * 100).toFixed(0)}%) supports directional bias`);
+  else if (regime.type === 'volatile') factors.push('Volatile regime detected — wider price swings likely');
+  else factors.push('Ranging market conditions — price between key support and resistance');
+
+  if (ind.macd !== undefined && ind.macdSignal !== undefined) {
+    if (ind.macd > ind.macdSignal) factors.push('MACD above signal line — upside momentum building');
+    else factors.push('MACD below signal line — downside pressure present');
+  }
+
+  return factors.slice(0, 4);
+}
+
+/** Build human-readable risk factor sentences from live technical context */
+function buildReadableRiskFactors(context: TechnicalContext, regime: MarketRegime): string[] {
+  const risks: string[] = [];
+  if (regime.type === 'volatile') risks.push('High volatility regime — position sizing caution advised');
+  if (context.volatilityState === 'high') risks.push('ATR indicates elevated intraday volatility');
+  if (context.indicators.rsi > 65) risks.push('Overbought conditions increase pullback risk');
+  if (context.indicators.rsi < 35) risks.push('Oversold conditions may face continued selling pressure');
+  if (context.volumeProfile === 'low') risks.push('Low volume — signal reliability reduced');
+  risks.push('Macro events or news may override technical signals');
+  return risks.slice(0, 3);
+}
+
 // GODLY PLAN: Quantum Ensemble Prediction
 function generateQuantumPrediction(
   symbol: string,
@@ -3445,8 +3484,8 @@ function combinePredictions(models: any, weights: Record<string, number>, horizo
     expectedMove: Math.abs(combinedConfidence) * 2,
     confidence: Math.abs(combinedConfidence),
     timeHorizon: horizons[0] || 60,
-    keyFactors: ['quantum_ensemble', 'market_regime_awareness'],
-    riskFactors: ['market_volatility', 'regime_change'],
+    keyFactors: buildReadableKeyFactors(context, regime),
+    riskFactors: buildReadableRiskFactors(context, regime),
     stopLoss: 0.5,
     takeProfit: Math.abs(combinedConfidence) * 3
   };
@@ -3887,8 +3926,12 @@ serve(async (req) => {
       volatilityPercent
     );
     
-    // Calculate position sizing
-    const sharesQuantity = Math.floor(investment / stockData.currentPrice);
+    // Calculate position sizing — crypto allows fractional units, stocks require whole shares
+    const isCryptoAsset = assetRoute.assetType === 'crypto';
+    const rawQty = investment / stockData.currentPrice;
+    const sharesQuantity = isCryptoAsset
+      ? parseFloat(rawQty.toFixed(6))  // up to 6 decimal places for crypto
+      : Math.floor(rawQty);             // whole shares only for stocks/forex
     const actualCost = sharesQuantity * stockData.currentPrice;
     
     // Add to forecast
@@ -3959,7 +4002,18 @@ serve(async (req) => {
         remainingCash: investment - actualCost
       },
       leverage: leverage || 1,
-      marginType: marginType || 'cash'
+      marginType: marginType || 'cash',
+      isCrypto: isCryptoAsset,
+      // Volume intelligence — used by ProbabilityPanel
+      volumeData: {
+        volume24h: externalSnapshot?.volume24h ?? null,
+        volumeProfile: technicalContext.volumeProfile,
+        volumeConfirmation: technicalContext.volumeConfirmation,
+        avgVolume: (() => {
+          const vols = technicalContext.candles.slice(-20).map((c: Candle) => c.volume);
+          return vols.length ? vols.reduce((a: number, b: number) => a + b, 0) / vols.length : null;
+        })(),
+      }
     };
 
     return new Response(JSON.stringify(result), {
