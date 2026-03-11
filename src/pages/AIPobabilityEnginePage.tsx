@@ -35,7 +35,7 @@ const AIPobabilityEnginePage = () => {
         <div className="min-h-screen bg-black text-zinc-100 font-sans selection:bg-teal-500/30 selection:text-teal-100 overflow-x-hidden">
             <Helmet>
                 <title>AI-Based Order Placing System | TradingSmart.ai</title>
-                <meta name="description" content="Learn about our AI-driven trading execution system that integrates directly with trading platforms. ChatGPT-powered intelligence." />
+                <meta name="description" content="Learn about our AI-driven trading execution system that integrates directly with trading platforms. AI-powered intelligence." />
             </Helmet>
 
             <AiPredictionHeader />
@@ -58,7 +58,7 @@ const AIPobabilityEnginePage = () => {
                     >
                         <FaRobot className="text-teal-400" />
                         <span className="text-sm font-medium text-teal-300 tracking-wide uppercase">
-                            ChatGPT Integrated Trading Intelligence
+                            AI Integrated Trading Intelligence
                         </span>
                     </motion.div>
 
@@ -98,7 +98,7 @@ const AIPobabilityEnginePage = () => {
                     <div className="grid md:grid-cols-3 gap-8">
                         {[
                             { title: "Market Data Engine", icon: <FaChartLine /> },
-                            { title: "AI Decision Engine (ChatGPT)", icon: <FaBrain /> },
+                            { title: "AI Decision Engine", icon: <FaBrain /> },
                             { title: "Broker API Execution Layer", icon: <FaNetworkWired /> },
                         ].map((item, i) => (
                             <motion.div
@@ -137,8 +137,8 @@ const AIPobabilityEnginePage = () => {
                             },
                             {
                                 step: "Step 2",
-                                title: "AI Analysis (ChatGPT Layer)",
-                                desc: "ChatGPT acts as the decision intelligence layer. It evaluates signals, sentiment, probability, strategy conditions, and risk to produce BUY/SELL/HOLD signals or automated commands.",
+                                title: "AI Analysis",
+                                desc: "AI acts as the decision intelligence layer. It evaluates signals, sentiment, probability, strategy conditions, and risk to produce BUY/SELL/HOLD signals or automated commands.",
                                 icon: <FaBrain />
                             },
                             {
