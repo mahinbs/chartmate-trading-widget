@@ -9,61 +9,61 @@ import heroBg from '@/assets/premium_hero_bg.png';
 import abstractDataBg from '@/assets/abstract_data_bg.png';
 
 import {
-  FaChartLine,
-  FaNetworkWired,
-  FaBrain,
-  FaCheckCircle,
-  FaTimesCircle,
-  FaRobot,
-  FaGlobe,
-  FaChartBar,
-  FaBitcoin,
-  FaUserShield,
-  FaArrowRight,
-  FaLayerGroup,
+    FaChartLine,
+    FaNetworkWired,
+    FaBrain,
+    FaCheckCircle,
+    FaTimesCircle,
+    FaRobot,
+    FaGlobe,
+    FaChartBar,
+    FaBitcoin,
+    FaUserShield,
+    FaArrowRight,
+    FaLayerGroup,
 } from "react-icons/fa";
 import { MdTrendingUp, MdOutlinePriceChange } from "react-icons/md";
 import { BiCctv } from "react-icons/bi";
 import { BsGraphUpArrow } from "react-icons/bs";
 import {
-  Carousel,
-  CarouselContent,
-  CarouselItem,
-  type CarouselApi,
+    Carousel,
+    CarouselContent,
+    CarouselItem,
+    type CarouselApi,
 } from "../components/ui/carousel";
 import { Button } from "../components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  DialogClose,
+    Dialog,
+    DialogContent,
+    DialogTitle,
+    DialogClose,
 } from "../components/ui/dialog";
 import { X } from "lucide-react";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
 import { Label } from "../components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
 } from "../components/ui/select";
 import AiPredictionHeader from "../components/landingpage/mainlandingpage/AiPredictionHeader";
 import AiPredictionFooter from "../components/landingpage/mainlandingpage/AiPredictionFooter";
 import { PRICING_PLANS } from "@/constants/pricing";
 
 const fadeUp: Variants = {
-  hidden: { opacity: 0, y: 30 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.8, ease: "easeOut" } },
+    hidden: { opacity: 0, y: 30 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.8, ease: "easeOut" } },
 };
 
 const staggerContainer: Variants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.15 },
-  },
+    hidden: { opacity: 0 },
+    visible: {
+        opacity: 1,
+        transition: { staggerChildren: 0.15 },
+    },
 };
 
 const MainLandingPage = () => {
@@ -137,7 +137,7 @@ const MainLandingPage = () => {
                 description: `Plan: ${planNames[data.plan as keyof typeof planNames] || data.plan}\n${data.message || ''}`,
                 ...(affiliateId && { affiliate_id: affiliateId }),
                 ...(data.referral_code?.trim() && { referral_code: data.referral_code.trim() }),
-            }]).then(() => {}).catch(() => {});
+            }]).then(() => { }).catch(() => { });
 
             const response = await fetch('https://send-mail-redirect-boostmysites.vercel.app/send-email', {
                 method: 'POST',
@@ -234,6 +234,14 @@ const MainLandingPage = () => {
                         >
                             Start Now
                         </Button>
+                        <Link to="/ai-probability-engine">
+                            <Button
+                                variant="outline"
+                                className="bg-transparent border border-zinc-700 hover:border-teal-500 hover:bg-teal-500/10 text-white font-bold text-lg px-10 py-7 rounded-xl transition-all duration-300 hover:-translate-y-0.5"
+                            >
+                                Learn How AI Orders Work
+                            </Button>
+                        </Link>
                     </motion.div>
 
                     <motion.div
@@ -624,8 +632,8 @@ const MainLandingPage = () => {
                                 key={plan.id}
                                 variants={fadeUp}
                                 className={`p-8 rounded-3xl flex flex-col relative transition-all shadow-lg hover:border-zinc-700 ${plan.recommended
-                                        ? "bg-gradient-to-b from-teal-950/40 to-black border border-teal-500/30 shadow-[0_0_40px_rgba(20,184,166,0.1)] lg:h-[110%] lg:-mt-[7%] lg:mb-[5%]"
-                                        : "bg-black border border-zinc-800"
+                                    ? "bg-gradient-to-b from-teal-950/40 to-black border border-teal-500/30 shadow-[0_0_40px_rgba(20,184,166,0.1)] lg:h-[110%] lg:-mt-[7%] lg:mb-[5%]"
+                                    : "bg-black border border-zinc-800"
                                     }`}
                             >
                                 {plan.recommended && (
