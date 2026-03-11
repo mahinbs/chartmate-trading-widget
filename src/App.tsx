@@ -41,6 +41,8 @@ import { HelmetProvider } from "react-helmet-async";
 import { PlatformChatbot } from "./components/PlatformChatbot";
 import RegisterPage from "./pages/RegisterPage";
 import AIPobabilityEnginePage from "./pages/AIPobabilityEnginePage";
+import AffiliatePartnerPage from "./pages/AffiliatePartnerPage";
+import TradingDashboardPage from "./pages/TradingDashboardPage";
 
 // OpenAlgo ping temporarily disabled in mock-order mode to avoid CORS noise
 
@@ -64,6 +66,8 @@ const App = () => (
               <Route path="/privacy-policy" element={<PrivacyPolicy />} />
               <Route path="/" element={<MainLandingPage />} />
               <Route path="/ai-probability-engine" element={<AIPobabilityEnginePage />} />
+              <Route path="/affiliate-partner" element={<AffiliatePartnerPage />} />
+              <Route path="/trading-dashboard" element={<TradingDashboardPage />} />
               <Route path="/contact-us" element={<ContactUsPage />} />
               <Route path="/blogs" element={<BlogsPage />} />
               <Route path="/blogs/:slug" element={<BlogDetailPage />} />

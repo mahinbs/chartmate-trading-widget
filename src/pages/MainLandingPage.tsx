@@ -239,7 +239,7 @@ const MainLandingPage = () => {
                                 variant="outline"
                                 className="bg-transparent border border-zinc-700 hover:border-teal-500 hover:bg-teal-500/10 text-white font-bold text-lg px-10 py-7 rounded-xl transition-all duration-300 hover:-translate-y-0.5"
                             >
-                                Learn How AI Orders Work
+                                AI Robot Trade
                             </Button>
                         </Link>
                     </motion.div>

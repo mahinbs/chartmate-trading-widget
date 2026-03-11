@@ -4,9 +4,7 @@ import logoImg from "@/assets/logo.png";
 import { supabase } from "@/integrations/supabase/client";
 
 const BASE_NAV_ITEMS = [
-  { id: "hero", label: "Overview" },
-  { id: "how-it-works", label: "How it works" },
-  { id: "pricing", label: "Pricing" },
+  { id: "ai-probability-engine", label: "AI Robot Trade", isRoute: true },
   { id: "market-picks", label: "Daily Analysis", isRoute: true },
   { id: "white-label", label: "White Label", isRoute: true },
 ];

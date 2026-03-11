@@ -6,8 +6,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 
 const BASE_NAV_ITEMS = [
-  { id: "ai-probability-engine", label: "AI Order System", isRoute: true },
+  { id: "ai-probability-engine", label: "AI Robot Trade", isRoute: true },
   { id: "market-picks", label: "Daily Analysis", isRoute: true },
+  { id: "affiliate-partner", label: "Affiliates", isRoute: true },
   { id: "white-label", label: "White Label", isRoute: true },
 ];
 
