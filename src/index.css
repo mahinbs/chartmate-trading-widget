@@ -129,6 +129,11 @@
   }
 }
 
+body{
+  width: 100vw;
+  overflow-x: hidden;
+}
+
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
