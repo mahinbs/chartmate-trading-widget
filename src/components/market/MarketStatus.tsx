@@ -100,15 +100,16 @@ export function MarketStatus({ symbol, displaySymbol, exchange, type }: MarketSt
       case 'REGULAR':
         return 'Regular trading session is active.';
       case 'PRE':
-        return `Regular session opens at ${regularHours.split('–')[0].trim()}.`;
+        return `Pre-market session. Regular session opens at ${regularHours.split('–')[0].trim()}.`;
       case 'POST':
-        return `Regular session closed at ${regularHours.split('–')[1]?.trim() || '4:00 PM'}.`;
+        return `After-hours session. Regular session closed at ${regularHours.split('–')[1]?.trim() || '4:00 PM'}.`;
       case 'CLOSED':
-        return `Regular hours: ${regularHours} (Mon–Fri).`;
+        // Note: regularHours is already shown on the line above, so just say it's closed.
+        return 'Currently outside regular trading hours (Mon–Fri).';
       case 'LIVE_24_7':
-        return 'Trades continuously, 24 hours a day.';
+        return 'Trades continuously, 24 hours a day, 7 days a week.';
       case 'LIVE_24_5':
-        return 'Trades Sunday evening to Friday evening U.S. time.';
+        return 'Trades Sunday evening to Friday evening (global forex hours).';
       default:
         return 'Market hours vary by venue.';
     }
@@ -155,12 +156,22 @@ export function MarketStatus({ symbol, displaySymbol, exchange, type }: MarketSt
               </Badge>
               {status.exchange && status.exchange !== 'Unknown' && (
                 <span className="text-xs sm:text-sm text-muted-foreground">
-                  {status.exchangeTimezoneName === 'Asia/Kolkata' ? 'NSE/BSE' : status.exchange}
+                  {/* Show friendly exchange name */}
+                  {status.exchangeTimezoneName === 'Asia/Kolkata'
+                    ? 'NSE / BSE'
+                    : status.exchange === 'NMS' ? 'NASDAQ'
+                    : status.exchange}
                 </span>
               )}
               {status.exchangeTimezoneName && status.exchangeTimezoneName !== 'UTC' && (
                 <span className="text-xs text-muted-foreground">
-                  ({status.exchangeTimezoneName === 'Asia/Kolkata' ? 'Asia/Kolkata (IST)' : status.exchangeTimezoneName})
+                  {/* Show friendly timezone label */}
+                  ({status.exchangeTimezoneName === 'Asia/Kolkata' ? 'IST'
+                    : status.exchangeTimezoneName === 'America/New_York' ? 'ET'
+                    : status.exchangeTimezoneName === 'Europe/London' ? 'GMT/BST'
+                    : status.exchangeTimezoneName === 'Asia/Tokyo' ? 'JST'
+                    : status.exchangeTimezoneName === 'Asia/Hong_Kong' ? 'HKT'
+                    : status.exchangeTimezoneName})
                 </span>
               )}
             </div>

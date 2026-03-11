@@ -185,10 +185,19 @@ serve(async (req) => {
           const {
             symbol: returnSymbol,
             exchange: yahooExchange = exchange || 'Unknown',
-            exchangeTimezoneName = 'UTC',
             marketState = 'CLOSED',
             quoteType = 'EQUITY'
           } = quote;
+
+          // Determine the correct timezone — Yahoo sometimes returns America/New_York
+          // for Indian exchanges (Bombay/BSE/NSE). Always override to IST for those.
+          const INDIAN_EXCHANGES = ['NSE', 'BSE', 'Bombay', 'BOM', 'CNX', 'INDNSE', 'INDBOM'];
+          const isIndianExchange =
+            INDIAN_EXCHANGES.includes(yahooExchange) ||
+            symbol.endsWith('.NS') || symbol.endsWith('.BO');
+          const exchangeTimezoneName: string = isIndianExchange
+            ? 'Asia/Kolkata'
+            : (quote.exchangeTimezoneName || 'UTC');
 
           // Handle different asset types
           let status: string;

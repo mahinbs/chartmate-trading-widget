@@ -44,7 +44,7 @@ import { StrategySelectionDialog, STRATEGIES } from "@/components/trading/Strate
 import { UsePreviousOrNewStrategyDialog } from "@/components/trading/UsePreviousOrNewStrategyDialog";
 import { PRICING_PLANS } from "@/constants/pricing";
 import { toast } from "sonner";
-import { Loader2, AlertTriangle, BrainCircuit, BarChart3, CheckCircle, ArrowRight, LogOut, History, Timer, Home, FlaskConical } from "lucide-react";
+import { Loader2, AlertTriangle, BrainCircuit, BarChart3, CheckCircle, ArrowRight, ArrowLeft, LogOut, History, Timer, Home, FlaskConical, RefreshCw } from "lucide-react";
 import { Container } from "@/components/layout/Container";
 import { formatCurrency } from "@/lib/display-utils";
 
@@ -297,17 +297,7 @@ const PredictPage = () => {
 
         if (!error && data) {
           setMarketStatus(data);
-          const isIndianExchange =
-            data.exchange === 'NSE' ||
-            data.exchange === 'BSE';
-          // For Indian stocks (NSE/BSE), always allow immediate entry
-          // and avoid showing \"Market closed\" banners in the UI.
-          setMarketClosed(
-            !isIndianExchange &&
-            (data.marketState === 'CLOSED' ||
-              data.marketState === 'PRE' ||
-              data.marketState === 'POST')
-          );
+          setMarketClosed(data.marketState === 'CLOSED' || data.marketState === 'PRE' || data.marketState === 'POST');
         }
       } catch (err) {
         console.error('Failed to fetch market status:', err);
@@ -481,11 +471,9 @@ const PredictPage = () => {
 
   const handleNextStep = () => {
     if (currentStep === "choose-asset" && symbol) {
-      // Step 1 → Step 2 (no preset prompt yet; we only ask after amount is filled)
       setCompletedSteps(prev => [...prev, "choose-asset"]);
       setCurrentStep("set-investment");
     } else if (currentStep === "set-investment" && investment) {
-      // After user has chosen symbol + investment, ask if they want previous details
       if (latestPreset && !presetPromptShown) {
         setShowPresetDialog(true);
         setPresetPromptShown(true);
@@ -501,6 +489,16 @@ const PredictPage = () => {
       setCurrentStep("analysis");
       handlePredict();
     }
+  };
+
+  const handlePrevStep = () => {
+    const stepOrder = ["choose-asset", "set-investment", "trading-profile", "review", "analysis", "results"];
+    const idx = stepOrder.indexOf(currentStep);
+    if (idx <= 0) return;
+    const prevStep = stepOrder[idx - 1];
+    // Remove current step from completedSteps so stepper reflects going back
+    setCompletedSteps(prev => prev.filter(s => s !== currentStep && s !== prevStep));
+    setCurrentStep(prevStep);
   };
 
   // Convert timeframe to minutes for API
@@ -897,15 +895,20 @@ const PredictPage = () => {
                     </div>
                   )}
 
-                  <Button
-                    onClick={handleNextStep}
-                    disabled={!investment || parseFloat(investment) <= 0}
-                    className="w-full"
-                    size="lg"
-                  >
-                    Continue to Trading Profile
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={handlePrevStep} className="flex-shrink-0">
+                      <ArrowLeft className="h-4 w-4 mr-1" /> Back
+                    </Button>
+                    <Button
+                      onClick={handleNextStep}
+                      disabled={!investment || parseFloat(investment) <= 0}
+                      className="flex-1"
+                      size="lg"
+                    >
+                      Continue to Trading Profile
+                      <ArrowRight className="ml-2 h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               </StepContainer>
             )}
@@ -937,15 +940,20 @@ const PredictPage = () => {
                     </p>
                   </div>
 
-                  <Button
-                    onClick={handleNextStep}
-                    className="w-full"
-                    size="lg"
-                    disabled={!userProfile.riskAcceptance}
-                  >
-                    Continue to Review
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={handlePrevStep} className="flex-shrink-0">
+                      <ArrowLeft className="h-4 w-4 mr-1" /> Back
+                    </Button>
+                    <Button
+                      onClick={handleNextStep}
+                      className="flex-1"
+                      size="lg"
+                      disabled={!userProfile.riskAcceptance}
+                    >
+                      Continue to Review
+                      <ArrowRight className="ml-2 h-4 w-4" />
+                    </Button>
+                  </div>
                   {!userProfile.riskAcceptance && (
                     <p className="text-sm text-center text-yellow-600 mt-2">
                       ⚠️ You must accept the risk disclosure to continue
@@ -1033,24 +1041,29 @@ const PredictPage = () => {
                     </ul>
                   </div>
 
-                  <Button
-                    onClick={handleNextStep}
-                    disabled={loading}
-                    className="w-full"
-                    size="lg"
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Starting Analysis...
-                      </>
-                    ) : (
-                      <>
-                        Start AI Analysis
-                        <BrainCircuit className="ml-2 h-4 w-4" />
-                      </>
-                    )}
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={handlePrevStep} disabled={loading} className="flex-shrink-0">
+                      <ArrowLeft className="h-4 w-4 mr-1" /> Back
+                    </Button>
+                    <Button
+                      onClick={handleNextStep}
+                      disabled={loading}
+                      className="flex-1"
+                      size="lg"
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Starting Analysis...
+                        </>
+                      ) : (
+                        <>
+                          Start AI Analysis
+                          <BrainCircuit className="ml-2 h-4 w-4" />
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </StepContainer>
             )}
@@ -1088,6 +1101,11 @@ const PredictPage = () => {
                     currentPrice={result.currentPrice}
                     geminiForecast={result.geminiForecast}
                     volumeData={result.volumeData}
+                    analysedAt={predictedAt}
+                    onRefresh={() => {
+                      setCurrentStep("review");
+                      setCompletedSteps(prev => prev.filter(s => s !== "analysis" && s !== "results"));
+                    }}
                   />
                 )}
 
@@ -1383,6 +1401,19 @@ const PredictPage = () => {
 
                 {/* Action Buttons */}
                 <div className="flex flex-col gap-4">
+                  {/* Back to review / re-run buttons */}
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={handlePrevStep} className="flex-shrink-0 border-white/10 hover:bg-white/5">
+                      <ArrowLeft className="h-4 w-4 mr-1" /> Back to Review
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => { setCurrentStep("review"); setCompletedSteps(prev => prev.filter(s => s !== "analysis" && s !== "results")); }}
+                      className="flex-1 border-white/10 hover:bg-white/5"
+                    >
+                      <RefreshCw className="h-4 w-4 mr-1" /> Re-run Analysis
+                    </Button>
+                  </div>
                   <div className="grid grid-cols-2 gap-4">
                     <Button
                       onClick={startNewPredictionFlow}
@@ -1413,8 +1444,8 @@ const PredictPage = () => {
           </div>
         </div >
 
-        {/* Global Live Chart - full width below main content */}
-        <div className="mt-10">
+        {/* Global Live Chart - hidden during analysis to avoid overlapping loader */}
+        <div className={`mt-10 transition-all duration-300 ${currentStep === 'analysis' ? 'hidden' : ''}`}>
           <Card className="glass-panel overflow-hidden border-white/5 bg-gradient-to-b from-card/80 to-background/90 shadow-2xl h-[520px] sm:h-[580px] flex flex-col max-w-6xl mx-auto">
             <CardHeader className="pb-3 border-b border-white/5">
               <div className="flex items-center justify-between">

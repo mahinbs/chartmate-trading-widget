@@ -9,6 +9,7 @@ import {
   Flame,
   Clock,
   Activity,
+  RefreshCw,
 } from "lucide-react";
 
 /* ─────────────────────────────── types ─────────────────────────────── */
@@ -51,6 +52,10 @@ interface ProbabilityPanelProps {
     volumeConfirmation?: number;
     avgVolume?: number;
   };
+  /** ISO timestamp when analysis was run (predictedAt). */
+  analysedAt?: Date | null;
+  /** Callback to re-run the analysis from the parent. */
+  onRefresh?: () => void;
 }
 
 /* ─────────────────────────────── helpers ────────────────────────────── */
@@ -209,6 +214,8 @@ export function ProbabilityPanel({
   currentPrice,
   geminiForecast,
   volumeData,
+  analysedAt,
+  onRefresh,
 }: ProbabilityPanelProps) {
   const forecasts = geminiForecast.forecasts ?? [];
   const primaryForecast = forecasts[0];
@@ -300,22 +307,41 @@ export function ProbabilityPanel({
   return (
     <div className="space-y-4">
       {/* Section header */}
-      <div className="flex items-center gap-3">
-        <div className="h-8 w-1.5 bg-gradient-to-b from-primary to-accent rounded-full" />
-        <div>
-          <h2 className="text-lg font-bold text-white tracking-tight">
-            AI Probability Analysis
-          </h2>
-          <p className="text-xs text-zinc-500">
-            Market intelligence based on technical + quantitative signals — not a recommendation
-          </p>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="h-8 w-1.5 bg-gradient-to-b from-primary to-accent rounded-full" />
+          <div>
+            <h2 className="text-lg font-bold text-white tracking-tight">
+              AI Probability Analysis
+            </h2>
+            <p className="text-xs text-zinc-500">
+              Market intelligence based on technical + quantitative signals — not a recommendation
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          {analysedAt && (
+            <span className="text-[10px] text-zinc-600">
+              Analysed {analysedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+            </span>
+          )}
+          {onRefresh && (
+            <button
+              onClick={onRefresh}
+              className="flex items-center gap-1 text-[11px] text-primary hover:text-primary/80 transition-colors"
+              title="Re-run AI analysis with latest market data"
+            >
+              <RefreshCw className="h-3 w-3" />
+              Refresh
+            </button>
+          )}
         </div>
       </div>
 
       {/* Row 1: Direction gauge + Confidence */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-        {/* 1. Directional Probability Gauge */}
+        {/* 1. Directional Probability Gauge — single card, three directions */}
         <Card className="glass-panel border-white/10 bg-zinc-900/50">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold flex items-center gap-2 text-zinc-200">
@@ -324,11 +350,28 @@ export function ProbabilityPanel({
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex justify-around">
-              <ArcGauge value={upPct} label="Upward" color="#10b981" />
-              <ArcGauge value={downPct} label="Downward" color="#ef4444" />
+            {/* Three gauges in one row: up / sideways / down */}
+            <div className="flex justify-around items-end">
+              <ArcGauge value={upPct}       label="Upward"    color="#10b981" />
+              <ArcGauge value={sidewaysPct} label="Sideways"  color="#6b7280" />
+              <ArcGauge value={downPct}     label="Downward"  color="#ef4444" />
             </div>
-
+            {/* Small bar summary so numbers are unambiguous */}
+            <div className="space-y-1.5">
+              {[
+                { label: "↑ Upward total",   pct: upPct,       bar: "bg-emerald-500" },
+                { label: "→ Sideways",        pct: sidewaysPct, bar: "bg-zinc-500"    },
+                { label: "↓ Downward total",  pct: downPct,     bar: "bg-red-500"     },
+              ].map(({ label, pct, bar }) => (
+                <div key={label} className="flex items-center gap-2 text-xs">
+                  <span className="w-28 text-zinc-500 shrink-0">{label}</span>
+                  <div className="flex-1 bg-white/5 rounded-full h-1.5 overflow-hidden">
+                    <div className={`h-full rounded-full ${bar}`} style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className="w-8 text-right font-semibold text-zinc-300">{pct}%</span>
+                </div>
+              ))}
+            </div>
             {/* Reasoning why */}
             <div className="text-xs text-zinc-400 bg-white/[0.03] rounded-lg p-3 border border-white/5 leading-relaxed">
               <span className="text-zinc-300 font-medium">Why:</span>{" "}
@@ -351,11 +394,11 @@ export function ProbabilityPanel({
                 <p className="text-4xl font-bold text-white tracking-tight">
                   {aiConfidence}%
                 </p>
-                <p className="text-xs text-zinc-500 mt-0.5">Signal strength</p>
+                <p className="text-xs text-zinc-500 mt-0.5">Overall AI signal strength</p>
               </div>
               <ArcGauge
                 value={aiConfidence}
-                label=""
+                label="Confidence"
                 color={aiConfidence >= 70 ? "#10b981" : aiConfidence >= 50 ? "#f59e0b" : "#ef4444"}
                 size={90}
               />
@@ -402,7 +445,7 @@ export function ProbabilityPanel({
       {/* Row 2: Scenario probabilities + Heatmap */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-        {/* 3. Scenario Probability (next 4 hours from first forecast) */}
+        {/* 3. Scenario Probability — sub-breakdown of direction totals above */}
         <Card className="glass-panel border-white/10 bg-zinc-900/50">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold flex items-center gap-2 text-zinc-200">
@@ -411,31 +454,41 @@ export function ProbabilityPanel({
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
+            {/* Note: Upward scenarios sum to total upward %; Downward = total downward % */}
+            <p className="text-[10px] text-zinc-600 -mt-1 mb-1">
+              ↑ Upward scenarios split from total {upPct}% · ↓ Downward = {downPct}%
+            </p>
             {[
               {
                 label: "Strong Upward Move",
                 pct: Math.round(upPct * 0.62),
                 color: "bg-emerald-500",
+                indent: false,
               },
               {
                 label: "Moderate Uptrend",
                 pct: Math.round(upPct * 0.38),
                 color: "bg-emerald-700",
+                indent: true,
               },
               {
                 label: "Sideways Range",
                 pct: sidewaysPct,
                 color: "bg-zinc-500",
+                indent: false,
               },
               {
                 label: "Downward Move",
                 pct: downPct,
                 color: "bg-red-500",
+                indent: false,
               },
-            ].map(({ label, pct, color }) => (
-              <div key={label} className="space-y-1">
+            ].map(({ label, pct, color, indent }) => (
+              <div key={label} className={`space-y-1 ${indent ? "ml-3" : ""}`}>
                 <div className="flex justify-between text-xs">
-                  <span className="text-zinc-300">{label}</span>
+                  <span className={`${indent ? "text-zinc-500" : "text-zinc-300"}`}>
+                    {indent ? "└ " : ""}{label}
+                  </span>
                   <span className="font-semibold text-white">{pct}%</span>
                 </div>
                 <PctBar value={pct} color={color} />
