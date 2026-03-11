@@ -6,9 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 
 const BASE_NAV_ITEMS = [
-  { id: "hero", label: "Overview" },
-  { id: "how-it-works", label: "How it works" },
-  { id: "pricing", label: "Pricing" },
+  { id: "ai-probability-engine", label: "AI Order System", isRoute: true },
   { id: "market-picks", label: "Daily Analysis", isRoute: true },
   { id: "white-label", label: "White Label", isRoute: true },
 ];
@@ -37,8 +35,8 @@ const AiPredictionHeader: React.FC = () => {
     const loadFlags = async () => {
       try {
         const [{ count: blogCount }, { count: dashCount }] = await Promise.all([
-          supabase.from('blogs').select('id', { head: true, count: 'exact' }),
-          supabase.from('public_dashboard_metrics').select('id', { head: true, count: 'exact' }),
+          (supabase as any).from('blogs').select('id', { head: true, count: 'exact' }),
+          (supabase as any).from('public_dashboard_metrics').select('id', { head: true, count: 'exact' }),
         ]);
         setHasBlogs((blogCount ?? 0) > 0);
         setHasDashboard((dashCount ?? 0) > 0);
@@ -66,13 +64,13 @@ const AiPredictionHeader: React.FC = () => {
         <div className="container flex items-center justify-between py-2.5 lg:py-4">
           <div
             className="flex items-center gap-2 cursor-pointer"
-            onClick={() => handleNavClick("hero")}
           >
-            <img
-              src={logoImg}
-              alt="TradingSmart.ai"
-              className="w-[3rem] lg:w-[5rem] object-contain"
-            />
+            <Link to='/'>
+              <img
+                src={logoImg}
+                alt="TradingSmart.ai"
+                className="w-[3rem] lg:w-[5rem] object-contain"
+              /></Link>
             {/* <div className="flex flex-col leading-tight">
               <span className="text-sm font-semibold text-white tracking-wide">
                 TradingSmart.ai
