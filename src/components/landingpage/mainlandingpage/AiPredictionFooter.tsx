@@ -63,7 +63,7 @@ const AiPredictionFooter: React.FC = () => {
           <img
             src={logoImg}
             alt="TradingSmart.ai"
-            className="w-[7.5rem] md:w-[10rem]"
+            className="w-[6rem] md:w-[8rem]"
           />
           <p className="text-sm font-semibold text-white">
             TradingSmart.ai – AI-Powered Market Predictions

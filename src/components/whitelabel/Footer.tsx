@@ -10,7 +10,7 @@ const Footer = () => {
             <div className="absolute top-0 left-1/4 w-96 h-96 bg-cyan-500/5 rounded-full blur-[100px] pointer-events-none"></div>
             <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-secondary/5 rounded-full blur-[100px] pointer-events-none"></div>
 
-            <div className="container-custom mx-auto px-4 relative z-10">
+            <div className="container mx-auto px-4 relative z-10">
                 
                 {/* Top CTA Section */}
                 <ScrollReveal>

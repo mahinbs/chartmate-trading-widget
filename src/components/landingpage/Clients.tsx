@@ -7,7 +7,7 @@ const Clients = () => {
 
     return (
         <section className="py-12 border-b border-gray-100 bg-white">
-            <div className="container-custom">
+            <div className="container">
                 <p className="text-center text-gray-400 text-sm font-semibold uppercase tracking-wider mb-8">
                     Compatible with Major Markets & Exchanges
                 </p>

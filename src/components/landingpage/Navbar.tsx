@@ -86,7 +86,7 @@ const Navbar = () => {
       <nav
         className={`fixed w-full z-50 transition-all duration-300 bg-black/50 ${isScrolled ? "shadow-sm py-4 backdrop-blur-sm" : "py-5"}`}
       >
-        <div className="container-custom flex justify-between items-center">
+        <div className="container flex justify-between items-center">
           {/* Logo */}
           <Link
             to="/"
@@ -96,7 +96,7 @@ const Navbar = () => {
             <img
               src={logo}
               alt="Logo"
-              className="w-[6.5rem] lg:w-[8.5rem] object-contain"
+              className="w-[3rem] lg:w-[5rem] object-contain"
             />
           </Link>
 
@@ -169,7 +169,7 @@ const Navbar = () => {
               <img
                 src={logo}
                 alt="Logo"
-                className="w-[6.5rem] object-contain"
+                className="w-[3rem] object-contain"
               />
             </div>
             <button

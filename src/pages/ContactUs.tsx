@@ -177,7 +177,7 @@ const ContactUsPage = () => {
                     ))}
                 </div>
 
-                <div className="container-custom relative z-20 max-w-2xl mx-auto">
+                <div className="container relative z-20 max-w-2xl mx-auto">
                     <ScrollReveal delay={0.2}>
                         <div className="text-center mb-12">
                             <h1 className="text-4xl md:text-5xl lg:text-6xl font-black tracking-tighter text-white mb-6">

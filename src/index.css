@@ -124,7 +124,7 @@
     @apply px-4 py-4 md:px-8 md:py-8 max-w-7xl mx-auto;
   }
 
-  .container-custom {
+  .container {
     @apply px-4 md:px-8 max-w-[85rem] mx-auto;
   }
 }

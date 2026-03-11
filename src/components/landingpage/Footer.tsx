@@ -11,7 +11,7 @@ const Footer = () => {
       <div className="absolute top-0 left-1/4 w-96 h-96 bg-cyan-500/5 rounded-full blur-[100px] pointer-events-none"></div>
       <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-secondary/5 rounded-full blur-[100px] pointer-events-none"></div>
 
-      <div className="container-custom mx-auto px-4 relative z-10">
+      <div className="container mx-auto px-4 relative z-10">
         {/* Top CTA Section */}
         <ScrollReveal>
           <div className="flex flex-col md:flex-row justify-between items-center bg-zinc-900/30 border border-white/5 rounded-3xl p-8 md:p-12 mb-20 backdrop-blur-sm">
@@ -43,7 +43,7 @@ const Footer = () => {
               <img
                 src={logoImg}
                 alt="TradingSmart.ai"
-                className="w-[7.5rem] md:w-[10rem]"
+                className="w-[6rem] md:w-[8rem]"
               />
               <div className="space-y-6 mb-10 max-w-xl">
                 <p className="text-gray-400 text-lg leading-relaxed font-light">

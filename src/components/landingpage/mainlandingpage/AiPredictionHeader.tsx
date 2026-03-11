@@ -69,7 +69,7 @@ const AiPredictionHeader: React.FC = () => {
             <img
               src={logoImg}
               alt="TradingSmart.ai"
-              className="w-[6.5rem] lg:w-[8.5rem] object-contain"
+              className="w-[3rem] lg:w-[5rem] object-contain"
             />
             {/* <div className="flex flex-col leading-tight">
               <span className="text-sm font-semibold text-white tracking-wide">
@@ -144,7 +144,7 @@ const AiPredictionHeader: React.FC = () => {
               <img
                 src={logoImg}
                 alt="TradingSmart.ai"
-                className="w-[4rem] lg:w-[5rem] object-contain"
+                className="w-[3rem] object-contain"
               />
             </div>
             <button
