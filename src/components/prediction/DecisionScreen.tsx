@@ -1,7 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { ActionSignal } from "./ActionSignal";
 import { RiskGrade } from "./RiskGrade";
 import { formatCurrency, formatPercentage } from "@/lib/display-utils";
 import {
@@ -37,6 +36,8 @@ interface DecisionScreenProps {
   leverage?: number;
   /** Display currency for all amounts (INR or USD). Default USD. */
   currency?: "INR" | "USD";
+  /** If true, show fractional units (crypto). */
+  isCrypto?: boolean;
 }
 
 export function DecisionScreen({
@@ -53,6 +54,7 @@ export function DecisionScreen({
   takeProfit,
   leverage = 1,
   currency = "USD",
+  isCrypto = false,
 }: DecisionScreenProps) {
   const fmt = (amount: number, decimals = 2, allowNegative = false) =>
     formatCurrency(amount, decimals, allowNegative, currency);
@@ -67,35 +69,19 @@ export function DecisionScreen({
   const getActionRecommendation = () => {
     if (action === 'BUY' && confidence >= 70) {
       return {
-        text: 'TRADE NOW',
-        urgency: 'HIGH',
-        color: 'bg-green-600 hover:bg-green-700',
-        reason: 'Strong buy signal with high confidence',
-        explanation: `AI detected strong upward momentum with ${confidence}% confidence. Multiple technical indicators align for a bullish move. Risk level is ${riskLevel.toLowerCase()}.`
+        explanation: `Strong upward momentum detected at ${confidence}% confidence. Multiple technical indicators align for a bullish move — risk level is ${riskLevel.toLowerCase()}. The market structure favours continuation of the current trend.`
       };
     } else if (action === 'BUY' && confidence >= 50) {
       return {
-        text: 'TRADE WITH CAUTION',
-        urgency: 'MEDIUM',
-        color: 'bg-yellow-600 hover:bg-yellow-700',
-        reason: 'Moderate confidence - consider smaller position',
-        explanation: `AI shows moderate buy signal with ${confidence}% confidence. Some indicators are positive but not all align. Consider reducing position size or waiting.`
+        explanation: `Moderate upward signal at ${confidence}% confidence. Some bullish indicators are present but not all aligned — risk level is ${riskLevel.toLowerCase()}. Consider a smaller position size until confirmation improves.`
       };
     } else if (action === 'SELL') {
       return {
-        text: 'AVOID OR EXIT',
-        urgency: 'HIGH',
-        color: 'bg-red-600 hover:bg-red-700',
-        reason: 'Bearish signal detected',
-        explanation: `AI detected downward pressure with ${confidence}% confidence. Technical indicators suggest potential decline. Consider shorting or avoiding this position.`
+        explanation: `Downward pressure detected at ${confidence}% confidence. Technical indicators suggest a bearish move is likely — risk level is ${riskLevel.toLowerCase()}. Opening a long position now conflicts with the current market direction.`
       };
     } else {
       return {
-        text: 'WAIT',
-        urgency: 'LOW',
-        color: 'bg-gray-600 hover:bg-gray-700',
-        reason: 'Market unclear - wait for better setup',
-        explanation: `AI recommends HOLD with only ${confidence}% confidence. Signals are mixed or unclear - entering now carries ${riskLevel.toLowerCase()} risk with uncertain reward. Wait for ${confidence < 40 ? 'much stronger' : 'stronger'} confirmation before committing capital.`
+        explanation: `Mixed or unclear signals — only ${confidence}% model confidence. Entering a position now carries ${riskLevel.toLowerCase()} risk with uncertain reward. The market lacks a clear directional edge; ${confidence < 40 ? 'wait for a much stronger setup' : 'wait for stronger confirmation'} before committing capital.`
       };
     }
   };
@@ -111,28 +97,18 @@ export function DecisionScreen({
 
       <CardHeader className="pb-6 pt-8 px-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <CardTitle className="text-3xl font-bold tracking-tight text-white">Investment Decision</CardTitle>
+          <CardTitle className="text-3xl font-bold tracking-tight text-white">Investment Analysis</CardTitle>
           <div className="flex gap-3 bg-black/40 p-1.5 rounded-2xl backdrop-blur-sm border border-white/10">
-            <ActionSignal action={action} confidence={confidence} size="lg" />
             <RiskGrade level={riskLevel} size="lg" />
           </div>
         </div>
 
-        {/* WHY THIS SIGNAL - Prominent Explanation */}
-        <Alert className={`mt-6 backdrop-blur-md shadow-lg border-l-4 ${action === 'BUY' ? 'border-l-green-500 border-y-0 border-r-0 bg-green-500/5' :
-            action === 'SELL' ? 'border-l-red-500 border-y-0 border-r-0 bg-red-500/5' :
-              'border-l-amber-500 border-y-0 border-r-0 bg-amber-500/5'
-          }`}>
-          <AlertTriangle className={`h-5 w-5 ${action === 'BUY' ? 'text-green-500' :
-              action === 'SELL' ? 'text-red-500' :
-                'text-amber-500'
-            }`} />
+        {/* Market context — no BUY/SELL/HOLD words */}
+        <Alert className="mt-6 backdrop-blur-md shadow-lg border-l-4 border-l-primary border-y-0 border-r-0 bg-primary/5">
+          <AlertTriangle className="h-5 w-5 text-primary" />
           <AlertDescription className="ml-2">
-            <p className={`font-semibold text-base mb-1 tracking-wide ${action === 'BUY' ? 'text-green-400' :
-                action === 'SELL' ? 'text-red-400' :
-                  'text-amber-400'
-              }`}>
-              Why {action}?
+            <p className="font-semibold text-base mb-1 tracking-wide text-primary">
+              Market Context
             </p>
             <p className="text-sm text-zinc-300 leading-relaxed">
               {recommendation.explanation}
@@ -195,11 +171,15 @@ export function DecisionScreen({
             </div>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Shares to buy:</span>
-                <span className="font-bold text-white">{positionSize.shares}</span>
+                <span className="text-muted-foreground">{isCrypto ? "Units to buy:" : "Shares to buy:"}</span>
+                <span className="font-bold text-white">
+                  {isCrypto
+                    ? positionSize.shares.toFixed(6).replace(/\.?0+$/, "")
+                    : positionSize.shares}
+                </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Price per share:</span>
+                <span className="text-muted-foreground">{isCrypto ? "Price per unit:" : "Price per share:"}</span>
                 <span className="font-medium text-zinc-300">{fmt(positionSize.costPerShare, 2)}</span>
               </div>
               <div className="flex justify-between pt-2 border-t border-white/10">

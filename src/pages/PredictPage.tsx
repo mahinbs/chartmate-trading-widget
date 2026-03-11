@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import ChartPanel from "@/components/ChartPanel";
+import YahooChartPanel from "@/components/YahooChartPanel";
 import { AdvancedPredictLoader } from "@/components/AdvancedPredictLoader";
 import { PredictionTimeline } from "@/components/PredictionTimeline";
 import { Stepper } from "@/components/ui/stepper";
@@ -28,6 +28,7 @@ import { NewsAnalysis } from "@/components/news/NewsAnalysis";
 import { MarketStatus } from "@/components/market/MarketStatus";
 import { UserProfileForm, UserProfile } from "@/components/prediction/UserProfileForm";
 import { DecisionScreen } from "@/components/prediction/DecisionScreen";
+import { ProbabilityPanel } from "@/components/prediction/ProbabilityPanel";
 import { LeverageSimulator } from "@/components/prediction/LeverageSimulator";
 import { RegulatoryDisclaimer } from "@/components/prediction/RegulatoryDisclaimer";
 import { AIReasoningDisplay } from "@/components/prediction/AIReasoningDisplay";
@@ -46,7 +47,6 @@ import { toast } from "sonner";
 import { Loader2, AlertTriangle, BrainCircuit, BarChart3, CheckCircle, ArrowRight, LogOut, History, Timer, Home, FlaskConical } from "lucide-react";
 import { Container } from "@/components/layout/Container";
 import { formatCurrency } from "@/lib/display-utils";
-import { getTradingViewSymbol } from "@/lib/tradingview-symbols";
 
 interface GeminiForecast {
   symbol: string;
@@ -165,6 +165,13 @@ interface PredictionResult {
   };
   leverage?: number;
   marginType?: string;
+  isCrypto?: boolean;
+  volumeData?: {
+    volume24h?: number | null;
+    volumeProfile?: string;
+    volumeConfirmation?: number;
+    avgVolume?: number | null;
+  };
 }
 
 interface PredictionPreset {
@@ -711,15 +718,16 @@ const PredictPage = () => {
 
       {/* Main Content */}
       <Container className="py-4 sm:py-8">
-        <div className={`grid grid-cols-1 ${!isMobile ? 'lg:grid-cols-12' : ''} gap-4 sm:gap-8`}>
-          {/* Left Column - Step Content */}
-          <div className={`space-y-6 ${!isMobile ? 'lg:col-span-7 xl:col-span-8' : ''}`}>
+        <div className={`grid grid-cols-1 gap-4 sm:gap-8`}>
+          {/* Main Column - Step Content */}
+          <div className={`space-y-6 ${!isMobile ? 'lg:col-span-12 xl:col-span-10 mx-auto' : ''}`}>
             {/* Step 1: Choose Asset */}
             {currentStep === "choose-asset" && (
               <StepContainer
                 title="Choose Your Asset"
                 description="Search and select the stock, crypto, or forex pair you want to analyze"
                 isActive={true}
+                className="max-w-2xl mx-auto"
               >
                 <div className="space-y-4">
                   <div>
@@ -1063,7 +1071,17 @@ const PredictPage = () => {
                 <div className="pointer-events-none absolute -inset-32 bg-primary/5 blur-[120px] -z-10 rounded-[100%]" />
                 <div className="pointer-events-none absolute top-1/4 -right-32 w-96 h-96 bg-accent/5 blur-[120px] -z-10 rounded-[100%]" />
 
-                {/* AI Reasoning - Why this signal? (MOVED TO TOP) */}
+                {/* Probability Panel — most important, shown first */}
+                {result.geminiForecast && (
+                  <ProbabilityPanel
+                    symbol={result.symbol}
+                    currentPrice={result.currentPrice}
+                    geminiForecast={result.geminiForecast}
+                    volumeData={result.volumeData}
+                  />
+                )}
+
+                {/* AI Reasoning - Why this signal? */}
                 {result.geminiForecast && (
                   <AIReasoningDisplay
                     symbol={result.symbol}
@@ -1101,7 +1119,24 @@ const PredictPage = () => {
                     takeProfit={userProfile.targetProfitPercentage || 15}
                     leverage={userProfile.leverage || 1}
                     currency={displayCurrency}
+                    isCrypto={result.isCrypto}
                   />
+                )}
+
+                {/* Key Price Levels - shown before Place Order */}
+                {result.geminiForecast?.support_resistance && (
+                  <Card className="glass-panel">
+                    <CardHeader>
+                      <CardTitle className="text-white">Key Price Levels</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <KeyLevels
+                        supportLevels={result.geminiForecast.support_resistance.supports}
+                        resistanceLevels={result.geminiForecast.support_resistance.resistances}
+                        currentPrice={result.currentPrice}
+                      />
+                    </CardContent>
+                  </Card>
                 )}
 
                 {/* START TRACKING BUTTON - Primary CTA */}
@@ -1117,35 +1152,19 @@ const PredictPage = () => {
                       </div>
 
                       {/* Context-aware label for the action buttons */}
-                      {result.geminiForecast?.action_signal?.action === 'HOLD' ? (
-                        <Alert className="border-yellow-500/50 bg-yellow-500/10">
-                          <AlertTriangle className="h-4 w-4 text-yellow-600" />
-                          <AlertDescription className="text-sm">
-                            <span className="font-semibold">⚠️ AI recommends HOLD.</span>{" "}
-                            Conditions are unclear. You can still place a <strong>real order</strong> (all AI &amp; backtest gates apply) or use <strong>Paper Trade</strong> to simulate risk-free with no money at stake.
-                          </AlertDescription>
-                        </Alert>
-                      ) : (
-                        <div className="text-xs text-center text-muted-foreground px-2">
-                          <strong>Real Order</strong>: real money, all AI gates &amp; backtest must pass.{" "}
-                          <strong>Paper Trade</strong>: simulated, no money, gates bypassed.
-                        </div>
-                      )}
+                      <div className="text-xs text-center text-muted-foreground px-2">
+                        <strong>Real Order</strong>: real money, all AI gates &amp; backtest must pass.{" "}
+                        <strong>Paper Trade</strong>: simulated, no money, gates bypassed.
+                      </div>
 
                       {/* Real trade button */}
                       <Button
                         onClick={() => setShowPremiumDialog(true)}
-                        className={`w-full text-lg py-6 shadow-lg ${result.geminiForecast?.action_signal?.action === 'HOLD'
-                          ? 'bg-gradient-to-r from-yellow-600 to-yellow-500 hover:from-yellow-700 hover:to-yellow-600'
-                          : 'bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600'
-                          }`}
+                        className="w-full text-lg py-6 shadow-lg bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600"
                         size="lg"
                       >
                         <Timer className="mr-2 h-5 w-5" />
-                        {result.geminiForecast?.action_signal?.action === 'HOLD'
-                          ? 'Place Order'
-                          : 'Place Order'
-                        }
+                        Place Order
                       </Button>
 
                       {/* Paper Trade button */}
@@ -1269,21 +1288,7 @@ const PredictPage = () => {
                         />
                       ) : null}
 
-                      {/* Key Levels */}
-                      {result.geminiForecast?.support_resistance && (
-                        <Card className="glass-panel">
-                          <CardHeader>
-                            <CardTitle className="text-white">Key Price Levels</CardTitle>
-                          </CardHeader>
-                          <CardContent>
-                            <KeyLevels
-                              supportLevels={result.geminiForecast.support_resistance.supports}
-                              resistanceLevels={result.geminiForecast.support_resistance.resistances}
-                              currentPrice={result.currentPrice}
-                            />
-                          </CardContent>
-                        </Card>
-                      )}
+                      {/* Key Levels moved above Place Order */}
                     </TabsContent>
 
                     {/* TAB 2: Market Context & Forecasts */}
@@ -1396,33 +1401,33 @@ const PredictPage = () => {
               </div>
             )}
           </div>
+        </div >
 
-          {/* Right Column - Live Chart */}
-          <div className={`lg:col-span-5 xl:col-span-4 lg:sticky lg:top-24 space-y-6 ${isMobile ? 'h-[500px] order-first mb-6' : 'h-[calc(100vh-8rem)]'} animate-in fade-in slide-in-from-right-8 duration-700`}>
-            <Card className="glass-panel overflow-hidden border-white/5 bg-gradient-to-b from-card/80 to-background/90 shadow-2xl h-full flex flex-col">
-              <CardHeader className={`${isMobile ? 'pb-2' : 'pb-4'} border-b border-white/5`}>
-                <div className="flex items-center justify-between">
-                  <CardTitle className={`${isMobile ? 'text-base' : 'text-lg'} text-white`}>Live Chart</CardTitle>
-                  {symbol && (
-                    <Badge variant="outline" className="text-xs border-white/10">
-                      {symbol}
-                    </Badge>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent className="p-0 flex-1 relative">
-                <div className="absolute inset-0">
-                  <ChartPanel
-                    syncSymbol={symbol ? getTradingViewSymbol(selectedSymbol?.full_symbol || symbol) : undefined}
-                    defaultSymbol="NASDAQ:AAPL"
-                    defaultInterval="D"
-                  />
-                </div>
-              </CardContent>
-            </Card>
+        {/* Global Live Chart - full width below main content */}
+        <div className="mt-10">
+          <Card className="glass-panel overflow-hidden border-white/5 bg-gradient-to-b from-card/80 to-background/90 shadow-2xl h-[520px] sm:h-[580px] flex flex-col max-w-6xl mx-auto">
+            <CardHeader className="pb-3 border-b border-white/5">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base sm:text-lg text-white">Live Market Chart</CardTitle>
+                {symbol && (
+                  <Badge variant="outline" className="text-xs border-white/10">
+                    {symbol}
+                  </Badge>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 flex-1 relative">
+              <div className="absolute inset-0">
+                <YahooChartPanel
+                  symbol={selectedSymbol?.full_symbol || symbol || "BTC-USD"}
+                  displayName={selectedSymbol?.description || selectedSymbol?.symbol || symbol}
+                />
+              </div>
+            </CardContent>
+          </Card>
 
-            {/* Chart Analysis */}
-            {chartAnalysis && (
+          {chartAnalysis && (
+            <div className="max-w-4xl mx-auto mt-4">
               <Card className="glass-panel">
                 <CardHeader className={isMobile ? 'pb-2' : ''}>
                   <CardTitle className={`${isMobile ? 'text-base' : 'text-lg'} text-white`}>Chart Analysis</CardTitle>
@@ -1438,9 +1443,9 @@ const PredictPage = () => {
                   </div>
                 </CardContent>
               </Card>
-            )}
-          </div>
-        </div >
+            </div>
+          )}
+        </div>
       </Container >
 
       {/* Premium Plan Required Dialog */}
