@@ -314,17 +314,54 @@ function computeMetrics(trades: Trade[]) {
   return { winRate, avgReturn, totalReturn, maxDrawdown: -maxDD, profitFactor };
 }
 
-// ─── Fetch historical OHLCV from Alpha Vantage ────────────────────────────────
+// ─── Symbol helpers ───────────────────────────────────────────────────────────
 
 function normalizeSymbol(raw: string): string {
-  return (raw || "")
-    .trim()
-    .toUpperCase()
-    .replace(/\.(NS|BO)$/i, "")
-    .replace(/-USD$/i, "USD")
-    .replace(/=X$/i, "");
+  return (raw || "").trim().toUpperCase()
+    .replace(/\.(NS|BO)$/i, "").replace(/-USD$/i, "USD").replace(/=X$/i, "");
+}
+function isIndianSymbol(raw: string) { return /\.(NS|BO)$/i.test(raw); }
+function isCryptoSymbol(raw: string) { return /-USD$|-USDT$|-BTC$/i.test(raw); }
+function isForexSymbol(raw: string)  { return /=X$/i.test(raw); }
+
+function toTDSymbol(raw: string): string {
+  if (isCryptoSymbol(raw)) return raw.replace(/-/g, '/').replace('USDT', 'USD');
+  if (isForexSymbol(raw)) {
+    const s = raw.replace('=X', '');
+    return s.length === 6 ? `${s.slice(0, 3)}/${s.slice(3)}` : s;
+  }
+  return raw.replace(/\.(NS|BO|L|AX|TO|DE)$/i, '').toUpperCase();
 }
 
+// ─── OHLCV fetchers ───────────────────────────────────────────────────────────
+
+// TwelveData: PRIMARY for US stocks, crypto, forex (most accurate + higher rate limits)
+async function fetchDailyOHLCFromTwelveData(raw: string, tdKey: string) {
+  try {
+    const tdSym = toTDSymbol(raw);
+    const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(tdSym)}&interval=1day&outputsize=120&order=ASC&apikey=${tdKey}`;
+    const r   = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    const d   = await r.json();
+    if (d?.status === 'error' || !d?.values?.length) return null;
+
+    const dates: string[] = [], opens: number[] = [], highs: number[] = [],
+          lows:  number[] = [], closes: number[] = [];
+    for (const v of d.values as any[]) {
+      dates.push(v.datetime.split(' ')[0]);
+      opens.push(parseFloat(v.open));
+      highs.push(parseFloat(v.high));
+      lows.push(parseFloat(v.low));
+      closes.push(parseFloat(v.close));
+    }
+    console.log(`✅ TwelveData backtest OHLCV: ${closes.length} days for ${tdSym}`);
+    return { dates, opens, highs, lows, closes, source: 'TwelveData' };
+  } catch (e: any) {
+    console.log(`⚠️ TwelveData backtest failed: ${e.message}`);
+    return null;
+  }
+}
+
+// Alpha Vantage: fallback for US stocks
 async function fetchDailyOHLC(symbol: string, alphaKey: string) {
   try {
     const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED&symbol=${encodeURIComponent(symbol)}&outputsize=compact&apikey=${alphaKey}`;
@@ -332,17 +369,9 @@ async function fetchDailyOHLC(symbol: string, alphaKey: string) {
     const d   = await r.json();
     const ts  = d?.["Time Series (Daily)"];
     if (!ts) return null;
-
-    const entries = Object.entries(ts)
-      .sort((a, b) => a[0].localeCompare(b[0]))   // chronological
-      .slice(-100);                                  // last 100 trading days
-
-    const dates:  string[] = [];
-    const opens:  number[] = [];
-    const highs:  number[] = [];
-    const lows:   number[] = [];
-    const closes: number[] = [];
-
+    const entries = Object.entries(ts).sort((a, b) => a[0].localeCompare(b[0])).slice(-100);
+    const dates: string[] = [], opens: number[] = [], highs: number[] = [],
+          lows:  number[] = [], closes: number[] = [];
     for (const [date, bar] of entries as [string, any][]) {
       dates.push(date);
       opens.push(Number(bar["1. open"]));
@@ -350,48 +379,38 @@ async function fetchDailyOHLC(symbol: string, alphaKey: string) {
       lows.push(Number(bar["3. low"]));
       closes.push(Number(bar["5. adjusted close"] ?? bar["4. close"]));
     }
-    return { dates, opens, highs, lows, closes };
-  } catch {
-    return null;
-  }
+    return { dates, opens, highs, lows, closes, source: 'Alpha Vantage' };
+  } catch { return null; }
 }
 
-// ─── Fallback: Fetch from Yahoo Finance ──────────────────────────────────────
-
+// Yahoo Finance: PRIMARY for Indian stocks + ultimate fallback for all others
 async function fetchDailyOHLCFromYahoo(rawSymbol: string) {
   try {
     const sym     = encodeURIComponent(rawSymbol);
     const endTs   = Math.floor(Date.now() / 1000);
-    const startTs = endTs - 100 * 24 * 60 * 60;
+    const startTs = endTs - 120 * 24 * 60 * 60;
     const url     = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&period1=${startTs}&period2=${endTs}`;
     const r       = await fetch(url, { signal: AbortSignal.timeout(15000) });
     const d       = await r.json();
     const result  = d?.chart?.result?.[0];
     if (!result) return null;
-
-    const timestamps  = result.timestamp as number[];
-    const q           = result.indicators?.quote?.[0];
-    const adjClose    = result.indicators?.adjclose?.[0]?.adjclose as number[];
+    const timestamps = result.timestamp as number[];
+    const q          = result.indicators?.quote?.[0];
+    const adjClose   = result.indicators?.adjclose?.[0]?.adjclose as number[];
     if (!timestamps || !q) return null;
-
-    const dates:  string[] = [];
-    const opens:  number[] = [];
-    const highs:  number[] = [];
-    const lows:   number[] = [];
-    const closes: number[] = [];
-
+    const dates: string[] = [], opens: number[] = [], highs: number[] = [],
+          lows:  number[] = [], closes: number[] = [];
     for (let i = 0; i < timestamps.length; i++) {
       if (q.close?.[i] == null) continue;
       dates.push(new Date(timestamps[i] * 1000).toISOString().split("T")[0]);
-      opens.push(q.open?.[i]  ?? q.close[i]);
-      highs.push(q.high?.[i]  ?? q.close[i]);
-      lows.push(q.low?.[i]   ?? q.close[i]);
+      opens.push(q.open?.[i]   ?? q.close[i]);
+      highs.push(q.high?.[i]   ?? q.close[i]);
+      lows.push(q.low?.[i]    ?? q.close[i]);
       closes.push(adjClose?.[i] ?? q.close[i]);
     }
-    return { dates, opens, highs, lows, closes };
-  } catch {
-    return null;
-  }
+    console.log(`✅ Yahoo Finance backtest OHLCV: ${closes.length} days for ${rawSymbol}`);
+    return { dates, opens, highs, lows, closes, source: 'Yahoo Finance' };
+  } catch { return null; }
 }
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
@@ -400,18 +419,37 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   try {
+    const tdKey    = Deno.env.get("TWELVE_DATA_API_KEY") ?? "";
     const alphaKey = Deno.env.get("ALPHA_VANTAGE_API_KEY") ?? "";
     const body     = await req.json().catch(() => ({}));
 
-    const rawSymbol: string   = body?.symbol   ?? "AAPL";
-    const strategy: string    = body?.strategy  ?? "trend_following";
-    const action: "BUY"|"SELL" = (body?.action ?? "BUY") === "SELL" ? "SELL" : "BUY";
+    const rawSymbol: string    = body?.symbol   ?? "AAPL";
+    const strategy: string     = body?.strategy  ?? "trend_following";
+    const action: "BUY"|"SELL" = (body?.action   ?? "BUY") === "SELL" ? "SELL" : "BUY";
 
+    const isIndian = isIndianSymbol(rawSymbol);
+    const isCrypto = isCryptoSymbol(rawSymbol);
+    const isForex  = isForexSymbol(rawSymbol);
+    const isUs     = !isIndian && !isCrypto && !isForex;
     const normalized = normalizeSymbol(rawSymbol);
 
-    // 1. Fetch OHLCV data
-    let ohlcv = alphaKey ? await fetchDailyOHLC(normalized, alphaKey) : null;
-    if (!ohlcv) ohlcv = await fetchDailyOHLCFromYahoo(rawSymbol);
+    // ── Data routing ──────────────────────────────────────────────────────────
+    // Indian stocks → Yahoo Finance (primary, best NSE/BSE data)
+    // US / crypto / forex → TwelveData (primary) → Alpha Vantage → Yahoo (fallbacks)
+    let ohlcv: any = null;
+    if (isIndian) {
+      ohlcv = await fetchDailyOHLCFromYahoo(rawSymbol);
+    } else {
+      if (tdKey && (isUs || isCrypto || isForex)) {
+        ohlcv = await fetchDailyOHLCFromTwelveData(rawSymbol, tdKey);
+      }
+      if (!ohlcv && isUs && alphaKey) {
+        ohlcv = await fetchDailyOHLC(normalized, alphaKey);
+      }
+      if (!ohlcv) {
+        ohlcv = await fetchDailyOHLCFromYahoo(rawSymbol);
+      }
+    }
     if (!ohlcv || ohlcv.closes.length < 30) {
       return new Response(JSON.stringify({
         error: "Insufficient historical data to run backtest. Please try again later.",
@@ -454,6 +492,7 @@ serve(async (req) => {
       symbol:            rawSymbol,
       strategy,
       action,
+      dataSource:        ohlcv.source ?? 'unknown',
       backtestPeriod:    `${n} trading days`,
       strategyAchieved:  achieved,
       achievementReason: reason,

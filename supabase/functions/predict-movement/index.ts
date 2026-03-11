@@ -184,6 +184,9 @@ interface TechnicalContext {
   volatilityRegime: string;
   momentum: number;
   meanReversionSignal: number;
+  // Volume detail fields
+  currentVolume: number;
+  avgVolume: number;
 }
 
 interface MarketMeta {
@@ -994,6 +997,92 @@ async function fetchCoinGeckoDominanceAndTrending(): Promise<{ btcDominance: num
   }
 }
 
+// ─── TwelveData helper ───────────────────────────────────────────────────────
+// Fetches RSI, BBands, quote (volume, price) and statistics from TwelveData.
+// Used as PRIMARY provider for US stocks, crypto, and forex.
+async function fetchTwelveDataIntelligence(
+  tdSymbol: string,             // TwelveData symbol format (e.g. AAPL, BTC/USD, EUR/USD)
+  interval: string,             // e.g. "1day", "1h"
+  computedBB: { upper: number; middle: number; lower: number }
+): Promise<{
+  rsi: number | null;
+  bbands: { upper: number; middle: number; lower: number } | null;
+  volume24h: number | null;
+  avgVol10d: number | null;
+  avgVol3m: number | null;
+  sharesFloat: number | null;
+  currentPrice: number | null;
+  change: number | null;
+  changePct: number | null;
+  notes: string;
+}> {
+  const tdKey = Deno.env.get('TWELVE_DATA_API_KEY');
+  if (!tdKey) throw new Error('TWELVE_DATA_API_KEY not set');
+
+  const base = `https://api.twelvedata.com`;
+  const enc = encodeURIComponent(tdSymbol);
+
+  const [rsiRes, bbandsRes, quoteRes, statRes] = await Promise.all([
+    fetch(`${base}/rsi?symbol=${enc}&interval=${interval}&outputsize=1&apikey=${tdKey}`),
+    fetch(`${base}/bbands?symbol=${enc}&interval=${interval}&outputsize=1&apikey=${tdKey}`),
+    fetch(`${base}/quote?symbol=${enc}&apikey=${tdKey}`),
+    fetch(`${base}/statistics?symbol=${enc}&apikey=${tdKey}`),
+  ]);
+
+  const [rsiJson, bbandsJson, quoteJson, statJson] = await Promise.all([
+    rsiRes.json(), bbandsRes.json(), quoteRes.json(), statRes.json(),
+  ]);
+
+  const rsi = rsiJson?.values?.[0]?.rsi ? parseFloat(rsiJson.values[0].rsi) : null;
+
+  const bbUpper = bbandsJson?.values?.[0]?.upper_band ? parseFloat(bbandsJson.values[0].upper_band) : null;
+  const bbMiddle = bbandsJson?.values?.[0]?.middle_band ? parseFloat(bbandsJson.values[0].middle_band) : null;
+  const bbLower = bbandsJson?.values?.[0]?.lower_band ? parseFloat(bbandsJson.values[0].lower_band) : null;
+  const bbands = bbUpper && bbMiddle && bbLower
+    ? { upper: bbUpper, middle: bbMiddle, lower: bbLower }
+    : computedBB;
+
+  const volume24h = quoteJson?.volume ? parseFloat(quoteJson.volume) : null;
+  const currentPrice = quoteJson?.close ? parseFloat(quoteJson.close) : null;
+  const change = quoteJson?.change ? parseFloat(quoteJson.change) : null;
+  const changePct = quoteJson?.percent_change ? parseFloat(quoteJson.percent_change) : null;
+
+  const avgVol10d = statJson?.statistics?.stock_statistics?.average_volume_10d_calc
+    ? parseFloat(statJson.statistics.stock_statistics.average_volume_10d_calc) : null;
+  const avgVol3m = statJson?.statistics?.stock_statistics?.average_volume_3m_calc
+    ? parseFloat(statJson.statistics.stock_statistics.average_volume_3m_calc) : null;
+  const sharesFloat = statJson?.statistics?.stock_statistics?.shares_float
+    ? parseFloat(statJson.statistics.stock_statistics.shares_float) : null;
+
+  const notes = [
+    `RSI(14)=${rsi?.toFixed(1) ?? 'N/A'}`,
+    `Vol=${volume24h ? (volume24h / 1e6).toFixed(2) + 'M' : 'N/A'}`,
+    `AvgVol10d=${avgVol10d ? (avgVol10d / 1e6).toFixed(2) + 'M' : 'N/A'}`,
+    `AvgVol3m=${avgVol3m ? (avgVol3m / 1e6).toFixed(2) + 'M' : 'N/A'}`,
+    `Float=${sharesFloat ? (sharesFloat / 1e6).toFixed(1) + 'M' : 'N/A'}`,
+    `BB Upper=${bbands.upper.toFixed(2)} Mid=${bbands.middle.toFixed(2)} Low=${bbands.lower.toFixed(2)}`,
+  ].join(' | ');
+
+  return { rsi, bbands, volume24h, avgVol10d, avgVol3m, sharesFloat, currentPrice, change, changePct, notes };
+}
+
+// Map our internal symbol → TwelveData symbol format
+function toTwelveDataSymbol(symbol: string, assetType: string): string {
+  // Crypto: BTC-USD → BTC/USD
+  if (assetType === 'crypto') {
+    const clean = symbol.replace(/-/g, '/').replace(/=X$/, '').replace('USDT', 'USD');
+    return clean;
+  }
+  // Forex: EURUSD=X → EUR/USD
+  if (assetType === 'forex') {
+    const s = symbol.replace('=X', '');
+    if (s.length === 6) return `${s.slice(0, 3)}/${s.slice(3)}`;
+    return s.replace(/-/g, '/');
+  }
+  // US stock / Indian: strip exchange suffix
+  return symbol.replace(/\.(NS|BO|L|AX|TO|DE|F)$/, '');
+}
+
 async function buildProviderIntelligence(
   symbol: string,
   timeframe: string,
@@ -1003,7 +1092,13 @@ async function buildProviderIntelligence(
 ): Promise<ProviderIntelligence> {
   const route = getAssetRouteInfo(symbol);
 
-  // Defaults
+  const computedBB = {
+    upper:  technicalContext.indicators.bbUpper,
+    middle: technicalContext.indicators.bbMiddle,
+    lower:  technicalContext.indicators.bbLower,
+  };
+
+  // Computed fallback baseline (always populated)
   const intelligence: ProviderIntelligence = {
     momentum: {
       source: 'computed',
@@ -1012,11 +1107,7 @@ async function buildProviderIntelligence(
     },
     volatility: {
       source: 'computed',
-      bollingerBands: {
-        upper: technicalContext.indicators.bbUpper,
-        middle: technicalContext.indicators.bbMiddle,
-        lower: technicalContext.indicators.bbLower,
-      },
+      bollingerBands: computedBB,
       optionGreeks: null,
     },
     sentiment: {
@@ -1027,98 +1118,189 @@ async function buildProviderIntelligence(
     },
   };
 
-  if (route.isUsStock) {
-    const [rsi, bbands, newsSentiment] = await Promise.all([
-      fetchAlphaVantageRSI(route.cleanSymbol, timeframe),
-      fetchAlphaVantageBollingerBands(route.cleanSymbol, timeframe),
-      fetchAlphaVantageNewsSentimentScore(route.cleanSymbol),
-    ]);
-
-    intelligence.momentum = {
-      source: 'Alpha Vantage',
-      volume24h: candles.length ? candles[candles.length - 1].volume : null,
-      rsi,
-      notes: 'RSI from Alpha Vantage technical indicator endpoint',
-    };
-    intelligence.volatility = {
-      source: 'Alpha Vantage',
-      bollingerBands: bbands,
-      optionGreeks: null,
-      notes: 'Bollinger Bands from Alpha Vantage BBANDS endpoint',
-    };
-    intelligence.sentiment = {
-      source: 'Alpha Vantage',
-      btcDominance: null,
-      trendingCoins: [],
-      newsSentimentScore: newsSentiment,
-      notes: 'News sentiment score from Alpha Vantage NEWS_SENTIMENT',
-    };
-    return intelligence;
-  }
-
-  if (route.assetType === 'crypto') {
-    const [marketData, dominanceAndTrending] = await Promise.all([
-      route.coingeckoId ? fetchCoinGeckoMarketData(route.coingeckoId) : Promise.resolve(null),
-      fetchCoinGeckoDominanceAndTrending(),
-    ]);
-
-    const prices = marketData?.candles?.map((c) => c.close) || candles.map((c) => c.close);
-    const rsiFromPrices = prices.length > 14 ? calculateRSI(prices, 14) : null;
-
-    intelligence.momentum = {
-      source: 'CoinGecko',
-      volume24h: marketData?.snapshot?.volume24h ?? null,
-      rsi: Number.isFinite(rsiFromPrices as number) ? Number(rsiFromPrices) : null,
-      notes: 'RSI derived from CoinGecko price series',
-    };
-    intelligence.volatility = {
-      source: 'CoinGecko+computed',
-      bollingerBands: {
-        upper: technicalContext.indicators.bbUpper,
-        middle: technicalContext.indicators.bbMiddle,
-        lower: technicalContext.indicators.bbLower,
-      },
-      optionGreeks: null,
-      notes: 'No options chain greeks from CoinGecko API',
-    };
-    intelligence.sentiment = {
-      source: 'CoinGecko',
-      btcDominance: dominanceAndTrending.btcDominance,
-      trendingCoins: dominanceAndTrending.trendingCoins,
-      newsSentimentScore: null,
-      notes: 'BTC dominance + trending coins from CoinGecko endpoints',
-    };
-    return intelligence;
-  }
-
+  // ── INDIAN STOCKS → Yahoo Finance data (computed from candles) ──────────────
+  // Yahoo Finance is the most reliable source for NSE/BSE data.
+  // We keep computed indicators from Yahoo candles and skip TwelveData here
+  // since TwelveData's Indian coverage is limited on the free tier.
   if (route.isIndianStock) {
-    intelligence.volatility = {
-      source: 'Upstox pending credentials',
-      bollingerBands: {
-        upper: technicalContext.indicators.bbUpper,
-        middle: technicalContext.indicators.bbMiddle,
-        lower: technicalContext.indicators.bbLower,
-      },
-      optionGreeks: { delta: null, theta: null, gamma: null, source: 'Upstox pending credentials' },
-      notes: 'Option Greeks will be fetched from Upstox once API credentials are configured',
-    };
+    console.log(`🇮🇳 Indian stock ${route.cleanSymbol}: using Yahoo Finance candle-computed indicators`);
+    intelligence.momentum.notes = `Yahoo Finance candles. RSI(14)=${technicalContext.indicators.rsi.toFixed(1)} | Vol=${(technicalContext.currentVolume / 1e6).toFixed(2)}M | AvgVol20d=${(technicalContext.avgVolume / 1e6).toFixed(2)}M`;
+    intelligence.volatility.notes = 'Bollinger Bands computed from Yahoo Finance OHLCV candles';
+    return intelligence;
+  }
+
+  // ── US STOCKS, CRYPTO, FOREX → TwelveData as PRIMARY ──────────────────────
+  if (route.isUsStock || route.assetType === 'crypto' || route.assetType === 'forex') {
+    const tdSymbol = toTwelveDataSymbol(symbol, route.assetType);
+    const tdInterval = timeframe === '15m' ? '15min'
+      : timeframe === '30m' ? '30min'
+      : timeframe === '1h' ? '1h'
+      : timeframe === '4h' ? '4h'
+      : '1day';
+
+    try {
+      console.log(`📊 TwelveData (primary) for ${tdSymbol} [${route.assetType}]`);
+      const td = await fetchTwelveDataIntelligence(tdSymbol, tdInterval, computedBB);
+
+      intelligence.momentum = {
+        source: 'TwelveData',
+        volume24h: td.volume24h ?? candles[candles.length - 1]?.volume ?? null,
+        rsi: td.rsi,
+        notes: td.notes,
+      };
+      intelligence.volatility = {
+        source: 'TwelveData',
+        bollingerBands: td.bbands ?? computedBB,
+        optionGreeks: null,
+        notes: `BBands from TwelveData ${tdInterval} candles`,
+      };
+
+      // For crypto: also fetch CoinGecko dominance/trending for sentiment block
+      if (route.assetType === 'crypto') {
+        try {
+          const dominanceAndTrending = await fetchCoinGeckoDominanceAndTrending();
+          intelligence.sentiment = {
+            source: 'CoinGecko+TwelveData',
+            btcDominance: dominanceAndTrending.btcDominance,
+            trendingCoins: dominanceAndTrending.trendingCoins,
+            newsSentimentScore: null,
+            notes: 'BTC dominance + trending from CoinGecko; price/vol from TwelveData',
+          };
+        } catch {
+          intelligence.sentiment.notes = 'CoinGecko sentiment unavailable';
+        }
+      }
+
+      // For US stocks: add Alpha Vantage news sentiment on top
+      if (route.isUsStock) {
+        try {
+          const newsSentiment = await fetchAlphaVantageNewsSentimentScore(route.cleanSymbol);
+          intelligence.sentiment = {
+            source: 'Alpha Vantage',
+            btcDominance: null,
+            trendingCoins: [],
+            newsSentimentScore: newsSentiment,
+            notes: 'News sentiment from Alpha Vantage; price/vol/indicators from TwelveData',
+          };
+        } catch {
+          intelligence.sentiment.notes = 'Alpha Vantage news sentiment unavailable';
+        }
+      }
+
+      console.log(`✅ TwelveData OK for ${tdSymbol}: ${td.notes}`);
+      return intelligence;
+
+    } catch (tdErr: any) {
+      console.log(`⚠️ TwelveData failed for ${tdSymbol}, falling back: ${tdErr.message}`);
+      // Fallback chain: Alpha Vantage for US stocks, CoinGecko for crypto
+      if (route.isUsStock) {
+        try {
+          const [rsi, bbands, newsSentiment] = await Promise.all([
+            fetchAlphaVantageRSI(route.cleanSymbol, timeframe),
+            fetchAlphaVantageBollingerBands(route.cleanSymbol, timeframe),
+            fetchAlphaVantageNewsSentimentScore(route.cleanSymbol),
+          ]);
+          intelligence.momentum = { source: 'Alpha Vantage (fallback)', volume24h: candles[candles.length - 1]?.volume ?? null, rsi, notes: 'TwelveData unavailable; using Alpha Vantage' };
+          intelligence.volatility = { source: 'Alpha Vantage (fallback)', bollingerBands: bbands ?? computedBB, optionGreeks: null };
+          intelligence.sentiment = { source: 'Alpha Vantage (fallback)', btcDominance: null, trendingCoins: [], newsSentimentScore: newsSentiment };
+        } catch { /* use computed defaults */ }
+      }
+      if (route.assetType === 'crypto') {
+        try {
+          const [marketData, dominanceAndTrending] = await Promise.all([
+            route.coingeckoId ? fetchCoinGeckoMarketData(route.coingeckoId) : Promise.resolve(null),
+            fetchCoinGeckoDominanceAndTrending(),
+          ]);
+          const prices = marketData?.candles?.map((c) => c.close) || candles.map((c) => c.close);
+          const rsiFromPrices = prices.length > 14 ? calculateRSI(prices, 14) : null;
+          intelligence.momentum = { source: 'CoinGecko (fallback)', volume24h: marketData?.snapshot?.volume24h ?? null, rsi: Number.isFinite(rsiFromPrices as number) ? Number(rsiFromPrices) : null, notes: 'TwelveData unavailable; using CoinGecko' };
+          intelligence.sentiment = { source: 'CoinGecko (fallback)', btcDominance: dominanceAndTrending.btcDominance, trendingCoins: dominanceAndTrending.trendingCoins, newsSentimentScore: null };
+        } catch { /* use computed defaults */ }
+      }
+    }
   }
 
   return intelligence;
 }
 
+// ─── TwelveData candle fetcher ───────────────────────────────────────────────
+// Primary OHLCV source for US stocks, crypto, and forex.
+async function fetchTwelveDataCandles(
+  tdSymbol: string,
+  interval: string,   // e.g. "1day", "1h", "15min"
+  outputsize = 100,
+): Promise<Candle[]> {
+  const tdKey = Deno.env.get('TWELVE_DATA_API_KEY');
+  if (!tdKey) throw new Error('TWELVE_DATA_API_KEY not set');
+  const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(tdSymbol)}&interval=${interval}&outputsize=${outputsize}&order=ASC&apikey=${tdKey}`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+  if (!res.ok) throw new Error(`TwelveData HTTP ${res.status}`);
+  const data = await res.json();
+  if (data.status === 'error') throw new Error(`TwelveData error: ${data.message}`);
+  const values: any[] = data?.values ?? [];
+  if (!values.length) throw new Error('TwelveData returned empty values');
+  return values.map((v: any) => ({
+    timestamp: new Date(v.datetime).getTime() / 1000,
+    open:      parseFloat(v.open),
+    high:      parseFloat(v.high),
+    low:       parseFloat(v.low),
+    close:     parseFloat(v.close),
+    volume:    parseFloat(v.volume ?? '0'),
+  }));
+}
+
+// Map our timeframe → TwelveData interval string
+function mapTimeframeToTDInterval(timeframe: string): string {
+  const map: Record<string, string> = {
+    '15m': '15min', '30m': '30min', '1h': '1h', '4h': '4h',
+    '1d': '1day', '1w': '1week',
+  };
+  return map[timeframe] ?? '1day';
+}
+
 async function fetchHistoricalCandles(symbol: string, timeframe: string): Promise<{ candles: Candle[]; meta: MarketMeta | null }> {
   try {
     const route = getAssetRouteInfo(symbol);
+    const tdInterval = mapTimeframeToTDInterval(timeframe);
 
-    // Use Alpha Vantage for US equities only to preserve API quota.
+    // ── TwelveData PRIMARY: US stocks, crypto, forex ──────────────────────────
+    if (route.isUsStock || route.assetType === 'crypto' || route.assetType === 'forex') {
+      const tdSymbol = toTwelveDataSymbol(symbol, route.assetType);
+      try {
+        console.log(`📊 TwelveData candles: ${tdSymbol} ${tdInterval}`);
+        const candles = await fetchTwelveDataCandles(tdSymbol, tdInterval, 120);
+        if (candles.length > 0) {
+          console.log(`✅ TwelveData: ${candles.length} candles for ${tdSymbol}`);
+          return {
+            candles: candles.slice(-100),
+            meta: {
+              provider: 'TwelveData',
+              symbol: tdSymbol,
+              resolution: tdInterval,
+              assetType: route.assetType,
+              yahooSymbol: route.cleanSymbol,
+              yahooInterval: tdInterval,
+              yahooRange: 'last100',
+            },
+          };
+        }
+      } catch (tdErr: any) {
+        console.log(`⚠️ TwelveData candles failed for ${tdSymbol}: ${tdErr.message} — falling back`);
+      }
+    }
+
+    // ── INDIAN STOCKS: Yahoo Finance is primary (best NSE/BSE coverage) ───────
+    // (no TwelveData attempt for Indian stocks — limited free-tier coverage)
+
+    // ── Legacy fallbacks (kept for reliability) ───────────────────────────────
+    // Alpha Vantage fallback for US stocks
     if (route.isUsStock) {
       try {
         const candles = await fetchAlphaVantageCandles(route.cleanSymbol, timeframe);
         const alphaInterval = mapTimeframeToAlphaInterval(timeframe);
         const trimmed = candles.slice(-100);
         const meta: MarketMeta = {
-          provider: 'Alpha Vantage',
+          provider: 'Alpha Vantage (fallback)',
           symbol: route.cleanSymbol,
           resolution: alphaInterval,
           assetType: route.assetType,
@@ -1127,20 +1309,21 @@ async function fetchHistoricalCandles(symbol: string, timeframe: string): Promis
           yahooRange: 'full',
         };
         if (trimmed.length > 0) {
+          console.log(`↩️ Alpha Vantage fallback candles: ${trimmed.length} for ${route.cleanSymbol}`);
           return { candles: trimmed, meta };
         }
       } catch (alphaError) {
-        console.log(`Alpha Vantage candles fallback to Yahoo for ${route.cleanSymbol}:`, alphaError.message);
+        console.log(`Alpha Vantage fallback also failed for ${route.cleanSymbol}:`, alphaError.message);
       }
     }
 
-    // Use CoinGecko daily market chart for crypto where supported.
+    // CoinGecko fallback for crypto
     if (route.assetType === 'crypto' && route.coingeckoId) {
       try {
         const cg = await fetchCoinGeckoMarketData(route.coingeckoId);
         if (cg.candles.length > 0) {
           const meta: MarketMeta = {
-            provider: 'CoinGecko',
+            provider: 'CoinGecko (fallback)',
             symbol: route.coingeckoId,
             resolution: '1d',
             assetType: route.assetType,
@@ -1151,7 +1334,7 @@ async function fetchHistoricalCandles(symbol: string, timeframe: string): Promis
           return { candles: cg.candles.slice(-100), meta };
         }
       } catch (cgError) {
-        console.log(`CoinGecko candles fallback to Yahoo for ${symbol}:`, cgError.message);
+        console.log(`CoinGecko fallback failed for ${symbol}:`, cgError.message);
       }
     }
 
@@ -1205,30 +1388,61 @@ async function fetchHistoricalCandles(symbol: string, timeframe: string): Promis
   }
 }
 
-// Real-time data fetching using Yahoo Finance candles only (no quote API)
+// Real-time data fetching — TwelveData primary for US/crypto/forex,
+// Yahoo Finance primary for Indian stocks.
 async function fetchRealStockData(symbol: string): Promise<StockData> {
   console.log(`Fetching real-time market data for ${symbol}`);
   const route = getAssetRouteInfo(symbol);
 
-  // Use Alpha Vantage only for US equities to avoid burning quota for other asset classes.
-  if (route.isUsStock) {
-    try {
-      const quote = await fetchAlphaVantageGlobalQuote(route.cleanSymbol);
-      console.log(`✅ Alpha Vantage quote for ${route.cleanSymbol}`);
-      return quote;
-    } catch (alphaError) {
-      console.log(`⚠️ Alpha Vantage quote fallback to Yahoo for ${route.cleanSymbol}:`, alphaError.message);
+  // ── TwelveData: PRIMARY for US stocks, crypto, and forex ─────────────────
+  if (route.isUsStock || route.assetType === 'crypto' || route.assetType === 'forex') {
+    const tdKey = Deno.env.get('TWELVE_DATA_API_KEY');
+    if (tdKey) {
+      const tdSymbol = toTwelveDataSymbol(symbol, route.assetType);
+      try {
+        const res = await fetch(
+          `https://api.twelvedata.com/quote?symbol=${encodeURIComponent(tdSymbol)}&apikey=${tdKey}`,
+          { signal: AbortSignal.timeout(10000) },
+        );
+        const q = await res.json();
+        if (q?.close && parseFloat(q.close) > 0) {
+          console.log(`✅ TwelveData quote for ${tdSymbol}: ${q.close}`);
+          return {
+            currentPrice:  parseFloat(q.close),
+            openPrice:     parseFloat(q.open ?? q.close),
+            highPrice:     parseFloat(q.high ?? q.close),
+            lowPrice:      parseFloat(q.low  ?? q.close),
+            previousClose: parseFloat(q.previous_close ?? q.close),
+            change:        parseFloat(q.change ?? '0'),
+            changePercent: parseFloat(q.percent_change ?? '0'),
+            volume24h:     parseFloat(q.volume ?? '0'),
+          };
+        }
+      } catch (tdErr: any) {
+        console.log(`⚠️ TwelveData quote failed for ${tdSymbol}: ${tdErr.message}`);
+      }
     }
   }
 
-  // Use CoinGecko for crypto where symbol mapping exists.
+  // ── Alpha Vantage fallback for US equities ───────────────────────────────
+  if (route.isUsStock) {
+    try {
+      const quote = await fetchAlphaVantageGlobalQuote(route.cleanSymbol);
+      console.log(`↩️ Alpha Vantage quote fallback for ${route.cleanSymbol}`);
+      return quote;
+    } catch (alphaError) {
+      console.log(`⚠️ Alpha Vantage quote fallback failed for ${route.cleanSymbol}:`, alphaError.message);
+    }
+  }
+
+  // ── CoinGecko fallback for crypto ────────────────────────────────────────
   if (route.assetType === 'crypto' && route.coingeckoId) {
     try {
       const cg = await fetchCoinGeckoMarketData(route.coingeckoId);
-      console.log(`✅ CoinGecko quote for ${route.coingeckoId}`);
+      console.log(`↩️ CoinGecko quote fallback for ${route.coingeckoId}`);
       return cg.stockData;
     } catch (cgError) {
-      console.log(`⚠️ CoinGecko quote fallback to Yahoo for ${symbol}:`, cgError.message);
+      console.log(`⚠️ CoinGecko quote fallback failed for ${symbol}:`, cgError.message);
     }
   }
 
@@ -2180,7 +2394,10 @@ function computeEnhancedTechnicalContext(candles: Candle[], stockData: StockData
     volumeConfirmation,
     volatilityRegime,
     momentum,
-    meanReversionSignal
+    meanReversionSignal,
+    // Raw volume figures for AI prompt
+    currentVolume,
+    avgVolume: avgVolume ?? 0
   };
 }
 
@@ -2400,6 +2617,15 @@ ENHANCED TECHNICAL ANALYSIS:
 - Mean Reversion Signal: ${(technicalContext.meanReversionSignal * 100).toFixed(0)}%
 - Volume Confirmation: ${technicalContext.volumeConfirmation > 0 ? 'Bullish' : technicalContext.volumeConfirmation < 0 ? 'Bearish' : 'Neutral'}
 
+VOLUME ANALYSIS (critical for institutional activity):
+- Current Volume: ${technicalContext.currentVolume ? (technicalContext.currentVolume / 1e6).toFixed(2) + 'M' : stockData.volume24h ? (stockData.volume24h / 1e6).toFixed(2) + 'M' : 'N/A'}
+- 20-Day Avg Volume: ${technicalContext.avgVolume ? (technicalContext.avgVolume / 1e6).toFixed(2) + 'M' : enhancedData?.fullYear?.avgVolume ? (enhancedData.fullYear.avgVolume / 1e6).toFixed(2) + 'M' : 'N/A'}
+- Volume Profile: ${technicalContext.volumeProfile} (${technicalContext.volumeProfile === 'high' ? 'ABOVE avg — strong institutional interest / breakout confirmation' : technicalContext.volumeProfile === 'low' ? 'BELOW avg — weak conviction, may be false move' : 'Average — neutral participation'})
+- Volume vs Avg Ratio: ${technicalContext.avgVolume && technicalContext.currentVolume ? (technicalContext.currentVolume / technicalContext.avgVolume).toFixed(2) + 'x' : 'N/A'}
+- Volume Trend Signal: ${technicalContext.volumeConfirmation > 0 ? 'Bullish confirmation — buyers stepping in' : technicalContext.volumeConfirmation < 0 ? 'Bearish divergence — selling pressure or disinterest' : 'Neutral — no volume bias'}
+- 24h Volume (exchange): ${stockData.volume24h ? (stockData.volume24h / 1e6).toFixed(2) + 'M' : 'N/A'}
+NOTE: ALWAYS incorporate volume in your conviction assessment. High volume = stronger signal, low volume = suspect signal.
+
 ADVANCED PATTERNS DETECTED:
 ${technicalContext.patterns.map(pattern => `- ${pattern}`).join('\n')}
 
@@ -2603,7 +2829,7 @@ Respond with a valid JSON object matching this exact schema:
 }`;
 
   try {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${geminiApiKey}`, {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key=${geminiApiKey}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -3927,7 +4153,7 @@ serve(async (req) => {
     );
     
     // Calculate position sizing — crypto allows fractional units, stocks require whole shares
-    const isCryptoAsset = assetRoute.assetType === 'crypto';
+    const isCryptoAsset = routeInfo.assetType === 'crypto';
     const rawQty = investment / stockData.currentPrice;
     const sharesQuantity = isCryptoAsset
       ? parseFloat(rawQty.toFixed(6))  // up to 6 decimal places for crypto
