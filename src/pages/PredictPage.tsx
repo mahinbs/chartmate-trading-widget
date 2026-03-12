@@ -654,7 +654,7 @@ const PredictPage = () => {
       </Dialog>
 
       {/* Header */}
-      <div className="border-b border-white/5 bg-background/80 backdrop-blur-xl sticky top-0 z-50">
+      <div className="border-b border-white/5 bg-background/80 backdrop-blur-xl z-50">
         <Container className="py-3 sm:py-4">
           <div className={`flex ${isMobile ? 'flex-col gap-2' : 'justify-between items-center'} mb-4`}>
             <Button
