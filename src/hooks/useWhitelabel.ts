@@ -28,27 +28,6 @@ export function useWhitelabelTenant(slug: string | undefined) {
       return;
     }
 
-    // ─── Development Mock ───
-    if (slug.toLowerCase() === "test-slug") {
-      setTenant({
-        id: "test-tenant-123",
-        slug: "test-slug",
-        brand_name: "Test Partner",
-        brand_logo_url: null,
-        brand_primary_color: "#06b6d4",
-        brand_tagline: "Your Success, Our Technology.",
-        owner_user_id: null,
-        owner_email: "admin@admin.com",
-        subscription_plan: "1_year",
-        starts_on: "2024-01-01",
-        ends_on: "2026-12-31",
-        status: "active",
-        created_at: new Date().toISOString(),
-      });
-      setLoading(false);
-      return;
-    }
-
     const load = async () => {
       setLoading(true);
       const { data, error: err } = await (supabase as any)

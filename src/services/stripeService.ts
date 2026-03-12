@@ -1,0 +1,56 @@
+import { supabase } from "@/integrations/supabase/client";
+
+export interface UserSubscription {
+  id: string;
+  user_id: string;
+  plan_id: string;
+  status: string;
+  current_period_end: string | null;
+}
+
+export async function createCheckoutSession(params: {
+  plan_id: string;
+  type?: "premium" | "whitelabel";
+  success_url?: string;
+  cancel_url?: string;
+  wl?: { brand_name?: string; slug?: string; token?: string };
+}): Promise<{ url: string } | { error: string }> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    return { error: "Please sign in to continue" };
+  }
+
+  const res = await supabase.functions.invoke("create-checkout-session", {
+    body: {
+      plan_id: params.plan_id,
+      type: params.type ?? "premium",
+      success_url: params.success_url,
+      cancel_url: params.cancel_url,
+      wl: params.wl,
+    },
+    headers: { Authorization: `Bearer ${session.access_token}` },
+  });
+
+  if (res.error) return { error: res.error.message ?? "Failed to create checkout" };
+  const data = res.data as { url?: string; error?: string };
+  if (data.error) return { error: data.error };
+  if (!data.url) return { error: "No checkout URL returned" };
+  return { url: data.url };
+}
+
+export async function getSubscription(): Promise<UserSubscription | null> {
+  const { data, error } = await (supabase as any)
+    .from("user_subscriptions")
+    .select("*")
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return data as UserSubscription;
+}
+
+export function hasActiveSubscription(sub: UserSubscription | null): boolean {
+  if (!sub) return false;
+  if (sub.status !== "active" && sub.status !== "trialing") return false;
+  if (sub.current_period_end && new Date(sub.current_period_end) < new Date()) return false;
+  return true;
+}

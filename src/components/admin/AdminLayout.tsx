@@ -1,11 +1,15 @@
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Users, BarChart3, FileText, Globe, Link2, Mail } from "lucide-react";
+import { ArrowLeft, Users, BarChart3, FileText, Globe, Link2, Mail, ShieldCheck } from "lucide-react";
+import { useAdmin } from "@/hooks/useAdmin";
+import { Badge } from "@/components/ui/badge";
 
 export function AdminLayout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { isSuperAdmin } = useAdmin();
+
   const path = location.pathname;
   const currentTab = path.includes("/admin/predictions")
     ? "daily"
@@ -31,6 +35,12 @@ export function AdminLayout() {
               Home
             </Button>
             <h1 className="text-xl md:text-2xl font-bold text-gradient">Admin Panel</h1>
+            {isSuperAdmin && (
+              <Badge className="bg-purple-500/20 text-purple-400 border-purple-500/40 border text-xs flex items-center gap-1">
+                <ShieldCheck className="h-3 w-3" />
+                Super Admin
+              </Badge>
+            )}
           </div>
           <Tabs
             value={currentTab}
@@ -69,12 +79,13 @@ export function AdminLayout() {
                 <Mail className="h-3.5 w-3.5" />
                 Contacts
               </TabsTrigger>
-              {/* White-label tab commented out for now
-              <TabsTrigger value="whitelabels" className="flex items-center gap-1.5 text-xs">
-                <Globe className="h-3.5 w-3.5" />
-                White-labels
-              </TabsTrigger>
-              */}
+              {/* White-labels tab: super-admin only */}
+              {isSuperAdmin && (
+                <TabsTrigger value="whitelabels" className="flex items-center gap-1.5 text-xs">
+                  <Globe className="h-3.5 w-3.5" />
+                  White-labels
+                </TabsTrigger>
+              )}
             </TabsList>
           </Tabs>
         </div>

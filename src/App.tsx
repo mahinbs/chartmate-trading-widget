@@ -43,6 +43,7 @@ import RegisterPage from "./pages/RegisterPage";
 import AIPobabilityEnginePage from "./pages/AIPobabilityEnginePage";
 import AffiliatePartnerPage from "./pages/AffiliatePartnerPage";
 import TradingDashboardPage from "./pages/TradingDashboardPage";
+import WlCheckoutPage from "./pages/WlCheckoutPage";
 
 // OpenAlgo ping temporarily disabled in mock-order mode to avoid CORS noise
 
@@ -75,6 +76,7 @@ const App = () => (
                   </ProtectedRoute>
                 }
               />
+              <Route path="/wl-checkout/:token" element={<WlCheckoutPage />} />
               <Route path="/contact-us" element={<ContactUsPage />} />
               <Route path="/blogs" element={<BlogsPage />} />
               <Route path="/blogs/:slug" element={<BlogDetailPage />} />

@@ -4,15 +4,18 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import {
-  AlertTriangle, CheckCircle2, Lightbulb, Loader2, Zap,
+  AlertTriangle, CheckCircle2, Lightbulb, Loader2,
   ChevronDown, ChevronUp, BarChart3, Globe, Lock, ShieldCheck,
-  Activity, XCircle, FlaskConical,
+  Activity, XCircle, FlaskConical, TrendingUp, TrendingDown, Repeat2,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+import { getStrategyParams } from "@/constants/strategyParams";
 
 // ── All OpenAlgo-compatible strategies ────────────────────────────────────────
 export const STRATEGIES: { value: string; label: string; description: string; product: string }[] = [
@@ -42,6 +45,36 @@ export const STRATEGY_DETAILS: Record<string, { whenToUse: string; pros: string[
   options_buying:     { whenToUse: "Strong view on direction or volatility; limited capital for leverage.", pros: ["Defined risk", "Leverage"], cons: ["Theta decay", "Need right strike/expiry"], inTrendWhen: "Expecting a clear move; volatility not too expensive." },
   options_selling:    { whenToUse: "High implied volatility; range-bound or slow grind; income focus.", pros: ["Theta in your favour", "High win rate"], cons: ["Unlimited risk if wrong", "Margin needed"], inTrendWhen: "IV is elevated and you expect range or mean reversion." },
   pairs_trading:      { whenToUse: "Correlated instruments; spread at extreme; market-neutral intent.", pros: ["Hedges market direction", "Statistical edge"], cons: ["Correlation can break", "More complex"], inTrendWhen: "A pair's spread has deviated from its mean." },
+};
+
+// Which direction each strategy naturally favours as first entry
+const STRATEGY_DIRECTION: Record<string, "buy" | "sell" | "both"> = {
+  trend_following:    "both",
+  breakout_breakdown: "both",
+  mean_reversion:     "both",
+  momentum:           "buy",
+  scalping:           "both",
+  swing_trading:      "both",
+  range_trading:      "both",
+  news_based:         "both",
+  options_buying:     "buy",
+  options_selling:    "sell",
+  pairs_trading:      "both",
+};
+
+// What the system auto-executes after the strategy exit conditions are met
+const AUTO_EXIT_NOTE: Record<string, { buy: string; sell: string }> = {
+  trend_following:    { buy: "Auto-SELL when trend reverses — price crosses below SMA or makes a lower low.", sell: "Auto-BUY to cover when downtrend ends and price reclaims SMA." },
+  breakout_breakdown: { buy: "Auto-SELL if price fails to hold the breakout level or hits target.", sell: "Auto-BUY to cover when price reclaims the breakdown level." },
+  mean_reversion:     { buy: "Auto-SELL when price returns to the moving average / mean target.", sell: "Auto-BUY to cover when price reverts back to mean from oversold." },
+  momentum:           { buy: "Auto-SELL when momentum weakens — RSI exits overbought or signal drops.", sell: "Auto-BUY to cover when downside momentum exhausts or reverses." },
+  scalping:           { buy: "Auto-SELL at tight profit target within minutes — strict SL/TP.", sell: "Auto-BUY to cover at tight target within minutes — high-frequency exit." },
+  swing_trading:      { buy: "Auto-SELL at swing high target (2–10 day hold) or on reversal signal.", sell: "Auto-BUY to cover at swing low target or when reversal confirms." },
+  range_trading:      { buy: "Auto-SELL at range resistance after buying at support.", sell: "Auto-BUY to cover at range support after selling at resistance." },
+  news_based:         { buy: "Auto-SELL after news catalyst dissipates or target is hit.", sell: "Auto-BUY to cover once the negative news event fades or price stabilises." },
+  options_buying:     { buy: "Auto-SELL the option at target price, delta target, or near expiry.", sell: "Auto-BUY puts to close; exit when the directional move plays out." },
+  options_selling:    { buy: "Auto-BUY to close the sold premium position at profit target.", sell: "Auto-BUY to close when premium decays to target or near expiry." },
+  pairs_trading:      { buy: "Auto-SELL the long leg when the spread reverts to mean.", sell: "Auto-BUY to cover the short leg when the spread normalises." },
 };
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -108,12 +141,20 @@ interface Props {
   onOpenChange:    (v: boolean) => void;
   currentStrategy: string;
   symbol:          string;
+  /** Initial action suggestion — user can override inside the dialog */
   action:          "BUY" | "SELL";
   investment?:     number;
   timeframe?:      string;
+  /** Current live market price — used to default SELL position inputs */
+  currentPrice?:   number;
   /** When true this is a paper trade simulation — strategy conditions & AI verdict gates are disabled */
   isPaperTrade?:   boolean;
-  onConfirm:       (strategy: string, product: string) => void;
+  /**
+   * Receives the chosen strategy, product type, and the user-selected action direction.
+   * For SELL orders, also receives the user's existing position details (buy price & shares).
+   * If the user didn't fill those in, defaults are: entryPrice = currentPrice, shares = investment / currentPrice.
+   */
+  onConfirm:       (strategy: string, product: string, action: "BUY" | "SELL", sellPosition?: { entryPrice: number; shares: number }) => void;
 }
 
 // ── Verdict helpers ────────────────────────────────────────────────────────────
@@ -268,7 +309,7 @@ function BacktestPanel({ result, loading, error }: {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function StrategySelectionDialog({
-  open, onOpenChange, currentStrategy, symbol, action, investment = 10000, timeframe = "1d", isPaperTrade = false, onConfirm,
+  open, onOpenChange, currentStrategy, symbol, action, investment = 10000, timeframe = "1d", currentPrice, isPaperTrade = false, onConfirm,
 }: Props) {
 
   const [userStats,        setUserStats]        = useState<Record<string, StrategyStats>>({});
@@ -280,34 +321,52 @@ export function StrategySelectionDialog({
   const [selected,         setSelected]          = useState(currentStrategy || "trend_following");
   const [expandedDetails,  setExpandedDetails]   = useState<string | null>(null);
 
+  // User-selected entry direction — starts from the prop but can be overridden in the dialog
+  const [selectedAction, setSelectedAction] = useState<"BUY" | "SELL">(action);
+
+  // SELL position details — optional fields so we can calculate accurate P&L
+  const [sellBuyPrice,  setSellBuyPrice]  = useState("");
+  const [sellNumShares, setSellNumShares] = useState("");
+
   // Backtest state
   const [backtestResult,  setBacktestResult]   = useState<BacktestResult | null>(null);
   const [backtestLoading, setBacktestLoading]  = useState(false);
   const [backtestError,   setBacktestError]    = useState<string | null>(null);
   const backtestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── On dialog open: reset non-action state and history ───────────────────────
   useEffect(() => {
     if (!open) return;
     setSelected(currentStrategy || "trend_following");
+    setSelectedAction(action);
+    setExpandedDetails(null);
+    setSellBuyPrice("");
+    setSellNumShares("");
+    loadHistory();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // ── Reload AI analysis whenever dialog opens or action direction changes ─────
+  useEffect(() => {
+    if (!open) return;
     setAiResult(null);
     setAiError(null);
     setBacktestResult(null);
     setBacktestError(null);
-    loadHistory();
-    loadAiAnalysis();
+    loadAiAnalysis(selectedAction);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, selectedAction]);
 
-  // Auto-run backtest whenever selected strategy changes (debounced 600ms)
+  // Auto-run backtest whenever selected strategy or action direction changes (debounced 600ms)
   useEffect(() => {
     if (!open || !selected) return;
     if (backtestTimerRef.current) clearTimeout(backtestTimerRef.current);
     backtestTimerRef.current = setTimeout(() => {
-      runBacktest(selected);
+      runBacktest(selected, selectedAction);
     }, 600);
     return () => { if (backtestTimerRef.current) clearTimeout(backtestTimerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, open]);
+  }, [selected, open, selectedAction]);
 
   // ── Load user's personal trade history ───────────────────────────────────────
   const loadHistory = useCallback(async () => {
@@ -355,12 +414,12 @@ export function StrategySelectionDialog({
   }, []);
 
   // ── Call Gemini via the edge function ────────────────────────────────────────
-  const loadAiAnalysis = useCallback(async () => {
+  const loadAiAnalysis = useCallback(async (actionOverride: "BUY" | "SELL") => {
     setAiLoading(true);
     setAiError(null);
     try {
       const { data, error } = await supabase.functions.invoke("suggest-strategy", {
-        body: { symbol, action, investment, timeframe },
+        body: { symbol, action: actionOverride, investment, timeframe },
       });
       if (error) {
         setAiError(error.message);
@@ -377,16 +436,16 @@ export function StrategySelectionDialog({
     } finally {
       setAiLoading(false);
     }
-  }, [symbol, action, investment, timeframe]);
+  }, [symbol, investment, timeframe]);
 
   // ── Run backtest for selected strategy ───────────────────────────────────────
-  const runBacktest = useCallback(async (strategyCode: string) => {
+  const runBacktest = useCallback(async (strategyCode: string, actionOverride: "BUY" | "SELL") => {
     setBacktestLoading(true);
     setBacktestResult(null);
     setBacktestError(null);
     try {
       const { data, error } = await supabase.functions.invoke("backtest-strategy", {
-        body: { symbol, strategy: strategyCode, action },
+        body: { symbol, strategy: strategyCode, action: actionOverride },
       });
       if (error) { setBacktestError(error.message); return; }
       if ((data as any)?.error) { setBacktestError((data as any).error); return; }
@@ -396,7 +455,7 @@ export function StrategySelectionDialog({
     } finally {
       setBacktestLoading(false);
     }
-  }, [symbol, action]);
+  }, [symbol]);
 
   // Merge AI ranks into a lookup
   const aiByStrategy = Object.fromEntries(
@@ -414,16 +473,16 @@ export function StrategySelectionDialog({
   const selectedAI = aiByStrategy[selected];
 
   // ── Order placement gate logic ────────────────────────────────────────────────
-  // Rule 1: AI analysis must finish before any strategy can be selected or order placed.
-  // Rule 2: Strategy conditions (RSI, SMA, price levels) must be achieved in the current market.
-  // Rule 3: AI verdict must be "great", "good", or "neutral" — "poor" and "avoid" block the order.
-  // Rule 4: Backtest must complete and confirm the strategy is achievable.
-  // PAPER TRADE: all gates are bypassed — it's simulation only, no capital at risk.
+  // Rule 1: AI analysis must ALWAYS finish before strategy grid unlocks (paper OR real).
+  //         The grid is useless without AI ranking — user must wait.
+  // Rule 2: For REAL trades — strategy backtest conditions must be met in the market.
+  // Rule 3: For REAL trades — AI verdict must not be "poor" or "avoid".
+  // Rule 4: For REAL trades — backtest must complete.
+  // PAPER TRADE: only Rule 1 applies (no capital at risk, so rules 2-4 are informational only).
+  const aiAnalysisPending   = aiLoading || (!aiResult && !aiError);          // always — paper or real
   const strategyNotAchieved = !isPaperTrade && backtestResult != null && !backtestResult.strategyAchieved;
   const aiVerdictBlocked    = !isPaperTrade && (selectedAI?.verdict === "poor" || selectedAI?.verdict === "avoid");
   const backtestPending     = !isPaperTrade && (backtestLoading || (!backtestResult && !backtestError));
-  // AI analysis must be done before strategy can be chosen or order placed
-  const aiAnalysisPending   = !isPaperTrade && (aiLoading || (!aiResult && !aiError));
   const orderBlocked        = aiAnalysisPending || strategyNotAchieved || aiVerdictBlocked || backtestPending;
 
   const getBlockReason = (): string | null => {
@@ -436,6 +495,10 @@ export function StrategySelectionDialog({
 
   const blockReason = getBlockReason();
 
+  // Auto-exit description for the chosen strategy + action
+  const autoExitText = AUTO_EXIT_NOTE[selected]?.[selectedAction === "BUY" ? "buy" : "sell"]
+    ?? `Once the order is placed, the system will automatically ${selectedAction === "BUY" ? "SELL" : "BUY"} when strategy exit conditions are met.`;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* Fixed height dialog — ONE single scroll inside */}
@@ -443,29 +506,137 @@ export function StrategySelectionDialog({
 
         {/* ── Fixed header ─────────────────────────────────────────────────── */}
         <div className="shrink-0 px-6 pt-6 pb-3 border-b">
-          <DialogTitle className="flex items-center gap-2 text-base font-semibold">
+          <div className="flex items-center gap-2 flex-wrap">
+            <DialogTitle className="text-base font-semibold">
+              {isPaperTrade ? "Paper Trade" : "Choose Strategy"}
+            </DialogTitle>
+            <Badge
+              variant={selectedAction === "SELL" ? "destructive" : "default"}
+              className={cn("text-xs", selectedAction === "BUY" ? "bg-green-600 hover:bg-green-600" : "")}
+            >
+              {selectedAction} {symbol}
+            </Badge>
+            {isPaperTrade && (
+              <Badge className="bg-violet-500/20 text-violet-700 border border-violet-500/40 text-[10px]">
+                Simulated
+              </Badge>
+            )}
+          </div>
+          <DialogDescription className="text-xs mt-2">
             {isPaperTrade
-              ? <FlaskConical className="h-5 w-5 text-violet-500" />
-              : <Zap className="h-5 w-5 text-primary" />
-            }
-            {isPaperTrade ? "Paper Trade" : "Choose Strategy"} — {action} {symbol}
-          </DialogTitle>
-          <DialogDescription className="text-xs mt-1">
-            {isPaperTrade
-              ? "Simulation only — no real capital. All strategy gates are bypassed. Pick any strategy and simulate freely."
-              : "AI ranks strategies using live RSI, MACD, news & macro. Backtest validates conditions on real historical data before any real order is placed."
+              ? "No real money. Choose your entry direction, pick a strategy, then track in real-time. Auto-exit fires when the strategy target is reached."
+              : "AI ranks strategies for live market. Choose your entry direction first, then select the strategy that suits it."
             }
           </DialogDescription>
-          {isPaperTrade && (
-            <div className="mt-2 flex items-center gap-2 rounded-md bg-violet-500/10 border border-violet-500/30 px-3 py-2 text-xs text-violet-700 font-medium">
-              <FlaskConical className="h-3.5 w-3.5 shrink-0" />
-              Paper trade — simulated only, no real money. Track performance without risk.
-            </div>
-          )}
         </div>
 
         {/* ── Single scrollable body ────────────────────────────────────────── */}
         <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-3">
+
+          {/* ── Step 1: Entry Direction ── */}
+          <div className="rounded-lg border-2 p-3 space-y-2">
+            <h4 className="font-semibold text-sm flex items-center gap-2">
+              <Repeat2 className="h-4 w-4" />
+              Step 1 — Choose Entry Direction
+            </h4>
+            <p className="text-xs text-muted-foreground">
+              Are you entering the market by <strong>buying first</strong> (long position) or <strong>selling first</strong> (short position / exiting a holding you already own)?
+            </p>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={selectedAction === "BUY" ? "default" : "outline"}
+                className={cn("flex-1 gap-2", selectedAction === "BUY" ? "bg-green-600 hover:bg-green-700 border-green-600" : "")}
+                onClick={() => setSelectedAction("BUY")}
+              >
+                <TrendingUp className="h-4 w-4" />
+                BUY First (Long)
+              </Button>
+              <Button
+                type="button"
+                variant={selectedAction === "SELL" ? "default" : "outline"}
+                className={cn("flex-1 gap-2", selectedAction === "SELL" ? "bg-red-600 hover:bg-red-700 border-red-600" : "")}
+                onClick={() => setSelectedAction("SELL")}
+              >
+                <TrendingDown className="h-4 w-4" />
+                SELL First (Short / Exit)
+              </Button>
+            </div>
+
+            {selectedAction === "SELL" && (
+              <div className="space-y-3">
+                <div className="flex items-start gap-2 rounded bg-amber-500/10 border border-amber-500/30 p-2 text-xs text-amber-800">
+                  <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                  <span>
+                    {isPaperTrade
+                      ? `Paper SELL: we assume you already hold ${symbol} at the current market price. The strategy will auto-BUY to close the position when exit conditions are met.`
+                      : `SELL order: ensure you hold ${symbol} or that your broker account has short-selling / margin enabled.`
+                    }
+                  </span>
+                </div>
+
+                {/* Optional position details for accurate P&L calculation */}
+                <div className="rounded-lg border bg-muted/20 p-3 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs font-semibold">Your existing position</p>
+                    <Badge variant="outline" className="text-[10px] border-muted-foreground/40">optional</Badge>
+                    <p className="text-[10px] text-muted-foreground ml-auto">Leave blank to use defaults</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Avg buy price / share</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        placeholder={currentPrice ? currentPrice.toFixed(2) : "e.g. 2450.00"}
+                        value={sellBuyPrice}
+                        onChange={e => setSellBuyPrice(e.target.value)}
+                        className="h-8 text-sm"
+                      />
+                      <p className="text-[10px] text-muted-foreground">default: current market price</p>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Shares held</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        step="1"
+                        placeholder={
+                          currentPrice && investment
+                            ? String(Math.floor(investment / currentPrice))
+                            : "e.g. 10"
+                        }
+                        value={sellNumShares}
+                        onChange={e => setSellNumShares(e.target.value)}
+                        className="h-8 text-sm"
+                      />
+                      <p className="text-[10px] text-muted-foreground">default: investment ÷ price</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {selectedAction === "BUY" && (
+              <div className="flex items-start gap-2 rounded bg-green-500/10 border border-green-500/30 p-2 text-xs text-green-800">
+                <TrendingUp className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                <span>
+                  You are entering a <strong>long position</strong> by buying {symbol}. The strategy will auto-SELL when the exit target or signal is triggered.
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* ── Step 2 label ── */}
+          <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
+            Step 2 — Choose a{" "}
+            <span className={cn("font-bold", selectedAction === "BUY" ? "text-green-700" : "text-red-700")}>
+              {selectedAction}
+            </span>{" "}
+            strategy
+            {aiLoading && <Loader2 className="h-3 w-3 animate-spin ml-1" />}
+          </p>
 
           {/* ── Live AI Market Context ── */}
           <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
@@ -477,7 +648,7 @@ export function StrategySelectionDialog({
 
             {aiLoading && (
               <p className="text-xs text-muted-foreground animate-pulse">
-                AI is fetching live price, RSI, MACD, news &amp; global macro for <strong>{symbol}</strong>…
+                AI is fetching live price, RSI, MACD, news &amp; global macro for <strong>{symbol}</strong> ({selectedAction} strategies)…
               </p>
             )}
             {aiError && <p className="text-xs text-destructive">{aiError}</p>}
@@ -523,7 +694,7 @@ export function StrategySelectionDialog({
             <Alert className="border-green-500 bg-green-500/10">
               <Lightbulb className="h-4 w-4 text-green-600" />
               <AlertDescription className="text-green-700 text-sm">
-                <strong>AI Top Pick:</strong>{" "}
+                <strong>AI Top Pick for {selectedAction}:</strong>{" "}
                 <button className="underline font-semibold" onClick={() => setSelected(aiResult.topPick.strategy)}>
                   {STRATEGIES.find(s => s.value === aiResult.topPick.strategy)?.label}
                 </button>
@@ -539,14 +710,14 @@ export function StrategySelectionDialog({
               <div>
                 <p className="text-sm font-semibold">AI Analysis in Progress</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Fetching live RSI, MACD, news sentiment &amp; global macro for <strong>{symbol}</strong>.
+                  Fetching live RSI, MACD, news sentiment &amp; global macro for <strong>{symbol}</strong> ({selectedAction}).
                   Strategy selection is locked until analysis completes.
                 </p>
               </div>
             </div>
           )}
 
-          {/* ── Strategy grid — 2-col, no inner scroll ── */}
+          {/* ── Strategy grid — 2-col ── */}
           <div className={cn(
             "grid sm:grid-cols-2 gap-2",
             aiAnalysisPending && "pointer-events-none select-none opacity-40",
@@ -556,6 +727,9 @@ export function StrategySelectionDialog({
               const ai  = aiByStrategy[s.value];
               const isTopPick = aiResult?.topPick?.strategy === s.value;
               const isBlocked = ai?.verdict === "poor" || ai?.verdict === "avoid";
+              const dirHint = STRATEGY_DIRECTION[s.value];
+              // Dim strategies that don't match the chosen direction
+              const mismatch = dirHint !== "both" && dirHint !== selectedAction.toLowerCase();
 
               return (
                 <button
@@ -570,19 +744,42 @@ export function StrategySelectionDialog({
                         ? "border-red-300 bg-red-500/5 hover:bg-red-500/10"
                         : isTopPick
                           ? "border-green-500 bg-green-500/5 hover:bg-green-500/10"
-                          : "border-muted hover:border-primary/50 bg-background",
+                          : mismatch
+                            ? "border-muted bg-muted/30 opacity-60 hover:opacity-80"
+                            : "border-muted hover:border-primary/50 bg-background",
                   )}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-sm truncate">
-                        {isTopPick && "⭐ "}{isBlocked && "🚫 "}{s.label}
+                        {isTopPick && "⭐ "}{isBlocked && "🚫 "}
+                        {dirHint === "buy" && selectedAction === "BUY" && "📈 "}
+                        {dirHint === "sell" && selectedAction === "SELL" && "📉 "}
+                        {s.label}
                       </p>
                       <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{s.description}</p>
                     </div>
                     <div className="flex flex-col items-end gap-1 shrink-0">
                       <Badge variant="outline" className="text-xs">{s.product}</Badge>
+                      {dirHint !== "both" && (
+                        <Badge
+                          variant="outline"
+                          className={cn("text-[10px]",
+                            dirHint === "buy" ? "border-green-400 text-green-700" : "border-red-400 text-red-700"
+                          )}
+                        >
+                          {dirHint === "buy" ? "BUY-suited" : "SELL-suited"}
+                        </Badge>
+                      )}
                       {ai && verdictLabel(ai.verdict)}
+                      {(() => {
+                        const sp = getStrategyParams(s.value);
+                        return (
+                          <span className="text-[10px] text-muted-foreground">
+                            SL {sp.stopLossPercentage}% · TP {sp.targetProfitPercentage}%
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -652,9 +849,38 @@ export function StrategySelectionDialog({
               <Activity className="h-3.5 w-3.5" />
               Backtest & Strategy Validation —{" "}
               <span className="text-primary">{STRATEGIES.find(s => s.value === selected)?.label}</span>
+              <span className={cn("ml-1", selectedAction === "BUY" ? "text-green-700" : "text-red-700")}>
+                ({selectedAction})
+              </span>
             </p>
             <BacktestPanel result={backtestResult} loading={backtestLoading} error={backtestError} />
           </div>
+
+          {/* ── Auto-exit info — always shown once AI is done ── */}
+          {!orderBlocked && (
+            <div className="space-y-2">
+              <div className="flex items-start gap-2 rounded-lg border border-blue-500/30 bg-blue-500/10 p-3 text-xs text-blue-800">
+                <Repeat2 className="h-4 w-4 mt-0.5 shrink-0 text-blue-600" />
+                <div>
+                  <p className="font-semibold mb-0.5">
+                    Strategy Exit — tracked in Active Trades
+                    {isPaperTrade && <span className="ml-1 text-violet-700">(Paper Simulated)</span>}
+                  </p>
+                  <p className="leading-relaxed">
+                    {autoExitText}
+                    {" "}You can manually override or close the position at any time from the Active Trades screen.
+                  </p>
+                </div>
+              </div>
+              {/* Transparency note: auto-exit is app-tracked, not broker-triggered */}
+              <div className="flex items-start gap-2 rounded-lg border border-orange-500/20 bg-orange-500/5 p-2.5 text-xs text-orange-700">
+                <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                <span>
+                  <strong>How exit works:</strong> The app monitors your position in Active Trades and alerts you when strategy conditions are met. For paper trades the exit is recorded automatically. For real orders you will need to place the exit order with your broker manually (or via the app's broker integration).
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* ── Order Gate: block reason ── */}
           {blockReason && (
@@ -681,7 +907,7 @@ export function StrategySelectionDialog({
             <Alert className="border-green-500/50 bg-green-500/10">
               <ShieldCheck className="h-4 w-4 text-green-600" />
               <AlertDescription className="text-green-700 text-sm">
-                Strategy conditions met & backtest complete. Cleared to place order.
+                Strategy conditions met & backtest complete. Cleared to place {selectedAction} order.
               </AlertDescription>
             </Alert>
           )}
@@ -704,14 +930,26 @@ export function StrategySelectionDialog({
             <Button
               className={cn(
                 "flex-1",
-                isPaperTrade ? "bg-violet-600 hover:bg-violet-700" : "",
+                isPaperTrade
+                  ? "bg-violet-600 hover:bg-violet-700"
+                  : selectedAction === "BUY"
+                    ? "bg-green-600 hover:bg-green-700"
+                    : "bg-red-600 hover:bg-red-700",
                 orderBlocked ? "opacity-50 cursor-not-allowed" : ""
               )}
               disabled={orderBlocked}
               onClick={() => {
                 if (orderBlocked) return;
                 const product = STRATEGIES.find(s => s.value === selected)?.product ?? "CNC";
-                onConfirm(selected, product);
+                const sellPosition = selectedAction === "SELL" ? {
+                  entryPrice: sellBuyPrice
+                    ? parseFloat(sellBuyPrice)
+                    : (currentPrice ?? 0),
+                  shares: sellNumShares
+                    ? parseFloat(sellNumShares)
+                    : (currentPrice && investment ? Math.floor(investment / currentPrice) : 1),
+                } : undefined;
+                onConfirm(selected, product, selectedAction, sellPosition);
                 onOpenChange(false);
               }}
             >
@@ -724,9 +962,9 @@ export function StrategySelectionDialog({
               ) : aiVerdictBlocked ? (
                 <><Lock className="h-4 w-4 mr-2" />Blocked — Choose Better Strategy</>
               ) : isPaperTrade ? (
-                <><FlaskConical className="h-4 w-4 mr-2" />Start Paper Trade</>
+                <><FlaskConical className="h-4 w-4 mr-2" />Start Paper {selectedAction} Trade</>
               ) : (
-                <><CheckCircle2 className="h-4 w-4 mr-2" />Place Real Order</>
+                <><CheckCircle2 className="h-4 w-4 mr-2" />Place {selectedAction} Order</>
               )}
             </Button>
           </div>

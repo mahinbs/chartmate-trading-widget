@@ -41,13 +41,12 @@ export default function WhitelabelDashboardPage() {
   const { tenant, loading: tenantLoading } = useWhitelabelTenant(slug);
 
   /* ── Demo / Dummy Mode State ── */
-  const isDummy = localStorage.getItem("wl_dummy_auth") === "true";
-  const user = isDummy ? { id: "dummy-123", email: "admin@admin.com", user_metadata: { full_name: "Demo Admin" } } : realUser;
+  const user = realUser;
   const isWLAdmin = true; // For now assuming admin if they reach this page, can be refined based on membership role
 
   /* ── Data Hooks ── */
-  const { affiliates, loading: loadingAffiliates, refresh: refreshAffiliates } = useWhitelabelAffiliates(user?.id, tenant?.id, isWLAdmin, isDummy);
-  const { users, loading: loadingUsers } = useWhitelabelUsers(tenant?.id, isWLAdmin, isDummy);
+  const { affiliates, loading: loadingAffiliates, refresh: refreshAffiliates } = useWhitelabelAffiliates(user?.id, tenant?.id, isWLAdmin, false);
+  const { users, loading: loadingUsers } = useWhitelabelUsers(tenant?.id, isWLAdmin, false);
 
   /* ── UI State ── */
   const [mainTab, setMainTab] = useState<"overview" | "affiliates">("overview");
@@ -74,7 +73,7 @@ export default function WhitelabelDashboardPage() {
     );
   }
 
-  if (!tenant && !isDummy) {
+  if (!tenant) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background text-center px-4">
         <div className="space-y-4 max-w-sm">
@@ -89,7 +88,6 @@ export default function WhitelabelDashboardPage() {
 
   /* ── Business Logic Handlers ── */
   const handleSignOut = async () => {
-    localStorage.removeItem("wl_dummy_auth");
     await supabase.auth.signOut();
     navigate(`/wl/${slug}`);
   };
@@ -97,13 +95,6 @@ export default function WhitelabelDashboardPage() {
   const handleSaveAffiliate = async (formData: typeof defaultAffForm) => {
     setAffSaving(true);
     try {
-      if (isDummy) {
-        toast.success(affEditingId ? "Affiliate updated (Demo Mode)" : "Affiliate created (Demo Mode)");
-        if (!affEditingId) setTempCredentials({ email: formData.email, temp_password: "demo-password-123" });
-        setAffDialogOpen(false);
-        return;
-      }
-
       if (affEditingId) {
         const { error } = await (supabase as any).from("affiliates").update(formData).eq("id", affEditingId);
         if (error) throw error;
@@ -127,11 +118,6 @@ export default function WhitelabelDashboardPage() {
 
   const handleResetPassword = async (id: string) => {
     try {
-      if (isDummy) {
-        setTempCredentials({ email: "demo@partner.com", temp_password: "reset-demo-789" });
-        toast.success("Password reset simulated (Demo Mode)");
-        return;
-      }
       const { data, error } = await supabase.functions.invoke("wl-reset-affiliate-password", { body: { affiliate_id: id } });
       if (error) throw error;
       setTempCredentials({ email: data.email, temp_password: data.temp_password });
@@ -143,10 +129,6 @@ export default function WhitelabelDashboardPage() {
 
   const handleToggleActive = async (aff: AffiliateRow) => {
     try {
-      if (isDummy) {
-        toast.success(!aff.is_active ? "Affiliate activated (Demo)" : "Affiliate suspended (Demo)");
-        return;
-      }
       const { error } = await (supabase as any).from("affiliates").update({ is_active: !aff.is_active }).eq("id", aff.id);
       if (error) throw error;
       toast.success(!aff.is_active ? "Affiliate activated" : "Affiliate suspended");
@@ -159,10 +141,6 @@ export default function WhitelabelDashboardPage() {
   const handleDeleteAffiliate = async (aff: AffiliateRow) => {
     if (!window.confirm(`Are you sure you want to delete ${aff.name}?`)) return;
     try {
-      if (isDummy) {
-        toast.success("Affiliate deleted (Demo Mode)");
-        return;
-      }
       const { error } = await (supabase as any).from("affiliates").delete().eq("id", aff.id);
       if (error) throw error;
       toast.success("Affiliate removed");
@@ -176,15 +154,6 @@ export default function WhitelabelDashboardPage() {
     setDetailLoading(true);
     setDetailAff(null);
     try {
-      if (isDummy) {
-        setDetailAff({
-          affiliate: aff,
-          visitors: [{ visitor_ip: "192.168.1.1", visited_at: new Date().toISOString() }],
-          submissions: [{ id: "s1", name: "Lead Alpha", email: "alpha@lead.com", phone: "+12345", created_at: new Date().toISOString() }],
-          payments: [{ id: "p1", amount: 1000, currency: "INR", commission_amount: 100, status: "completed", created_at: new Date().toISOString() }]
-        });
-        return;
-      }
       const [vRec, sRec, pRec] = await Promise.all([
         (supabase as any).from("affiliate_visitors").select("*").eq("affiliate_id", aff.id).order("visited_at", { ascending: false }),
         (supabase as any).from("contact_submissions").select("*").eq("affiliate_id", aff.id).order("created_at", { ascending: false }),
@@ -207,7 +176,6 @@ export default function WhitelabelDashboardPage() {
           <div className="flex items-center gap-4">
             {tenant?.brand_logo_url ? <img src={tenant.brand_logo_url} className="h-8 object-contain" /> : <div className="h-8 w-8 rounded-lg flex items-center justify-center font-bold" style={{ background: color }}>{tenant?.brand_name.charAt(0)}</div>}
             <span className="font-bold text-lg tracking-tight" style={{ color }}>{tenant?.brand_name} <span className="text-zinc-500 font-medium ml-1">Portal</span></span>
-            {isDummy && <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/20 text-[10px] ml-2">Demo Mode</Badge>}
           </div>
           <div className="flex items-center gap-4">
              <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-zinc-500 hover:text-white gap-2 transition-colors"><LogOut className="h-4 w-4" /> Sign out</Button>

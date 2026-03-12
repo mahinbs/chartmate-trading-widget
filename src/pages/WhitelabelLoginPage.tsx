@@ -34,14 +34,6 @@ export default function WhitelabelLoginPage() {
     if (expired) { toast.error("This white-label subscription has expired. Contact your provider."); return; }
     setSubmitting(true);
     try {
-      // ─── Dummy login bypass ───
-      if (mode === "login" && email === "admin@admin.com" && password === "admin123") {
-        localStorage.setItem("wl_dummy_auth", "true");
-        toast.success(`Welcome back (Demo Mode)!`);
-        navigate(`/wl/${slug}/dashboard`);
-        return;
-      }
-
       if (mode === "signup") {
         const { error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
@@ -50,8 +42,6 @@ export default function WhitelabelLoginPage() {
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-
-        localStorage.removeItem("wl_dummy_auth"); // Clear dummy flag on real login
 
         // Register as tenant user (upsert — no error if already exists)
         if (data.user && tenant) {

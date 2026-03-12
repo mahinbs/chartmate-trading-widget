@@ -52,6 +52,8 @@ import {
 import AiPredictionHeader from "../components/landingpage/mainlandingpage/AiPredictionHeader";
 import AiPredictionFooter from "../components/landingpage/mainlandingpage/AiPredictionFooter";
 import { PRICING_PLANS } from "@/constants/pricing";
+import { toast } from "sonner";
+import { createCheckoutSession } from "@/services/stripeService";
 
 const fadeUp: Variants = {
     hidden: { opacity: 0, y: 30 },
@@ -672,9 +674,22 @@ const MainLandingPage = () => {
                                     ))}
                                 </ul>
                                 <Button
-                                    onClick={() => {
-                                        setValue("plan", plan.id);
-                                        setIsEnquiryModalOpen(true);
+                                    onClick={async () => {
+                                        const { data: { session } } = await supabase.auth.getSession();
+                                        if (!session) {
+                                            navigate('/auth?redirect=' + encodeURIComponent('/#pricing'));
+                                            return;
+                                        }
+                                        const result = await createCheckoutSession({
+                                            plan_id: plan.id,
+                                            success_url: window.location.origin + '/?checkout=success',
+                                            cancel_url: window.location.origin + '/#pricing',
+                                        });
+                                        if (result.error) {
+                                            toast.error(result.error);
+                                            return;
+                                        }
+                                        if (result.url) window.location.href = result.url;
                                     }}
                                     className={
                                         plan.recommended
