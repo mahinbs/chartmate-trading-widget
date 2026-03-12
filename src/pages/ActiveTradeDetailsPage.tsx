@@ -18,6 +18,11 @@ import {
     Drawer, DrawerContent, DrawerDescription, DrawerHeader,
     DrawerTitle, DrawerFooter, DrawerClose,
 } from "@/components/ui/drawer";
+import {
+    Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export default function ActiveTradeDetailsPage() {
     const { id } = useParams();
@@ -31,6 +36,9 @@ export default function ActiveTradeDetailsPage() {
     const [manageDrawerOpen, setManageDrawerOpen] = useState(false);
     const [closing, setClosing] = useState(false);
     const [cancelling, setCancelling] = useState(false);
+    const [addToPositionOpen, setAddToPositionOpen] = useState(false);
+    const [addAmount, setAddAmount] = useState("");
+    const [adding, setAdding] = useState(false);
 
     useEffect(() => {
         const loadTrade = async () => {
@@ -103,6 +111,30 @@ export default function ActiveTradeDetailsPage() {
         setClosing(false);
     };
 
+    const handleAddToPosition = async () => {
+        if (!trade || !addAmount || parseFloat(addAmount) <= 0) return;
+        const amount = parseFloat(addAmount);
+        const price = trade.currentPrice || trade.entryPrice;
+        setAdding(true);
+        const { data, error } = await tradeTrackingService.addToPosition({
+            tradeId: trade.id,
+            additionalAmount: amount,
+            currentPrice: price,
+            allowFractional: isUsdDenominatedSymbol(trade.symbol),
+        });
+        setAdding(false);
+        if (!error && data) {
+            const sym = isUsdDenominatedSymbol(trade.symbol) ? "$" : "₹";
+            toast({ title: "Position Updated", description: `Added ${sym}${amount.toFixed(2)}. Cumulative: ${sym}${(trade.investmentAmount + amount).toFixed(2)}` });
+            setAddToPositionOpen(false);
+            setAddAmount("");
+            const { data: updated } = await tradeTrackingService.getTrade(trade.id);
+            if (updated) setTrade(updated);
+        } else {
+            toast({ title: "Error", description: error || "Failed to add to position", variant: "destructive" });
+        }
+    };
+
     // Stop Tracking (cancel / remove the trade record)
     const handleStopTracking = async () => {
         if (!trade) return;
@@ -141,6 +173,16 @@ export default function ActiveTradeDetailsPage() {
     // Action panel (shared between desktop inline and mobile drawer)
     const ActionPanel = () => (
         <div className="space-y-3">
+            {/* Add to Position */}
+            <Button
+                variant="default"
+                className="w-full bg-teal-600 hover:bg-teal-500 text-white py-5"
+                onClick={() => setAddToPositionOpen(true)}
+            >
+                <TrendingUp className="h-4 w-4 mr-2" />
+                Buy More / Add to Position
+            </Button>
+
             {/* View on TradingView */}
             <Button
                 variant="outline"
@@ -434,6 +476,51 @@ export default function ActiveTradeDetailsPage() {
                         </DrawerFooter>
                     </DrawerContent>
                 </Drawer>
+
+                {/* Add to Position Dialog */}
+                <Dialog open={addToPositionOpen} onOpenChange={setAddToPositionOpen}>
+                    <DialogContent className="bg-[#1a1b1e] text-white border-white/10 sm:max-w-md">
+                        <DialogHeader>
+                            <DialogTitle>Add to Position</DialogTitle>
+                            <DialogDescription className="text-slate-400">
+                                Add more capital to this {trade.action} position. New avg entry &amp; shares will be calculated.
+                                Current: {currencySymbol}{convertAmount(trade.investmentAmount).toFixed(2)} · {trade.shares} shares @ {currencySymbol}{formatPrice(convertAmount(trade.entryPrice))}
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4 py-4">
+                            <div>
+                                <Label htmlFor="add-amount" className="text-slate-300">Additional amount ({assetCurrency})</Label>
+                                <Input
+                                    id="add-amount"
+                                    type="number"
+                                    min="0.01"
+                                    step="0.01"
+                                    placeholder="e.g. 1000"
+                                    value={addAmount}
+                                    onChange={(e) => setAddAmount(e.target.value)}
+                                    className="mt-2 bg-white/5 border-white/10 text-white"
+                                />
+                            </div>
+                            {addAmount && parseFloat(addAmount) > 0 && (
+                                <p className="text-sm text-slate-400">
+                                    At {currencySymbol}{formatPrice(convertAmount(trade.currentPrice || trade.entryPrice))}/share → ~{(parseFloat(addAmount) / (trade.currentPrice || trade.entryPrice)).toFixed(isUsdDenominatedSymbol(trade.symbol) ? 6 : 0)} new shares.
+                                    Cumulative investment: {(isUsdDenominatedSymbol(trade.symbol) ? "$" : "₹")}{(trade.investmentAmount + parseFloat(addAmount)).toFixed(2)}
+                                </p>
+                            )}
+                        </div>
+                        <DialogFooter>
+                            <Button variant="ghost" onClick={() => { setAddToPositionOpen(false); setAddAmount(""); }}>Cancel</Button>
+                            <Button
+                                onClick={handleAddToPosition}
+                                disabled={!addAmount || parseFloat(addAmount) <= 0 || adding}
+                                className="bg-teal-600 hover:bg-teal-500"
+                            >
+                                {adding ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                                Add {currencySymbol}{addAmount ? parseFloat(addAmount).toFixed(2) : "0"}
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
             </div>
         </div>
     );

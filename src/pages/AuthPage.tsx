@@ -27,7 +27,7 @@ const AuthPage = () => {
         navigate('/auth/change-password', { replace: true });
         return;
       }
-      if (role === 'admin') navigate('/admin/users', { replace: true });
+      if (role === 'super_admin' || role === 'admin') navigate('/admin/users', { replace: true });
       else if (role === 'affiliate') navigate('/affiliate/dashboard', { replace: true });
       else if (role === 'user') navigate('/home', { replace: true });
     }

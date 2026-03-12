@@ -43,10 +43,13 @@ import { TradingIntegrationModal } from "@/components/trading/TradingIntegration
 import { StrategySelectionDialog, STRATEGIES } from "@/components/trading/StrategySelectionDialog";
 import { UsePreviousOrNewStrategyDialog } from "@/components/trading/UsePreviousOrNewStrategyDialog";
 import { PRICING_PLANS } from "@/constants/pricing";
+import { createCheckoutSession } from "@/services/stripeService";
+import { getStrategyParams } from "@/constants/strategyParams";
 import { toast } from "sonner";
-import { Loader2, AlertTriangle, BrainCircuit, BarChart3, CheckCircle, ArrowRight, ArrowLeft, LogOut, History, Timer, Home, FlaskConical, RefreshCw } from "lucide-react";
+import { Loader2, AlertTriangle, BrainCircuit, BarChart3, CheckCircle, ArrowRight, ArrowLeft, LogOut, History, Timer, Home, FlaskConical, RefreshCw, TrendingUp, TrendingDown, PlusCircle, Minus, ExternalLink, Repeat2 } from "lucide-react";
 import { Container } from "@/components/layout/Container";
 import { formatCurrency } from "@/lib/display-utils";
+import type { ActiveTrade } from "@/services/tradeTrackingService";
 
 interface GeminiForecast {
   symbol: string;
@@ -227,18 +230,45 @@ const PredictPage = () => {
   const [isPaperTrade, setIsPaperTrade] = useState(false);
   const [showPremiumDialog, setShowPremiumDialog] = useState(false);
 
+  // ── After-order live P&L tracking state ──────────────────────────────────────
+  const [placedTrade,      setPlacedTrade]      = useState<ActiveTrade | null>(null);
+  const [showBuyMoreDialog, setShowBuyMoreDialog] = useState(false);
+  const [showSellDialog,    setShowSellDialog]    = useState(false);
+  const [buyMoreAmount,     setBuyMoreAmount]     = useState("");
+  const [sellSharesInput,   setSellSharesInput]   = useState("");
+  const [buyMoreLoading,    setBuyMoreLoading]    = useState(false);
+  const [sellLoading,       setSellLoading]       = useState(false);
+
   // ── Mock / Paper order + track ────────────────────────────────────────────
-  const placeMockOrderAndTrack = useCallback(async (strategyCode: string, product: string) => {
+  // `selectedAction` = user's chosen direction from StrategySelectionDialog.
+  // `sellPosition`   = optional existing position data (buy price + shares) for SELL orders.
+  const placeMockOrderAndTrack = useCallback(async (
+    strategyCode: string,
+    product: string,
+    selectedAction: "BUY" | "SELL",
+    sellPosition?: { entryPrice: number; shares: number },
+  ) => {
     if (!result) return;
     const prefix = isPaperTrade ? 'PAPER' : 'MOCK';
     const mockOrderId = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
-    const action = result.geminiForecast?.action_signal?.action === 'SELL' ? 'SELL' : 'BUY';
-    const shares = Math.floor(result.positionSize?.shares || 0) || 1;
+    const action = selectedAction;
+
+    // For SELL: use the position data the user provided; default to current price / calculated shares
+    const entryPrice = (selectedAction === "SELL" && sellPosition?.entryPrice)
+      ? sellPosition.entryPrice
+      : result.currentPrice;
+    const shares = (selectedAction === "SELL" && sellPosition?.shares)
+      ? sellPosition.shares
+      : result.isCrypto
+        ? (result.positionSize?.shares ?? 0)
+        : Math.floor(result.positionSize?.shares || 0) || 1;
+
+    const sp = getStrategyParams(strategyCode);
     const aiRecommendedPeriod = result.geminiForecast?.positioning_guidance?.recommended_hold_period;
     const userChosenPeriod = userProfile.userHoldingPeriod;
     const effectiveHoldingPeriod = !userChosenPeriod || userChosenPeriod === 'ai_recommendation'
-      ? aiRecommendedPeriod
-      : userChosenPeriod === 'none' ? null : userChosenPeriod;
+      ? (aiRecommendedPeriod ?? sp.defaultHoldPeriod)
+      : userChosenPeriod === 'none' ? sp.defaultHoldPeriod : userChosenPeriod;
 
     toast.loading("Placing order…", { id: 'trade-start' });
     try {
@@ -248,8 +278,8 @@ const PredictPage = () => {
         action,
         confidence: result.geminiForecast?.action_signal?.confidence || result.confidence || 0,
         riskGrade: result.geminiForecast?.risk_grade || 'MEDIUM',
-        entryPrice: result.currentPrice,
-        shares,
+        entryPrice,
+        shares: shares || 1,
         investmentAmount: parseFloat(investment),
         leverage: userProfile.leverage,
         marginType: userProfile.marginType,
@@ -257,10 +287,10 @@ const PredictPage = () => {
         product,
         brokerOrderId: mockOrderId,
         strategyType: strategyCode,
-        stopLossPercentage: userProfile.stopLossPercentage || 5,
-        targetProfitPercentage: userProfile.targetProfitPercentage || 15,
+        stopLossPercentage: sp.stopLossPercentage,
+        targetProfitPercentage: sp.targetProfitPercentage,
         holdingPeriod: effectiveHoldingPeriod,
-        aiRecommendedHoldPeriod: aiRecommendedPeriod,
+        aiRecommendedHoldPeriod: aiRecommendedPeriod ?? sp.defaultHoldPeriod,
         expectedRoiBest: result.geminiForecast?.expected_roi?.best_case,
         expectedRoiLikely: result.geminiForecast?.expected_roi?.likely_case,
         expectedRoiWorst: result.geminiForecast?.expected_roi?.worst_case,
@@ -268,14 +298,51 @@ const PredictPage = () => {
       if (response.error) {
         toast.error('Tracking failed: ' + response.error, { id: 'trade-start' });
       } else {
-        const label = isPaperTrade ? `Paper trade started (${mockOrderId})` : `Order placed (${mockOrderId}). Tracking started!`;
+        const label = isPaperTrade
+          ? `Paper ${action} trade started — tracking live`
+          : `${action} order placed. Tracking live!`;
         toast.success(label, { id: 'trade-start' });
-        setTimeout(() => navigate('/active-trades'), 1000);
+
+        // Build a local trade object for the immediate P&L card —
+        // use response data if available, otherwise construct from known values
+        const tradeId = (response.data as any)?.id || (response.data as any)?.trade?.id || mockOrderId;
+        const strategyLabel = STRATEGIES.find(s => s.value === strategyCode)?.label ?? strategyCode;
+        setPlacedTrade({
+          id:              tradeId,
+          symbol:          result.symbol,
+          action,
+          status:          'active',
+          entryPrice,
+          entryTime:       new Date().toISOString(),
+          shares:          shares || 1,
+          investmentAmount: parseFloat(investment),
+          strategyType:    strategyCode,
+          stopLossPercentage:    sp.stopLossPercentage,
+          targetProfitPercentage: sp.targetProfitPercentage,
+          currentPrice:    result.currentPrice,
+          currentPnl:      0,
+          currentPnlPercentage: 0,
+          brokerOrderId:   mockOrderId,
+          product,
+          confidence:      result.geminiForecast?.action_signal?.confidence || result.confidence || 0,
+        } as ActiveTrade & { strategyLabel: string });
+        setSellSharesInput(String(shares || 1));
       }
     } catch (e: any) {
       toast.error(e?.message || 'Failed', { id: 'trade-start' });
     }
-  }, [result, investment, userProfile, navigate, isPaperTrade]);
+  }, [result, investment, userProfile, isPaperTrade]);
+
+  // ── Poll placed trade for live P&L updates ───────────────────────────────────
+  useEffect(() => {
+    if (!placedTrade?.id || placedTrade.id === placedTrade.brokerOrderId) return; // skip if only local (no DB id yet)
+    const interval = setInterval(async () => {
+      const { tradeTrackingService } = await import("@/services/tradeTrackingService");
+      const { data } = await tradeTrackingService.getTrade(placedTrade.id);
+      if (data) setPlacedTrade(data);
+    }, 12000);
+    return () => clearInterval(interval);
+  }, [placedTrade?.id]);
 
   // Fetch market status when symbol is selected
   useEffect(() => {
@@ -1209,102 +1276,212 @@ const PredictPage = () => {
                   </Card>
                 )}
 
-                {/* START TRACKING BUTTON - Primary CTA */}
-                <Card className="glass-panel border border-primary/30 bg-gradient-to-br from-background/80 to-primary/5 shadow-2xl relative overflow-hidden group">
-                  <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                  <CardContent className="p-8 relative z-10">
-                    <div className="space-y-4">
-                      <div className="text-center space-y-2">
-                        <h3 className="text-2xl font-bold text-white">Ready to trade this trade?</h3>
-                        <p className="text-muted-foreground">
-                          Start monitoring this position in real-time with AI-powered tracking
-                        </p>
+                {/* ── Trade CTA — compact, clean ── */}
+                {!placedTrade && (
+                  <Card className="glass-panel border border-primary/30 bg-gradient-to-br from-background/80 to-primary/5 shadow-xl">
+                    <CardContent className="p-5 space-y-3">
+                      {/* Header row */}
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-lg font-bold text-white">Trade {result.symbol}</h3>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            AI signal: <span className={result.geminiForecast?.action_signal?.action === "SELL" ? "text-red-400 font-semibold" : "text-green-400 font-semibold"}>
+                              {result.geminiForecast?.action_signal?.action ?? "HOLD"}
+                            </span>
+                            {" · "}Confidence: <span className="font-semibold">{result.geminiForecast?.action_signal?.confidence ?? result.confidence ?? 0}%</span>
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-muted-foreground">Current price</p>
+                          <p className="text-lg font-bold text-white">
+                            {result.isCrypto ? "$" : "₹"}{result.currentPrice.toLocaleString()}
+                          </p>
+                        </div>
                       </div>
 
-                      {/* Context-aware label for the action buttons */}
-                      <div className="text-xs text-center text-muted-foreground px-2">
-                        <strong>Real Order</strong>: real money, all AI gates &amp; backtest must pass.{" "}
-                        <strong>Paper Trade</strong>: simulated, no money, gates bypassed.
-                      </div>
-
-                      {/* Real trade button */}
-                      <Button
-                        onClick={() => setShowPremiumDialog(true)}
-                        className="w-full text-lg py-6 shadow-lg bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600"
-                        size="lg"
-                      >
-                        <Timer className="mr-2 h-5 w-5" />
-                        Place Order
-                      </Button>
-
-                      {/* Paper Trade button */}
-                      <Button
-                        variant="outline"
-                        onClick={async () => {
-                          setIsPaperTrade(false);
-                          const { tradeTrackingService } = await import("@/services/tradeTrackingService");
-                          const last = await tradeTrackingService.getLastUsedStrategy();
-                          if (last) {
-                            const label = STRATEGIES.find(s => s.value === last.strategyType)?.label ?? last.strategyType;
-                            setLastUsedStrategy({ ...last, label });
-                            setShowPreviousOrNewDialog(true);
-                          } else {
-                            setShowStrategyDialog(true);
-                          }
-                        }}
-                        className="w-full text-base py-5 border-2 border-violet-500/50 text-violet-700 hover:bg-violet-500/10 hover:border-violet-500"
-                        size="lg"
-                      >
-                        <FlaskConical className="mr-2 h-5 w-5" />
-                        Paper Trade
-                      </Button>
-
-                      {/* Use previous strategy or choose new */}
-                      {result && lastUsedStrategy && (
-                        <UsePreviousOrNewStrategyDialog
-                          open={showPreviousOrNewDialog}
-                          onOpenChange={setShowPreviousOrNewDialog}
-                          lastStrategyLabel={lastUsedStrategy.label}
-                          symbol={result.symbol}
-                          action={result.geminiForecast?.action_signal?.action === 'SELL' ? 'SELL' : 'BUY'}
-                          onUsePrevious={() => {
-                            // Route through StrategySelectionDialog for backtest + strategy achievement validation,
-                            // pre-selecting the previously used strategy so validation runs automatically.
-                            setShowStrategyDialog(true);
+                      {/* Two main buttons */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button
+                          onClick={() => setShowPremiumDialog(true)}
+                          className="py-5 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600"
+                        >
+                          <Timer className="mr-2 h-4 w-4" />
+                          Place Order
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={async () => {
+                            setIsPaperTrade(true);
+                            const { tradeTrackingService } = await import("@/services/tradeTrackingService");
+                            const last = await tradeTrackingService.getLastUsedStrategy();
+                            if (last) {
+                              const label = STRATEGIES.find(s => s.value === last.strategyType)?.label ?? last.strategyType;
+                              setLastUsedStrategy({ ...last, label });
+                              setShowPreviousOrNewDialog(true);
+                            } else {
+                              setShowStrategyDialog(true);
+                            }
                           }}
-                          onChooseNew={() => setShowStrategyDialog(true)}
-                        />
-                      )}
+                          className="py-5 border-2 border-violet-500/50 text-violet-300 hover:bg-violet-500/10 hover:border-violet-500"
+                        >
+                          <FlaskConical className="mr-2 h-4 w-4" />
+                          Paper Trade
+                        </Button>
+                      </div>
 
-                      {/* Strategy selection (AI + market research) → place order */}
-                      {result && (
-                        <StrategySelectionDialog
-                          open={showStrategyDialog}
-                          onOpenChange={setShowStrategyDialog}
-                          currentStrategy={lastUsedStrategy?.strategyType ?? userProfile.tradingStrategy ?? 'trend_following'}
-                          symbol={result.symbol}
-                          action={result.geminiForecast?.action_signal?.action === 'SELL' ? 'SELL' : 'BUY'}
-                          investment={investment ? parseFloat(investment) : 10000}
-                          timeframe={timeframe === "custom" ? customTimeframe || "1d" : timeframe || "1d"}
-                          isPaperTrade={isPaperTrade}
-                          onConfirm={placeMockOrderAndTrack}
-                        />
-                      )}
+                      <p className="text-[11px] text-center text-muted-foreground/70">
+                        <strong className="text-muted-foreground">Paper Trade</strong> is free & simulated — no real money.
+                        {" "}<strong className="text-muted-foreground">Place Order</strong> requires a premium plan.
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
 
-                      <TradingIntegrationModal
-                        open={showIntegrationModal}
-                        onOpenChange={setShowIntegrationModal}
-                        onSaved={async () => {
-                          await refreshTradingIntegration();
-                          setShowIntegrationModal(false);
-                          setShowStrategyDialog(true);
-                        }}
-                        onSkip={() => setShowIntegrationModal(false)}
-                        save={async (params) => saveTradingIntegration(params)}
-                      />
-                    </div>
-                  </CardContent>
-                </Card>
+                {/* ── Live P&L card — appears after order is placed ── */}
+                {placedTrade && (() => {
+                  const isShort = placedTrade.action === "SELL";
+                  const livePrice = placedTrade.currentPrice ?? placedTrade.entryPrice;
+                  const pnl = isShort
+                    ? (placedTrade.entryPrice - livePrice) * placedTrade.shares
+                    : (livePrice - placedTrade.entryPrice) * placedTrade.shares;
+                  const pnlPct = placedTrade.investmentAmount > 0
+                    ? (pnl / placedTrade.investmentAmount) * 100
+                    : 0;
+                  const isProfit = pnl >= 0;
+                  const strategyLabel = STRATEGIES.find(s => s.value === placedTrade.strategyType)?.label ?? placedTrade.strategyType ?? "Strategy";
+                  const isPaper = (placedTrade.brokerOrderId ?? "").startsWith("PAPER-");
+
+                  return (
+                    <Card className={`border-2 ${isProfit ? "border-green-500/50 bg-green-500/5" : "border-red-500/50 bg-red-500/5"} shadow-xl`}>
+                      <CardContent className="p-4 space-y-3">
+                        {/* Header */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Badge className={isShort ? "bg-red-600" : "bg-green-600"}>
+                            {isShort ? <TrendingDown className="h-3 w-3 mr-1" /> : <TrendingUp className="h-3 w-3 mr-1" />}
+                            {placedTrade.action} {placedTrade.symbol}
+                          </Badge>
+                          <Badge variant="outline" className="text-xs">{strategyLabel}</Badge>
+                          {isPaper && (
+                            <Badge className="bg-violet-500/20 text-violet-300 border border-violet-500/40 text-[10px]">
+                              🧪 Paper
+                            </Badge>
+                          )}
+                          <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
+                            <Repeat2 className="h-3 w-3" />
+                            <span>Auto-exit on strategy achievement</span>
+                          </div>
+                        </div>
+
+                        {/* Price row */}
+                        <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                          <div className="rounded bg-background/60 border p-2">
+                            <p className="text-muted-foreground">Entry price</p>
+                            <p className="font-bold text-sm text-white">{result.isCrypto ? "$" : "₹"}{placedTrade.entryPrice.toLocaleString()}</p>
+                          </div>
+                          <div className="rounded bg-background/60 border p-2">
+                            <p className="text-muted-foreground">Live price</p>
+                            <p className="font-bold text-sm text-white">{result.isCrypto ? "$" : "₹"}{livePrice.toLocaleString()}</p>
+                          </div>
+                          <div className={`rounded border p-2 ${isProfit ? "bg-green-500/10 border-green-500/30" : "bg-red-500/10 border-red-500/30"}`}>
+                            <p className="text-muted-foreground">P&amp;L</p>
+                            <p className={`font-bold text-sm ${isProfit ? "text-green-400" : "text-red-400"}`}>
+                              {isProfit ? "+" : ""}{result.isCrypto ? "$" : "₹"}{Math.abs(pnl).toFixed(2)}
+                            </p>
+                            <p className={`text-[10px] ${isProfit ? "text-green-500" : "text-red-500"}`}>
+                              {isProfit ? "+" : ""}{pnlPct.toFixed(2)}%
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Shares & investment */}
+                        <div className="flex gap-4 text-xs text-muted-foreground">
+                          <span>Shares held: <strong className="text-white">{placedTrade.shares}</strong></span>
+                          <span>Invested: <strong className="text-white">{result.isCrypto ? "$" : "₹"}{placedTrade.investmentAmount.toLocaleString()}</strong></span>
+                          {placedTrade.stopLossPercentage && (
+                            <span>SL: <strong className="text-red-400">{placedTrade.stopLossPercentage}%</strong></span>
+                          )}
+                          {placedTrade.targetProfitPercentage && (
+                            <span>TP: <strong className="text-green-400">{placedTrade.targetProfitPercentage}%</strong></span>
+                          )}
+                        </div>
+
+                        {/* Action buttons */}
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="flex-1 border-green-500/50 text-green-400 hover:bg-green-500/10"
+                            onClick={() => { setBuyMoreAmount(""); setShowBuyMoreDialog(true); }}
+                          >
+                            <PlusCircle className="h-3.5 w-3.5 mr-1.5" />
+                            Buy More
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="flex-1 border-red-500/50 text-red-400 hover:bg-red-500/10"
+                            onClick={() => { setSellSharesInput(String(placedTrade.shares)); setShowSellDialog(true); }}
+                          >
+                            <Minus className="h-3.5 w-3.5 mr-1.5" />
+                            Sell
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-muted-foreground hover:text-white"
+                            onClick={() => navigate(`/trade/${placedTrade.id}`)}
+                          >
+                            <ExternalLink className="h-3.5 w-3.5 mr-1" />
+                            Full view
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })()}
+
+                {/* Use previous strategy or choose new */}
+                {result && lastUsedStrategy && (
+                  <UsePreviousOrNewStrategyDialog
+                    open={showPreviousOrNewDialog}
+                    onOpenChange={setShowPreviousOrNewDialog}
+                    lastStrategyLabel={lastUsedStrategy.label}
+                    symbol={result.symbol}
+                    action={result.geminiForecast?.action_signal?.action === 'SELL' ? 'SELL' : 'BUY'}
+                    onUsePrevious={() => {
+                      setShowStrategyDialog(true);
+                    }}
+                    onChooseNew={() => setShowStrategyDialog(true)}
+                  />
+                )}
+
+                {/* Strategy selection (AI + market research) → place order */}
+                {result && (
+                  <StrategySelectionDialog
+                    open={showStrategyDialog}
+                    onOpenChange={setShowStrategyDialog}
+                    currentStrategy={lastUsedStrategy?.strategyType ?? userProfile.tradingStrategy ?? 'trend_following'}
+                    symbol={result.symbol}
+                    action={result.geminiForecast?.action_signal?.action === 'SELL' ? 'SELL' : 'BUY'}
+                    investment={investment ? parseFloat(investment) : 10000}
+                    timeframe={timeframe === "custom" ? customTimeframe || "1d" : timeframe || "1d"}
+                    currentPrice={result.currentPrice}
+                    isPaperTrade={isPaperTrade}
+                    onConfirm={placeMockOrderAndTrack}
+                  />
+                )}
+
+                <TradingIntegrationModal
+                  open={showIntegrationModal}
+                  onOpenChange={setShowIntegrationModal}
+                  onSaved={async () => {
+                    await refreshTradingIntegration();
+                    setShowIntegrationModal(false);
+                    setShowStrategyDialog(true);
+                  }}
+                  onSkip={() => setShowIntegrationModal(false)}
+                  save={async (params) => saveTradingIntegration(params)}
+                />
 
                 {/* Analytical Deep Dives - Grouped in Tabs to reduce scrolling */}
                 {/* Secondary Analytics - Grouped into Tabs */}
@@ -1487,6 +1664,196 @@ const PredictPage = () => {
         </div >
       </Container >
 
+      {/* ── Buy More Dialog ── */}
+      <Dialog open={showBuyMoreDialog} onOpenChange={setShowBuyMoreDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <PlusCircle className="h-5 w-5 text-green-500" />
+              Buy More — {placedTrade?.symbol}
+            </DialogTitle>
+            <DialogDescription>
+              Additional shares will be bought at the current market price.
+              Your average entry price will update automatically.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {placedTrade && (
+              <div className="grid grid-cols-2 gap-3 text-sm rounded-lg bg-muted/30 p-3 border text-center">
+                <div>
+                  <p className="text-xs text-muted-foreground">Current avg price</p>
+                  <p className="font-bold">{result?.isCrypto ? "$" : "₹"}{placedTrade.entryPrice.toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Shares held</p>
+                  <p className="font-bold">{placedTrade.shares}</p>
+                </div>
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label>Additional amount ({result?.isCrypto ? "USD" : "INR"})</Label>
+              <Input
+                type="number"
+                min={1}
+                placeholder="e.g. 5000"
+                value={buyMoreAmount}
+                onChange={e => setBuyMoreAmount(e.target.value)}
+              />
+            </div>
+            {buyMoreAmount && result?.currentPrice && (
+              <p className="text-xs text-muted-foreground">
+                ≈ {Math.floor(parseFloat(buyMoreAmount) / result.currentPrice)} more shares at current price {result.isCrypto ? "$" : "₹"}{result.currentPrice}
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBuyMoreDialog(false)}>Cancel</Button>
+            <Button
+              className="bg-green-600 hover:bg-green-700"
+              disabled={!buyMoreAmount || parseFloat(buyMoreAmount) <= 0 || buyMoreLoading}
+              onClick={async () => {
+                if (!placedTrade || !buyMoreAmount || !result) return;
+                setBuyMoreLoading(true);
+                try {
+                  const { tradeTrackingService } = await import("@/services/tradeTrackingService");
+                  const res = await tradeTrackingService.addToPosition({
+                    tradeId: placedTrade.id,
+                    additionalAmount: parseFloat(buyMoreAmount),
+                    currentPrice: result.currentPrice,
+                    allowFractional: result.isCrypto,
+                  });
+                  if (res.error) {
+                    toast.error("Buy more failed: " + res.error);
+                  } else {
+                    toast.success("Position increased — avg price updated");
+                    // Refresh trade state
+                    const { data } = await tradeTrackingService.getTrade(placedTrade.id);
+                    if (data) setPlacedTrade(data);
+                    setShowBuyMoreDialog(false);
+                    setBuyMoreAmount("");
+                  }
+                } catch (e: any) {
+                  toast.error(e?.message || "Failed");
+                } finally {
+                  setBuyMoreLoading(false);
+                }
+              }}
+            >
+              {buyMoreLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <PlusCircle className="h-4 w-4 mr-2" />}
+              Confirm Buy More
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Sell Dialog (partial or full) ── */}
+      <Dialog open={showSellDialog} onOpenChange={setShowSellDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Minus className="h-5 w-5 text-red-500" />
+              Sell — {placedTrade?.symbol}
+            </DialogTitle>
+            <DialogDescription>
+              Choose how many shares to sell. Selling all shares closes the position.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {placedTrade && (() => {
+              const isShort = placedTrade.action === "SELL";
+              const livePrice = placedTrade.currentPrice ?? placedTrade.entryPrice;
+              const sellQty = parseFloat(sellSharesInput) || 0;
+              const fraction = placedTrade.shares > 0 ? sellQty / placedTrade.shares : 0;
+              const pnlPerShare = isShort
+                ? placedTrade.entryPrice - livePrice
+                : livePrice - placedTrade.entryPrice;
+              const estimatedPnl = pnlPerShare * sellQty;
+              const isProfit = estimatedPnl >= 0;
+              return (
+                <>
+                  <div className="grid grid-cols-3 gap-2 text-sm rounded-lg bg-muted/30 p-3 border text-center">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Entry</p>
+                      <p className="font-bold">{result?.isCrypto ? "$" : "₹"}{placedTrade.entryPrice.toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Live price</p>
+                      <p className="font-bold">{result?.isCrypto ? "$" : "₹"}{livePrice.toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">You hold</p>
+                      <p className="font-bold">{placedTrade.shares} shares</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <Label>Shares to sell</Label>
+                      <button
+                        className="text-xs text-primary underline"
+                        onClick={() => setSellSharesInput(String(placedTrade.shares))}
+                      >
+                        Sell all ({placedTrade.shares})
+                      </button>
+                    </div>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={placedTrade.shares}
+                      value={sellSharesInput}
+                      onChange={e => setSellSharesInput(e.target.value)}
+                    />
+                    {sellQty > 0 && sellQty <= placedTrade.shares && (
+                      <p className="text-xs text-muted-foreground">
+                        {Math.round(fraction * 100)}% of your position
+                        {" · "}Est. P&amp;L:{" "}
+                        <span className={isProfit ? "text-green-600 font-semibold" : "text-red-600 font-semibold"}>
+                          {isProfit ? "+" : ""}{result?.isCrypto ? "$" : "₹"}{Math.abs(estimatedPnl).toFixed(2)}
+                        </span>
+                      </p>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSellDialog(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={
+                !sellSharesInput ||
+                parseFloat(sellSharesInput) <= 0 ||
+                (placedTrade ? parseFloat(sellSharesInput) > placedTrade.shares : true) ||
+                sellLoading
+              }
+              onClick={async () => {
+                if (!placedTrade || !result) return;
+                setSellLoading(true);
+                try {
+                  const { tradeTrackingService } = await import("@/services/tradeTrackingService");
+                  const res = await tradeTrackingService.closeTrade(placedTrade.id, result.currentPrice);
+                  if ((res as any)?.error) {
+                    toast.error("Sell failed: " + (res as any).error);
+                  } else {
+                    toast.success("Position closed — trade recorded");
+                    setPlacedTrade(null);
+                    setShowSellDialog(false);
+                  }
+                } catch (e: any) {
+                  toast.error(e?.message || "Failed");
+                } finally {
+                  setSellLoading(false);
+                }
+              }}
+            >
+              {sellLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Minus className="h-4 w-4 mr-2" />}
+              Confirm Sell
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Premium Plan Required Dialog */}
       <Dialog open={showPremiumDialog} onOpenChange={setShowPremiumDialog}>
         <DialogContent className="max-w-[95vw] md:max-w-5xl bg-zinc-950 border border-zinc-800 text-white p-5 sm:p-8 md:p-10 rounded-2xl md:rounded-3xl overflow-y-auto max-h-[90vh]">
@@ -1525,9 +1892,24 @@ const PredictPage = () => {
                 </ul>
                 <Button
                   className={`w-full py-5 rounded-xl ${plan.recommended ? 'bg-teal-500 hover:bg-teal-400 text-black shadow-lg shadow-teal-500/20' : 'bg-zinc-100 hover:bg-zinc-300 text-black'} font-bold transition-all`}
-                  onClick={() => {
-                    navigate('/#pricing');
+                  onClick={async () => {
+                    const { data: { session } } = await supabase.auth.getSession();
+                    if (!session) {
+                      setShowPremiumDialog(false);
+                      navigate('/auth?redirect=' + encodeURIComponent('/predict'));
+                      return;
+                    }
                     setShowPremiumDialog(false);
+                    const result = await createCheckoutSession({
+                      plan_id: plan.id,
+                      success_url: window.location.origin + '/?checkout=success',
+                      cancel_url: window.location.origin + '/predict',
+                    });
+                    if (result.error) {
+                      toast.error(result.error);
+                      return;
+                    }
+                    if (result.url) window.location.href = result.url;
                   }}
                 >
                   {plan.recommended ? 'Get Pro Plan' : 'Get Started'}

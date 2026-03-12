@@ -260,8 +260,34 @@ export function ProbabilityPanel({
       ? "Medium"
       : "Low";
 
-  /* Buyer / seller pressure → map from up vs down probability */
-  const buyerPressure = Math.round((upPct / (upPct + downPct)) * 100) || 50;
+  /* Buyer / seller pressure
+   * Start from the directional probability ratio, then skew it using:
+   *   1. AI action signal direction + confidence (breaks 50/50 ties)
+   *   2. Volume confirmation nudge (±8 pts)
+   * This prevents the meter from always reading 50/50 when up ≈ down.
+   */
+  const buyerPressure = useMemo(() => {
+    // Base ratio from probability
+    let bp = (upPct + downPct) > 0
+      ? Math.round((upPct / (upPct + downPct)) * 100)
+      : 50;
+
+    // Action-signal bias — confidence above 50% pulls the needle
+    const sig  = actionSignal?.action;
+    const conf = clamp(actionSignal?.confidence ?? 50);
+    if (sig === "BUY" && conf > 50) {
+      bp = clamp(Math.round(bp + (conf - 50) * 0.6));
+    } else if (sig === "SELL" && conf > 50) {
+      bp = clamp(Math.round(bp - (conf - 50) * 0.6));
+    }
+
+    // Volume confirmation nudge (−1 to +1 scale → −8 to +8 pts)
+    if (volumeData?.volumeConfirmation != null) {
+      bp = clamp(Math.round(bp + volumeData.volumeConfirmation * 8));
+    }
+
+    return bp;
+  }, [upPct, downPct, actionSignal, volumeData]);
   const sellerPressure = 100 - buyerPressure;
 
   /* Price targets from support/resistance */
@@ -742,12 +768,25 @@ export function ProbabilityPanel({
               ))}
             </div>
 
-            {/* Bias note */}
-            {geminiForecast.positioning_guidance?.notes && (
-              <p className="text-[11px] text-zinc-500 leading-relaxed border-t border-white/5 pt-2">
-                {geminiForecast.positioning_guidance.notes}
-              </p>
-            )}
+            {/* Bias note / neutral warning */}
+            <p className="text-[11px] leading-relaxed border-t border-white/5 pt-2">
+              {Math.abs(buyerPressure - 50) <= 5 ? (
+                <span className="text-amber-500 font-medium">
+                  ⚖ Market is evenly contested — no dominant pressure. Wait for a volume confirmation or trend break before entering.
+                </span>
+              ) : buyerPressure > 50 ? (
+                <span className="text-emerald-500">
+                  🟢 Buyer pressure dominates ({buyerPressure}% vs {sellerPressure}%). Momentum favours upside.
+                </span>
+              ) : (
+                <span className="text-red-500">
+                  🔴 Seller pressure dominates ({sellerPressure}% vs {buyerPressure}%). Downside pressure is building.
+                </span>
+              )}
+              {geminiForecast.positioning_guidance?.notes && (
+                <span className="text-zinc-500 ml-1">— {geminiForecast.positioning_guidance.notes}</span>
+              )}
+            </p>
           </CardContent>
         </Card>
       </div>

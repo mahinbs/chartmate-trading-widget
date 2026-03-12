@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -446,8 +446,8 @@ export default function AdminPublicDashboardPage() {
                       const isExpanded = expandedId === m.id;
                       const pts = getPoints(m);
                       return (
-                        <>
-                          <TableRow key={m.id} className="border-white/5 hover:bg-white/5 transition-colors">
+                        <React.Fragment key={m.id}>
+                          <TableRow className="border-white/5 hover:bg-white/5 transition-colors">
                             <TableCell className="text-xs font-mono text-zinc-500">{m.key}</TableCell>
                             <TableCell>
                               <Input 
@@ -555,7 +555,7 @@ export default function AdminPublicDashboardPage() {
                               </TableCell>
                             </TableRow>
                           )}
-                        </>
+                        </React.Fragment>
                       );
                     })}
                   </TableBody>

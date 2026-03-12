@@ -9,9 +9,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { PlusCircle, Pencil, Power, Users, Link2, CalendarDays, Loader2, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { PlusCircle, Pencil, Power, Users, Link2, CalendarDays, Loader2, AlertTriangle, CheckCircle2, SendHorizonal, Copy } from "lucide-react";
 import { daysRemaining } from "@/hooks/useWhitelabel";
 import type { WhitelabelTenant } from "@/hooks/useWhitelabel";
+import { useAdmin } from "@/hooks/useAdmin";
 
 const EMPTY: Partial<WhitelabelTenant> & { password?: string } = {
   slug: "",
@@ -42,6 +43,7 @@ function statusBadge(row: WhitelabelTenant) {
 }
 
 export default function AdminWhitelabelsPage() {
+  const { isSuperAdmin } = useAdmin();
   const [tenants, setTenants] = useState<WhitelabelTenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -49,6 +51,12 @@ export default function AdminWhitelabelsPage() {
   const [form, setForm] = useState<typeof EMPTY>({ ...EMPTY });
   const [isEdit, setIsEdit] = useState(false);
   const [tenantUsers, setTenantUsers] = useState<Record<string, number>>({});
+
+  // 5-year payment link dialog
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkSending, setLinkSending] = useState(false);
+  const [linkForm, setLinkForm] = useState({ email: "", brand_name: "", slug: "" });
+  const [generatedLink, setGeneratedLink] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -151,6 +159,45 @@ export default function AdminWhitelabelsPage() {
 
   const appUrl = window.location.origin;
 
+  const handleSendLink = async () => {
+    if (!linkForm.email.trim() || !linkForm.brand_name.trim() || !linkForm.slug.trim()) {
+      toast.error("Email, brand name, and slug are all required"); return;
+    }
+    setLinkSending(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await supabase.functions.invoke("create-wl-payment-link", {
+        body: {
+          email:      linkForm.email.trim().toLowerCase(),
+          brand_name: linkForm.brand_name.trim(),
+          slug:       linkForm.slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-"),
+        },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (res.error) throw new Error(res.error.message ?? "Failed");
+      const data = res.data as { payment_url?: string; error?: string };
+      if (data.error) throw new Error(data.error);
+      setGeneratedLink(data.payment_url ?? null);
+      toast.success("Payment link generated!");
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to generate link");
+    } finally {
+      setLinkSending(false);
+    }
+  };
+
+  if (!isSuperAdmin) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-center gap-4">
+        <AlertTriangle className="h-12 w-12 text-red-500" />
+        <h2 className="text-xl font-bold text-white">Super Admin Only</h2>
+        <p className="text-zinc-400 text-sm max-w-sm">
+          White-label tenant management is restricted to the platform super-admin. You do not have access to this section.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -158,9 +205,14 @@ export default function AdminWhitelabelsPage() {
           <h2 className="text-lg font-bold text-white">White-label Partners</h2>
           <p className="text-sm text-muted-foreground mt-0.5">Create and manage reseller / white-label tenants. Each gets a branded login page and their own dashboard.</p>
         </div>
-        <Button onClick={openCreate} className="gap-2">
-          <PlusCircle className="h-4 w-4" /> New White-label
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" className="gap-2 border-cyan-500/40 text-cyan-400 hover:bg-cyan-500/10" onClick={() => { setLinkForm({ email: "", brand_name: "", slug: "" }); setGeneratedLink(null); setLinkOpen(true); }}>
+            <SendHorizonal className="h-4 w-4" /> Send 5yr Payment Link
+          </Button>
+          <Button onClick={openCreate} className="gap-2">
+            <PlusCircle className="h-4 w-4" /> New White-label
+          </Button>
+        </div>
       </div>
 
       {/* Summary cards */}
@@ -256,6 +308,98 @@ export default function AdminWhitelabelsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* 5-year payment link dialog */}
+      <Dialog open={linkOpen} onOpenChange={(v) => { setLinkOpen(v); if (!v) setGeneratedLink(null); }}>
+        <DialogContent className="sm:max-w-md bg-zinc-950 border-white/10">
+          <DialogHeader>
+            <DialogTitle className="text-white flex items-center gap-2">
+              <SendHorizonal className="h-4 w-4 text-cyan-400" />
+              Send 5-Year WL Payment Link
+            </DialogTitle>
+          </DialogHeader>
+          {!generatedLink ? (
+            <div className="space-y-4 py-2">
+              <p className="text-sm text-zinc-400">
+                Generate a single-use $3,399 payment link for a specific partner.
+                Only that partner's email can complete the payment.
+              </p>
+              <div>
+                <Label className="text-zinc-300">Partner Email *</Label>
+                <Input
+                  type="email"
+                  placeholder="partner@example.com"
+                  value={linkForm.email}
+                  onChange={(e) => setLinkForm((f) => ({ ...f, email: e.target.value }))}
+                  className="bg-zinc-900 border-white/10 mt-1"
+                />
+              </div>
+              <div>
+                <Label className="text-zinc-300">Brand Name *</Label>
+                <Input
+                  placeholder="Acme Trading"
+                  value={linkForm.brand_name}
+                  onChange={(e) => setLinkForm((f) => ({ ...f, brand_name: e.target.value }))}
+                  className="bg-zinc-900 border-white/10 mt-1"
+                />
+              </div>
+              <div>
+                <Label className="text-zinc-300">URL Slug * <span className="text-xs text-muted-foreground">(e.g. acme-trading)</span></Label>
+                <Input
+                  placeholder="acme-trading"
+                  value={linkForm.slug}
+                  onChange={(e) => setLinkForm((f) => ({ ...f, slug: e.target.value }))}
+                  className="bg-zinc-900 border-white/10 mt-1 font-mono"
+                />
+                <p className="text-[10px] text-zinc-500 mt-0.5">{appUrl}/wl/{linkForm.slug || "slug"}</p>
+              </div>
+              <div className="rounded-lg bg-cyan-950/40 border border-cyan-500/30 px-4 py-3 text-xs text-cyan-400">
+                🔒 The link will only work for <strong>{linkForm.email || "the specified email"}</strong>.
+                Any other logged-in user will be blocked from paying.
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4 py-2">
+              <div className="flex items-center gap-2 text-green-400">
+                <CheckCircle2 className="h-5 w-5" />
+                <span className="font-medium">Link generated!</span>
+              </div>
+              <p className="text-sm text-zinc-400">Share this link with <strong className="text-white">{linkForm.email}</strong>. It expires in 7 days.</p>
+              <div className="flex items-center gap-2 bg-zinc-900 border border-white/10 rounded-lg px-3 py-2">
+                <span className="text-xs text-cyan-400 font-mono flex-1 truncate">{generatedLink}</span>
+                <Button
+                  variant="ghost" size="sm"
+                  className="h-7 px-2 text-zinc-400 hover:text-white shrink-0"
+                  onClick={() => { navigator.clipboard.writeText(generatedLink!); toast.success("Copied!"); }}
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <p className="text-xs text-zinc-500">
+                The link is valid for 7 days. Once paid it cannot be reused.
+                You can view pending requests in your database under <code className="text-zinc-400">wl_payment_requests</code>.
+              </p>
+            </div>
+          )}
+          <DialogFooter>
+            {!generatedLink ? (
+              <>
+                <Button variant="outline" onClick={() => setLinkOpen(false)} className="border-white/10">Cancel</Button>
+                <Button
+                  onClick={handleSendLink}
+                  disabled={linkSending || !linkForm.email || !linkForm.brand_name || !linkForm.slug}
+                  className="bg-cyan-600 hover:bg-cyan-500"
+                >
+                  {linkSending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <SendHorizonal className="h-4 w-4 mr-2" />}
+                  Generate Link
+                </Button>
+              </>
+            ) : (
+              <Button onClick={() => setLinkOpen(false)} className="w-full">Done</Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Create / Edit dialog */}
       <Dialog open={open} onOpenChange={setOpen}>

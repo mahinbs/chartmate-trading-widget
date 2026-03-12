@@ -194,6 +194,28 @@ class TradeTrackingService {
   }
 
   /**
+   * Add more capital to an existing active trade. Recalculates avg entry, shares, SL/TP.
+   */
+  async addToPosition(params: {
+    tradeId: string;
+    additionalAmount: number;
+    currentPrice: number;
+    allowFractional?: boolean;
+  }) {
+    try {
+      const { data, error } = await supabase.functions.invoke('add-to-position', {
+        body: params,
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      return { data, error: null };
+    } catch (error: any) {
+      console.error('Error adding to position:', error);
+      return { data: null, error: error.message };
+    }
+  }
+
+  /**
    * Get trade price history
    */
   async getTradeHistory(tradeId: string) {
