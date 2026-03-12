@@ -8,7 +8,6 @@ const Navbar = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [hasBlogs, setHasBlogs] = useState(false);
-  const [hasDashboard, setHasDashboard] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -29,14 +28,10 @@ const Navbar = () => {
   useEffect(() => {
     const loadFlags = async () => {
       try {
-        const [{ count: blogCount }, { count: dashCount }] = await Promise.all([
-          supabase.from("blogs").select("id", { head: true, count: "exact" }),
-          supabase
-            .from("public_dashboard_metrics")
-            .select("id", { head: true, count: "exact" }),
+        const [{ count: blogCount }] = await Promise.all([
+          supabase.from("blogs").select("id", { head: true, count: "exact" })
         ]);
         setHasBlogs((blogCount ?? 0) > 0);
-        setHasDashboard((dashCount ?? 0) > 0);
       } catch (e) {
         console.error("Navbar flags error", e);
       }
@@ -122,14 +117,6 @@ const Navbar = () => {
                 Blogs
               </Link>
             )}
-            {hasDashboard && (
-              <Link
-                to="/dashboard"
-                className="text-white hover:text-primary font-medium transition-colors text-sm"
-              >
-                Dashboard
-              </Link>
-            )}
             <Link
               to="/contact-us"
               className="bg-primary hover:bg-primary-hover text-white px-6 py-2.5 rounded text-sm font-bold transition-colors shadow-sm"
@@ -210,19 +197,6 @@ const Navbar = () => {
               >
                 <span className="text-sm font-medium uppercase tracking-wider">
                   Blogs
-                </span>
-                <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_10px_rgba(34,211,238,0.6)] group-hover:scale-125 transition-transform" />
-              </Link>
-            )}
-            
-            {hasDashboard && (
-              <Link
-                to="/dashboard"
-                className="flex items-center justify-between rounded-xl px-3 py-3 text-left text-gray-200 hover:bg-white/5 hover:text-white transition-colors group"
-                onClick={() => setIsMobileMenuOpen(false)}
-              >
-                <span className="text-sm font-medium uppercase tracking-wider">
-                  Dashboard
                 </span>
                 <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_10px_rgba(34,211,238,0.6)] group-hover:scale-125 transition-transform" />
               </Link>

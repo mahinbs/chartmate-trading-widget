@@ -26,17 +26,17 @@ const scrollToSection = (id: string) => {
 const AiPredictionFooter: React.FC = () => {
   const year = new Date().getFullYear();
   const [hasBlogs, setHasBlogs] = useState(false);
-  const [hasDashboard, setHasDashboard] = useState(false);
+  // const [hasDashboard, setHasDashboard] = useState(false);
 
   useEffect(() => {
     const loadFlags = async () => {
       try {
-        const [{ count: blogCount }, { count: dashCount }] = await Promise.all([
+        const [{ count: blogCount }] = await Promise.all([
           supabase.from('blogs').select('id', { head: true, count: 'exact' }),
-          supabase.from('public_dashboard_metrics').select('id', { head: true, count: 'exact' }),
+          // supabase.from('public_dashboard_metrics').select('id', { head: true, count: 'exact' }),
         ]);
         setHasBlogs((blogCount ?? 0) > 0);
-        setHasDashboard((dashCount ?? 0) > 0);
+        // setHasDashboard((dashCount ?? 0) > 0);
       } catch (e) {
         console.error('Footer flags error', e);
       }
@@ -47,7 +47,7 @@ const AiPredictionFooter: React.FC = () => {
   const navItems = [
     ...BASE_NAV_ITEMS,
     ...(hasBlogs ? [{ id: "blogs", label: "Blogs", isRoute: true }] : []),
-    ...(hasDashboard ? [{ id: "dashboard", label: "Dashboard", isRoute: true }] : []),
+    // ...(hasDashboard ? [{ id: "dashboard", label: "Dashboard", isRoute: true }] : []),
   ];
 
   const handleNavClick = (id: string) => {
