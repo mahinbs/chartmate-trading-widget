@@ -1,8 +1,67 @@
-import React from 'react';
-import { Check } from 'lucide-react';
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Check, Loader2 } from 'lucide-react';
 import { ScrollReveal } from '../ui/ScrollReveal';
+import { createCheckoutSession } from '@/services/stripeService';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
+import { Button } from '../ui/button';
+import { Input } from '../ui/input';
+import { Label } from '../ui/label';
+
+const WL_PLANS = [
+    { id: "wl_1_year", name: "1 Year License", price: "$1,999", originalPrice: "$2,499", duration: "/ 1 year", badge: "Standard", badgeColor: "bg-gray-700", isRecommended: false, planId: "wl_1_year" },
+    { id: "wl_2_years", name: "2 Year License", price: "$2,499", originalPrice: "$2,999", duration: "/ 2 years", badge: "Popular", badgeColor: "bg-secondary", isRecommended: true, planId: "wl_2_years" },
+    { id: "wl_5_years", name: "5 Year License", price: "$3,399", originalPrice: "$4,999", duration: "/ 5 years", badge: "Best Value", badgeColor: "bg-cyan-500 text-black", isRecommended: false, planId: "wl_5_years", contactOnly: true },
+];
 
 const Pricing = () => {
+    const navigate = useNavigate();
+    const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
+    const [wlDialogOpen, setWlDialogOpen] = useState(false);
+    const [wlPlan, setWlPlan] = useState<typeof WL_PLANS[0] | null>(null);
+    const [brandName, setBrandName] = useState("");
+    const [slug, setSlug] = useState("");
+
+    const handleGetPlan = async (plan: typeof WL_PLANS[0]) => {
+        if (plan.contactOnly) {
+            document.getElementById("contact")?.scrollIntoView({ behavior: "smooth" });
+            return;
+        }
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+            toast.error("Please sign in to purchase");
+            navigate("/auth?redirect=" + encodeURIComponent("/white-label#pricing"));
+            return;
+        }
+        setWlPlan(plan);
+        setBrandName("");
+        setSlug("");
+        setWlDialogOpen(true);
+    };
+
+    const handleWlCheckout = async () => {
+        if (!wlPlan) return;
+        const bn = brandName.trim() || "My Brand";
+        const s = slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-") || "my-brand";
+        setLoadingPlan(wlPlan.planId);
+        const result = await createCheckoutSession({
+            plan_id: wlPlan.planId,
+            type: "whitelabel",
+            success_url: window.location.origin + "/?checkout=success&type=wl",
+            cancel_url: window.location.origin + "/white-label#pricing",
+            wl: { brand_name: bn, slug: s },
+        });
+        setLoadingPlan(null);
+        setWlDialogOpen(false);
+        if (result.error) {
+            toast.error(result.error);
+            return;
+        }
+        if (result.url) window.location.href = result.url;
+    };
+
     return (
         <section id="pricing" className="py-16 bg-black relative">
             <div className="container mx-auto px-4 relative z-10">
@@ -18,39 +77,7 @@ const Pricing = () => {
                 </ScrollReveal>
 
                 <div className="grid lg:grid-cols-3 gap-8 max-w-6xl mx-auto items-center">
-                    {[
-                        {
-                            name: "1 Year License",
-                            price: "$1,999",
-                            originalPrice: "$2,499",
-                            duration: "/ 1 year",
-                            inrPrice: "₹1,81,909",
-                            badge: "Standard",
-                            badgeColor: "bg-gray-700",
-                            isRecommended: false,
-                            tagline: "Start your own software business. Sell licenses and keep the profits."
-                        },
-                        {
-                            name: "5 Year License",
-                            price: "$3,399",
-                            originalPrice: "$4,999",
-                            duration: "/ 5 years",
-                            inrPrice: "₹3,09,500",
-                            badge: "Best Value",
-                            badgeColor: "bg-cyan-500 text-black",
-                            isRecommended: true
-                        },
-                        {
-                            name: "2 Year License",
-                            price: "$2,499",
-                            originalPrice: "$2,999",
-                            duration: "/ 2 years",
-                            inrPrice: "₹2,27,409",
-                            badge: "Popular",
-                            badgeColor: "bg-secondary",
-                            isRecommended: false
-                        }
-                    ].map((plan, index) => (
+                    {WL_PLANS.map((plan, index) => (
                         <ScrollReveal key={index} delay={index * 0.2} direction="up">
                             <div className={`rounded-3xl p-8 lg:p-10 flex flex-col h-full relative overflow-hidden group transition-all duration-300 ${plan.isRecommended ? 'bg-gradient-to-b from-gray-900 via-zinc-900 to-black border border-cyan-500 shadow-[0_0_40px_rgba(6,182,212,0.2)] md:scale-105 z-20' : 'bg-zinc-900/50 border border-white/10 hover:border-white/30 z-10'}`}>
 
@@ -71,11 +98,7 @@ const Pricing = () => {
                                             <span className="text-5xl font-black text-white">{plan.price}</span>
                                             <span className="text-gray-400 font-medium text-sm">{plan.duration}</span>
                                         </div>
-                                        <span className="text-gray-500 text-sm mt-1">or {plan.inrPrice} {plan.duration}</span>
                                     </div>
-                                    {plan.tagline && (
-                                        <p className="text-gray-400 text-sm mt-4 italic max-w-xs mx-auto">{plan.tagline}</p>
-                                    )}
                                 </div>
 
                                 <div className="space-y-6 mb-8 flex-grow relative z-10">
@@ -124,14 +147,46 @@ const Pricing = () => {
                                     </div>
                                 </div>
 
-                                <a href="#contact" className={`w-full block text-center ${plan.isRecommended ? 'bg-cyan-500 hover:bg-primary text-black shadow-[0_0_20px_rgba(6,182,212,0.3)]' : 'bg-white/10 hover:bg-white/20 text-white'} font-bold py-4 rounded-xl transition-all relative z-10 text-lg`}>
-                                    Get {plan.name}
-                                </a>
+                                <button
+                                    type="button"
+                                    onClick={() => handleGetPlan(plan)}
+                                    disabled={!!loadingPlan}
+                                    className={`w-full block text-center ${plan.isRecommended ? 'bg-cyan-500 hover:bg-primary text-black shadow-[0_0_20px_rgba(6,182,212,0.3)]' : 'bg-white/10 hover:bg-white/20 text-white'} font-bold py-4 rounded-xl transition-all relative z-10 text-lg disabled:opacity-70`}
+                                >
+                                    {loadingPlan === plan.planId ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : (plan.contactOnly ? "Contact Us" : `Get ${plan.name}`)}
+                                </button>
                             </div>
                         </ScrollReveal>
                     ))}
                 </div>
             </div>
+
+            <Dialog open={wlDialogOpen} onOpenChange={setWlDialogOpen}>
+                <DialogContent className="bg-zinc-950 border-white/10 text-white">
+                    <DialogHeader>
+                        <DialogTitle>White Label Setup</DialogTitle>
+                    </DialogHeader>
+                    <p className="text-sm text-zinc-400">Enter your brand details before checkout. You can edit these later in the admin panel.</p>
+                    <div className="space-y-4 py-4">
+                        <div>
+                            <Label className="text-zinc-300">Brand Name</Label>
+                            <Input value={brandName} onChange={(e) => setBrandName(e.target.value)} placeholder="Acme Trading" className="bg-zinc-900 border-white/10 mt-1" />
+                        </div>
+                        <div>
+                            <Label className="text-zinc-300">URL Slug</Label>
+                            <Input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="acme-trading" className="bg-zinc-900 border-white/10 mt-1 font-mono" />
+                            <p className="text-xs text-zinc-500 mt-0.5">Login URL: {typeof window !== "undefined" ? window.location.origin : ""}/wl/{slug || "your-slug"}</p>
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setWlDialogOpen(false)} className="border-white/10">Cancel</Button>
+                        <Button onClick={handleWlCheckout} disabled={!!loadingPlan}>
+                            {loadingPlan ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                            Proceed to Checkout
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </section>
     );
 };

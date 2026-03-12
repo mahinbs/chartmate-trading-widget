@@ -2,6 +2,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { History, Sparkles } from "lucide-react";
 
 interface Props {
@@ -21,14 +22,19 @@ export function UsePreviousOrNewStrategyDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Strategy for this order</DialogTitle>
+          <div className="flex items-center gap-2 flex-wrap">
+            <DialogTitle>Strategy for this {action}</DialogTitle>
+            <Badge variant={action === "SELL" ? "destructive" : "default"} className="text-xs">
+              {action} {symbol}
+            </Badge>
+          </div>
           <DialogDescription>
-            Use your previous strategy for this {action} {symbol} order, or pick a new one with full market research and AI suggestions.
+            Each strategy has its own stop loss, take profit & hold period. Choose to reuse your last strategy or pick a new one with AI analysis.
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3 pt-2">
           <Button
-            className="w-full justify-start gap-3"
+            className="w-full justify-start gap-3 h-12"
             variant="outline"
             onClick={() => {
               onUsePrevious();
@@ -36,17 +42,17 @@ export function UsePreviousOrNewStrategyDialog({
             }}
           >
             <History className="h-5 w-5 shrink-0" />
-            <span>Use previous: <strong>{lastStrategyLabel}</strong></span>
+            <span>Reuse: <strong>{lastStrategyLabel}</strong></span>
           </Button>
           <Button
-            className="w-full justify-start gap-3"
+            className="w-full justify-start gap-3 h-12"
             onClick={() => {
               onChooseNew();
               onOpenChange(false);
             }}
           >
             <Sparkles className="h-5 w-5 shrink-0" />
-            <span>Choose new strategy (AI + market research)</span>
+            <span>New strategy (AI + backtest)</span>
           </Button>
         </div>
       </DialogContent>

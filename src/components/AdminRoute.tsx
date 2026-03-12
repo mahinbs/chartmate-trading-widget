@@ -8,9 +8,14 @@ interface AdminRouteProps {
   children: ReactNode;
 }
 
+/**
+ * Guards the /admin/* platform panel.
+ * Only users with role = 'super_admin' (i.e. trading@admin.com) can enter.
+ * Regular 'admin' users are WL partners — they use /wl/:slug/dashboard instead.
+ */
 export const AdminRoute = ({ children }: AdminRouteProps) => {
   const { user, loading: authLoading } = useAuth();
-  const { isAdmin, loading: adminLoading } = useAdmin();
+  const { isSuperAdmin, loading: adminLoading } = useAdmin();
 
   if (authLoading || adminLoading) {
     return (
@@ -26,7 +31,7 @@ export const AdminRoute = ({ children }: AdminRouteProps) => {
 
   if (!user) return <Navigate to="/auth" replace />;
   if ((user as any).user_metadata?.need_password_reset) return <Navigate to="/auth/change-password" replace />;
-  if (!isAdmin) return <Navigate to="/home" replace />;
+  if (!isSuperAdmin) return <Navigate to="/home" replace />;
 
   return <>{children}</>;
 };

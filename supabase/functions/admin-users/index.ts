@@ -25,7 +25,7 @@ async function assertAdmin(userId: string, supabaseClient: ReturnType<typeof cre
     .eq("user_id", userId)
     .maybeSingle();
   if (error) throw new Error(`Failed to validate role: ${error.message}`);
-  const hasAdminRole = roleRow?.role === "admin";
+  const hasAdminRole = roleRow?.role === "admin" || roleRow?.role === "super_admin";
   if (!hasAdminRole) throw new Error("Forbidden: admin access required");
 }
 

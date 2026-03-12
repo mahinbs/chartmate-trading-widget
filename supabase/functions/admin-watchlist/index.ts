@@ -32,7 +32,7 @@ async function assertAdmin(userId: string, supabaseClient: ReturnType<typeof cre
     .eq("user_id", userId)
     .maybeSingle();
   if (error) throw new Error(`Failed to validate role: ${error.message}`);
-  if (roleRow?.role !== "admin") {
+  if (roleRow?.role !== "admin" && roleRow?.role !== "super_admin") {
     throw new Error("Forbidden: admin access required");
   }
 }

@@ -5,6 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 export const useAdmin = () => {
   const { user, loading: authLoading } = useAuth();
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -16,6 +17,7 @@ export const useAdmin = () => {
 
       if (!user) {
         setIsAdmin(false);
+        setIsSuperAdmin(false);
         setLoading(false);
         return;
       }
@@ -30,12 +32,18 @@ export const useAdmin = () => {
         if (error) {
           console.error("Admin check error:", error);
           setIsAdmin(false);
+          setIsSuperAdmin(false);
         } else {
-          setIsAdmin((data as any)?.role === "admin");
+          const role = (data as any)?.role as string | undefined;
+          setIsSuperAdmin(role === "super_admin");
+          // Both admin and super_admin can access admin panel
+          // (super_admin is the master; regular 'admin' is a WL partner)
+          setIsAdmin(role === "admin" || role === "super_admin");
         }
       } catch (error) {
         console.error("Admin check failed:", error);
         setIsAdmin(false);
+        setIsSuperAdmin(false);
       } finally {
         setLoading(false);
       }
@@ -44,5 +52,5 @@ export const useAdmin = () => {
     checkAdmin();
   }, [user, authLoading]);
 
-  return { isAdmin, loading };
+  return { isAdmin, isSuperAdmin, loading };
 };

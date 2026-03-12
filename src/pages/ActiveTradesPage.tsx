@@ -282,49 +282,115 @@ export default function ActiveTradesPage() {
 
       {/* Portfolio Summary */}
       {activeTrades.length > 0 && (
-        <div className="grid md:grid-cols-3 gap-4">
-          <Card className="glass-panel">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                Total Invested
-              </CardTitle>
+        <>
+          {/* Prominent Real-time P/L Card */}
+          <Card className="glass-panel border-teal-500/30 bg-gradient-to-br from-zinc-900/90 to-zinc-950">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-teal-400 animate-pulse" title="Live prices" />
+                  Profit & Loss (Real-time)
+                </CardTitle>
+                <Badge variant="secondary" className="text-xs bg-teal-500/20 text-teal-400 border-teal-500/40">
+                  Live
+                </Badge>
+              </div>
             </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold text-white">
-                {currencySymbol}
-                {stats.totalInvested.toFixed(2)}
-              </p>
+            <CardContent className="space-y-4">
+              <div className="flex flex-wrap items-baseline gap-4">
+                <div>
+                  <p className="text-sm text-muted-foreground mb-1">Total P&L</p>
+                  <p className={`text-3xl md:text-4xl font-bold ${stats.totalPnL >= 0 ? 'text-teal-400' : 'text-red-500'}`}>
+                    {stats.totalPnL >= 0 ? '+' : ''}
+                    {currencySymbol}
+                    {stats.totalPnL.toFixed(2)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground mb-1">Return</p>
+                  <p className={`text-2xl md:text-3xl font-bold ${stats.totalPnLPercentage >= 0 ? 'text-teal-400' : 'text-red-500'}`}>
+                    {stats.totalPnLPercentage >= 0 ? '+' : ''}{stats.totalPnLPercentage.toFixed(2)}%
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground mb-1">Invested</p>
+                  <p className="text-xl font-semibold text-white">
+                    {currencySymbol}{stats.totalInvested.toFixed(2)}
+                  </p>
+                </div>
+              </div>
+              {/* Per-trade P&L breakdown */}
+              <div className="border-t border-white/10 pt-3">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Per position</p>
+                <div className="flex flex-wrap gap-2">
+                  {activeTrades.map((t) => {
+                    const pnl = t.currentPnl ?? 0;
+                    const pnlConverted = convertAmount(pnl, t.symbol);
+                    const isPos = pnlConverted >= 0;
+                    return (
+                      <div
+                        key={t.id}
+                        className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 bg-white/5 border border-white/10 text-sm"
+                      >
+                        <span className="font-medium text-white truncate max-w-[100px]">{t.symbol}</span>
+                        <span className={isPos ? 'text-teal-400' : 'text-red-500'}>
+                          {isPos ? '+' : ''}{currencySymbol}{pnlConverted.toFixed(2)}
+                        </span>
+                        <span className="text-muted-foreground text-xs">
+                          ({t.currentPnlPercentage != null ? `${t.currentPnlPercentage >= 0 ? '+' : ''}${t.currentPnlPercentage.toFixed(1)}%` : '—'})
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </CardContent>
           </Card>
 
-          <Card className="glass-panel">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                Total P&L
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className={`text-2xl font-bold ${stats.totalPnL >= 0 ? 'text-teal-400' : 'text-red-500'}`}>
-                {stats.totalPnL >= 0 ? '+' : ''}
-                {currencySymbol}
-                {stats.totalPnL.toFixed(2)}
-              </p>
-            </CardContent>
-          </Card>
+          <div className="grid md:grid-cols-3 gap-4">
+            <Card className="glass-panel">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                  Total Invested
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold text-white">
+                  {currencySymbol}
+                  {stats.totalInvested.toFixed(2)}
+                </p>
+              </CardContent>
+            </Card>
 
-          <Card className="glass-panel">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                Portfolio Return
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className={`text-2xl font-bold ${stats.totalPnLPercentage >= 0 ? 'text-teal-400' : 'text-red-500'}`}>
-                {stats.totalPnLPercentage >= 0 ? '+' : ''}{stats.totalPnLPercentage.toFixed(2)}%
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+            <Card className="glass-panel">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                  Total P&L
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className={`text-2xl font-bold ${stats.totalPnL >= 0 ? 'text-teal-400' : 'text-red-500'}`}>
+                  {stats.totalPnL >= 0 ? '+' : ''}
+                  {currencySymbol}
+                  {stats.totalPnL.toFixed(2)}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="glass-panel">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                  Portfolio Return
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className={`text-2xl font-bold ${stats.totalPnLPercentage >= 0 ? 'text-teal-400' : 'text-red-500'}`}>
+                  {stats.totalPnLPercentage >= 0 ? '+' : ''}{stats.totalPnLPercentage.toFixed(2)}%
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        </>
       )}
 
       {/* Trades Tabs */}
