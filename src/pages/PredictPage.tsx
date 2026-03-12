@@ -1234,7 +1234,7 @@ const PredictPage = () => {
                         size="lg"
                       >
                         <Timer className="mr-2 h-5 w-5" />
-                        Place Order
+                        Algo Trade
                       </Button>
 
                       {/* Paper Trade button */}
@@ -1526,7 +1526,7 @@ const PredictPage = () => {
                 <Button
                   className={`w-full py-5 rounded-xl ${plan.recommended ? 'bg-teal-500 hover:bg-teal-400 text-black shadow-lg shadow-teal-500/20' : 'bg-zinc-100 hover:bg-zinc-300 text-black'} font-bold transition-all`}
                   onClick={() => {
-                    navigate('/#pricing');
+                    navigate('/trading-dashboard');
                     setShowPremiumDialog(false);
                   }}
                 >
