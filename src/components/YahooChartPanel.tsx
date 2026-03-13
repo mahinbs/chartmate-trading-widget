@@ -67,6 +67,22 @@ function toTime(v: number | string): Time {
   return Math.floor(new Date(v).getTime() / 1000) as unknown as Time;
 }
 
+function formatLocalChartTime(t: Time): string {
+  // Render in the user's browser timezone/locale.
+  if (typeof t === "number") {
+    return new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+  // For business day points, show local date.
+  if (typeof t === "string") {
+    return new Date(`${t}T00:00:00`).toLocaleDateString();
+  }
+  // BusinessDay object fallback
+  if (typeof t === "object" && t && "year" in t && "month" in t && "day" in t) {
+    return new Date(t.year, t.month - 1, t.day).toLocaleDateString();
+  }
+  return String(t);
+}
+
 /* ─── Minimal Yahoo Finance protobuf decoder ───────────────────────────── */
 // Yahoo Finance WebSocket frames are base64-encoded protobuf messages.
 // Field map (reverse-engineered from yahoo-finance-websocket open projects):
@@ -141,9 +157,11 @@ const CROSSHAIR_CLR = "rgba(255,255,255,0.3)";
 export default function YahooChartPanel({
   symbol,
   displayName,
+  onLivePrice,
 }: {
   symbol: string;
   displayName?: string;
+  onLivePrice?: (price: number) => void;
 }) {
   const containerRef   = useRef<HTMLDivElement | null>(null);
   const chartRef       = useRef<IChartApi | null>(null);
@@ -183,6 +201,13 @@ export default function YahooChartPanel({
         textColor: TEXT_COLOR,
         fontFamily: "system-ui,-apple-system,BlinkMacSystemFont,'Inter',sans-serif",
         fontSize: 11,
+        // Hide library attribution logo so the panel looks native.
+        attributionLogo: false,
+      },
+      localization: {
+        // Use browser locale/timezone automatically.
+        locale: Intl.DateTimeFormat().resolvedOptions().locale,
+        timeFormatter: (time: Time) => formatLocalChartTime(time),
       },
       grid: {
         vertLines: { color: GRID_COLOR, style: LineStyle.Solid },
@@ -204,6 +229,7 @@ export default function YahooChartPanel({
         secondsVisible: false,
         fixLeftEdge: true,
         rightOffset: 5,
+        tickMarkFormatter: (time: Time) => formatLocalChartTime(time),
       },
       handleScroll: true,
       handleScale: true,
@@ -307,14 +333,16 @@ export default function YahooChartPanel({
       setLastCandles(candles);
       setMeta(data?.meta ?? null);
       applyCandles(candles);
-      if (!livePrice && data?.meta?.regularMarketPrice)
+      if (!livePrice && data?.meta?.regularMarketPrice) {
         setLivePrice(data.meta.regularMarketPrice);
+        onLivePrice?.(data.meta.regularMarketPrice);
+      }
     } catch (e: any) {
       setError(e?.message || "Failed to load chart data");
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [applyCandles, livePrice]);
+  }, [applyCandles, livePrice, onLivePrice]);
 
   /* ── Yahoo Finance WebSocket streaming ─────────────────────────────── */
   const connectWS = useCallback((sym: string) => {
@@ -340,6 +368,7 @@ export default function YahooChartPanel({
         if (msg.price && msg.price > 0) {
           const p = msg.price;
           setLivePrice(p);
+          onLivePrice?.(p);
           if (msg.change)       setLiveChange(msg.change);
           if (msg.changePercent) setLivePct(msg.changePercent);
 
@@ -373,7 +402,7 @@ export default function YahooChartPanel({
     };
 
     wsRef.current = ws;
-  }, []);
+  }, [onLivePrice]);
 
   /* ── re-build chart when chart type changes ─────────────────────────── */
   useEffect(() => {

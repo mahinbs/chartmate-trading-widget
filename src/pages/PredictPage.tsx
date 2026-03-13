@@ -39,6 +39,7 @@ import type { SymbolData } from "@/components/SymbolSearch";
 import { useAuth } from "@/hooks/useAuth";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useTradingIntegration } from "@/hooks/useTradingIntegration";
+import { useSubscription } from "@/hooks/useSubscription";
 import { TradingIntegrationModal } from "@/components/trading/TradingIntegrationModal";
 import { StrategySelectionDialog, STRATEGIES } from "@/components/trading/StrategySelectionDialog";
 import { UsePreviousOrNewStrategyDialog } from "@/components/trading/UsePreviousOrNewStrategyDialog";
@@ -222,6 +223,7 @@ const PredictPage = () => {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const { save: saveTradingIntegration, refresh: refreshTradingIntegration } = useTradingIntegration();
+  const { isPremium } = useSubscription();
   const [showIntegrationModal, setShowIntegrationModal] = useState(false);
   const [showStrategyDialog, setShowStrategyDialog] = useState(false);
   const [showPreviousOrNewDialog, setShowPreviousOrNewDialog] = useState(false);
@@ -229,6 +231,7 @@ const PredictPage = () => {
   const [displayCurrency, setDisplayCurrency] = useState<"INR" | "USD">("INR");
   const [isPaperTrade, setIsPaperTrade] = useState(false);
   const [showPremiumDialog, setShowPremiumDialog] = useState(false);
+  const [checkingOnboarding, setCheckingOnboarding] = useState(false);
 
   // ── After-order live P&L tracking state ──────────────────────────────────────
   const [placedTrade,      setPlacedTrade]      = useState<ActiveTrade | null>(null);
@@ -1302,10 +1305,45 @@ const PredictPage = () => {
                       {/* Two main buttons */}
                       <div className="grid grid-cols-2 gap-2">
                         <Button
-                          onClick={() => setShowPremiumDialog(true)}
+                          disabled={checkingOnboarding}
+                          onClick={async () => {
+                            if (!isPremium) {
+                              setShowPremiumDialog(true);
+                              return;
+                            }
+                            // Check algo_onboarding provisioning status
+                            setCheckingOnboarding(true);
+                            const { data: onboarding } = await (supabase as any)
+                              .from("algo_onboarding")
+                              .select("status")
+                              .eq("user_id", user?.id)
+                              .maybeSingle();
+                            setCheckingOnboarding(false);
+
+                            if (!onboarding) {
+                              // No onboarding form submitted yet
+                              navigate("/algo-setup");
+                              return;
+                            }
+                            if (onboarding.status === "pending") {
+                              toast.info("Your algo trading account is being set up. Our team will activate it within 24 hours.", { duration: 5000 });
+                              return;
+                            }
+                            // provisioned or active — proceed to strategy selection
+                            setIsPaperTrade(false);
+                            const { tradeTrackingService } = await import("@/services/tradeTrackingService");
+                            const last = await tradeTrackingService.getLastUsedStrategy();
+                            if (last) {
+                              const label = STRATEGIES.find(s => s.value === last.strategyType)?.label ?? last.strategyType;
+                              setLastUsedStrategy({ ...last, label });
+                              setShowPreviousOrNewDialog(true);
+                            } else {
+                              setShowStrategyDialog(true);
+                            }
+                          }}
                           className="py-5 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600"
                         >
-                          <Timer className="mr-2 h-4 w-4" />
+                          {checkingOnboarding ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Timer className="mr-2 h-4 w-4" />}
                           Place Order
                         </Button>
                         <Button
@@ -1347,12 +1385,21 @@ const PredictPage = () => {
                   const pnlPct = placedTrade.investmentAmount > 0
                     ? (pnl / placedTrade.investmentAmount) * 100
                     : 0;
-                  const isProfit = pnl >= 0;
+                  const isNeutral = Math.abs(pnl) < 0.005 && Math.abs(pnlPct) < 0.005;
+                  const isProfit = !isNeutral && pnl > 0;
+                  const pnlPrefix = isNeutral ? "" : isProfit ? "+" : "";
+                  const pnlTone = isNeutral ? "text-slate-400" : isProfit ? "text-green-400" : "text-red-400";
+                  const pnlToneSoft = isNeutral ? "text-slate-500" : isProfit ? "text-green-500" : "text-red-500";
+                  const pnlBoxTone = isNeutral
+                    ? "bg-slate-500/10 border-slate-500/30"
+                    : isProfit
+                      ? "bg-green-500/10 border-green-500/30"
+                      : "bg-red-500/10 border-red-500/30";
                   const strategyLabel = STRATEGIES.find(s => s.value === placedTrade.strategyType)?.label ?? placedTrade.strategyType ?? "Strategy";
                   const isPaper = (placedTrade.brokerOrderId ?? "").startsWith("PAPER-");
 
                   return (
-                    <Card className={`border-2 ${isProfit ? "border-green-500/50 bg-green-500/5" : "border-red-500/50 bg-red-500/5"} shadow-xl`}>
+                    <Card className={`border-2 ${isNeutral ? "border-slate-500/40 bg-slate-500/5" : isProfit ? "border-green-500/50 bg-green-500/5" : "border-red-500/50 bg-red-500/5"} shadow-xl`}>
                       <CardContent className="p-4 space-y-3">
                         {/* Header */}
                         <div className="flex items-center gap-2 flex-wrap">
@@ -1382,13 +1429,13 @@ const PredictPage = () => {
                             <p className="text-muted-foreground">Live price</p>
                             <p className="font-bold text-sm text-white">{result.isCrypto ? "$" : "₹"}{livePrice.toLocaleString()}</p>
                           </div>
-                          <div className={`rounded border p-2 ${isProfit ? "bg-green-500/10 border-green-500/30" : "bg-red-500/10 border-red-500/30"}`}>
+                          <div className={`rounded border p-2 ${pnlBoxTone}`}>
                             <p className="text-muted-foreground">P&amp;L</p>
-                            <p className={`font-bold text-sm ${isProfit ? "text-green-400" : "text-red-400"}`}>
-                              {isProfit ? "+" : ""}{result.isCrypto ? "$" : "₹"}{Math.abs(pnl).toFixed(2)}
+                            <p className={`font-bold text-sm ${pnlTone}`}>
+                              {pnlPrefix}{result.isCrypto ? "$" : "₹"}{(isNeutral ? 0 : Math.abs(pnl)).toFixed(2)}
                             </p>
-                            <p className={`text-[10px] ${isProfit ? "text-green-500" : "text-red-500"}`}>
-                              {isProfit ? "+" : ""}{pnlPct.toFixed(2)}%
+                            <p className={`text-[10px] ${pnlToneSoft}`}>
+                              {pnlPrefix}{(isNeutral ? 0 : pnlPct).toFixed(2)}%
                             </p>
                           </div>
                         </div>
@@ -1902,14 +1949,14 @@ const PredictPage = () => {
                     setShowPremiumDialog(false);
                     const result = await createCheckoutSession({
                       plan_id: plan.id,
-                      success_url: window.location.origin + '/?checkout=success',
+                      success_url: window.location.origin + '/algo-setup?checkout=success',
                       cancel_url: window.location.origin + '/predict',
                     });
-                    if (result.error) {
+                    if ("error" in result) {
                       toast.error(result.error);
                       return;
                     }
-                    if (result.url) window.location.href = result.url;
+                    if ("url" in result) window.location.href = result.url;
                   }}
                 >
                   {plan.recommended ? 'Get Pro Plan' : 'Get Started'}

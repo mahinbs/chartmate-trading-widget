@@ -682,7 +682,7 @@ const MainLandingPage = () => {
                                         }
                                         const result = await createCheckoutSession({
                                             plan_id: plan.id,
-                                            success_url: window.location.origin + '/?checkout=success',
+                                            success_url: window.location.origin + '/algo-setup?checkout=success',
                                             cancel_url: window.location.origin + '/#pricing',
                                         });
                                         if (result.error) {

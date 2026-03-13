@@ -1,7 +1,7 @@
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Users, BarChart3, FileText, Globe, Link2, Mail, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Users, BarChart3, FileText, Globe, Link2, Mail, ShieldCheck, Zap } from "lucide-react";
 import { useAdmin } from "@/hooks/useAdmin";
 import { Badge } from "@/components/ui/badge";
 
@@ -23,6 +23,8 @@ export function AdminLayout() {
     ? "contacts"
     : path.includes("/admin/whitelabels")
     ? "whitelabels"
+    : path.includes("/admin/algo-requests")
+    ? "algo-requests"
     : "users";
 
   return (
@@ -51,6 +53,7 @@ export function AdminLayout() {
               else if (v === "affiliates") navigate("/admin/affiliates");
               else if (v === "contacts") navigate("/admin/contacts");
               else if (v === "whitelabels") navigate("/admin/whitelabels");
+              else if (v === "algo-requests") navigate("/admin/algo-requests");
               else navigate("/admin/users");
             }}
           >
@@ -78,6 +81,10 @@ export function AdminLayout() {
               <TabsTrigger value="contacts" className="flex items-center gap-1.5 text-xs">
                 <Mail className="h-3.5 w-3.5" />
                 Contacts
+              </TabsTrigger>
+              <TabsTrigger value="algo-requests" className="flex items-center gap-1.5 text-xs">
+                <Zap className="h-3.5 w-3.5" />
+                Algo Requests
               </TabsTrigger>
               {/* White-labels tab: super-admin only */}
               {isSuperAdmin && (

@@ -157,6 +157,8 @@ interface Props {
   onConfirm:       (strategy: string, product: string, action: "BUY" | "SELL", sellPosition?: { entryPrice: number; shares: number }) => void;
 }
 
+type SellMode = "short" | "normal";
+
 // ── Verdict helpers ────────────────────────────────────────────────────────────
 
 function verdictLabel(v?: string) {
@@ -323,6 +325,7 @@ export function StrategySelectionDialog({
 
   // User-selected entry direction — starts from the prop but can be overridden in the dialog
   const [selectedAction, setSelectedAction] = useState<"BUY" | "SELL">(action);
+  const [sellMode, setSellMode] = useState<SellMode>("short");
 
   // SELL position details — optional fields so we can calculate accurate P&L
   const [sellBuyPrice,  setSellBuyPrice]  = useState("");
@@ -333,12 +336,14 @@ export function StrategySelectionDialog({
   const [backtestLoading, setBacktestLoading]  = useState(false);
   const [backtestError,   setBacktestError]    = useState<string | null>(null);
   const backtestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const aiCacheRef = useRef<Record<string, AiResult>>({});
 
   // ── On dialog open: reset non-action state and history ───────────────────────
   useEffect(() => {
     if (!open) return;
     setSelected(currentStrategy || "trend_following");
     setSelectedAction(action);
+    setSellMode("short");
     setExpandedDetails(null);
     setSellBuyPrice("");
     setSellNumShares("");
@@ -346,33 +351,45 @@ export function StrategySelectionDialog({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  const effectiveAction: "BUY" | "SELL" =
+    selectedAction === "SELL" && sellMode === "normal" ? "BUY" : selectedAction;
+  const actionLabel =
+    selectedAction === "SELL" && sellMode === "normal" ? "SELL (Normal)" : selectedAction;
+
   // ── Reload AI analysis whenever dialog opens or action direction changes ─────
   useEffect(() => {
     if (!open) return;
-    setAiResult(null);
+    const cacheKey = `${symbol}|${investment}|${timeframe}|${effectiveAction}`;
+    const cached = aiCacheRef.current[cacheKey];
     setAiError(null);
     setBacktestResult(null);
     setBacktestError(null);
-    loadAiAnalysis(selectedAction);
+    if (cached) {
+      setAiResult(cached);
+      setAiLoading(false);
+      return;
+    }
+    setAiResult(null);
+    loadAiAnalysis(effectiveAction);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, selectedAction]);
+  }, [open, effectiveAction, symbol, investment, timeframe]);
 
   // Auto-run backtest whenever selected strategy or action direction changes (debounced 600ms)
   useEffect(() => {
     if (!open || !selected) return;
     if (backtestTimerRef.current) clearTimeout(backtestTimerRef.current);
     backtestTimerRef.current = setTimeout(() => {
-      runBacktest(selected, selectedAction);
+      runBacktest(selected, effectiveAction);
     }, 600);
     return () => { if (backtestTimerRef.current) clearTimeout(backtestTimerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, open, selectedAction]);
+  }, [selected, open, effectiveAction]);
 
   // ── Load user's personal trade history ───────────────────────────────────────
   const loadHistory = useCallback(async () => {
     setHistLoading(true);
     try {
-      const { data } = await supabase
+      const { data } = await (supabase as any)
         .from("active_trades")
         .select("strategy_type, actual_pnl, actual_pnl_percentage, status")
         .in("status", ["completed", "stopped_out", "target_hit", "cancelled"]);
@@ -428,7 +445,10 @@ export function StrategySelectionDialog({
       if (!data) { setAiError("No AI data returned"); return; }
       if ((data as any).aiError) setAiError((data as any).aiError as string);
       if (data.ranked && data.ranked.length > 0) {
-        setAiResult(data as AiResult);
+        const next = data as AiResult;
+        const cacheKey = `${symbol}|${investment}|${timeframe}|${actionOverride}`;
+        aiCacheRef.current[cacheKey] = next;
+        setAiResult(next);
         if (data.topPick?.strategy) setSelected(data.topPick.strategy);
       }
     } catch (e: any) {
@@ -496,8 +516,8 @@ export function StrategySelectionDialog({
   const blockReason = getBlockReason();
 
   // Auto-exit description for the chosen strategy + action
-  const autoExitText = AUTO_EXIT_NOTE[selected]?.[selectedAction === "BUY" ? "buy" : "sell"]
-    ?? `Once the order is placed, the system will automatically ${selectedAction === "BUY" ? "SELL" : "BUY"} when strategy exit conditions are met.`;
+  const autoExitText = AUTO_EXIT_NOTE[selected]?.[effectiveAction === "BUY" ? "buy" : "sell"]
+    ?? `Once the order is placed, the system will automatically ${effectiveAction === "BUY" ? "SELL" : "BUY"} when strategy exit conditions are met.`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -505,7 +525,7 @@ export function StrategySelectionDialog({
       <DialogContent className="sm:max-w-2xl max-h-[92vh] flex flex-col p-0 gap-0">
 
         {/* ── Fixed header ─────────────────────────────────────────────────── */}
-        <div className="shrink-0 px-6 pt-6 pb-3 border-b">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-3 border-b space-y-0">
           <div className="flex items-center gap-2 flex-wrap">
             <DialogTitle className="text-base font-semibold">
               {isPaperTrade ? "Paper Trade" : "Choose Strategy"}
@@ -514,7 +534,7 @@ export function StrategySelectionDialog({
               variant={selectedAction === "SELL" ? "destructive" : "default"}
               className={cn("text-xs", selectedAction === "BUY" ? "bg-green-600 hover:bg-green-600" : "")}
             >
-              {selectedAction} {symbol}
+              {actionLabel} {symbol}
             </Badge>
             {isPaperTrade && (
               <Badge className="bg-violet-500/20 text-violet-700 border border-violet-500/40 text-[10px]">
@@ -528,7 +548,7 @@ export function StrategySelectionDialog({
               : "AI ranks strategies for live market. Choose your entry direction first, then select the strategy that suits it."
             }
           </DialogDescription>
-        </div>
+        </DialogHeader>
 
         {/* ── Single scrollable body ────────────────────────────────────────── */}
         <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-3">
@@ -559,18 +579,48 @@ export function StrategySelectionDialog({
                 onClick={() => setSelectedAction("SELL")}
               >
                 <TrendingDown className="h-4 w-4" />
-                SELL First (Short / Exit)
+                SELL
               </Button>
             </div>
 
             {selectedAction === "SELL" && (
               <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSellMode("short")}
+                    className={cn(
+                      "rounded-md border p-2 text-left transition-colors",
+                      sellMode === "short"
+                        ? "border-red-500 bg-red-500/10"
+                        : "border-muted bg-background hover:border-red-400/60"
+                    )}
+                  >
+                    <p className="text-xs font-semibold text-red-500">Short Sell</p>
+                    <p className="text-[11px] text-muted-foreground mt-1">Sell first, buy later. Profit if price falls.</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSellMode("normal")}
+                    className={cn(
+                      "rounded-md border p-2 text-left transition-colors",
+                      sellMode === "normal"
+                        ? "border-blue-500 bg-blue-500/10"
+                        : "border-muted bg-background hover:border-blue-400/60"
+                    )}
+                  >
+                    <p className="text-xs font-semibold text-blue-500">Sell Existing (Normal)</p>
+                    <p className="text-[11px] text-muted-foreground mt-1">You already own shares. Uses long P&amp;L logic.</p>
+                  </button>
+                </div>
                 <div className="flex items-start gap-2 rounded bg-amber-500/10 border border-amber-500/30 p-2 text-xs text-amber-800">
                   <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
                   <span>
-                    {isPaperTrade
-                      ? `Paper SELL: we assume you already hold ${symbol} at the current market price. The strategy will auto-BUY to close the position when exit conditions are met.`
-                      : `SELL order: ensure you hold ${symbol} or that your broker account has short-selling / margin enabled.`
+                    {sellMode === "short"
+                      ? (isPaperTrade
+                        ? `Paper Short Sell: we assume a short is opened now. Strategy auto-BUY covers the short on exit.`
+                        : `Short Sell: ensure your broker account has short-selling / margin enabled.`)
+                      : `Normal Sell: this tracks an existing holding you bought earlier. Enter your buy price and quantity for correct P&L.`
                     }
                   </span>
                 </div>
@@ -585,7 +635,7 @@ export function StrategySelectionDialog({
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
                       <Label className="text-xs">Avg buy price / share</Label>
-                      <Input
+                        <Input
                         type="number"
                         min={0}
                         step="0.01"
@@ -594,7 +644,9 @@ export function StrategySelectionDialog({
                         onChange={e => setSellBuyPrice(e.target.value)}
                         className="h-8 text-sm"
                       />
-                      <p className="text-[10px] text-muted-foreground">default: current market price</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {sellMode === "normal" ? "recommended for accurate normal-sell P&L" : "default: current market price"}
+                      </p>
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs">Shares held</Label>
@@ -611,7 +663,9 @@ export function StrategySelectionDialog({
                         onChange={e => setSellNumShares(e.target.value)}
                         className="h-8 text-sm"
                       />
-                      <p className="text-[10px] text-muted-foreground">default: investment ÷ price</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {sellMode === "normal" ? "shares you already hold" : "default: investment ÷ price"}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -632,7 +686,7 @@ export function StrategySelectionDialog({
           <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
             Step 2 — Choose a{" "}
             <span className={cn("font-bold", selectedAction === "BUY" ? "text-green-700" : "text-red-700")}>
-              {selectedAction}
+              {actionLabel}
             </span>{" "}
             strategy
             {aiLoading && <Loader2 className="h-3 w-3 animate-spin ml-1" />}
@@ -821,14 +875,22 @@ export function StrategySelectionDialog({
                   )}
 
                   <div className="mt-2">
-                    <button
-                      type="button"
-                      className="text-xs text-primary hover:underline flex items-center gap-1"
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className="text-xs text-primary hover:underline flex items-center gap-1 cursor-pointer"
                       onClick={(e) => { e.stopPropagation(); setExpandedDetails(expandedDetails === s.value ? null : s.value); }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setExpandedDetails(expandedDetails === s.value ? null : s.value);
+                        }
+                      }}
                     >
                       {expandedDetails === s.value ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                       {expandedDetails === s.value ? "Hide" : "Show"} details
-                    </button>
+                    </span>
                     {expandedDetails === s.value && STRATEGY_DETAILS[s.value] && (
                       <div className="mt-2 p-2 rounded bg-muted/50 text-xs space-y-1 text-left" onClick={e => e.stopPropagation()}>
                         <p><strong>When to use:</strong> {STRATEGY_DETAILS[s.value].whenToUse}</p>
@@ -850,7 +912,7 @@ export function StrategySelectionDialog({
               Backtest & Strategy Validation —{" "}
               <span className="text-primary">{STRATEGIES.find(s => s.value === selected)?.label}</span>
               <span className={cn("ml-1", selectedAction === "BUY" ? "text-green-700" : "text-red-700")}>
-                ({selectedAction})
+                ({actionLabel})
               </span>
             </p>
             <BacktestPanel result={backtestResult} loading={backtestLoading} error={backtestError} />
@@ -949,7 +1011,8 @@ export function StrategySelectionDialog({
                     ? parseFloat(sellNumShares)
                     : (currentPrice && investment ? Math.floor(investment / currentPrice) : 1),
                 } : undefined;
-                onConfirm(selected, product, selectedAction, sellPosition);
+                const actionToSubmit = selectedAction === "SELL" && sellMode === "normal" ? "BUY" : selectedAction;
+                onConfirm(selected, product, actionToSubmit, sellPosition);
                 onOpenChange(false);
               }}
             >
@@ -962,9 +1025,9 @@ export function StrategySelectionDialog({
               ) : aiVerdictBlocked ? (
                 <><Lock className="h-4 w-4 mr-2" />Blocked — Choose Better Strategy</>
               ) : isPaperTrade ? (
-                <><FlaskConical className="h-4 w-4 mr-2" />Start Paper {selectedAction} Trade</>
+                <><FlaskConical className="h-4 w-4 mr-2" />Start Paper {actionLabel} Trade</>
               ) : (
-                <><CheckCircle2 className="h-4 w-4 mr-2" />Place {selectedAction} Order</>
+                <><CheckCircle2 className="h-4 w-4 mr-2" />Place {actionLabel} Order</>
               )}
             </Button>
           </div>

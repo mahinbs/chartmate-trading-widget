@@ -108,6 +108,10 @@ Deno.serve(async (req: Request) => {
           }
         }
       } else {
+        // For one-time payments (e.g. test_1_rupee) there's no subscription; set 1yr access
+        const periodEnd: string | null = obj?.current_period_end
+          ? new Date((obj.current_period_end as number) * 1000).toISOString()
+          : null;
         await supabase.from("user_subscriptions").upsert(
           {
             user_id:              userId,
@@ -115,9 +119,7 @@ Deno.serve(async (req: Request) => {
             stripe_subscription_id: subId ?? null,
             plan_id:              planId,
             status:               "active",
-            current_period_end:   obj?.current_period_end
-              ? new Date((obj.current_period_end as number) * 1000).toISOString()
-              : null,
+            current_period_end:   periodEnd,
             updated_at: new Date().toISOString(),
           },
           { onConflict: "user_id" },

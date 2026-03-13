@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { tradeTrackingService, ActiveTrade } from "@/services/tradeTrackingService";
-import { isUsdDenominatedSymbol, getTradingViewSymbol } from "@/lib/tradingview-symbols";
-import TradingViewWidget from "@/components/TradingViewWidget";
+import { isUsdDenominatedSymbol } from "@/lib/tradingview-symbols";
+import YahooChartPanel from "@/components/YahooChartPanel";
 import {
     ArrowLeft, Loader2, TrendingDown, TrendingUp, Target,
     AlertTriangle, CheckCircle, X, ExternalLink
@@ -67,26 +67,20 @@ export default function ActiveTradeDetailsPage() {
         loadFx();
     }, [trade, usdPerInr]);
 
-    useEffect(() => {
-        if (!trade || !isUsdDenominatedSymbol(trade.symbol)) return;
-        const base = trade.symbol.replace(/[^A-Z]/gi, "").replace(/USD$/i, "");
-        const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${base.toLowerCase()}usdt@trade`);
-        ws.onmessage = (event) => {
-            try {
-                const payload = JSON.parse(event.data);
-                const price = parseFloat(payload.p || payload.price);
-                if (price && !Number.isNaN(price)) {
-                    setTrade(prev => {
-                        if (!prev) return prev;
-                        const pnl = (price - prev.entryPrice) * prev.shares * (prev.action === "SELL" ? -1 : 1);
-                        const pnlPct = (pnl / prev.investmentAmount) * 100;
-                        return { ...prev, currentPrice: price, currentPnl: pnl, currentPnlPercentage: pnlPct, lastPriceUpdate: new Date().toISOString() };
-                    });
-                }
-            } catch { /* ignore */ }
-        };
-        return () => ws.close();
-    }, [trade?.symbol]);
+    const handleLivePrice = (price: number) => {
+        setTrade((prev) => {
+            if (!prev) return prev;
+            const pnl = (price - prev.entryPrice) * prev.shares * (prev.action === "SELL" ? -1 : 1);
+            const pnlPct = prev.investmentAmount > 0 ? (pnl / prev.investmentAmount) * 100 : 0;
+            return {
+                ...prev,
+                currentPrice: price,
+                currentPnl: pnl,
+                currentPnlPercentage: pnlPct,
+                lastPriceUpdate: new Date().toISOString(),
+            };
+        });
+    };
 
     const convertAmount = (value: number | undefined) => {
         const v = value ?? 0;
@@ -97,16 +91,34 @@ export default function ActiveTradeDetailsPage() {
         return v;
     };
 
-    // Close Tracking (marks trade closed in DB, no broker order)
+    // Sell action:
+    // - real trade => square off via broker, then close in DB
+    // - paper/manual => close in DB only
     const handleCloseTracking = async () => {
         if (!trade) return;
         setClosing(true);
-        const { error } = await tradeTrackingService.closeTrade(trade.id, trade.currentPrice || trade.entryPrice);
-        if (!error) {
-            toast({ title: "Trade Closed", description: "Successfully closed active tracking." });
-            navigate("/active-trades");
+        const isPaperTrade = trade.brokerOrderId?.startsWith("PAPER-") ?? false;
+        if (!isPaperTrade && trade.brokerOrderId) {
+            const { exitOrderId, error } = await tradeTrackingService.squareOff(trade.id);
+            if (!error) {
+                toast({
+                    title: "Trade Squared Off",
+                    description: exitOrderId
+                        ? `Exit order placed on broker. Order ID: ${exitOrderId}`
+                        : "Exit order placed on broker.",
+                });
+                navigate("/active-trades");
+            } else {
+                toast({ title: "Error", description: error, variant: "destructive" });
+            }
         } else {
-            toast({ title: "Error", description: "Failed to close trade.", variant: "destructive" });
+            const { error } = await tradeTrackingService.closeTrade(trade.id, trade.currentPrice || trade.entryPrice);
+            if (!error) {
+                toast({ title: "Trade Closed", description: "Successfully closed active tracking." });
+                navigate("/active-trades");
+            } else {
+                toast({ title: "Error", description: "Failed to close trade.", variant: "destructive" });
+            }
         }
         setClosing(false);
     };
@@ -159,7 +171,15 @@ export default function ActiveTradeDetailsPage() {
 
     const assetCurrency = isUsdDenominatedSymbol(trade.symbol) ? "USD" : "INR";
     const currencySymbol = displayCurrency === "USD" ? "$" : "₹";
-    const isPositive = (trade.currentPnl ?? 0) >= 0;
+    const convertedPnl = convertAmount(trade.currentPnl);
+    const pnlPct = trade.currentPnlPercentage ?? 0;
+    const isNeutral = Math.abs(convertedPnl) < 0.005 && Math.abs(pnlPct) < 0.005;
+    const isPositive = !isNeutral && convertedPnl > 0;
+    const pnlTextClass = isNeutral ? "text-slate-400" : isPositive ? "text-[#1db152]" : "text-[#e53935]";
+    const pnlCardClass = isNeutral ? "text-slate-400" : isPositive ? "text-[#1db152]" : "text-red-400";
+    const pnlPrefix = isNeutral ? "" : isPositive ? "+" : "";
+    const displayPnl = isNeutral ? 0 : convertedPnl;
+    const displayPnlPct = isNeutral ? 0 : pnlPct;
     const formatPrice = (p: number) => p < 10 ? p.toFixed(5) : p.toFixed(2);
     const isNearStopLoss = trade.stopLossPrice && trade.currentPrice &&
         Math.abs(trade.currentPrice - trade.stopLossPrice) / trade.stopLossPrice < 0.05;
@@ -180,17 +200,17 @@ export default function ActiveTradeDetailsPage() {
                 onClick={() => setAddToPositionOpen(true)}
             >
                 <TrendingUp className="h-4 w-4 mr-2" />
-                Buy More / Add to Position
+                {trade.action === "SELL" ? "Sell More / Add to Short" : "Buy More / Add to Position"}
             </Button>
 
-            {/* View on TradingView */}
+            {/* View on Yahoo Finance */}
             <Button
                 variant="outline"
                 className="w-full border-white/10 text-slate-300 hover:bg-white/5 hover:text-white py-5"
-                onClick={() => window.open(`https://www.tradingview.com/chart/?symbol=${getTradingViewSymbol(trade.symbol)}`, '_blank')}
+                onClick={() => window.open(`https://finance.yahoo.com/chart/${encodeURIComponent(trade.symbol)}`, '_blank')}
             >
                 <ExternalLink className="h-4 w-4 mr-2" />
-                View on TradingView
+                View on Yahoo Finance
             </Button>
 
             {/* Primary: Close Tracking (Sell / mark done) */}
@@ -217,7 +237,7 @@ export default function ActiveTradeDetailsPage() {
             </div>
 
             <p className="text-[11px] text-center text-slate-500 leading-relaxed">
-                "Sell" closes this trade and updates the ChartMate database.
+                "Sell" squares off on broker for real trades (paper trades close in ChartMate only).
                 {trade.exchange && !isUsdDenominatedSymbol(trade.symbol)
                     ? ` Exchange: ${trade.exchange}.`
                     : ""}{" "}
@@ -296,21 +316,25 @@ export default function ActiveTradeDetailsPage() {
 
                         {/* Chart */}
                         <div className="mt-0 lg:flex-1 h-[45vh] lg:h-full min-h-[300px] bg-[#0d0e10] border-t border-white/5">
-                            <TradingViewWidget symbol={getTradingViewSymbol(trade.symbol)} interval="15" />
+                            <YahooChartPanel
+                                symbol={trade.symbol}
+                                displayName={trade.symbol}
+                                onLivePrice={handleLivePrice}
+                            />
                         </div>
 
                         {/* PnL Bar */}
                         <div className="px-6 py-4 border-t border-white/5 bg-[#111114] grid grid-cols-3 gap-4">
                             <div>
                                 <p className="text-[10px] text-slate-500 mb-0.5">Return</p>
-                                <p className={`text-base font-semibold ${isPositive ? 'text-[#1db152]' : 'text-[#e53935]'}`}>
-                                    {isPositive ? '+' : ''}{currencySymbol}{convertAmount(trade.currentPnl).toFixed(2)}
+                                <p className={`text-base font-semibold ${pnlTextClass}`}>
+                                    {pnlPrefix}{currencySymbol}{displayPnl.toFixed(2)}
                                 </p>
                             </div>
                             <div>
                                 <p className="text-[10px] text-slate-500 mb-0.5">Percentage</p>
-                                <p className={`text-base font-semibold ${isPositive ? 'text-[#1db152]' : 'text-[#e53935]'}`}>
-                                    {isPositive ? '+' : ''}{(trade.currentPnlPercentage || 0).toFixed(2)}%
+                                <p className={`text-base font-semibold ${pnlTextClass}`}>
+                                    {pnlPrefix}{displayPnlPct.toFixed(2)}%
                                 </p>
                             </div>
                             <div>
@@ -327,6 +351,17 @@ export default function ActiveTradeDetailsPage() {
                     ═══════════════════════════ */}
                     <div className="border-t lg:border-t-0 lg:border-l border-white/5 bg-[#141517] lg:overflow-y-auto flex flex-col">
                         <div className="p-5 lg:p-6 space-y-5 flex-1">
+
+                            {/* Live P/L */}
+                            <div className={`rounded-xl border p-4 ${isNeutral ? 'border-slate-500/30 bg-slate-500/10' : isPositive ? 'border-[#1db152]/40 bg-[#1db152]/10' : 'border-red-500/40 bg-red-500/10'}`}>
+                                <p className="text-[10px] text-slate-400 uppercase tracking-wider">Live Profit / Loss</p>
+                                <p className={`text-2xl font-bold mt-1 ${pnlCardClass}`}>
+                                    {pnlPrefix}{currencySymbol}{displayPnl.toFixed(2)}
+                                </p>
+                                <p className={`text-sm font-semibold mt-1 ${pnlCardClass}`}>
+                                    {pnlPrefix}{displayPnlPct.toFixed(2)}%
+                                </p>
+                            </div>
 
                             {/* Stop Loss / Take Profit */}
                             <div className="grid grid-cols-2 gap-3">
@@ -381,7 +416,7 @@ export default function ActiveTradeDetailsPage() {
                                 {trade.status === 'exit_zone' && (
                                     <Alert className="bg-orange-500/10 border-orange-500/40 text-orange-400 py-2.5">
                                         <AlertTriangle className="h-3.5 w-3.5" />
-                                        <AlertDescription className="text-xs">Exit Zone: Consider closing position.</AlertDescription>
+                                        <AlertDescription className="text-xs">Exit Zone warning only. Auto-exit triggers when SL/TP/holding-end is actually hit.</AlertDescription>
                                     </Alert>
                                 )}
                                 {trade.leverage && trade.leverage > 1 && (
@@ -431,7 +466,9 @@ export default function ActiveTradeDetailsPage() {
                                 {trade.lastPriceUpdate && (
                                     <div className="flex justify-between items-center">
                                         <span>Last Update</span>
-                                        <span className="font-medium text-slate-200">{new Date(trade.lastPriceUpdate).toLocaleString()}</span>
+                                        <span className="font-medium text-slate-200">
+                                            {new Date(trade.lastPriceUpdate).toLocaleString()}
+                                        </span>
                                     </div>
                                 )}
                             </div>
@@ -481,15 +518,15 @@ export default function ActiveTradeDetailsPage() {
                 <Dialog open={addToPositionOpen} onOpenChange={setAddToPositionOpen}>
                     <DialogContent className="bg-[#1a1b1e] text-white border-white/10 sm:max-w-md">
                         <DialogHeader>
-                            <DialogTitle>Add to Position</DialogTitle>
+                            <DialogTitle>{trade.action === "SELL" ? "Add to Short Position" : "Add to Position"}</DialogTitle>
                             <DialogDescription className="text-slate-400">
-                                Add more capital to this {trade.action} position. New avg entry &amp; shares will be calculated.
+                                Add more capital at the current market price to this {trade.action} position. New average entry &amp; shares will be calculated.
                                 Current: {currencySymbol}{convertAmount(trade.investmentAmount).toFixed(2)} · {trade.shares} shares @ {currencySymbol}{formatPrice(convertAmount(trade.entryPrice))}
                             </DialogDescription>
                         </DialogHeader>
                         <div className="space-y-4 py-4">
                             <div>
-                                <Label htmlFor="add-amount" className="text-slate-300">Additional amount ({assetCurrency})</Label>
+                                <Label htmlFor="add-amount" className="text-slate-300">{trade.action === "SELL" ? "Additional short amount" : "Additional amount"} ({assetCurrency})</Label>
                                 <Input
                                     id="add-amount"
                                     type="number"

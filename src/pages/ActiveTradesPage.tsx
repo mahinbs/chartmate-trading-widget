@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,44 @@ import { getTradingViewSymbol, isUsdDenominatedSymbol } from "@/lib/tradingview-
 import { RefreshCw, TrendingUp, TrendingDown, Activity, CheckCircle, Bell, BarChart3, Home } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
+function decodeYFProto(bytes: Uint8Array): { id?: string; price?: number } {
+  const out: Record<number, unknown> = {};
+  let pos = 0;
+  while (pos < bytes.length) {
+    const tagByte = bytes[pos++];
+    const field = tagByte >> 3;
+    const wire = tagByte & 0x7;
+    if (wire === 0) {
+      // varint
+      while (pos < bytes.length) {
+        const b = bytes[pos++];
+        if (!(b & 0x80)) break;
+      }
+    } else if (wire === 2) {
+      // length-delimited
+      let len = 0, shift = 0;
+      while (pos < bytes.length) {
+        const b = bytes[pos++];
+        len |= (b & 0x7f) << shift;
+        if (!(b & 0x80)) break;
+        shift += 7;
+      }
+      out[field] = new TextDecoder().decode(bytes.slice(pos, pos + len));
+      pos += len;
+    } else if (wire === 5) {
+      // 32-bit float
+      const dv = new DataView(bytes.buffer, bytes.byteOffset + pos, 4);
+      out[field] = dv.getFloat32(0, true);
+      pos += 4;
+    } else if (wire === 1) {
+      pos += 8;
+    } else {
+      break;
+    }
+  }
+  return { id: out[1] as string | undefined, price: out[2] as number | undefined };
+}
+
 export default function ActiveTradesPage() {
   const [activeTrades, setActiveTrades] = useState<ActiveTrade[]>([]);
   const [completedTrades, setCompletedTrades] = useState<ActiveTrade[]>([]);
@@ -21,6 +59,8 @@ export default function ActiveTradesPage() {
   const [usdPerInr, setUsdPerInr] = useState<number | null>(null);
   const [fxLoading, setFxLoading] = useState(false);
   const [fxError, setFxError] = useState<string | null>(null);
+  const yahooWsRef = useRef<WebSocket | null>(null);
+  const yahooReconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -197,6 +237,93 @@ export default function ActiveTradesPage() {
       ws?.close();
     };
   }, [activeTrades.map((t) => t.symbol).join(",")]);
+
+  // Yahoo WebSocket for non-USD symbols (NSE/BSE etc.) for truly live updates.
+  useEffect(() => {
+    const stockSymbols = Array.from(
+      new Set(
+        activeTrades
+          .filter((t) => !isUsdDenominatedSymbol(t.symbol))
+          .map((t) => t.symbol.toUpperCase())
+      )
+    );
+
+    if (stockSymbols.length === 0) {
+      if (yahooWsRef.current) {
+        yahooWsRef.current.close(1000, "no-symbols");
+        yahooWsRef.current = null;
+      }
+      if (yahooReconnectRef.current) {
+        clearTimeout(yahooReconnectRef.current);
+        yahooReconnectRef.current = null;
+      }
+      return;
+    }
+
+    const connectYahoo = () => {
+      if (yahooWsRef.current) yahooWsRef.current.close(1000, "reconnect");
+      if (yahooReconnectRef.current) {
+        clearTimeout(yahooReconnectRef.current);
+        yahooReconnectRef.current = null;
+      }
+
+      const ws = new WebSocket("wss://streamer.finance.yahoo.com");
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ subscribe: stockSymbols }));
+        console.log("⚡ Yahoo WS connected for", stockSymbols.join(", "));
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const raw = atob(event.data);
+          const bytes = new Uint8Array(raw.length);
+          for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+          const msg = decodeYFProto(bytes);
+          const symbol = (msg.id || "").toUpperCase();
+          const price = Number(msg.price);
+          if (!symbol || !price || Number.isNaN(price)) return;
+
+          setActiveTrades((prev) =>
+            prev.map((t) => {
+              if (t.symbol.toUpperCase() !== symbol) return t;
+              const pnl = (price - t.entryPrice) * t.shares * (t.action === "SELL" ? -1 : 1);
+              const pnlPct = (pnl / t.investmentAmount) * 100;
+              return {
+                ...t,
+                currentPrice: price,
+                currentPnl: pnl,
+                currentPnlPercentage: pnlPct,
+                lastPriceUpdate: new Date().toISOString(),
+              };
+            })
+          );
+        } catch {
+          // ignore malformed tick
+        }
+      };
+
+      ws.onclose = (e) => {
+        if (e.code !== 1000) {
+          yahooReconnectRef.current = setTimeout(connectYahoo, 2000);
+        }
+      };
+
+      ws.onerror = () => ws.close();
+      yahooWsRef.current = ws;
+    };
+
+    connectYahoo();
+    return () => {
+      if (yahooWsRef.current) {
+        yahooWsRef.current.close(1000, "cleanup");
+        yahooWsRef.current = null;
+      }
+      if (yahooReconnectRef.current) {
+        clearTimeout(yahooReconnectRef.current);
+        yahooReconnectRef.current = null;
+      }
+    };
+  }, [activeTrades.map((t) => t.symbol.toUpperCase()).sort().join(",")]);
 
   const convertAmount = (value: number, symbol?: string) => {
     const assetCurrency = symbol ? (isUsdDenominatedSymbol(symbol) ? "USD" : "INR") : "INR";
@@ -423,23 +550,27 @@ export default function ActiveTradesPage() {
             <>
               <div className="minimal-panel rounded-xl overflow-hidden">
                 {/* Table Header */}
-                <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 px-4 py-3 border-b border-white/5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider bg-black/20">
+                <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 px-4 py-3 border-b border-white/5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider bg-black/20">
                   <div>Market</div>
                   <div className="text-right w-24 sm:w-32">Entry</div>
                   <div className="text-right w-24 sm:w-32">Current</div>
+                  <div className="text-right w-24 sm:w-32">P/L</div>
                 </div>
 
                 {/* Table Rows */}
                 <div className="divide-y divide-white/5">
                   {activeTrades.map((trade) => {
                     const pnl = convertAmount(trade.currentPnl ?? 0, trade.symbol);
-                    const pnlPct = trade.currentPnlPercentage ?? 0;
-                    const isPositive = pnl >= 0;
+                    const isNeutral = Math.abs(pnl) < 0.005;
+                    const isPositive = !isNeutral && pnl > 0;
+                    const pnlClass = isNeutral ? "text-slate-400" : isPositive ? "text-teal-400" : "text-red-500";
+                    const pnlPrefix = isNeutral ? "" : isPositive ? "+" : "";
+                    const displayPnl = isNeutral ? 0 : pnl;
 
                     return (
                       <div
                         key={trade.id}
-                        className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center px-4 py-4 hover:bg-white/5 cursor-pointer transition-colors"
+                        className="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 items-center px-4 py-4 hover:bg-white/5 cursor-pointer transition-colors"
                         onClick={() => navigate(`/trade/${trade.id}`)}
                       >
                         {/* Market Column */}
@@ -453,11 +584,10 @@ export default function ActiveTradesPage() {
                               {trade.action}
                             </span>
                           </div>
-                          <div className={`flex items-center gap-1 text-[11px] font-medium ${isPositive ? 'text-teal-400' : 'text-red-400'}`}>
-                            {isPositive ? <TrendingUp className="h-3 w-3 shrink-0" /> : <TrendingDown className="h-3 w-3 shrink-0" />}
+                          <div className={`flex items-center gap-1 text-[11px] font-medium ${pnlClass}`}>
+                            {isNeutral ? null : isPositive ? <TrendingUp className="h-3 w-3 shrink-0" /> : <TrendingDown className="h-3 w-3 shrink-0" />}
                             <span className="truncate">
-                              {isPositive ? '+' : ''}{currencySymbol}{Math.abs(pnl).toFixed(2)}
-                              <span className="text-[10px] ml-1 opacity-80 text-muted-foreground">({isPositive ? '+' : ''}{pnlPct.toFixed(2)}%)</span>
+                              {pnlPrefix}{currencySymbol}{Math.abs(displayPnl).toFixed(2)}
                             </span>
                           </div>
                         </div>
@@ -470,8 +600,13 @@ export default function ActiveTradesPage() {
                         </div>
 
                         {/* Current Price Column */}
-                        <div className={`text-right w-24 sm:w-32 text-xs sm:text-sm font-bold tabular-nums ${isPositive ? 'text-teal-400' : 'text-red-400'}`}>
+                        <div className={`text-right w-24 sm:w-32 text-xs sm:text-sm font-bold tabular-nums ${pnlClass}`}>
                           {currencySymbol}{convertAmount(trade.currentPrice || trade.entryPrice, trade.symbol).toFixed(2)}
+                        </div>
+
+                        {/* P/L Column */}
+                        <div className={`text-right w-24 sm:w-32 text-xs sm:text-sm font-bold tabular-nums ${pnlClass}`}>
+                          {pnlPrefix}{currencySymbol}{Math.abs(displayPnl).toFixed(2)}
                         </div>
                       </div>
                     );

@@ -394,15 +394,16 @@ class TradeTrackingService {
 
       if (fetchError || !trade) throw fetchError || new Error('Trade not found');
 
-      // Calculate final P&L
-      const pnl = (currentPrice - trade.entry_price) * trade.shares;
-      const pnlPercentage = ((currentPrice - trade.entry_price) / trade.entry_price) * 100;
+      // Calculate final P&L (SELL positions gain when price goes down)
+      const side = trade.action === 'SELL' ? -1 : 1;
+      const pnl = (currentPrice - trade.entry_price) * trade.shares * side;
+      const pnlPercentage = (((currentPrice - trade.entry_price) / trade.entry_price) * 100) * side;
 
       // Determine exit reason
       let exitReason = 'user_closed';
-      if (trade.stop_loss_price && currentPrice <= trade.stop_loss_price) {
+      if (trade.stop_loss_price && ((trade.action === 'SELL' && currentPrice >= trade.stop_loss_price) || (trade.action !== 'SELL' && currentPrice <= trade.stop_loss_price))) {
         exitReason = 'stop_loss_triggered';
-      } else if (trade.take_profit_price && currentPrice >= trade.take_profit_price) {
+      } else if (trade.take_profit_price && ((trade.action === 'SELL' && currentPrice <= trade.take_profit_price) || (trade.action !== 'SELL' && currentPrice >= trade.take_profit_price))) {
         exitReason = 'target_hit';
       } else if (trade.expected_exit_time && new Date() >= new Date(trade.expected_exit_time)) {
         exitReason = 'holding_period_ended';

@@ -58,9 +58,11 @@ Deno.serve(async (req: Request) => {
     const cancelUrl  = (body.cancel_url  as string) || `${APP_URL}/?checkout=cancelled`;
     const wlPayload  = body.wl as { brand_name?: string; slug?: string; token?: string } | undefined;
 
-    const priceId = PRICE_IDS[planId] || PRICE_IDS.proPlan;
+    const priceId = PRICE_IDS[planId] || (planId === "test_1_rupee" ? "" : PRICE_IDS.proPlan);
     if (!priceId) {
-      return new Response(JSON.stringify({ error: `Price for plan ${planId} not configured` }), { status: 400, headers });
+      const msg = `Price for plan ${planId} not configured. Set STRIPE_PRICE_TEST_1R in Supabase secrets.`;
+      console.error("create-checkout-session 400:", msg);
+      return new Response(JSON.stringify({ error: msg }), { status: 400, headers });
     }
 
     // WL 5yr — one-time payment, validate the admin-issued token
@@ -113,7 +115,7 @@ Deno.serve(async (req: Request) => {
     const formBody = new URLSearchParams();
 
     if (isWl5yr) {
-      // One-time payment mode for 5-year WL
+      // One-time payment mode (5yr WL only)
       formBody.append("mode", "payment");
       formBody.append("payment_method_types[]", "card");
       formBody.append("line_items[0][price]", priceId);
@@ -152,10 +154,10 @@ Deno.serve(async (req: Request) => {
 
     const stripeData = await stripeRes.json().catch(() => ({}));
     if (!stripeRes.ok) {
-      return new Response(
-        JSON.stringify({ error: (stripeData as { error?: { message?: string } }).error?.message ?? "Stripe error" }),
-        { status: 400, headers },
-      );
+      const msg = (stripeData as { error?: { message?: string } }).error?.message;
+      const stripeErr = msg ?? (JSON.stringify(stripeData) || "Stripe error");
+      console.error("create-checkout-session Stripe 400:", stripeErr);
+      return new Response(JSON.stringify({ error: stripeErr }), { status: 400, headers });
     }
 
     const sessionId = (stripeData as { id?: string }).id;

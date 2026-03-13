@@ -47,6 +47,28 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers });
     }
 
+    // ── Verify active subscription ────────────────────────────────────────
+    const { data: sub } = await supabase
+      .from("user_subscriptions")
+      .select("status, current_period_end")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    const isActiveSub =
+      sub &&
+      sub.status === "active" &&
+      (!sub.current_period_end || new Date(sub.current_period_end) > new Date());
+
+    if (!isActiveSub) {
+      return new Response(
+        JSON.stringify({
+          error: "An active subscription is required to place live orders. Please purchase a plan.",
+          error_code: "NO_SUBSCRIPTION",
+        }),
+        { status: 403, headers },
+      );
+    }
+
     // ── Load user's OpenAlgo API key from DB ──────────────────────────────
     const { data: integration, error: dbError } = await supabase
       .from("user_trading_integration")

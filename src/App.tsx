@@ -26,6 +26,7 @@ import AdminPublicDashboardPage from "./pages/admin/AdminPublicDashboardPage";
 import AdminAffiliatesPage from "./pages/admin/AdminAffiliatesPage";
 import AdminContactsPage from "./pages/admin/AdminContactsPage";
 import AdminWhitelabelsPage from "./pages/admin/AdminWhitelabelsPage";
+import AdminAlgoRequestsPage from "./pages/admin/AdminAlgoRequestsPage";
 import BlogsPage from "./pages/BlogsPage";
 import BlogDetailPage from "./pages/BlogDetailPage";
 import PublicDashboardPage from "./pages/PublicDashboardPage";
@@ -44,6 +45,7 @@ import AIPobabilityEnginePage from "./pages/AIPobabilityEnginePage";
 import AffiliatePartnerPage from "./pages/AffiliatePartnerPage";
 import TradingDashboardPage from "./pages/TradingDashboardPage";
 import WlCheckoutPage from "./pages/WlCheckoutPage";
+import AlgoOnboardingPage from "./pages/AlgoOnboardingPage";
 
 // OpenAlgo ping temporarily disabled in mock-order mode to avoid CORS noise
 
@@ -77,6 +79,7 @@ const App = () => (
                 }
               />
               <Route path="/wl-checkout/:token" element={<WlCheckoutPage />} />
+              <Route path="/algo-setup" element={<AlgoOnboardingPage />} />
               <Route path="/contact-us" element={<ContactUsPage />} />
               <Route path="/blogs" element={<BlogsPage />} />
               <Route path="/blogs/:slug" element={<BlogDetailPage />} />
@@ -154,6 +157,7 @@ const App = () => (
                 <Route path="affiliates" element={<AdminAffiliatesPage />} />
                 <Route path="contacts" element={<AdminContactsPage />} />
                 <Route path="whitelabels" element={<AdminWhitelabelsPage />} />
+                <Route path="algo-requests" element={<AdminAlgoRequestsPage />} />
               </Route>
               <Route path="/wl/:slug" element={<WhitelabelLoginPage />} />
               <Route path="/wl/:slug/dashboard" element={<WhitelabelDashboardPage />} />

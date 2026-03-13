@@ -78,7 +78,7 @@ serve(async (req) => {
     const requestBody: StartTradeRequest = await req.json();
     
     // Validate required fields
-    if (!requestBody.symbol || !requestBody.action || !requestBody.entryPrice || !requestBody.shares) {
+    if (!requestBody.symbol || !requestBody.action || !requestBody.entryPrice || requestBody.shares == null) {
       return new Response(
         JSON.stringify({ error: 'Missing required fields' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -89,8 +89,15 @@ serve(async (req) => {
     // No longer blocking HOLD - user has manual control
 
     // Calculate stop loss and take profit prices
-    const stopLossPrice = requestBody.entryPrice * (1 - requestBody.stopLossPercentage / 100);
-    const takeProfitPrice = requestBody.entryPrice * (1 + requestBody.targetProfitPercentage / 100);
+    // BUY:  SL below entry, TP above entry
+    // SELL: SL above entry, TP below entry
+    const isSell = requestBody.action === "SELL";
+    const stopLossPrice = isSell
+      ? requestBody.entryPrice * (1 + requestBody.stopLossPercentage / 100)
+      : requestBody.entryPrice * (1 - requestBody.stopLossPercentage / 100);
+    const takeProfitPrice = isSell
+      ? requestBody.entryPrice * (1 - requestBody.targetProfitPercentage / 100)
+      : requestBody.entryPrice * (1 + requestBody.targetProfitPercentage / 100);
 
     // Calculate expected exit time based on holding period
     const now = new Date();
@@ -128,6 +135,20 @@ serve(async (req) => {
     const isForex = /=[Xx]|[A-Z]{6}$/.test(requestBody.symbol || '') || requestBody.exchange === 'FOREX';
     const defaultExchange = isCrypto ? 'CRYPTO' : isForex ? 'FOREX' : (requestBody.exchange || 'NSE');
     const defaultProduct = isCrypto || isForex ? 'CNC' : (requestBody.product || 'CNC');
+    const parsedShares = Number(requestBody.shares);
+    if (!Number.isFinite(parsedShares) || parsedShares <= 0) {
+      return new Response(
+        JSON.stringify({ error: 'shares must be a valid number greater than 0' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Quantity normalization rule:
+    // - Crypto supports fractional quantity (up to 8 decimals)
+    // - Non-crypto is rounded to whole quantity automatically
+    const normalizedShares = isCrypto
+      ? Number(parsedShares.toFixed(8))
+      : Math.max(1, Math.round(parsedShares));
 
     // Create active trade record
     const tradeData = {
@@ -138,7 +159,7 @@ serve(async (req) => {
       
       entry_price: requestBody.entryPrice,
       entry_time: now.toISOString(),
-      shares: requestBody.shares,
+      shares: normalizedShares,
       investment_amount: requestBody.investmentAmount,
       
       leverage: requestBody.leverage || 1.0,

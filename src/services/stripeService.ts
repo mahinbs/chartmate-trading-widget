@@ -31,10 +31,10 @@ export async function createCheckoutSession(params: {
     headers: { Authorization: `Bearer ${session.access_token}` },
   });
 
-  if (res.error) return { error: res.error.message ?? "Failed to create checkout" };
-  const data = res.data as { url?: string; error?: string };
-  if (data.error) return { error: data.error };
-  if (!data.url) return { error: "No checkout URL returned" };
+  const data = res.data as { url?: string; error?: string } | null;
+  const errMsg = data?.error ?? res.error?.message ?? "Failed to create checkout";
+  if (res.error || data?.error) return { error: errMsg };
+  if (!data?.url) return { error: "No checkout URL returned" };
   return { url: data.url };
 }
 

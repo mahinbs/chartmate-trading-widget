@@ -99,8 +99,17 @@ serve(async (req) => {
     const newShares = oldShares + addShares;
     const newInvestment = oldInvestment + additionalAmount;
     const newAvgEntry = (oldEntry * oldShares + currentPrice * addShares) / newShares;
-    const newStopLoss = newAvgEntry * (1 - slPct / 100);
-    const newTakeProfit = newAvgEntry * (1 + tpPct / 100);
+    const isSell = trade.action === "SELL";
+    const newStopLoss = isSell
+      ? newAvgEntry * (1 + slPct / 100)
+      : newAvgEntry * (1 - slPct / 100);
+    const newTakeProfit = isSell
+      ? newAvgEntry * (1 - tpPct / 100)
+      : newAvgEntry * (1 + tpPct / 100);
+    const signedPnl = (currentPrice - newAvgEntry) * newShares * (isSell ? -1 : 1);
+    const signedPnlPct = newAvgEntry > 0
+      ? ((currentPrice - newAvgEntry) / newAvgEntry) * 100 * (isSell ? -1 : 1)
+      : 0;
 
     const { error: updateErr } = await supabase
       .from("active_trades")
@@ -111,8 +120,8 @@ serve(async (req) => {
         stop_loss_price: newStopLoss,
         take_profit_price: newTakeProfit,
         current_price: currentPrice,
-        current_pnl: (currentPrice - newAvgEntry) * newShares * (trade.action === "SELL" ? -1 : 1),
-        current_pnl_percentage: ((currentPrice - newAvgEntry) / newAvgEntry) * 100,
+        current_pnl: signedPnl,
+        current_pnl_percentage: signedPnlPct,
         last_price_update: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
