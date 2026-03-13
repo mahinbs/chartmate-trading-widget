@@ -20,7 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { RefreshCw, Zap, CheckCircle2, Clock, Loader2, Search, Key } from "lucide-react";
+import { RefreshCw, Zap, CheckCircle2, Loader2, Search, Key } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -125,18 +125,13 @@ export default function AdminAlgoRequestsPage() {
 
   const handleProvision = async () => {
     if (!selected) return;
-    if (!apiKeyInput.trim()) {
-      toast.error("Please enter the OpenAlgo API key.");
-      return;
-    }
 
     setProvisioning(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const res = await supabase.functions.invoke("admin-provision-algo", {
         body: {
-          onboarding_id:    selected.id,
-          openalgo_api_key: apiKeyInput.trim(),
+          onboarding_id: selected.id,
         },
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
@@ -350,11 +345,12 @@ export default function AdminAlgoRequestsPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Key className="h-4 w-4 text-teal-400" />
-              Provision OpenAlgo Key
+              Auto-Provision OpenAlgo Account
             </DialogTitle>
             <DialogDescription className="text-zinc-400 text-sm">
-              Enter the OpenAlgo API key for <strong className="text-white">{selected?.full_name}</strong>.
-              This will be saved to their account and unlock the Place Order button immediately.
+              This will automatically create an OpenAlgo account for{" "}
+              <strong className="text-white">{selected?.full_name}</strong> and link it to their
+              broker. No manual API key required.
             </DialogDescription>
           </DialogHeader>
 
@@ -383,22 +379,10 @@ export default function AdminAlgoRequestsPage() {
                 </div>
               )}
 
-              <div className="space-y-1.5">
-                <Label className="text-zinc-300 text-sm flex items-center gap-1.5">
-                  <Key className="h-3.5 w-3.5 text-teal-400" />
-                  OpenAlgo API Key
-                  <span className="text-red-400">*</span>
-                </Label>
-                <Input
-                  value={apiKeyInput}
-                  onChange={(e) => setApiKeyInput(e.target.value)}
-                  placeholder="Paste API key from openalgo.tradebrainx.com → API Keys"
-                  className="bg-zinc-800 border-zinc-700 text-white font-mono text-sm placeholder:text-zinc-600"
-                  autoFocus
-                />
-                <p className="text-xs text-zinc-500">
-                  Get this from OpenAlgo admin dashboard → create a new user → copy their API key.
-                </p>
+              <div className="bg-teal-500/5 border border-teal-500/20 rounded-lg p-3 text-xs text-teal-300">
+                <strong>What happens:</strong> An OpenAlgo user account is automatically created,
+                their API key is generated and saved to our DB, and their strategy assignment
+                is activated. The user's Place Order button will unlock immediately.
               </div>
             </div>
           )}
@@ -413,7 +397,7 @@ export default function AdminAlgoRequestsPage() {
             </Button>
             <Button
               onClick={handleProvision}
-              disabled={provisioning || !apiKeyInput.trim()}
+              disabled={provisioning}
               className="bg-teal-600 hover:bg-teal-500 text-white"
             >
               {provisioning ? (

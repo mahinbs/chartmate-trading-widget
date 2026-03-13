@@ -1,13 +1,21 @@
 /**
  * admin-provision-algo — Supabase Edge Function (super-admin only)
  *
- * Provisions an OpenAlgo API key for a user who submitted the algo_onboarding form.
- * Uses service role to bypass user_trading_integration RLS.
+ * Provisions a user for live algo trading:
+ *  1. Calls OpenAlgo /api/v1/platform/create-user to auto-create their OpenAlgo account
+ *     and receive their API key (no manual API key copy-paste needed).
+ *  2. Saves the API key + broker mapping to user_trading_integration.
+ *  3. Creates an algo_user_assignments record with strategy + risk profile.
+ *  4. Marks algo_onboarding as "provisioned".
  *
- * Body: { onboarding_id, openalgo_api_key }
+ * Body: { onboarding_id, openalgo_username_override? }
+ * (openalgo_api_key is no longer required — it's auto-generated)
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const OPENALGO_URL = (Deno.env.get("OPENALGO_URL") ?? "").replace(/\/$/, "");
+const OPENALGO_APP_KEY = Deno.env.get("OPENALGO_APP_KEY") ?? "";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin":  "*",
@@ -46,12 +54,11 @@ Deno.serve(async (req: Request) => {
 
     // ── Parse body ────────────────────────────────────────────────────────
     const body = await req.json().catch(() => ({}));
-    const onboardingId: string  = (body.onboarding_id as string)?.trim();
-    const openalgoApiKey: string = (body.openalgo_api_key as string)?.trim();
+    const onboardingId: string = (body.onboarding_id as string)?.trim();
 
-    if (!onboardingId || !openalgoApiKey) {
+    if (!onboardingId) {
       return new Response(
-        JSON.stringify({ error: "onboarding_id and openalgo_api_key are required" }),
+        JSON.stringify({ error: "onboarding_id is required" }),
         { status: 400, headers },
       );
     }
@@ -79,17 +86,60 @@ Deno.serve(async (req: Request) => {
 
     const targetUserId: string = onboarding.user_id;
 
-    // ── Upsert user_trading_integration (service role bypasses RLS) ───────
+    // ── Get user email from Supabase auth ─────────────────────────────────
+    const { data: { user: targetUser } } = await supabase.auth.admin.getUserById(targetUserId);
+    const targetEmail = targetUser?.email ?? `user_${targetUserId.slice(0, 8)}@chartmate.in`;
+
+    // ── Auto-create OpenAlgo user and get API key ─────────────────────────
+    let openalgoApiKey = "";
+    let openalgoUsername = "";
+
+    if (OPENALGO_URL && OPENALGO_APP_KEY) {
+      const openalgoRes = await fetch(`${OPENALGO_URL}/api/v1/platform/create-user`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Platform-Key": OPENALGO_APP_KEY,
+        },
+        body: JSON.stringify({
+          supabase_user_id: targetUserId,
+          email: targetEmail,
+        }),
+      });
+
+      if (!openalgoRes.ok) {
+        const errText = await openalgoRes.text();
+        console.error("OpenAlgo create-user failed:", errText);
+        return new Response(
+          JSON.stringify({
+            error: "Failed to create OpenAlgo account. Please check OPENALGO_URL and OPENALGO_APP_KEY.",
+            detail: errText,
+          }),
+          { status: 502, headers },
+        );
+      }
+
+      const openalgoData = await openalgoRes.json() as { api_key: string; username: string; created: boolean };
+      openalgoApiKey = openalgoData.api_key ?? "";
+      openalgoUsername = openalgoData.username ?? "";
+      console.log(`OpenAlgo user ${openalgoUsername} ${openalgoData.created ? "created" : "already existed"}`);
+    } else {
+      // Fallback: OPENALGO_URL not configured — still provision in Supabase
+      console.warn("OPENALGO_URL or OPENALGO_APP_KEY not set — skipping OpenAlgo user creation");
+    }
+
+    // ── Upsert user_trading_integration ──────────────────────────────────
     const { data: integrationRow, error: upsertErr } = await supabase
       .from("user_trading_integration")
       .upsert(
         {
           user_id:           targetUserId,
           integration_type:  "openalgo",
-          base_url:          "",
+          base_url:          OPENALGO_URL || "",
           api_key_encrypted: "",
           broker:            onboarding.broker ?? "zerodha",
           openalgo_api_key:  openalgoApiKey,
+          openalgo_username: openalgoUsername,
           strategy_name:     onboarding.strategy_pref ?? "ChartMate AI",
           is_active:         true,
           updated_at:        new Date().toISOString(),
@@ -107,20 +157,20 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // ── Enforce assigned strategy + risk profile for this user ─────────────
+    // ── Upsert algo_user_assignments ──────────────────────────────────────
     const allowedStrategy = (onboarding.strategy_pref ?? "trend_following").toString().trim();
     const riskProfile = (onboarding.risk_level ?? "medium").toString().toLowerCase();
     const { error: assignmentErr } = await supabase
       .from("algo_user_assignments")
       .upsert(
         {
-          user_id: targetUserId,
-          integration_id: integrationRow?.id ?? null,
+          user_id:          targetUserId,
+          integration_id:   integrationRow?.id ?? null,
           allowed_strategy: allowedStrategy,
-          risk_profile: riskProfile,
-          status: "active",
-          assigned_by: user.id,
-          updated_at: new Date().toISOString(),
+          risk_profile:     riskProfile,
+          status:           "active",
+          assigned_by:      user.id,
+          updated_at:       new Date().toISOString(),
         },
         { onConflict: "user_id" },
       );
@@ -140,7 +190,12 @@ Deno.serve(async (req: Request) => {
       .eq("id", onboardingId);
 
     return new Response(
-      JSON.stringify({ success: true, message: "User provisioned successfully" }),
+      JSON.stringify({
+        success: true,
+        message: "User provisioned successfully",
+        openalgo_username: openalgoUsername || null,
+        openalgo_key_set:  !!openalgoApiKey,
+      }),
       { status: 200, headers },
     );
 

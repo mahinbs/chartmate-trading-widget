@@ -2,6 +2,7 @@ import { ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useUserRole } from '@/hooks/useUserRole';
+import { useMyTenantMembership } from '@/hooks/useWhitelabel';
 import { Skeleton } from '@/components/ui/skeleton';
 
 interface ProtectedRouteProps {
@@ -11,10 +12,11 @@ interface ProtectedRouteProps {
 export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   const { user, loading: authLoading } = useAuth();
   const { role, loading: roleLoading } = useUserRole();
+  const { membership, loading: membershipLoading } = useMyTenantMembership(user?.id);
   const location = useLocation();
   const isChangePasswordPage = location.pathname === '/auth/change-password';
 
-  if (authLoading || roleLoading) {
+  if (authLoading || roleLoading || (role === 'admin' && membershipLoading)) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="space-y-4 w-full max-w-md">
@@ -32,6 +34,15 @@ export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
 
   if ((user as any).user_metadata?.need_password_reset && !isChangePasswordPage) {
     return <Navigate to="/auth/change-password" replace />;
+  }
+
+  // WL admins should ONLY use their white-label admin panel.
+  if (role === 'admin' && !isChangePasswordPage) {
+    const wlSlug = membership?.role === 'admin' && membership?.status === 'active'
+      ? membership?.tenant?.slug
+      : null;
+    if (wlSlug) return <Navigate to={`/wl/${wlSlug}/dashboard`} replace />;
+    return <Navigate to="/white-label#pricing" replace />;
   }
 
   // Affiliates must not access regular user pages — send them to their own dashboard

@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { PlusCircle, Pencil, Power, Users, Link2, CalendarDays, Loader2, AlertTriangle, CheckCircle2, SendHorizonal, Copy } from "lucide-react";
+import { PlusCircle, Pencil, Power, Users, Link2, CalendarDays, Loader2, AlertTriangle, CheckCircle2, SendHorizonal, Copy, KeyRound } from "lucide-react";
 import { daysRemaining } from "@/hooks/useWhitelabel";
 import type { WhitelabelTenant } from "@/hooks/useWhitelabel";
 import { useAdmin } from "@/hooks/useAdmin";
@@ -57,6 +57,7 @@ export default function AdminWhitelabelsPage() {
   const [linkSending, setLinkSending] = useState(false);
   const [linkForm, setLinkForm] = useState({ email: "", brand_name: "", slug: "" });
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
+  const [ownerTempCredentials, setOwnerTempCredentials] = useState<{ email: string; temp_password: string } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -105,8 +106,14 @@ export default function AdminWhitelabelsPage() {
   };
 
   const save = async () => {
-    if (!form.slug?.trim() || !form.brand_name?.trim() || !form.starts_on || !form.ends_on) {
-      toast.error("Slug, brand name, and dates are required"); return;
+    if (!form.slug?.trim() || !form.brand_name?.trim()) {
+      toast.error("Slug and brand name are required"); return;
+    }
+    if (!isEdit && !form.owner_email?.trim()) {
+      toast.error("Owner email is required"); return;
+    }
+    if (isEdit && (!form.starts_on || !form.ends_on)) {
+      toast.error("Start and end dates are required for existing tenants"); return;
     }
     setSaving(true);
     try {
@@ -135,14 +142,27 @@ export default function AdminWhitelabelsPage() {
         }
         toast.success("White-label tenant updated");
       } else {
-        const { error } = await (supabase as any).from("white_label_tenants").insert(payload);
-        if (error) throw error;
-        toast.success("White-label tenant created! Share the login link with them.");
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await supabase.functions.invoke("admin-create-whitelabel-tenant", {
+          body: payload,
+          headers: { Authorization: `Bearer ${session?.access_token}` },
+        });
+        if (res.error) throw new Error(res.error.message ?? "Create failed");
+        const data = res.data as { email?: string; temp_password?: string; error?: string };
+        if (data.error) throw new Error(data.error);
+        if (!data.email || !data.temp_password) throw new Error("Temporary credentials were not returned");
+        setOwnerTempCredentials({ email: data.email, temp_password: data.temp_password });
+        toast.success("White-label user created. Share temporary credentials.");
       }
       setOpen(false);
       load();
     } catch (e: any) {
-      toast.error(e?.message || "Save failed");
+      const msg = e?.message || "Save failed";
+      if (/Failed to fetch|CORS|Edge Function/i.test(msg)) {
+        toast.error("Edge function not reachable. Deploy `admin-create-whitelabel-tenant` and retry.");
+      } else {
+        toast.error(msg);
+      }
     } finally {
       setSaving(false);
     }
@@ -183,6 +203,29 @@ export default function AdminWhitelabelsPage() {
       toast.error(e?.message || "Failed to generate link");
     } finally {
       setLinkSending(false);
+    }
+  };
+
+  const handleResetOwnerPassword = async (tenantId: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await supabase.functions.invoke("admin-reset-whitelabel-password", {
+        body: { tenant_id: tenantId },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (res.error) throw new Error(res.error.message ?? "Failed");
+      const data = res.data as { email?: string; temp_password?: string; error?: string };
+      if (data.error) throw new Error(data.error);
+      if (!data.email || !data.temp_password) throw new Error("Temporary credentials were not returned");
+      setOwnerTempCredentials({ email: data.email, temp_password: data.temp_password });
+      toast.success("Temporary owner password generated");
+    } catch (e: any) {
+      const msg = e?.message || "Password reset failed";
+      if (/Failed to fetch|CORS|Edge Function/i.test(msg)) {
+        toast.error("Edge function not reachable. Deploy `admin-reset-whitelabel-password` and retry.");
+      } else {
+        toast.error(msg);
+      }
     }
   };
 
@@ -299,6 +342,15 @@ export default function AdminWhitelabelsPage() {
                         >
                           <Power className="h-3.5 w-3.5" />
                         </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-cyan-400 hover:text-cyan-300"
+                          onClick={() => handleResetOwnerPassword(t.id)}
+                          title="Reset white-label owner password"
+                        >
+                          <KeyRound className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -405,7 +457,7 @@ export default function AdminWhitelabelsPage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-lg bg-zinc-950 border-white/10">
           <DialogHeader>
-            <DialogTitle className="text-white">{isEdit ? "Edit White-label Tenant" : "New White-label Tenant"}</DialogTitle>
+            <DialogTitle className="text-white">{isEdit ? "Edit White-label Tenant" : "New White-label User"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-1">
             <div className="grid grid-cols-2 gap-3">
@@ -444,29 +496,40 @@ export default function AdminWhitelabelsPage() {
               <Input value={form.owner_email ?? ""} onChange={(e) => setForm((f) => ({ ...f, owner_email: e.target.value }))} placeholder="partner@example.com" className="bg-zinc-900 border-white/10 mt-1" />
             </div>
 
-            <div>
-              <Label className="text-zinc-300">Subscription Plan</Label>
-              <Select value={form.subscription_plan ?? "1_year"} onValueChange={handlePlanChange}>
-                <SelectTrigger className="bg-zinc-900 border-white/10 mt-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1_year">1 Year</SelectItem>
-                  <SelectItem value="2_year">2 Years</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {isEdit && (
+              <>
+                <div>
+                  <Label className="text-zinc-300">Subscription Plan</Label>
+                  <Select value={form.subscription_plan ?? "1_year"} onValueChange={handlePlanChange}>
+                    <SelectTrigger className="bg-zinc-900 border-white/10 mt-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1_year">1 Year</SelectItem>
+                      <SelectItem value="2_year">2 Years</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-zinc-300">Starts On (date)</Label>
-                <Input type="date" value={form.starts_on ?? ""} onChange={(e) => handleStartChange(e.target.value)} className="bg-zinc-900 border-white/10 mt-1" />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-zinc-300">Starts On (date)</Label>
+                    <Input type="date" value={form.starts_on ?? ""} onChange={(e) => handleStartChange(e.target.value)} className="bg-zinc-900 border-white/10 mt-1" />
+                  </div>
+                  <div>
+                    <Label className="text-zinc-300">Ends On (date) — auto-set</Label>
+                    <Input type="date" value={form.ends_on ?? ""} onChange={(e) => setForm((f) => ({ ...f, ends_on: e.target.value }))} className="bg-zinc-900 border-white/10 mt-1" />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {!isEdit && (
+              <div className="rounded-lg bg-cyan-950/40 border border-cyan-500/30 px-4 py-3 text-xs text-cyan-400">
+                This creates the white-label login user and temporary password first.
+                Generate the 5-year payment link separately after form review.
               </div>
-              <div>
-                <Label className="text-zinc-300">Ends On (date) — auto-set</Label>
-                <Input type="date" value={form.ends_on ?? ""} onChange={(e) => setForm((f) => ({ ...f, ends_on: e.target.value }))} className="bg-zinc-900 border-white/10 mt-1" />
-              </div>
-            </div>
+            )}
 
             {isEdit && (
               <div>
@@ -488,11 +551,40 @@ export default function AdminWhitelabelsPage() {
             <Button variant="outline" onClick={() => setOpen(false)} className="border-white/10">Cancel</Button>
             <Button onClick={save} disabled={saving}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              {isEdit ? "Save Changes" : "Create Tenant"}
+              {isEdit ? "Save Changes" : "Create User"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {ownerTempCredentials && (
+        <Dialog open={!!ownerTempCredentials} onOpenChange={(o) => !o && setOwnerTempCredentials(null)}>
+          <DialogContent className="bg-zinc-900 border-white/10 text-white max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <CheckCircle2 className="h-5 w-5 text-green-500" />
+                Owner Temporary Credentials
+              </DialogTitle>
+            </DialogHeader>
+            <div className="py-4 space-y-4">
+              <p className="text-sm text-zinc-400">Share this with the white-label owner. They must reset it on first login.</p>
+              <div className="bg-black/40 p-4 rounded-xl border border-white/10 font-mono text-sm space-y-2">
+                <p><span className="text-zinc-500">Email:</span> {ownerTempCredentials.email}</p>
+                <p><span className="text-zinc-500">Pass:</span> {ownerTempCredentials.temp_password}</p>
+              </div>
+              <Button
+                className="w-full bg-cyan-600 h-10"
+                onClick={() => {
+                  navigator.clipboard.writeText(`Email: ${ownerTempCredentials.email}\nPass: ${ownerTempCredentials.temp_password}`);
+                  toast.success("Copied to clipboard");
+                }}
+              >
+                Copy Credentials
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

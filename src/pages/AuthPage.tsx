@@ -10,6 +10,7 @@ import { useUserRole } from '@/hooks/useUserRole';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import { Container } from '@/components/layout/Container';
+import { supabase } from '@/integrations/supabase/client';
 
 const AuthPage = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -22,15 +23,33 @@ const AuthPage = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!roleLoading && user) {
+    const routeAfterLogin = async () => {
+      if (roleLoading || !user) return;
       if ((user as any).user_metadata?.need_password_reset) {
         navigate('/auth/change-password', { replace: true });
         return;
       }
-      if (role === 'super_admin' || role === 'admin') navigate('/admin/users', { replace: true });
-      else if (role === 'affiliate') navigate('/affiliate/dashboard', { replace: true });
+      if (role === 'super_admin') {
+        navigate('/admin/users', { replace: true });
+        return;
+      }
+      if (role === 'admin') {
+        const { data } = await (supabase as any)
+          .from("white_label_tenant_users")
+          .select("white_label_tenants(slug)")
+          .eq("user_id", user.id)
+          .eq("role", "admin")
+          .eq("status", "active")
+          .maybeSingle();
+        const slug = data?.white_label_tenants?.slug as string | undefined;
+        if (slug) navigate(`/wl/${slug}/dashboard`, { replace: true });
+        else navigate('/white-label#pricing', { replace: true });
+        return;
+      }
+      if (role === 'affiliate') navigate('/affiliate/dashboard', { replace: true });
       else if (role === 'user') navigate('/home', { replace: true });
-    }
+    };
+    routeAfterLogin();
   }, [user, role, roleLoading, navigate]);
 
   const handleSignIn = async (e: React.FormEvent) => {

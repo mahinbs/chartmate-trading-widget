@@ -72,28 +72,60 @@ Deno.serve(async (req: Request) => {
         ends.setFullYear(ends.getFullYear() + years);
 
         const subPlan = years === 5 ? "5_year" : years === 2 ? "2_year" : "1_year";
+        const startsStr = starts.toISOString().slice(0, 10);
+        const endsStr   = ends.toISOString().slice(0, 10);
 
-        const { data: tenant, error: insertErr } = await supabase
+        // Check if tenant already exists (admin pre-created flow)
+        const { data: existingTenant } = await supabase
           .from("white_label_tenants")
-          .insert({
-            slug,
-            brand_name:         brandName,
-            brand_primary_color: "#6366f1",
-            owner_email:        session.customer_email ?? undefined,
-            subscription_plan:  subPlan,
-            starts_on:          starts.toISOString().slice(0, 10),
-            ends_on:            ends.toISOString().slice(0, 10),
-            status:             "active",
-            stripe_customer_id: custId ?? null,
-            // For 5yr one-time payments there's no subscription object
-            stripe_subscription_id: subId ?? null,
-          })
           .select("id")
-          .single();
+          .eq("slug", slug)
+          .maybeSingle();
 
-        if (!insertErr && tenant) {
+        let tenantId: string | null = null;
+
+        if (existingTenant?.id) {
+          // Tenant was pre-created by admin — just activate it and record payment details
+          const { data: updated } = await supabase
+            .from("white_label_tenants")
+            .update({
+              status:             "active",
+              subscription_plan:  subPlan,
+              starts_on:          startsStr,
+              ends_on:            endsStr,
+              stripe_customer_id: custId ?? null,
+              stripe_subscription_id: subId ?? null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", existingTenant.id)
+            .select("id")
+            .single();
+          tenantId = updated?.id ?? existingTenant.id;
+        } else {
+          // Brand-new tenant (self-signup via pricing page)
+          const { data: inserted } = await supabase
+            .from("white_label_tenants")
+            .insert({
+              slug,
+              brand_name:          brandName,
+              brand_primary_color: "#6366f1",
+              owner_email:         session.customer_email ?? undefined,
+              subscription_plan:   subPlan,
+              starts_on:           startsStr,
+              ends_on:             endsStr,
+              status:              "active",
+              stripe_customer_id:  custId ?? null,
+              stripe_subscription_id: subId ?? null,
+            })
+            .select("id")
+            .single();
+          tenantId = inserted?.id ?? null;
+        }
+
+        if (tenantId) {
+          // Ensure owner membership is active
           await supabase.from("white_label_tenant_users").upsert({
-            tenant_id: tenant.id,
+            tenant_id: tenantId,
             user_id:   userId,
             role:      "admin",
             status:    "active",

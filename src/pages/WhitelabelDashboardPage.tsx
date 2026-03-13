@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate, Link, Navigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -40,9 +40,15 @@ export default function WhitelabelDashboardPage() {
   const { user: realUser, loading: authLoading } = useAuth();
   const { tenant, loading: tenantLoading } = useWhitelabelTenant(slug);
 
-  /* ── Demo / Dummy Mode State ── */
+  /* ── Access State ── */
   const user = realUser;
-  const isWLAdmin = true; // For now assuming admin if they reach this page, can be refined based on membership role
+  const [membershipLoading, setMembershipLoading] = useState(true);
+  const [membershipRole, setMembershipRole] = useState<"admin" | "user" | null>(null);
+  const [membershipStatus, setMembershipStatus] = useState<string | null>(null);
+  const [hasPaidAccess, setHasPaidAccess] = useState(false);
+  const [paymentToken, setPaymentToken] = useState<string | null>(null);
+  const [paymentCheckLoading, setPaymentCheckLoading] = useState(true);
+  const isWLAdmin = membershipRole === "admin" && membershipStatus === "active";
 
   /* ── Data Hooks ── */
   const { affiliates, loading: loadingAffiliates, refresh: refreshAffiliates } = useWhitelabelAffiliates(user?.id, tenant?.id, isWLAdmin, false);
@@ -63,6 +69,63 @@ export default function WhitelabelDashboardPage() {
   const expired = isTenantExpired(tenant);
   const days = tenant ? daysRemaining(tenant.ends_on) : 0;
   const color = tenant?.brand_primary_color ?? "#06b6d4";
+
+  useEffect(() => {
+    const checkMembership = async () => {
+      if (!tenant?.id || !user?.id) {
+        setMembershipRole(null);
+        setMembershipStatus(null);
+        setMembershipLoading(false);
+        return;
+      }
+      setMembershipLoading(true);
+      const { data } = await (supabase as any)
+        .from("white_label_tenant_users")
+        .select("role,status")
+        .eq("tenant_id", tenant.id)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      setMembershipRole((data?.role as "admin" | "user" | undefined) ?? null);
+      setMembershipStatus((data?.status as string | undefined) ?? null);
+      setMembershipLoading(false);
+    };
+    checkMembership();
+  }, [tenant?.id, user?.id]);
+
+  useEffect(() => {
+    const checkPayment = async () => {
+      if (!tenant || !user?.email) {
+        setHasPaidAccess(false);
+        setPaymentToken(null);
+        setPaymentCheckLoading(false);
+        return;
+      }
+      setPaymentCheckLoading(true);
+      // Active tenant status OR stripe subscription both mean paid access
+      if (tenant.status === "active" || Boolean((tenant as any).stripe_subscription_id)) {
+        setHasPaidAccess(true);
+        setPaymentToken(null);
+        setPaymentCheckLoading(false);
+        return;
+      }
+
+      const { data } = await (supabase as any)
+        .from("wl_payment_requests")
+        .select("token,status,expires_at")
+        .eq("slug", tenant.slug)
+        .eq("email", (user.email ?? "").toLowerCase())
+        .order("created_at", { ascending: false });
+      const rows = Array.isArray(data) ? data : [];
+      const paid = rows.some((r: any) => r.status === "paid");
+      const now = new Date();
+      const pending = rows.find((r: any) => r.status === "pending" && new Date(r.expires_at) > now);
+
+      setHasPaidAccess(paid);
+      setPaymentToken(pending?.token ?? null);
+      setPaymentCheckLoading(false);
+    };
+    checkPayment();
+  }, [tenant, user?.email]);
 
   const loadAlgoRequests = async () => {
     if (!tenant?.id || !user?.id) return;
@@ -88,7 +151,7 @@ export default function WhitelabelDashboardPage() {
   }, [tenant?.id, user?.id]);
 
   /* ── Authentication & Security Guard ── */
-  if (authLoading || tenantLoading) {
+  if (authLoading || tenantLoading || membershipLoading || paymentCheckLoading) {
     return (
       <div className="min-h-screen bg-background p-8 space-y-6">
         <div className="flex justify-between items-center"><Skeleton className="h-10 w-48" /><Skeleton className="h-10 w-32" /></div>
@@ -106,6 +169,54 @@ export default function WhitelabelDashboardPage() {
           <h1 className="text-2xl font-bold text-white">Partner portal not found</h1>
           <p className="text-muted-foreground text-sm">The white-label link is invalid or the portal has been deactivated. Please contact support.</p>
           <Button asChild variant="outline" className="mt-4"><Link to="/">Back to Home</Link></Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) return <Navigate to={`/wl/${slug}`} replace />;
+  if ((user as any).user_metadata?.need_password_reset) {
+    return <Navigate to={`/auth/change-password?redirect=${encodeURIComponent(`/wl/${slug}/dashboard`)}`} replace />;
+  }
+
+  if (!membershipRole || membershipStatus !== "active") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background text-center px-4">
+        <div className="space-y-4 max-w-md">
+          <AlertTriangle className="h-10 w-10 text-amber-500 mx-auto" />
+          <h1 className="text-xl font-bold text-white">Access Restricted</h1>
+          <p className="text-sm text-muted-foreground">
+            Your account is not an active member of this white-label tenant.
+          </p>
+          <Button asChild variant="outline"><Link to={`/wl/${slug}`}>Back to login</Link></Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!hasPaidAccess) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background text-center px-4">
+        <div className="space-y-4 max-w-md">
+          <AlertTriangle className="h-10 w-10 text-amber-500 mx-auto" />
+          <h1 className="text-xl font-bold text-white">Dashboard Locked</h1>
+          <p className="text-sm text-muted-foreground">
+            Your white-label admin panel unlocks after payment is completed.
+          </p>
+          <div className="flex items-center justify-center gap-2">
+            {paymentToken ? (
+              <Button className="bg-cyan-600 hover:bg-cyan-500" onClick={() => navigate(`/wl-checkout/${paymentToken}`)}>
+                Pay and Unlock
+              </Button>
+            ) : (
+              <Button className="bg-cyan-600 hover:bg-cyan-500" onClick={() => navigate("/white-label#pricing")}>
+                Go to Pricing
+              </Button>
+            )}
+            <Button variant="outline" onClick={async () => { await supabase.auth.signOut(); navigate(`/wl/${slug}`); }}>
+              Sign out
+            </Button>
+          </div>
         </div>
       </div>
     );

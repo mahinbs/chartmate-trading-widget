@@ -1,4 +1,5 @@
 import React from 'react';
+import { useLocation } from 'react-router-dom';
 import Layout from '../components/landingpage/Layout';
 import WhiteLabelHero from '../components/whitelabel/Hero';
 import PartnerSupport from '../components/whitelabel/PartnerSupport';
@@ -12,6 +13,19 @@ import WhiteLabelHowToGetStarted from '../components/whitelabel/HowToGetStarted'
 import WhiteLabelFooter from '../components/whitelabel/Footer';
 
 const WhiteLabelPage = () => {
+    const location = useLocation();
+
+    React.useEffect(() => {
+        if (!location.hash) return;
+        const id = location.hash.replace("#", "");
+        const node = document.getElementById(id);
+        if (node) {
+            setTimeout(() => {
+                node.scrollIntoView({ behavior: "smooth", block: "start" });
+            }, 60);
+        }
+    }, [location.hash]);
+
     return (
         <Layout>
             <div className="bg-black text-white font-sans selection:bg-cyan-500 selection:text-black min-h-screen">

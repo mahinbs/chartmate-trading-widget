@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,8 +9,28 @@ import { ActionSignal } from "@/components/prediction/ActionSignal";
 import { PerformanceDashboard } from "@/components/performance/PerformanceDashboard";
 import { tradeTrackingService, ActiveTrade } from "@/services/tradeTrackingService";
 import { getTradingViewSymbol, isUsdDenominatedSymbol } from "@/lib/tradingview-symbols";
-import { RefreshCw, TrendingUp, TrendingDown, Activity, CheckCircle, Bell, BarChart3, Home } from "lucide-react";
+import { RefreshCw, TrendingUp, TrendingDown, Activity, CheckCircle, Bell, BarChart3, Home, History, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+
+interface BrokerOrder {
+  id:               string;
+  broker_order_id:  string | null;
+  symbol:           string | null;
+  exchange:         string | null;
+  action:           string | null;
+  quantity:         number | null;
+  price:            number | null;
+  order_type:       string | null;
+  product_type:     string | null;
+  status:           string | null;
+  filled_quantity:  number | null;
+  average_price:    number | null;
+  strategy_name:    string | null;
+  rejection_reason: string | null;
+  order_timestamp:  string | null;
+  synced_at:        string;
+}
 
 function decodeYFProto(bytes: Uint8Array): { id?: string; price?: number } {
   const out: Record<number, unknown> = {};
@@ -59,10 +79,36 @@ export default function ActiveTradesPage() {
   const [usdPerInr, setUsdPerInr] = useState<number | null>(null);
   const [fxLoading, setFxLoading] = useState(false);
   const [fxError, setFxError] = useState<string | null>(null);
+  const [brokerOrders, setBrokerOrders]         = useState<BrokerOrder[]>([]);
+  const [ordersLoading, setOrdersLoading]       = useState(false);
+  const [ordersSyncing, setOrdersSyncing]       = useState(false);
   const yahooWsRef = useRef<WebSocket | null>(null);
   const yahooReconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
+
+  const loadBrokerOrders = useCallback(async (sync = false) => {
+    if (sync) setOrdersSyncing(true);
+    else setOrdersLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const res = await supabase.functions.invoke("sync-order-history", {
+        body: {},
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+
+      const data = res.data as { orders?: BrokerOrder[] } | null;
+      if (data?.orders) setBrokerOrders(data.orders);
+      if (sync) toast({ title: "Orders synced from broker", duration: 2000 });
+    } catch {
+      // non-fatal — user may not have integration set up
+    } finally {
+      setOrdersLoading(false);
+      setOrdersSyncing(false);
+    }
+  }, [toast]);
 
   const loadTrades = async () => {
     try {
@@ -521,18 +567,22 @@ export default function ActiveTradesPage() {
       )}
 
       {/* Trades Tabs */}
-      <Tabs defaultValue="active" className="w-full">
-        <TabsList className="grid w-full max-w-2xl grid-cols-3">
+      <Tabs defaultValue="active" className="w-full" onValueChange={(v) => { if (v === "orders" && brokerOrders.length === 0) loadBrokerOrders(false); }}>
+        <TabsList className="grid w-full max-w-3xl grid-cols-4">
           <TabsTrigger value="active">
-            <Activity className="h-4 w-4 mr-2" />
+            <Activity className="h-4 w-4 mr-1.5" />
             Active ({activeTrades.length})
           </TabsTrigger>
           <TabsTrigger value="completed">
-            <CheckCircle className="h-4 w-4 mr-2" />
+            <CheckCircle className="h-4 w-4 mr-1.5" />
             Completed ({completedTrades.length})
           </TabsTrigger>
+          <TabsTrigger value="orders">
+            <History className="h-4 w-4 mr-1.5" />
+            Broker Orders
+          </TabsTrigger>
           <TabsTrigger value="performance">
-            <BarChart3 className="h-4 w-4 mr-2" />
+            <BarChart3 className="h-4 w-4 mr-1.5" />
             Performance
           </TabsTrigger>
         </TabsList>
@@ -682,6 +732,128 @@ export default function ActiveTradesPage() {
                 </Card>
               ))}
             </div>
+          )}
+        </TabsContent>
+
+        {/* Broker Orders Tab */}
+        <TabsContent value="orders" className="space-y-4 mt-6">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-zinc-400">
+              Real-time orders from your broker via OpenAlgo.
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => loadBrokerOrders(true)}
+              disabled={ordersSyncing}
+              className="border-zinc-700 hover:bg-zinc-800 text-xs"
+            >
+              {ordersSyncing ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+              )}
+              Sync from Broker
+            </Button>
+          </div>
+
+          {ordersLoading ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin text-teal-400" />
+            </div>
+          ) : brokerOrders.length === 0 ? (
+            <Alert className="border-white/10 bg-white/5">
+              <History className="h-4 w-4 text-zinc-400" />
+              <AlertDescription className="text-zinc-400">
+                No broker orders found. Click "Sync from Broker" to fetch your latest orders.
+                <br />
+                <span className="text-xs text-zinc-500 mt-1 block">
+                  Requires an active OpenAlgo integration. Complete onboarding at{" "}
+                  <a href="/algo-setup" className="underline text-teal-400">Algo Setup</a>.
+                </span>
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <Card className="bg-zinc-900 border-zinc-800 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-zinc-800 text-xs text-zinc-400">
+                      <th className="text-left px-4 py-3">Symbol</th>
+                      <th className="text-left px-4 py-3">Action</th>
+                      <th className="text-right px-4 py-3">Qty</th>
+                      <th className="text-right px-4 py-3">Price</th>
+                      <th className="text-left px-4 py-3">Type</th>
+                      <th className="text-left px-4 py-3">Strategy</th>
+                      <th className="text-left px-4 py-3">Status</th>
+                      <th className="text-left px-4 py-3">Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {brokerOrders.map((order) => {
+                      const statusColors: Record<string, string> = {
+                        complete:  "bg-green-500/10 text-green-400 border-green-500/30",
+                        rejected:  "bg-red-500/10 text-red-400 border-red-500/30",
+                        open:      "bg-teal-500/10 text-teal-400 border-teal-500/30",
+                        cancelled: "bg-zinc-700 text-zinc-400 border-zinc-600",
+                        trigger_pending: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+                      };
+                      const sc = statusColors[(order.status ?? "").toLowerCase()] ?? "bg-zinc-700 text-zinc-400 border-zinc-600";
+                      const isBuy = (order.action ?? "").toUpperCase() === "BUY";
+
+                      return (
+                        <tr key={order.id} className="border-b border-zinc-800/60 hover:bg-zinc-800/30">
+                          <td className="px-4 py-3 font-mono font-medium text-white">
+                            {order.symbol ?? "—"}
+                            {order.exchange && (
+                              <span className="text-[10px] text-zinc-500 ml-1">{order.exchange}</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`font-bold text-xs ${isBuy ? "text-green-400" : "text-red-400"}`}>
+                              {order.action ?? "—"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right text-zinc-300">
+                            {order.filled_quantity != null
+                              ? `${order.filled_quantity}/${order.quantity}`
+                              : (order.quantity ?? "—")}
+                          </td>
+                          <td className="px-4 py-3 text-right text-zinc-300">
+                            {order.average_price
+                              ? `₹${order.average_price.toLocaleString()}`
+                              : order.price
+                              ? `₹${order.price.toLocaleString()}`
+                              : "—"}
+                          </td>
+                          <td className="px-4 py-3 text-zinc-400 text-xs">
+                            {[order.order_type, order.product_type].filter(Boolean).join(" · ")}
+                          </td>
+                          <td className="px-4 py-3 text-zinc-400 text-xs max-w-[120px] truncate">
+                            {order.strategy_name ?? "—"}
+                          </td>
+                          <td className="px-4 py-3">
+                            <Badge className={`text-[10px] border ${sc}`}>
+                              {(order.status ?? "unknown").charAt(0).toUpperCase() + (order.status ?? "unknown").slice(1)}
+                            </Badge>
+                            {order.rejection_reason && (
+                              <p className="text-[10px] text-red-400 mt-0.5 max-w-[100px] truncate" title={order.rejection_reason}>
+                                {order.rejection_reason}
+                              </p>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-zinc-500 text-xs whitespace-nowrap">
+                            {order.order_timestamp
+                              ? new Date(order.order_timestamp).toLocaleString()
+                              : new Date(order.synced_at).toLocaleString()}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
           )}
         </TabsContent>
 

@@ -11,6 +11,8 @@ export interface WhitelabelTenant {
   owner_user_id: string | null;
   owner_email: string | null;
   subscription_plan: string;
+  stripe_customer_id?: string | null;
+  stripe_subscription_id?: string | null;
   starts_on: string;
   ends_on: string;
   status: string;

@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/hooks/useAuth";
 import { useAdmin } from "@/hooks/useAdmin";
+import { useUserRole } from "@/hooks/useUserRole";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Lock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -15,9 +16,11 @@ export default function ChangePasswordPage() {
   const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
   const { user } = useAuth();
-  const { isAdmin } = useAdmin();
+  const { isSuperAdmin } = useAdmin();
+  const { role } = useUserRole();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,7 +40,33 @@ export default function ChangePasswordPage() {
       });
       if (error) throw error;
       toast({ title: "Password updated", description: "You can now use your new password to sign in." });
-      navigate(isAdmin ? "/admin/users" : "/home", { replace: true });
+      const params = new URLSearchParams(location.search);
+      const redirect = params.get("redirect");
+      if (redirect) {
+        navigate(redirect, { replace: true });
+        return;
+      }
+      if (isSuperAdmin) {
+        navigate("/admin/users", { replace: true });
+        return;
+      }
+      if (role === "admin") {
+        const { data } = await (supabase as any)
+          .from("white_label_tenant_users")
+          .select("white_label_tenants(slug)")
+          .eq("user_id", user?.id)
+          .eq("role", "admin")
+          .eq("status", "active")
+          .maybeSingle();
+        const slug = data?.white_label_tenants?.slug as string | undefined;
+        if (slug) {
+          navigate(`/wl/${slug}/dashboard`, { replace: true });
+          return;
+        }
+        navigate("/white-label#pricing", { replace: true });
+        return;
+      }
+      navigate("/home", { replace: true });
     } catch (err: any) {
       toast({ title: "Update failed", description: err?.message ?? "Please try again.", variant: "destructive" });
     } finally {

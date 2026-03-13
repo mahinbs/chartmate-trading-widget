@@ -3,6 +3,9 @@ import { useForm, Controller } from 'react-hook-form';
 import { Helmet } from 'react-helmet-async';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAffiliateRef } from '@/hooks/useAffiliateRef';
+import { useAuth } from '@/hooks/useAuth';
+import { useUserRole } from '@/hooks/useUserRole';
+import { useMyTenantMembership } from '@/hooks/useWhitelabel';
 import { supabase } from '@/integrations/supabase/client';
 import { motion, Variants } from 'framer-motion';
 import heroBg from '@/assets/premium_hero_bg.png';
@@ -70,6 +73,9 @@ const staggerContainer: Variants = {
 
 const MainLandingPage = () => {
     const { affiliateId } = useAffiliateRef();
+    const { user, loading: authLoading } = useAuth();
+    const { role, loading: roleLoading } = useUserRole();
+    const { membership, loading: membershipLoading } = useMyTenantMembership(user?.id);
     const [activeTab, setActiveTab] = useState('stocks');
     const [isEnquiryModalOpen, setIsEnquiryModalOpen] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -77,6 +83,17 @@ const MainLandingPage = () => {
 
     const [api, setApi] = useState<CarouselApi>();
     const navigate = useNavigate();
+
+    React.useEffect(() => {
+        if (authLoading || roleLoading) return;
+        if (!user || role !== "admin") return;
+        if (membershipLoading) return;
+        const wlSlug = membership?.role === "admin" && membership?.status === "active"
+            ? membership?.tenant?.slug
+            : null;
+        if (wlSlug) navigate(`/wl/${wlSlug}/dashboard`, { replace: true });
+        else navigate("/white-label#pricing", { replace: true });
+    }, [user, role, authLoading, roleLoading, membershipLoading, membership, navigate]);
 
     interface FormData {
         name: string;

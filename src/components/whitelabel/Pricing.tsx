@@ -5,10 +5,8 @@ import { ScrollReveal } from '../ui/ScrollReveal';
 import { createCheckoutSession } from '@/services/stripeService';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { Label } from '../ui/label';
+import { useAuth } from '@/hooks/useAuth';
+import { useMyTenantMembership } from '@/hooks/useWhitelabel';
 
 const WL_PLANS = [
     { id: "wl_1_year", name: "1 Year License", price: "$1,999", originalPrice: "$2,499", duration: "/ 1 year", badge: "Standard", badgeColor: "bg-gray-700", isRecommended: false, planId: "wl_1_year" },
@@ -19,10 +17,17 @@ const WL_PLANS = [
 const Pricing = () => {
     const navigate = useNavigate();
     const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
-    const [wlDialogOpen, setWlDialogOpen] = useState(false);
-    const [wlPlan, setWlPlan] = useState<typeof WL_PLANS[0] | null>(null);
-    const [brandName, setBrandName] = useState("");
-    const [slug, setSlug] = useState("");
+    const { user } = useAuth();
+    const { membership } = useMyTenantMembership(user?.id);
+
+    const resolveBranding = () => {
+        const wlTenant = membership?.role === "admin" && membership?.status === "active"
+            ? membership.tenant
+            : null;
+        const brandName = wlTenant?.brand_name?.trim() || "My Brand";
+        const slug = wlTenant?.slug?.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-") || "my-brand";
+        return { brandName, slug };
+    };
 
     const handleGetPlan = async (plan: typeof WL_PLANS[0]) => {
         if (plan.contactOnly) {
@@ -35,26 +40,16 @@ const Pricing = () => {
             navigate("/auth?redirect=" + encodeURIComponent("/white-label#pricing"));
             return;
         }
-        setWlPlan(plan);
-        setBrandName("");
-        setSlug("");
-        setWlDialogOpen(true);
-    };
-
-    const handleWlCheckout = async () => {
-        if (!wlPlan) return;
-        const bn = brandName.trim() || "My Brand";
-        const s = slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-") || "my-brand";
-        setLoadingPlan(wlPlan.planId);
+        const { brandName, slug } = resolveBranding();
+        setLoadingPlan(plan.planId);
         const result = await createCheckoutSession({
-            plan_id: wlPlan.planId,
+            plan_id: plan.planId,
             type: "whitelabel",
             success_url: window.location.origin + "/?checkout=success&type=wl",
             cancel_url: window.location.origin + "/white-label#pricing",
-            wl: { brand_name: bn, slug: s },
+            wl: { brand_name: brandName, slug },
         });
         setLoadingPlan(null);
-        setWlDialogOpen(false);
         if (result.error) {
             toast.error(result.error);
             return;
@@ -160,33 +155,6 @@ const Pricing = () => {
                     ))}
                 </div>
             </div>
-
-            <Dialog open={wlDialogOpen} onOpenChange={setWlDialogOpen}>
-                <DialogContent className="bg-zinc-950 border-white/10 text-white">
-                    <DialogHeader>
-                        <DialogTitle>White Label Setup</DialogTitle>
-                    </DialogHeader>
-                    <p className="text-sm text-zinc-400">Enter your brand details before checkout. You can edit these later in the admin panel.</p>
-                    <div className="space-y-4 py-4">
-                        <div>
-                            <Label className="text-zinc-300">Brand Name</Label>
-                            <Input value={brandName} onChange={(e) => setBrandName(e.target.value)} placeholder="Acme Trading" className="bg-zinc-900 border-white/10 mt-1" />
-                        </div>
-                        <div>
-                            <Label className="text-zinc-300">URL Slug</Label>
-                            <Input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="acme-trading" className="bg-zinc-900 border-white/10 mt-1 font-mono" />
-                            <p className="text-xs text-zinc-500 mt-0.5">Login URL: {typeof window !== "undefined" ? window.location.origin : ""}/wl/{slug || "your-slug"}</p>
-                        </div>
-                    </div>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setWlDialogOpen(false)} className="border-white/10">Cancel</Button>
-                        <Button onClick={handleWlCheckout} disabled={!!loadingPlan}>
-                            {loadingPlan ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                            Proceed to Checkout
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
         </section>
     );
 };

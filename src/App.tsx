@@ -46,6 +46,7 @@ import AffiliatePartnerPage from "./pages/AffiliatePartnerPage";
 import TradingDashboardPage from "./pages/TradingDashboardPage";
 import WlCheckoutPage from "./pages/WlCheckoutPage";
 import AlgoOnboardingPage from "./pages/AlgoOnboardingPage";
+import StrategiesPage from "./pages/StrategiesPage";
 
 // OpenAlgo ping temporarily disabled in mock-order mode to avoid CORS noise
 
@@ -80,6 +81,14 @@ const App = () => (
               />
               <Route path="/wl-checkout/:token" element={<WlCheckoutPage />} />
               <Route path="/algo-setup" element={<AlgoOnboardingPage />} />
+              <Route
+                path="/strategies"
+                element={
+                  <ProtectedRoute>
+                    <StrategiesPage />
+                  </ProtectedRoute>
+                }
+              />
               <Route path="/contact-us" element={<ContactUsPage />} />
               <Route path="/blogs" element={<BlogsPage />} />
               <Route path="/blogs/:slug" element={<BlogDetailPage />} />
