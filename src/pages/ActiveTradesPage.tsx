@@ -9,8 +9,9 @@ import { ActionSignal } from "@/components/prediction/ActionSignal";
 import { PerformanceDashboard } from "@/components/performance/PerformanceDashboard";
 import { tradeTrackingService, ActiveTrade } from "@/services/tradeTrackingService";
 import { getTradingViewSymbol, isUsdDenominatedSymbol } from "@/lib/tradingview-symbols";
-import { RefreshCw, TrendingUp, TrendingDown, Activity, CheckCircle, Bell, BarChart3, Home, History, Loader2 } from "lucide-react";
+import { RefreshCw, TrendingUp, TrendingDown, Activity, CheckCircle, Bell, BarChart3, Home, History, Loader2, ShieldAlert, Target } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { toast as sonnerToast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 
 interface BrokerOrder {
@@ -84,8 +85,90 @@ export default function ActiveTradesPage() {
   const [ordersSyncing, setOrdersSyncing]       = useState(false);
   const yahooWsRef = useRef<WebSocket | null>(null);
   const yahooReconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Track trade IDs already auto-exited this session to avoid duplicate orders
+  const triggeredRef = useRef<Set<string>>(new Set());
   const { toast } = useToast();
   const navigate = useNavigate();
+
+  // ── Real-time SL / TP auto-exit ────────────────────────────────────────────
+  // Called on every live price tick. If SL or TP is breached for a live-order
+  // trade, places an immediate MARKET exit order through OpenAlgo.
+  const checkAndAutoExit = useCallback(async (trade: ActiveTrade, price: number) => {
+    if (!trade.brokerOrderId?.startsWith("PAPER") === false) return; // paper trades — skip
+    if (trade.status !== "active" && trade.status !== "monitoring" && trade.status !== "exit_zone") return;
+    if (triggeredRef.current.has(trade.id)) return; // already triggered
+
+    const isBuy    = trade.action === "BUY";
+    const slHit    = trade.stopLossPrice
+      ? (isBuy ? price <= trade.stopLossPrice : price >= trade.stopLossPrice)
+      : false;
+    const tpHit    = trade.takeProfitPrice
+      ? (isBuy ? price >= trade.takeProfitPrice : price <= trade.takeProfitPrice)
+      : false;
+
+    if (!slHit && !tpHit) return;
+
+    triggeredRef.current.add(trade.id); // prevent re-entry
+
+    const reason = slHit ? "Stop Loss" : "Take Profit";
+    const emoji  = slHit ? "🛑" : "🎯";
+    sonnerToast(`${emoji} ${reason} hit for ${trade.symbol} @ ₹${price.toFixed(2)}`, {
+      description: "Placing auto-exit order…",
+      duration: 6000,
+    });
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      // Place the exit order
+      const res = await supabase.functions.invoke("broker-order-action", {
+        body: {
+          action:   "close_all_pos", // squares off all positions in strategy
+          trade_id: trade.id,
+        },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+
+      const ok = !res.error && !(res.data as any)?.error;
+      if (ok) {
+        sonnerToast.success(`Auto-exit complete — ${reason} triggered on ${trade.symbol}`);
+        const exitStatus = slHit ? "stopped_out" : "target_hit";
+        await supabase.from("active_trades" as any).update({
+          status:      exitStatus,
+          exit_price:  price,
+          exit_time:   new Date().toISOString(),
+          exit_reason: slHit ? "stop_loss_triggered" : "target_hit",
+          actual_pnl:  trade.currentPnl ?? null,
+        }).eq("id", trade.id);
+
+        // ── Auto post-trade AI analysis ──────────────────────────────────
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          supabase.functions.invoke("analyze-post-prediction", {
+            body: {
+              symbol:       trade.symbol,
+              action:       trade.action,
+              entry_price:  trade.entryPrice,
+              exit_price:   price,
+              exit_reason:  slHit ? "stop_loss" : "take_profit",
+              pnl:          trade.currentPnl ?? 0,
+              strategy:     trade.strategyType ?? "unknown",
+              trade_id:     trade.id,
+            },
+            headers: { Authorization: `Bearer ${session?.access_token}` },
+          }).then(() => {
+            sonnerToast.info(`AI post-trade analysis ready for ${trade.symbol}`, { duration: 4000 });
+          }).catch(() => {});
+        });
+
+        loadTrades();
+      } else {
+        sonnerToast.error(`Auto-exit order failed for ${trade.symbol}: ${(res.data as any)?.error ?? "unknown"}`);
+        triggeredRef.current.delete(trade.id); // allow retry
+      }
+    } catch (e: any) {
+      sonnerToast.error("Auto-exit error: " + e.message);
+      triggeredRef.current.delete(trade.id);
+    }
+  }, []);
 
   const loadBrokerOrders = useCallback(async (sync = false) => {
     if (sync) setOrdersSyncing(true);
@@ -252,20 +335,21 @@ export default function ActiveTradesPage() {
             `${sym.replace(/USDT$/i, "")}-USD`;
           const internalSymbol = fromBinanceToInternal(binanceSymbol).toUpperCase();
 
-          setActiveTrades((prev) =>
-            prev.map((t) => {
+          setActiveTrades((prev) => {
+            const updated = prev.map((t) => {
               if (t.symbol.toUpperCase() !== internalSymbol) return t;
               const pnl = (price - t.entryPrice) * t.shares * (t.action === "SELL" ? -1 : 1);
               const pnlPct = (pnl / t.investmentAmount) * 100;
-              return {
-                ...t,
-                currentPrice: price,
-                currentPnl: pnl,
-                currentPnlPercentage: pnlPct,
-                lastPriceUpdate: new Date().toISOString(),
-              };
-            })
-          );
+              return { ...t, currentPrice: price, currentPnl: pnl, currentPnlPercentage: pnlPct, lastPriceUpdate: new Date().toISOString() };
+            });
+            // Check SL/TP on updated trades (outside setState to avoid stale closure)
+            updated.forEach((t) => {
+              if (t.symbol.toUpperCase() === internalSymbol && t.brokerOrderId && !t.brokerOrderId.startsWith("PAPER")) {
+                checkAndAutoExit(t, price);
+              }
+            });
+            return updated;
+          });
         } catch {
           // ignore malformed ticks
         }
@@ -282,7 +366,7 @@ export default function ActiveTradesPage() {
     return () => {
       ws?.close();
     };
-  }, [activeTrades.map((t) => t.symbol).join(",")]);
+  }, [activeTrades.map((t) => t.symbol).join(","), checkAndAutoExit]);
 
   // Yahoo WebSocket for non-USD symbols (NSE/BSE etc.) for truly live updates.
   useEffect(() => {
@@ -329,20 +413,21 @@ export default function ActiveTradesPage() {
           const price = Number(msg.price);
           if (!symbol || !price || Number.isNaN(price)) return;
 
-          setActiveTrades((prev) =>
-            prev.map((t) => {
+          setActiveTrades((prev) => {
+            const updated = prev.map((t) => {
               if (t.symbol.toUpperCase() !== symbol) return t;
               const pnl = (price - t.entryPrice) * t.shares * (t.action === "SELL" ? -1 : 1);
               const pnlPct = (pnl / t.investmentAmount) * 100;
-              return {
-                ...t,
-                currentPrice: price,
-                currentPnl: pnl,
-                currentPnlPercentage: pnlPct,
-                lastPriceUpdate: new Date().toISOString(),
-              };
-            })
-          );
+              return { ...t, currentPrice: price, currentPnl: pnl, currentPnlPercentage: pnlPct, lastPriceUpdate: new Date().toISOString() };
+            });
+            // Real-time SL/TP check on every tick
+            updated.forEach((t) => {
+              if (t.symbol.toUpperCase() === symbol && t.brokerOrderId && !t.brokerOrderId.startsWith("PAPER")) {
+                checkAndAutoExit(t, price);
+              }
+            });
+            return updated;
+          });
         } catch {
           // ignore malformed tick
         }
@@ -369,7 +454,7 @@ export default function ActiveTradesPage() {
         yahooReconnectRef.current = null;
       }
     };
-  }, [activeTrades.map((t) => t.symbol.toUpperCase()).sort().join(",")]);
+  }, [activeTrades.map((t) => t.symbol.toUpperCase()).sort().join(","), checkAndAutoExit]);
 
   const convertAmount = (value: number, symbol?: string) => {
     const assetCurrency = symbol ? (isUsdDenominatedSymbol(symbol) ? "USD" : "INR") : "INR";
@@ -639,6 +724,21 @@ export default function ActiveTradesPage() {
                             <span className="truncate">
                               {pnlPrefix}{currencySymbol}{Math.abs(displayPnl).toFixed(2)}
                             </span>
+                          </div>
+                          {/* SL / TP badges */}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {trade.stopLossPrice && (
+                              <span className="flex items-center gap-0.5 text-[9px] text-red-400 bg-red-500/10 border border-red-500/20 px-1.5 py-0.5 rounded">
+                                <ShieldAlert className="h-2.5 w-2.5" />
+                                SL {currencySymbol}{convertAmount(trade.stopLossPrice, trade.symbol).toFixed(2)}
+                              </span>
+                            )}
+                            {trade.takeProfitPrice && (
+                              <span className="flex items-center gap-0.5 text-[9px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded">
+                                <Target className="h-2.5 w-2.5" />
+                                TP {currencySymbol}{convertAmount(trade.takeProfitPrice, trade.symbol).toFixed(2)}
+                              </span>
+                            )}
                           </div>
                         </div>
 

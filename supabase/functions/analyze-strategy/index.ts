@@ -10,8 +10,23 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY") ?? "";
-const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") ?? "";
+// Uses the same GEMINI_API_KEY already configured for predict-movement, suggest-strategy, etc.
+const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
+
+async function callGemini(prompt: string): Promise<string> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { maxOutputTokens: 1200, temperature: 0.2 },
+    }),
+  });
+  if (!res.ok) throw new Error(`Gemini error: ${res.status}`);
+  const data = await res.json();
+  return data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+}
 
 const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin":  "*",
@@ -92,58 +107,22 @@ Provide analysis in this exact JSON format (no markdown, pure JSON):
   "notes": "<key insight for the trader in 1-2 sentences>"
 }`;
 
-    // Call AI (Groq preferred, fallback to OpenAI)
+    // Call Gemini (same key used across the whole platform)
     let aiAnalysis: Record<string, unknown> | null = null;
 
-    if (GROQ_API_KEY) {
-      const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${GROQ_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
-          messages: [{ role: "user", content: prompt }],
-          temperature: 0.3,
-          max_tokens: 800,
-        }),
-      });
-
-      if (groqRes.ok) {
-        const groqData = await groqRes.json() as { choices: Array<{ message: { content: string } }> };
-        const raw = groqData.choices?.[0]?.message?.content ?? "";
+    if (GEMINI_API_KEY) {
+      try {
+        const raw = await callGemini(prompt);
         const jsonMatch = raw.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           aiAnalysis = JSON.parse(jsonMatch[0]);
         }
+      } catch (e) {
+        console.warn("Gemini analysis failed, falling back to rule-based:", e);
       }
     }
 
-    if (!aiAnalysis && OPENAI_API_KEY) {
-      const oaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${OPENAI_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          messages: [{ role: "user", content: prompt }],
-          temperature: 0.3,
-          max_tokens: 800,
-          response_format: { type: "json_object" },
-        }),
-      });
-
-      if (oaiRes.ok) {
-        const oaiData = await oaiRes.json() as { choices: Array<{ message: { content: string } }> };
-        const raw = oaiData.choices?.[0]?.message?.content ?? "";
-        aiAnalysis = JSON.parse(raw);
-      }
-    }
-
-    // Fallback: generate rule-based analysis if no AI key
+    // Fallback: rule-based analysis when Gemini is unavailable
     if (!aiAnalysis) {
       const sl = Number(s.stop_loss_pct ?? 2);
       const tp = Number(s.take_profit_pct ?? 4);
@@ -174,7 +153,7 @@ Provide analysis in this exact JSON format (no markdown, pure JSON):
           : "Any trending market with clear direction",
         avoid_when: "High-impact news days (RBI policy, budget, earnings), low volume sessions",
         risk_reward_ratio: rrr,
-        notes: `This is a rule-based estimate. Connect your AI API key (GROQ_API_KEY) for deep analysis.`,
+        notes: `Rule-based estimate. Set GEMINI_API_KEY for full AI-powered analysis.`,
       };
     }
 

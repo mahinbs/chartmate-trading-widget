@@ -1,4 +1,4 @@
-import { Brain, Home } from "lucide-react";
+import { Brain, Home, Activity, Link2 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 
 import {
@@ -17,6 +17,9 @@ import {
 const menuItems = [
   { title: "Home", url: "/home", icon: Home },
   { title: "AI Analysis", url: "/predict", icon: Brain },
+  { title: "Active Trades", url: "/active-trades", icon: Activity },
+  { title: "Strategies", url: "/strategies", icon: Brain },
+  { title: "Broker Sync", url: "/algo-setup", icon: Link2 },
 ];
 
 export function AppSidebar() {

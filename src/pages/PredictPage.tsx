@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,8 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useTradingIntegration } from "@/hooks/useTradingIntegration";
 import { useSubscription } from "@/hooks/useSubscription";
 import { TradingIntegrationModal } from "@/components/trading/TradingIntegrationModal";
+import BrokerSyncSection from "@/components/trading/BrokerSyncSection";
+import PreOrderConfirmSheet, { PreOrderData } from "@/components/trading/PreOrderConfirmSheet";
 import { StrategySelectionDialog, STRATEGIES } from "@/components/trading/StrategySelectionDialog";
 import { UsePreviousOrNewStrategyDialog } from "@/components/trading/UsePreviousOrNewStrategyDialog";
 import { PRICING_PLANS } from "@/constants/pricing";
@@ -233,6 +235,9 @@ const PredictPage = () => {
   const [isPaperTrade, setIsPaperTrade] = useState(false);
   const [showPremiumDialog, setShowPremiumDialog] = useState(false);
   const [checkingOnboarding, setCheckingOnboarding] = useState(false);
+  const [preOrderData, setPreOrderData] = useState<PreOrderData | null>(null);
+  const [showPreOrderSheet, setShowPreOrderSheet] = useState(false);
+  const pendingOrderRef = useRef<{ strategy: string; product: string; action: "BUY"|"SELL"; sellPosition?: { entryPrice: number; shares: number } } | null>(null);
 
   // ── After-order live P&L tracking state ──────────────────────────────────────
   const [placedTrade,      setPlacedTrade]      = useState<ActiveTrade | null>(null);
@@ -367,6 +372,39 @@ const PredictPage = () => {
       toast.error(e?.message || 'Failed', { id: 'trade-start' });
     }
   }, [result, investment, userProfile, isPaperTrade]);
+
+  // ── Intercept strategy confirm for live orders → show pre-order sheet ─────
+  const handleStrategyConfirm = useCallback((
+    strategyCode: string,
+    product: string,
+    selectedAction: "BUY" | "SELL",
+    sellPosition?: { entryPrice: number; shares: number },
+  ) => {
+    if (isPaperTrade || !result) {
+      placeMockOrderAndTrack(strategyCode, product, selectedAction, sellPosition);
+      return;
+    }
+    pendingOrderRef.current = { strategy: strategyCode, product, action: selectedAction, sellPosition };
+    const sp = getStrategyParams(strategyCode);
+    const price = result.currentPrice;
+    const shares = result.isCrypto
+      ? (result.positionSize?.shares ?? 0)
+      : Math.floor(result.positionSize?.shares || 0) || 1;
+    const isBuy = selectedAction === "BUY";
+    setPreOrderData({
+      symbol:     result.symbol,
+      action:     selectedAction,
+      quantity:   shares || 1,
+      price,
+      exchange:   "NSE",
+      product,
+      strategy:   STRATEGIES.find(s => s.value === strategyCode)?.label ?? "ChartMate AI",
+      stopLoss:   parseFloat((isBuy ? price * (1 - sp.stopLossPercentage / 100) : price * (1 + sp.stopLossPercentage / 100)).toFixed(2)),
+      takeProfit: parseFloat((isBuy ? price * (1 + sp.targetProfitPercentage / 100) : price * (1 - sp.targetProfitPercentage / 100)).toFixed(2)),
+      investment: parseFloat(investment),
+    });
+    setShowPreOrderSheet(true);
+  }, [isPaperTrade, result, investment, placeMockOrderAndTrack]);
 
   // ── Poll placed trade for live P&L updates ───────────────────────────────────
   useEffect(() => {
@@ -1334,6 +1372,11 @@ const PredictPage = () => {
                         </div>
                       </div>
 
+                      {/* Broker sync status — shown for paid users in live mode */}
+                      {isPremium && !isPaperTrade && (
+                        <BrokerSyncSection compact />
+                      )}
+
                       {/* Subscription status for paid users */}
                       {isPremium && (
                         <div className="space-y-2">
@@ -1609,7 +1652,7 @@ const PredictPage = () => {
                           timeframe={timeframe === "custom" ? customTimeframe || "1d" : timeframe || "1d"}
                     currentPrice={result.currentPrice}
                           isPaperTrade={isPaperTrade}
-                          onConfirm={placeMockOrderAndTrack}
+                          onConfirm={handleStrategyConfirm}
                         />
                       )}
 
@@ -2074,6 +2117,22 @@ const PredictPage = () => {
           </Alert>
         </Container>
       </div >
+
+      {/* ── Pre-order deep AI analysis sheet ──────────────────────────────── */}
+      <PreOrderConfirmSheet
+        open={showPreOrderSheet}
+        order={preOrderData}
+        onConfirm={() => {
+          setShowPreOrderSheet(false);
+          const p = pendingOrderRef.current;
+          if (p) placeMockOrderAndTrack(p.strategy, p.product, p.action, p.sellPosition);
+          pendingOrderRef.current = null;
+        }}
+        onCancel={() => {
+          setShowPreOrderSheet(false);
+          pendingOrderRef.current = null;
+        }}
+      />
     </div >
   );
 };

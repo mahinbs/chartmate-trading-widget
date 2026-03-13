@@ -28,6 +28,8 @@ import {
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
+import BrokerSyncSection from "@/components/trading/BrokerSyncSection";
+import BrokerPortfolioCard from "@/components/trading/BrokerPortfolioCard";
 
 interface OnboardingForm {
   full_name: string;
@@ -77,6 +79,7 @@ export default function AlgoOnboardingPage() {
   const [planId, setPlanId] = useState<string>("premium");
   const [alreadySubmitted, setAlreadySubmitted] = useState(false);
   const [existingStatus, setExistingStatus] = useState<string | null>(null);
+  const [existingBroker, setExistingBroker] = useState<string | null>(null);
   const [checking, setChecking] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
@@ -119,6 +122,7 @@ export default function AlgoOnboardingPage() {
       if (existing) {
         setAlreadySubmitted(true);
         setExistingStatus(existing.status ?? null);
+        setExistingBroker(existing.broker ?? null);
       }
 
       setChecking(false);
@@ -173,6 +177,9 @@ export default function AlgoOnboardingPage() {
 
   if (done || alreadySubmitted) {
     const status = done ? "pending" : (existingStatus ?? "pending");
+    const broker = existingBroker ?? "other";
+    const isProvisioned = status === "provisioned" || status === "active";
+
     const statusTone =
       status === "active"
         ? "bg-green-500/10 text-green-300 border-green-500/30"
@@ -183,38 +190,55 @@ export default function AlgoOnboardingPage() {
       status === "active"
         ? "Active"
         : status === "provisioned"
-          ? "Provisioned"
-          : "Pending setup";
+          ? "Provisioned — connect your broker below"
+          : "Pending setup (24h)";
 
     return (
-      <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center px-4 text-center gap-6">
-        <div className="rounded-full bg-teal-500/10 p-6 border border-teal-500/30">
-          <CheckCircle2 className="h-12 w-12 text-teal-400" />
+      <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center px-4 py-12">
+        <div className="w-full max-w-md space-y-6 text-center">
+          <div className="flex flex-col items-center gap-4">
+            <div className="rounded-full bg-teal-500/10 p-6 border border-teal-500/30">
+              <CheckCircle2 className="h-12 w-12 text-teal-400" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-black text-white tracking-tight mb-2">
+                {done ? "You're all set!" : "Already submitted"}
+              </h1>
+              <p className="text-zinc-400 text-sm max-w-sm mx-auto">
+                {isProvisioned
+                  ? "Your algo trading account is ready. Connect your broker below to start placing live orders."
+                  : done
+                    ? "Our team will configure your algo trading account within 24 hours."
+                    : "We already have your details. You can track current onboarding status below."}
+              </p>
+            </div>
+            <div className={`text-xs font-semibold px-4 py-2 rounded-full border ${statusTone}`}>
+              Onboarding status: {statusLabel}
+            </div>
+            {!isProvisioned && (
+              <div className="flex items-center gap-1 text-xs text-teal-400 border border-teal-500/30 bg-teal-500/10 rounded-full px-4 py-2">
+                <Zap className="h-3.5 w-3.5 mr-1" />
+                Algo Trade access active for 1 year
+              </div>
+            )}
+          </div>
+
+          {/* Broker sync + live portfolio once provisioned */}
+          {isProvisioned && (
+            <>
+              <BrokerSyncSection broker={broker} />
+              <BrokerPortfolioCard />
+            </>
+          )}
+
+          <Button
+            onClick={() => navigate("/predict")}
+            className="w-full bg-teal-500 hover:bg-teal-400 text-black font-bold px-8 rounded-xl"
+          >
+            Go to Trading Dashboard
+            <ChevronRight className="h-4 w-4 ml-1" />
+          </Button>
         </div>
-        <div>
-          <h1 className="text-3xl font-black text-white tracking-tight mb-2">
-            {done ? "You're all set!" : "Already submitted"}
-          </h1>
-          <p className="text-zinc-400 text-sm max-w-sm mx-auto">
-            {done
-              ? "Our team will configure your OpenAlgo account within 24 hours. You can monitor your onboarding status below."
-              : "We already have your details. You can track current onboarding status below."}
-          </p>
-        </div>
-        <div className={`text-xs font-semibold px-4 py-2 rounded-full border ${statusTone}`}>
-          Onboarding status: {statusLabel}
-        </div>
-        <div className="flex items-center gap-1 text-xs text-teal-400 border border-teal-500/30 bg-teal-500/10 rounded-full px-4 py-2">
-          <Zap className="h-3.5 w-3.5 mr-1" />
-          Algo Trade access active for 1 year
-        </div>
-        <Button
-          onClick={() => navigate("/predict")}
-          className="bg-teal-500 hover:bg-teal-400 text-black font-bold px-8 rounded-xl"
-        >
-          Go to Trading Dashboard
-          <ChevronRight className="h-4 w-4 ml-1" />
-        </Button>
       </div>
     );
   }

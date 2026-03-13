@@ -2,20 +2,19 @@
  * admin-provision-algo — Supabase Edge Function (super-admin only)
  *
  * Provisions a user for live algo trading:
- *  1. Calls OpenAlgo /api/v1/platform/create-user to auto-create their OpenAlgo account
- *     and receive their API key (no manual API key copy-paste needed).
- *  2. Saves the API key + broker mapping to user_trading_integration.
+ *  1. Admin provides the user's personal OpenAlgo API key (each user has their own unique key).
+ *     Get it from openalgo.tradebrainx.com → create the user account → copy their API key.
+ *  2. Saves that API key to user_trading_integration (tied to this specific user only).
  *  3. Creates an algo_user_assignments record with strategy + risk profile.
  *  4. Marks algo_onboarding as "provisioned".
  *
- * Body: { onboarding_id, openalgo_username_override? }
- * (openalgo_api_key is no longer required — it's auto-generated)
+ * Body: { onboarding_id, openalgo_api_key }
+ * Every user gets a DIFFERENT openalgo_api_key — never reuse the same key across users.
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const OPENALGO_URL = (Deno.env.get("OPENALGO_URL") ?? "").replace(/\/$/, "");
-const OPENALGO_APP_KEY = Deno.env.get("OPENALGO_APP_KEY") ?? "";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin":  "*",
@@ -54,11 +53,12 @@ Deno.serve(async (req: Request) => {
 
     // ── Parse body ────────────────────────────────────────────────────────
     const body = await req.json().catch(() => ({}));
-    const onboardingId: string = (body.onboarding_id as string)?.trim();
+    const onboardingId: string   = (body.onboarding_id as string)?.trim();
+    const openalgoApiKey: string = (body.openalgo_api_key as string)?.trim();
 
-    if (!onboardingId) {
+    if (!onboardingId || !openalgoApiKey) {
       return new Response(
-        JSON.stringify({ error: "onboarding_id is required" }),
+        JSON.stringify({ error: "onboarding_id and openalgo_api_key are required. Each user has their own unique API key from OpenAlgo." }),
         { status: 400, headers },
       );
     }
@@ -86,49 +86,9 @@ Deno.serve(async (req: Request) => {
 
     const targetUserId: string = onboarding.user_id;
 
-    // ── Get user email from Supabase auth ─────────────────────────────────
-    const { data: { user: targetUser } } = await supabase.auth.admin.getUserById(targetUserId);
-    const targetEmail = targetUser?.email ?? `user_${targetUserId.slice(0, 8)}@chartmate.in`;
-
-    // ── Auto-create OpenAlgo user and get API key ─────────────────────────
-    let openalgoApiKey = "";
-    let openalgoUsername = "";
-
-    if (OPENALGO_URL && OPENALGO_APP_KEY) {
-      const openalgoRes = await fetch(`${OPENALGO_URL}/api/v1/platform/create-user`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Platform-Key": OPENALGO_APP_KEY,
-        },
-        body: JSON.stringify({
-          supabase_user_id: targetUserId,
-          email: targetEmail,
-        }),
-      });
-
-      if (!openalgoRes.ok) {
-        const errText = await openalgoRes.text();
-        console.error("OpenAlgo create-user failed:", errText);
-        return new Response(
-          JSON.stringify({
-            error: "Failed to create OpenAlgo account. Please check OPENALGO_URL and OPENALGO_APP_KEY.",
-            detail: errText,
-          }),
-          { status: 502, headers },
-        );
-      }
-
-      const openalgoData = await openalgoRes.json() as { api_key: string; username: string; created: boolean };
-      openalgoApiKey = openalgoData.api_key ?? "";
-      openalgoUsername = openalgoData.username ?? "";
-      console.log(`OpenAlgo user ${openalgoUsername} ${openalgoData.created ? "created" : "already existed"}`);
-    } else {
-      // Fallback: OPENALGO_URL not configured — still provision in Supabase
-      console.warn("OPENALGO_URL or OPENALGO_APP_KEY not set — skipping OpenAlgo user creation");
-    }
-
-    // ── Upsert user_trading_integration ──────────────────────────────────
+    // ── Upsert user_trading_integration with the user's personal API key ──
+    // NOTE: openalgoApiKey is unique per user — it was obtained from
+    // openalgo.tradebrainx.com by creating this user's account there.
     const { data: integrationRow, error: upsertErr } = await supabase
       .from("user_trading_integration")
       .upsert(
@@ -139,7 +99,6 @@ Deno.serve(async (req: Request) => {
           api_key_encrypted: "",
           broker:            onboarding.broker ?? "zerodha",
           openalgo_api_key:  openalgoApiKey,
-          openalgo_username: openalgoUsername,
           strategy_name:     onboarding.strategy_pref ?? "ChartMate AI",
           is_active:         true,
           updated_at:        new Date().toISOString(),
@@ -193,8 +152,6 @@ Deno.serve(async (req: Request) => {
       JSON.stringify({
         success: true,
         message: "User provisioned successfully",
-        openalgo_username: openalgoUsername || null,
-        openalgo_key_set:  !!openalgoApiKey,
       }),
       { status: 200, headers },
     );

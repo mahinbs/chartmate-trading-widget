@@ -125,13 +125,18 @@ export default function AdminAlgoRequestsPage() {
 
   const handleProvision = async () => {
     if (!selected) return;
+    if (!apiKeyInput.trim()) {
+      toast.error("Please enter the OpenAlgo API key for this user's account.");
+      return;
+    }
 
     setProvisioning(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const res = await supabase.functions.invoke("admin-provision-algo", {
         body: {
-          onboarding_id: selected.id,
+          onboarding_id:    selected.id,
+          openalgo_api_key: apiKeyInput.trim(),
         },
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
@@ -345,12 +350,13 @@ export default function AdminAlgoRequestsPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Key className="h-4 w-4 text-teal-400" />
-              Auto-Provision OpenAlgo Account
+              Provision OpenAlgo Key
             </DialogTitle>
             <DialogDescription className="text-zinc-400 text-sm">
-              This will automatically create an OpenAlgo account for{" "}
-              <strong className="text-white">{selected?.full_name}</strong> and link it to their
-              broker. No manual API key required.
+              Enter <strong className="text-white">{selected?.full_name}</strong>'s personal
+              OpenAlgo API key. Every user has their own unique key — get it from{" "}
+              <span className="text-teal-400">openalgo.tradebrainx.com → API Keys</span> after
+              creating their account there.
             </DialogDescription>
           </DialogHeader>
 
@@ -379,10 +385,23 @@ export default function AdminAlgoRequestsPage() {
                 </div>
               )}
 
-              <div className="bg-teal-500/5 border border-teal-500/20 rounded-lg p-3 text-xs text-teal-300">
-                <strong>What happens:</strong> An OpenAlgo user account is automatically created,
-                their API key is generated and saved to our DB, and their strategy assignment
-                is activated. The user's Place Order button will unlock immediately.
+              <div className="space-y-1.5">
+                <Label className="text-zinc-300 text-sm flex items-center gap-1.5">
+                  <Key className="h-3.5 w-3.5 text-teal-400" />
+                  This User's OpenAlgo API Key
+                  <span className="text-red-400">*</span>
+                </Label>
+                <Input
+                  value={apiKeyInput}
+                  onChange={(e) => setApiKeyInput(e.target.value)}
+                  placeholder="Paste their unique API key from OpenAlgo dashboard → API Keys"
+                  className="bg-zinc-800 border-zinc-700 text-white font-mono text-sm placeholder:text-zinc-600"
+                  autoFocus
+                />
+                <p className="text-xs text-zinc-500">
+                  Each user has a different API key. Go to OpenAlgo admin → create this user's account →
+                  copy their personal API key and paste it here.
+                </p>
               </div>
             </div>
           )}
@@ -397,7 +416,7 @@ export default function AdminAlgoRequestsPage() {
             </Button>
             <Button
               onClick={handleProvision}
-              disabled={provisioning}
+              disabled={provisioning || !apiKeyInput.trim()}
               className="bg-teal-600 hover:bg-teal-500 text-white"
             >
               {provisioning ? (
