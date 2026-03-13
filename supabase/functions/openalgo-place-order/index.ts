@@ -10,6 +10,7 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { resolveTradeAccess } from "../_shared/trade-access.ts";
 
 const OPENALGO_URL = (Deno.env.get("OPENALGO_URL") ?? "").replace(/\/$/, "");
 
@@ -47,19 +48,9 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers });
     }
 
-    // ── Verify active subscription ────────────────────────────────────────
-    const { data: sub } = await supabase
-      .from("user_subscriptions")
-      .select("status, current_period_end")
-      .eq("user_id", user.id)
-      .maybeSingle();
-
-    const isActiveSub =
-      sub &&
-      sub.status === "active" &&
-      (!sub.current_period_end || new Date(sub.current_period_end) > new Date());
-
-    if (!isActiveSub) {
+    // ── Verify paid + onboarding + integration prerequisites ─────────────
+    const access = await resolveTradeAccess(supabase as any, user.id);
+    if (!access.hasActiveSubscription) {
       return new Response(
         JSON.stringify({
           error: "An active subscription is required to place live orders. Please purchase a plan.",
@@ -68,24 +59,27 @@ Deno.serve(async (req: Request) => {
         { status: 403, headers },
       );
     }
-
-    // ── Load user's OpenAlgo API key from DB ──────────────────────────────
-    const { data: integration, error: dbError } = await supabase
-      .from("user_trading_integration")
-      .select("broker, openalgo_api_key, token_expires_at, is_active")
-      .eq("user_id", user.id)
-      .eq("is_active", true)
-      .maybeSingle();
-
-    if (dbError || !integration) {
+    if (!access.hasProvisionedOnboarding) {
       return new Response(
         JSON.stringify({
-          error: "No broker connected. Please connect your broker in Settings.",
+          error: "Onboarding not provisioned yet. Please complete onboarding and wait for activation.",
+          error_code: "ONBOARDING_NOT_PROVISIONED",
+        }),
+        { status: 403, headers },
+      );
+    }
+    if (!access.hasActiveIntegration || !access.integration) {
+      return new Response(
+        JSON.stringify({
+          error: "No active broker integration found. Please connect your broker in Settings.",
           error_code: "NO_INTEGRATION",
         }),
         { status: 400, headers },
       );
     }
+
+    // ── Load user's OpenAlgo API key from DB ──────────────────────────────
+    const integration = access.integration;
 
     const openalgoApiKey = integration.openalgo_api_key ?? "";
     if (!openalgoApiKey.trim()) {
@@ -99,7 +93,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── Parse order payload ───────────────────────────────────────────────
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const { symbol, action, quantity, exchange, product, pricetype, price, strategy } = body as {
       symbol:     string;
       action:     string;
@@ -109,13 +103,99 @@ Deno.serve(async (req: Request) => {
       pricetype?: string;
       price?:     number;
       strategy?:  string;
+      strategy_code?: string;
+      intent?: "entry" | "exit";
+      trade_id?: string;
+    };
+    const strategyCode = ((body as { strategy_code?: string }).strategy_code ?? "").trim().toLowerCase();
+    const orderIntent = (body as { intent?: string }).intent === "exit" ? "exit" : "entry";
+    const tradeId = ((body as { trade_id?: string }).trade_id ?? "").trim() || null;
+
+    const writeAudit = async (params: {
+      status: "success" | "failed";
+      errorCode?: string;
+      errorMessage?: string;
+      responsePayload?: unknown;
+    }) => {
+      await supabase.from("order_audit_logs").insert({
+        user_id: user.id,
+        trade_id: tradeId,
+        intent: orderIntent,
+        provider: "openalgo",
+        request_payload: body,
+        response_payload: params.responsePayload ?? null,
+        status: params.status,
+        error_code: params.errorCode ?? null,
+        error_message: params.errorMessage ?? null,
+      });
     };
 
     if (!symbol || !action || !quantity) {
+      await writeAudit({
+        status: "failed",
+        errorCode: "INVALID_ORDER_PAYLOAD",
+        errorMessage: "symbol, action and quantity are required",
+      });
       return new Response(
         JSON.stringify({ error: "symbol, action and quantity are required" }),
         { status: 400, headers },
       );
+    }
+
+    // ── Enforce server-side strategy/account assignment (entries only) ────
+    const { data: assignment } = await supabase
+      .from("algo_user_assignments")
+      .select("allowed_strategy, status, integration_id")
+      .eq("user_id", user.id)
+      .eq("status", "active")
+      .maybeSingle();
+
+    if (orderIntent === "entry") {
+      if (!assignment) {
+        await writeAudit({
+          status: "failed",
+          errorCode: "ASSIGNMENT_REQUIRED",
+          errorMessage: "No active admin assignment found for this user",
+        });
+        return new Response(
+          JSON.stringify({
+            error: "No active strategy assignment found. Contact support to activate your assigned strategy.",
+            error_code: "ASSIGNMENT_REQUIRED",
+          }),
+          { status: 403, headers },
+        );
+      }
+
+      const allowedStrategy = (assignment.allowed_strategy ?? "").toString().trim().toLowerCase();
+      if (allowedStrategy && strategyCode && strategyCode !== allowedStrategy) {
+        await writeAudit({
+          status: "failed",
+          errorCode: "STRATEGY_NOT_ALLOWED",
+          errorMessage: `Requested strategy ${strategyCode} does not match allowed strategy ${allowedStrategy}`,
+        });
+        return new Response(
+          JSON.stringify({
+            error: `Strategy '${strategyCode}' is not allowed for your account. Allowed strategy: '${allowedStrategy}'.`,
+            error_code: "STRATEGY_NOT_ALLOWED",
+          }),
+          { status: 403, headers },
+        );
+      }
+
+      if (assignment.integration_id && assignment.integration_id !== access.integration.id) {
+        await writeAudit({
+          status: "failed",
+          errorCode: "ASSIGNMENT_INTEGRATION_MISMATCH",
+          errorMessage: "Assigned integration is not active for this user",
+        });
+        return new Response(
+          JSON.stringify({
+            error: "Assigned account mapping is invalid. Please contact support.",
+            error_code: "ASSIGNMENT_INTEGRATION_MISMATCH",
+          }),
+          { status: 403, headers },
+        );
+      }
     }
 
     const resolvedExchange = (exchange ?? "NSE").toUpperCase();
@@ -129,6 +209,11 @@ Deno.serve(async (req: Request) => {
       const mins   = nowIst.getUTCHours() * 60 + nowIst.getUTCMinutes();
 
       if (day === 0 || day === 6 || mins < 540 || mins > 930) {
+        await writeAudit({
+          status: "failed",
+          errorCode: "MARKET_CLOSED",
+          errorMessage: "Indian market is closed for new orders",
+        });
         return new Response(
           JSON.stringify({
             error: "Indian market is closed. Orders can only be placed Mon–Fri between 09:00 and 15:30 IST.",
@@ -140,9 +225,12 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── Call real OpenAlgo /api/v1/placeorder ─────────────────────────────
+    const resolvedStrategyName =
+      strategy ?? access.integration.strategy_name ?? (strategyCode || "ChartMate AI");
+
     const orderPayload = {
       apikey:             openalgoApiKey.trim(),
-      strategy:           strategy ?? "ChartMate AI",
+      strategy:           resolvedStrategyName,
       exchange:           resolvedExchange,
       symbol:             symbol.toUpperCase(),
       action:             action.toUpperCase(),
@@ -168,6 +256,12 @@ Deno.serve(async (req: Request) => {
 
       // Invalid/expired API key
       if (openalgoRes.status === 401 || openalgoRes.status === 403) {
+        await writeAudit({
+          status: "failed",
+          errorCode: "INVALID_OPENALGO_KEY",
+          errorMessage: "OpenAlgo API key invalid or expired",
+          responsePayload: openalgoData,
+        });
         return new Response(
           JSON.stringify({
             error: "Your OpenAlgo API key is invalid or expired. Please reconnect your broker.",
@@ -177,11 +271,22 @@ Deno.serve(async (req: Request) => {
         );
       }
 
+      await writeAudit({
+        status: "failed",
+        errorCode: "OPENALGO_ORDER_FAILED",
+        errorMessage: detail,
+        responsePayload: openalgoData,
+      });
       return new Response(
         JSON.stringify({ error: detail, raw: openalgoData }),
         { status: 502, headers },
       );
     }
+
+    await writeAudit({
+      status: "success",
+      responsePayload: openalgoData,
+    });
 
     // Success — return the order ID directly
     return new Response(JSON.stringify(openalgoData), { status: 200, headers });

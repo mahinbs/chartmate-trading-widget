@@ -59,7 +59,7 @@ Deno.serve(async (req: Request) => {
     // ── Fetch the onboarding record ───────────────────────────────────────
     const { data: onboarding, error: fetchErr } = await supabase
       .from("algo_onboarding")
-      .select("user_id, broker, strategy_pref, status")
+      .select("id, user_id, broker, strategy_pref, risk_level, status")
       .eq("id", onboardingId)
       .maybeSingle();
 
@@ -80,7 +80,7 @@ Deno.serve(async (req: Request) => {
     const targetUserId: string = onboarding.user_id;
 
     // ── Upsert user_trading_integration (service role bypasses RLS) ───────
-    const { error: upsertErr } = await supabase
+    const { data: integrationRow, error: upsertErr } = await supabase
       .from("user_trading_integration")
       .upsert(
         {
@@ -95,12 +95,40 @@ Deno.serve(async (req: Request) => {
           updated_at:        new Date().toISOString(),
         },
         { onConflict: "user_id" },
-      );
+      )
+      .select("id")
+      .single();
 
     if (upsertErr) {
       console.error("admin-provision-algo upsert error:", upsertErr);
       return new Response(
         JSON.stringify({ error: "Failed to save integration: " + upsertErr.message }),
+        { status: 500, headers },
+      );
+    }
+
+    // ── Enforce assigned strategy + risk profile for this user ─────────────
+    const allowedStrategy = (onboarding.strategy_pref ?? "trend_following").toString().trim();
+    const riskProfile = (onboarding.risk_level ?? "medium").toString().toLowerCase();
+    const { error: assignmentErr } = await supabase
+      .from("algo_user_assignments")
+      .upsert(
+        {
+          user_id: targetUserId,
+          integration_id: integrationRow?.id ?? null,
+          allowed_strategy: allowedStrategy,
+          risk_profile: riskProfile,
+          status: "active",
+          assigned_by: user.id,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id" },
+      );
+
+    if (assignmentErr) {
+      console.error("admin-provision-algo assignment error:", assignmentErr);
+      return new Response(
+        JSON.stringify({ error: "Failed to save user assignment: " + assignmentErr.message }),
         { status: 500, headers },
       );
     }

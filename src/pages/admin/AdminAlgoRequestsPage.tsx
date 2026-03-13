@@ -72,10 +72,13 @@ export default function AdminAlgoRequestsPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const { data, error } = await (supabase as any)
-        .from("algo_onboarding")
-        .select("*")
-        .order("created_at", { ascending: false });
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await supabase.functions.invoke("get-algo-requests", {
+        body: {},
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      const data = (res.data as { rows?: any[] } | null)?.rows ?? [];
+      const error = res.error;
 
       if (error) throw error;
 

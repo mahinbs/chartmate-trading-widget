@@ -76,6 +76,7 @@ export default function AlgoOnboardingPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [planId, setPlanId] = useState<string>("premium");
   const [alreadySubmitted, setAlreadySubmitted] = useState(false);
+  const [existingStatus, setExistingStatus] = useState<string | null>(null);
   const [checking, setChecking] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
@@ -111,11 +112,14 @@ export default function AlgoOnboardingPage() {
       // Check if already submitted
       const { data: existing } = await (supabase as any)
         .from("algo_onboarding")
-        .select("id")
+        .select("id,status")
         .eq("user_id", session.user.id)
         .maybeSingle();
 
-      if (existing) setAlreadySubmitted(true);
+      if (existing) {
+        setAlreadySubmitted(true);
+        setExistingStatus(existing.status ?? null);
+      }
 
       setChecking(false);
     })();
@@ -168,6 +172,20 @@ export default function AlgoOnboardingPage() {
   }
 
   if (done || alreadySubmitted) {
+    const status = done ? "pending" : (existingStatus ?? "pending");
+    const statusTone =
+      status === "active"
+        ? "bg-green-500/10 text-green-300 border-green-500/30"
+        : status === "provisioned"
+          ? "bg-teal-500/10 text-teal-300 border-teal-500/30"
+          : "bg-amber-500/10 text-amber-300 border-amber-500/30";
+    const statusLabel =
+      status === "active"
+        ? "Active"
+        : status === "provisioned"
+          ? "Provisioned"
+          : "Pending setup";
+
     return (
       <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center px-4 text-center gap-6">
         <div className="rounded-full bg-teal-500/10 p-6 border border-teal-500/30">
@@ -179,9 +197,12 @@ export default function AlgoOnboardingPage() {
           </h1>
           <p className="text-zinc-400 text-sm max-w-sm mx-auto">
             {done
-              ? "Our team will configure your OpenAlgo account within 24 hours. Your Place Order button is now unlocked."
-              : "We already have your details. Our team will reach out shortly."}
+              ? "Our team will configure your OpenAlgo account within 24 hours. You can monitor your onboarding status below."
+              : "We already have your details. You can track current onboarding status below."}
           </p>
+        </div>
+        <div className={`text-xs font-semibold px-4 py-2 rounded-full border ${statusTone}`}>
+          Onboarding status: {statusLabel}
         </div>
         <div className="flex items-center gap-1 text-xs text-teal-400 border border-teal-500/30 bg-teal-500/10 rounded-full px-4 py-2">
           <Zap className="h-3.5 w-3.5 mr-1" />

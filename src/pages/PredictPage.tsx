@@ -223,11 +223,12 @@ const PredictPage = () => {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const { save: saveTradingIntegration, refresh: refreshTradingIntegration } = useTradingIntegration();
-  const { isPremium } = useSubscription();
+  const { isPremium, isExpiringSoon, daysUntilExpiry, isAutoRenewDisabled, isInGracePeriod } = useSubscription();
   const [showIntegrationModal, setShowIntegrationModal] = useState(false);
   const [showStrategyDialog, setShowStrategyDialog] = useState(false);
   const [showPreviousOrNewDialog, setShowPreviousOrNewDialog] = useState(false);
   const [lastUsedStrategy, setLastUsedStrategy] = useState<{ strategyType: string; product: string; label: string } | null>(null);
+  const [assignedStrategy, setAssignedStrategy] = useState<string | null>(null);
   const [displayCurrency, setDisplayCurrency] = useState<"INR" | "USD">("INR");
   const [isPaperTrade, setIsPaperTrade] = useState(false);
   const [showPremiumDialog, setShowPremiumDialog] = useState(false);
@@ -252,8 +253,8 @@ const PredictPage = () => {
     sellPosition?: { entryPrice: number; shares: number },
   ) => {
     if (!result) return;
-    const prefix = isPaperTrade ? 'PAPER' : 'MOCK';
-    const mockOrderId = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
+    const prefix = isPaperTrade ? "PAPER" : "OPENALGO";
+    let brokerOrderId = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
     const action = selectedAction;
 
     // For SELL: use the position data the user provided; default to current price / calculated shares
@@ -276,6 +277,37 @@ const PredictPage = () => {
     toast.loading("Placing order…", { id: 'trade-start' });
     try {
       const { tradeTrackingService } = await import("@/services/tradeTrackingService");
+
+      // Real trade path: place broker order first, then create tracking record.
+      if (!isPaperTrade) {
+        const strategyLabel = STRATEGIES.find(s => s.value === strategyCode)?.label ?? "ChartMate AI";
+        const { data: orderData, error: orderErr } = await supabase.functions.invoke("openalgo-place-order", {
+          body: {
+            symbol: result.symbol,
+            action,
+            quantity: shares || 1,
+            exchange: "NSE",
+            product,
+            pricetype: "MARKET",
+            strategy: strategyLabel,
+            strategy_code: strategyCode,
+            intent: "entry",
+          },
+        });
+
+        const orderError = (orderData as any)?.error ?? orderErr?.message;
+        if (orderError) {
+          toast.error(`Order failed: ${orderError}`, { id: "trade-start" });
+          return;
+        }
+
+        brokerOrderId =
+          (orderData as any)?.orderid ||
+          (orderData as any)?.order_id ||
+          (orderData as any)?.data?.orderid ||
+          brokerOrderId;
+      }
+
       const response = await tradeTrackingService.startTradeSession({
         symbol: result.symbol,
         action,
@@ -288,7 +320,7 @@ const PredictPage = () => {
         marginType: userProfile.marginType,
         exchange: 'NSE',
         product,
-        brokerOrderId: mockOrderId,
+        brokerOrderId,
         strategyType: strategyCode,
         stopLossPercentage: sp.stopLossPercentage,
         targetProfitPercentage: sp.targetProfitPercentage,
@@ -308,7 +340,7 @@ const PredictPage = () => {
 
         // Build a local trade object for the immediate P&L card —
         // use response data if available, otherwise construct from known values
-        const tradeId = (response.data as any)?.id || (response.data as any)?.trade?.id || mockOrderId;
+        const tradeId = (response.data as any)?.id || (response.data as any)?.trade?.id || brokerOrderId;
         const strategyLabel = STRATEGIES.find(s => s.value === strategyCode)?.label ?? strategyCode;
         setPlacedTrade({
           id:              tradeId,
@@ -325,7 +357,7 @@ const PredictPage = () => {
           currentPrice:    result.currentPrice,
           currentPnl:      0,
           currentPnlPercentage: 0,
-          brokerOrderId:   mockOrderId,
+          brokerOrderId,
           product,
           confidence:      result.geminiForecast?.action_signal?.confidence || result.confidence || 0,
         } as ActiveTrade & { strategyLabel: string });
@@ -1017,15 +1049,15 @@ const PredictPage = () => {
                     <Button variant="outline" onClick={handlePrevStep} className="flex-shrink-0">
                       <ArrowLeft className="h-4 w-4 mr-1" /> Back
                     </Button>
-                    <Button
-                      onClick={handleNextStep}
-                      disabled={!investment || parseFloat(investment) <= 0}
+                  <Button
+                    onClick={handleNextStep}
+                    disabled={!investment || parseFloat(investment) <= 0}
                       className="flex-1"
-                      size="lg"
-                    >
-                      Continue to Trading Profile
-                      <ArrowRight className="ml-2 h-4 w-4" />
-                    </Button>
+                    size="lg"
+                  >
+                    Continue to Trading Profile
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
                   </div>
                 </div>
               </StepContainer>
@@ -1062,15 +1094,15 @@ const PredictPage = () => {
                     <Button variant="outline" onClick={handlePrevStep} className="flex-shrink-0">
                       <ArrowLeft className="h-4 w-4 mr-1" /> Back
                     </Button>
-                    <Button
-                      onClick={handleNextStep}
+                  <Button
+                    onClick={handleNextStep}
                       className="flex-1"
-                      size="lg"
-                      disabled={!userProfile.riskAcceptance}
-                    >
-                      Continue to Review
-                      <ArrowRight className="ml-2 h-4 w-4" />
-                    </Button>
+                    size="lg"
+                    disabled={!userProfile.riskAcceptance}
+                  >
+                    Continue to Review
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
                   </div>
                   {!userProfile.riskAcceptance && (
                     <p className="text-sm text-center text-yellow-600 mt-2">
@@ -1163,24 +1195,24 @@ const PredictPage = () => {
                     <Button variant="outline" onClick={handlePrevStep} disabled={loading} className="flex-shrink-0">
                       <ArrowLeft className="h-4 w-4 mr-1" /> Back
                     </Button>
-                    <Button
-                      onClick={handleNextStep}
-                      disabled={loading}
+                  <Button
+                    onClick={handleNextStep}
+                    disabled={loading}
                       className="flex-1"
-                      size="lg"
-                    >
-                      {loading ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Starting Analysis...
-                        </>
-                      ) : (
-                        <>
-                          Start AI Analysis
-                          <BrainCircuit className="ml-2 h-4 w-4" />
-                        </>
-                      )}
-                    </Button>
+                    size="lg"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Starting Analysis...
+                      </>
+                    ) : (
+                      <>
+                        Start AI Analysis
+                        <BrainCircuit className="ml-2 h-4 w-4" />
+                      </>
+                    )}
+                  </Button>
                   </div>
                 </div>
               </StepContainer>
@@ -1302,9 +1334,43 @@ const PredictPage = () => {
                         </div>
                       </div>
 
+                      {/* Subscription status for paid users */}
+                      {isPremium && (
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge className="bg-teal-500/20 text-teal-300 border border-teal-500/40">
+                              Subscription Active
+                            </Badge>
+                            {isInGracePeriod && (
+                              <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                                Grace Period (24h after expiry)
+                              </Badge>
+                            )}
+                          </div>
+
+                          {isExpiringSoon && (
+                            <Alert className="bg-amber-500/10 border-amber-500/40 text-amber-300 py-2.5">
+                              <AlertTriangle className="h-3.5 w-3.5" />
+                              <AlertDescription className="text-xs">
+                                Your subscription expires in {Math.max(daysUntilExpiry ?? 0, 0)} day(s). Renew to avoid OpenAlgo interruption.
+                          </AlertDescription>
+                        </Alert>
+                          )}
+
+                          {isAutoRenewDisabled && (
+                            <Alert className="bg-red-500/10 border-red-500/40 text-red-300 py-2.5">
+                              <AlertTriangle className="h-3.5 w-3.5" />
+                              <AlertDescription className="text-xs">
+                                Auto-renew is OFF. OpenAlgo access disables 24 hours after expiry unless you renew.
+                              </AlertDescription>
+                            </Alert>
+                          )}
+                        </div>
+                      )}
+
                       {/* Two main buttons */}
                       <div className="grid grid-cols-2 gap-2">
-                        <Button
+                      <Button
                           disabled={checkingOnboarding}
                           onClick={async () => {
                             if (!isPremium) {
@@ -1329,42 +1395,71 @@ const PredictPage = () => {
                               toast.info("Your algo trading account is being set up. Our team will activate it within 24 hours.", { duration: 5000 });
                               return;
                             }
-                            // provisioned or active — proceed to strategy selection
-                            setIsPaperTrade(false);
-                            const { tradeTrackingService } = await import("@/services/tradeTrackingService");
-                            const last = await tradeTrackingService.getLastUsedStrategy();
-                            if (last) {
-                              const label = STRATEGIES.find(s => s.value === last.strategyType)?.label ?? last.strategyType;
-                              setLastUsedStrategy({ ...last, label });
-                              setShowPreviousOrNewDialog(true);
-                            } else {
-                              setShowStrategyDialog(true);
+                            // provisioned or active — load enforced assignment + account mapping
+                            const { data: assignment } = await (supabase as any)
+                              .from("algo_user_assignments")
+                              .select("allowed_strategy, risk_profile, integration_id, status")
+                              .eq("user_id", user?.id)
+                              .eq("status", "active")
+                              .maybeSingle();
+                            if (!assignment?.allowed_strategy) {
+                              toast.error("Your strategy assignment is not ready yet. Please contact support.");
+                              return;
                             }
+                            const { data: integration } = await (supabase as any)
+                              .from("user_trading_integration")
+                              .select("id, is_active, broker")
+                              .eq("user_id", user?.id)
+                              .eq("is_active", true)
+                              .maybeSingle();
+                            if (!integration?.id) {
+                              toast.error("No active broker account mapping found. Please contact support.");
+                              return;
+                            }
+                            if (assignment.integration_id && assignment.integration_id !== integration.id) {
+                              toast.error("Assigned account mismatch. Please contact support.");
+                              return;
+                            }
+
+                            setIsPaperTrade(false);
+                            setAssignedStrategy(assignment.allowed_strategy);
+                            setUserProfile((prev) => ({
+                              ...prev,
+                              riskTolerance: (assignment.risk_profile ?? prev.riskTolerance) as any,
+                            }));
+                            const label = STRATEGIES.find(s => s.value === assignment.allowed_strategy)?.label ?? assignment.allowed_strategy;
+                            setLastUsedStrategy({
+                              strategyType: assignment.allowed_strategy,
+                              product: "CNC",
+                              label,
+                            });
+                            setShowStrategyDialog(true);
                           }}
                           className="py-5 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600"
                         >
                           {checkingOnboarding ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Timer className="mr-2 h-4 w-4" />}
                           Place Order
                         </Button>
-                        <Button
-                          variant="outline"
-                          onClick={async () => {
+                      <Button
+                        variant="outline"
+                        onClick={async () => {
                             setIsPaperTrade(true);
-                            const { tradeTrackingService } = await import("@/services/tradeTrackingService");
-                            const last = await tradeTrackingService.getLastUsedStrategy();
-                            if (last) {
-                              const label = STRATEGIES.find(s => s.value === last.strategyType)?.label ?? last.strategyType;
-                              setLastUsedStrategy({ ...last, label });
-                              setShowPreviousOrNewDialog(true);
-                            } else {
-                              setShowStrategyDialog(true);
-                            }
-                          }}
+                            setAssignedStrategy(null);
+                          const { tradeTrackingService } = await import("@/services/tradeTrackingService");
+                          const last = await tradeTrackingService.getLastUsedStrategy();
+                          if (last) {
+                            const label = STRATEGIES.find(s => s.value === last.strategyType)?.label ?? last.strategyType;
+                            setLastUsedStrategy({ ...last, label });
+                            setShowPreviousOrNewDialog(true);
+                          } else {
+                            setShowStrategyDialog(true);
+                          }
+                        }}
                           className="py-5 border-2 border-violet-500/50 text-violet-300 hover:bg-violet-500/10 hover:border-violet-500"
-                        >
+                      >
                           <FlaskConical className="mr-2 h-4 w-4" />
-                          Paper Trade
-                        </Button>
+                        Paper Trade
+                      </Button>
                       </div>
 
                       <p className="text-[11px] text-center text-muted-foreground/70">
@@ -1487,48 +1582,48 @@ const PredictPage = () => {
                   );
                 })()}
 
-                {/* Use previous strategy or choose new */}
-                {result && lastUsedStrategy && (
-                  <UsePreviousOrNewStrategyDialog
-                    open={showPreviousOrNewDialog}
-                    onOpenChange={setShowPreviousOrNewDialog}
-                    lastStrategyLabel={lastUsedStrategy.label}
-                    symbol={result.symbol}
-                    action={result.geminiForecast?.action_signal?.action === 'SELL' ? 'SELL' : 'BUY'}
-                    onUsePrevious={() => {
-                      setShowStrategyDialog(true);
-                    }}
-                    onChooseNew={() => setShowStrategyDialog(true)}
-                  />
-                )}
+                      {/* Use previous strategy or choose new */}
+                      {result && lastUsedStrategy && (
+                        <UsePreviousOrNewStrategyDialog
+                          open={showPreviousOrNewDialog}
+                          onOpenChange={setShowPreviousOrNewDialog}
+                          lastStrategyLabel={lastUsedStrategy.label}
+                          symbol={result.symbol}
+                          action={result.geminiForecast?.action_signal?.action === 'SELL' ? 'SELL' : 'BUY'}
+                          onUsePrevious={() => {
+                            setShowStrategyDialog(true);
+                          }}
+                          onChooseNew={() => setShowStrategyDialog(true)}
+                        />
+                      )}
 
-                {/* Strategy selection (AI + market research) → place order */}
-                {result && (
-                  <StrategySelectionDialog
-                    open={showStrategyDialog}
-                    onOpenChange={setShowStrategyDialog}
-                    currentStrategy={lastUsedStrategy?.strategyType ?? userProfile.tradingStrategy ?? 'trend_following'}
-                    symbol={result.symbol}
-                    action={result.geminiForecast?.action_signal?.action === 'SELL' ? 'SELL' : 'BUY'}
-                    investment={investment ? parseFloat(investment) : 10000}
-                    timeframe={timeframe === "custom" ? customTimeframe || "1d" : timeframe || "1d"}
+                      {/* Strategy selection (AI + market research) → place order */}
+                      {result && (
+                        <StrategySelectionDialog
+                          open={showStrategyDialog}
+                          onOpenChange={setShowStrategyDialog}
+                    currentStrategy={assignedStrategy ?? lastUsedStrategy?.strategyType ?? userProfile.tradingStrategy ?? 'trend_following'}
+                          symbol={result.symbol}
+                          action={result.geminiForecast?.action_signal?.action === 'SELL' ? 'SELL' : 'BUY'}
+                          investment={investment ? parseFloat(investment) : 10000}
+                          timeframe={timeframe === "custom" ? customTimeframe || "1d" : timeframe || "1d"}
                     currentPrice={result.currentPrice}
-                    isPaperTrade={isPaperTrade}
-                    onConfirm={placeMockOrderAndTrack}
-                  />
-                )}
+                          isPaperTrade={isPaperTrade}
+                          onConfirm={placeMockOrderAndTrack}
+                        />
+                      )}
 
-                <TradingIntegrationModal
-                  open={showIntegrationModal}
-                  onOpenChange={setShowIntegrationModal}
-                  onSaved={async () => {
-                    await refreshTradingIntegration();
-                    setShowIntegrationModal(false);
-                    setShowStrategyDialog(true);
-                  }}
-                  onSkip={() => setShowIntegrationModal(false)}
-                  save={async (params) => saveTradingIntegration(params)}
-                />
+                      <TradingIntegrationModal
+                        open={showIntegrationModal}
+                        onOpenChange={setShowIntegrationModal}
+                        onSaved={async () => {
+                          await refreshTradingIntegration();
+                          setShowIntegrationModal(false);
+                          setShowStrategyDialog(true);
+                        }}
+                        onSkip={() => setShowIntegrationModal(false)}
+                        save={async (params) => saveTradingIntegration(params)}
+                      />
 
                 {/* Analytical Deep Dives - Grouped in Tabs to reduce scrolling */}
                 {/* Secondary Analytics - Grouped into Tabs */}
@@ -1745,14 +1840,14 @@ const PredictPage = () => {
                 placeholder="e.g. 5000"
                 value={buyMoreAmount}
                 onChange={e => setBuyMoreAmount(e.target.value)}
-              />
-            </div>
+                  />
+                </div>
             {buyMoreAmount && result?.currentPrice && (
               <p className="text-xs text-muted-foreground">
                 ≈ {Math.floor(parseFloat(buyMoreAmount) / result.currentPrice)} more shares at current price {result.isCrypto ? "$" : "₹"}{result.currentPrice}
-              </p>
-            )}
-          </div>
+                      </p>
+                    )}
+                  </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowBuyMoreDialog(false)}>Cancel</Button>
             <Button
@@ -1858,8 +1953,8 @@ const PredictPage = () => {
                           {isProfit ? "+" : ""}{result?.isCrypto ? "$" : "₹"}{Math.abs(estimatedPnl).toFixed(2)}
                         </span>
                       </p>
-                    )}
-                  </div>
+            )}
+          </div>
                 </>
               );
             })()}
@@ -1942,7 +2037,7 @@ const PredictPage = () => {
                   onClick={async () => {
                     const { data: { session } } = await supabase.auth.getSession();
                     if (!session) {
-                      setShowPremiumDialog(false);
+                    setShowPremiumDialog(false);
                       navigate('/auth?redirect=' + encodeURIComponent('/predict'));
                       return;
                     }

@@ -1,6 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
+import { resolveTradeAccess } from "../_shared/trade-access.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -30,6 +31,7 @@ interface StartTradeRequest {
   expectedRoiLikely?: number;
   expectedRoiWorst?: number;
   predictionId?: string;
+  isPaperTrade?: boolean;
 }
 
 serve(async (req) => {
@@ -87,6 +89,71 @@ serve(async (req) => {
 
     // Allow HOLD tracking (user can override AI recommendation)
     // No longer blocking HOLD - user has manual control
+
+    const isPaperTrade =
+      requestBody.isPaperTrade === true ||
+      (requestBody.brokerOrderId ?? "").toUpperCase().startsWith("PAPER-");
+
+    // Enforce backend prerequisites for live trading only.
+    if (!isPaperTrade) {
+      const access = await resolveTradeAccess(supabaseClient as any, user.id);
+      if (!access.hasActiveSubscription) {
+        return new Response(
+          JSON.stringify({
+            error: "Active paid subscription required before starting a live trade session.",
+            error_code: "NO_SUBSCRIPTION",
+          }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      if (!access.hasProvisionedOnboarding) {
+        return new Response(
+          JSON.stringify({
+            error: "Onboarding is not provisioned yet. Please complete onboarding and wait for activation.",
+            error_code: "ONBOARDING_NOT_PROVISIONED",
+          }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      if (!access.hasActiveIntegration) {
+        return new Response(
+          JSON.stringify({
+            error: "No active broker integration found. Please connect broker first.",
+            error_code: "NO_INTEGRATION",
+          }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      const { data: assignment } = await supabaseClient
+        .from("algo_user_assignments")
+        .select("allowed_strategy, status, integration_id")
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .maybeSingle();
+
+      if (!assignment) {
+        return new Response(
+          JSON.stringify({
+            error: "No active strategy assignment found for this account.",
+            error_code: "ASSIGNMENT_REQUIRED",
+          }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      const requestedStrategy = (requestBody.strategyType ?? "").toString().trim().toLowerCase();
+      const allowedStrategy = (assignment.allowed_strategy ?? "").toString().trim().toLowerCase();
+      if (requestedStrategy && allowedStrategy && requestedStrategy !== allowedStrategy) {
+        return new Response(
+          JSON.stringify({
+            error: `Requested strategy '${requestedStrategy}' is not assigned to your account.`,
+            error_code: "STRATEGY_NOT_ALLOWED",
+          }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+    }
 
     // Calculate stop loss and take profit prices
     // BUY:  SL below entry, TP above entry

@@ -12,5 +12,21 @@ export function useSubscription() {
     });
   }, []);
 
-  return { subscription, loading, isPremium: hasActiveSubscription(subscription) };
+  const isPremium = hasActiveSubscription(subscription);
+  const nowMs = Date.now();
+  const periodEndMs = subscription?.current_period_end ? new Date(subscription.current_period_end).getTime() : null;
+  const daysUntilExpiry = periodEndMs != null ? Math.ceil((periodEndMs - nowMs) / (24 * 60 * 60 * 1000)) : null;
+  const isExpiringSoon = isPremium && daysUntilExpiry != null && daysUntilExpiry >= 0 && daysUntilExpiry <= 7;
+  const isAutoRenewDisabled = Boolean(subscription?.cancel_at_period_end);
+  const isInGracePeriod = Boolean(periodEndMs != null && periodEndMs < nowMs && (periodEndMs + 24 * 60 * 60 * 1000) > nowMs);
+
+  return {
+    subscription,
+    loading,
+    isPremium,
+    isExpiringSoon,
+    daysUntilExpiry,
+    isAutoRenewDisabled,
+    isInGracePeriod,
+  };
 }

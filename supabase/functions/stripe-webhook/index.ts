@@ -120,13 +120,20 @@ Deno.serve(async (req: Request) => {
             plan_id:              planId,
             status:               "active",
             current_period_end:   periodEnd,
+            cancel_at_period_end: false,
             updated_at: new Date().toISOString(),
           },
           { onConflict: "user_id" },
         );
       }
     } else if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
-      const sub = obj as { id?: string; status?: string; customer?: string; current_period_end?: number };
+      const sub = obj as {
+        id?: string;
+        status?: string;
+        customer?: string;
+        current_period_end?: number;
+        cancel_at_period_end?: boolean;
+      };
       const subId = sub.id;
       const status = (sub.status as string) ?? "canceled";
 
@@ -137,6 +144,7 @@ Deno.serve(async (req: Request) => {
           current_period_end: sub.current_period_end
             ? new Date(sub.current_period_end * 1000).toISOString()
             : null,
+          cancel_at_period_end: Boolean(sub.cancel_at_period_end),
           updated_at: new Date().toISOString(),
         })
         .eq("stripe_subscription_id", subId);

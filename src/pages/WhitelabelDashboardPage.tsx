@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   AlertTriangle, Users, CalendarDays, LogOut, ArrowRight, Copy,
-  CheckCircle2, PlusCircle, RefreshCw, Link2
+  CheckCircle2, PlusCircle, RefreshCw, Link2, Zap
 } from "lucide-react";
 
 /* ── Hooks ── */
@@ -57,10 +57,35 @@ export default function WhitelabelDashboardPage() {
   const [detailAff, setDetailAff] = useState<any | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [tempCredentials, setTempCredentials] = useState<{ email: string; temp_password: string } | null>(null);
+  const [algoRows, setAlgoRows] = useState<any[]>([]);
+  const [algoLoading, setAlgoLoading] = useState(false);
 
   const expired = isTenantExpired(tenant);
   const days = tenant ? daysRemaining(tenant.ends_on) : 0;
   const color = tenant?.brand_primary_color ?? "#06b6d4";
+
+  const loadAlgoRequests = async () => {
+    if (!tenant?.id || !user?.id) return;
+    setAlgoLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await supabase.functions.invoke("get-algo-requests", {
+        body: { tenant_id: tenant.id },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (res.error) throw res.error;
+      setAlgoRows(((res.data as { rows?: any[] } | null)?.rows) ?? []);
+    } catch {
+      setAlgoRows([]);
+    } finally {
+      setAlgoLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAlgoRequests();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant?.id, user?.id]);
 
   /* ── Authentication & Security Guard ── */
   if (authLoading || tenantLoading) {
@@ -211,6 +236,47 @@ export default function WhitelabelDashboardPage() {
                     <Badge variant="outline" className="border-cyan-500/20 text-cyan-400">{users.length} Total</Badge>
                   </div>
                   <UserTable users={users} loading={loadingUsers} />
+                </Card>
+
+                <Card className="glass-panel border-white/10 bg-white/5 backdrop-blur-sm overflow-hidden">
+                  <div className="p-6 border-b border-white/5 flex items-center justify-between">
+                    <h3 className="font-bold text-base flex items-center gap-2"><Zap className="h-4 w-4 text-cyan-400" /> Algo Onboarding</h3>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="border-cyan-500/20 text-cyan-400">{algoRows.length} Requests</Badge>
+                      <Button variant="ghost" size="sm" onClick={loadAlgoRequests} className="text-zinc-500 hover:text-cyan-300">
+                        <RefreshCw className={`h-3.5 w-3.5 ${algoLoading ? "animate-spin" : ""}`} />
+                      </Button>
+                    </div>
+                  </div>
+                  <CardContent className="p-0">
+                    {algoLoading ? (
+                      <div className="p-6 text-sm text-zinc-500">Loading onboarding requests…</div>
+                    ) : algoRows.length === 0 ? (
+                      <div className="p-6 text-sm text-zinc-500">No onboarding forms yet from your users.</div>
+                    ) : (
+                      <div className="divide-y divide-white/5">
+                        {algoRows.slice(0, 10).map((row) => (
+                          <div key={row.id} className="px-6 py-4 flex items-center justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-medium text-white">{row.full_name}</p>
+                              <p className="text-xs text-zinc-500">
+                                {row.broker} · {row.strategy_pref ?? "no strategy"} · {new Date(row.created_at).toLocaleDateString()}
+                              </p>
+                            </div>
+                            <Badge className={`text-[10px] border ${
+                              row.status === "pending"
+                                ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                                : row.status === "provisioned" || row.status === "active"
+                                  ? "bg-teal-500/20 text-teal-300 border-teal-500/40"
+                                  : "bg-zinc-800 text-zinc-300 border-zinc-700"
+                            }`}>
+                              {row.status}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
                 </Card>
               </div>
               <div className="space-y-6">

@@ -6,6 +6,7 @@ export interface UserSubscription {
   plan_id: string;
   status: string;
   current_period_end: string | null;
+  cancel_at_period_end?: boolean | null;
 }
 
 export async function createCheckoutSession(params: {
@@ -51,6 +52,10 @@ export async function getSubscription(): Promise<UserSubscription | null> {
 export function hasActiveSubscription(sub: UserSubscription | null): boolean {
   if (!sub) return false;
   if (sub.status !== "active" && sub.status !== "trialing") return false;
-  if (sub.current_period_end && new Date(sub.current_period_end) < new Date()) return false;
+  // Keep OpenAlgo access for a 24h grace window after expiry.
+  if (sub.current_period_end) {
+    const graceEndMs = new Date(sub.current_period_end).getTime() + (24 * 60 * 60 * 1000);
+    if (graceEndMs < Date.now()) return false;
+  }
   return true;
 }

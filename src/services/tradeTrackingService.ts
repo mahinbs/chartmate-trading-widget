@@ -87,6 +87,7 @@ class TradeTrackingService {
     expectedRoiLikely?: number;
     expectedRoiWorst?: number;
     predictionId?: string;
+    isPaperTrade?: boolean;
   }) {
     try {
       const { data, error } = await supabase.functions.invoke('start-trade-session', {
@@ -325,6 +326,9 @@ class TradeTrackingService {
             product,
             pricetype: 'MARKET',
             strategy:  trade.strategy_type ? `ChartMate ${trade.strategy_type}` : 'ChartMate AI',
+            strategy_code: trade.strategy_type ?? undefined,
+            intent: 'exit',
+            trade_id: trade.id,
           },
         }
       );
