@@ -2,8 +2,8 @@
  * create-checkout-session — Supabase Edge Function
  * Creates a Stripe Checkout Session for premium plans or white-label subscriptions.
  *
- * WL 1yr / 2yr  → mode: subscription (recurring yearly)
- * WL 5yr        → mode: payment (one-time, admin-generated link with security token)
+ * WL 1yr / 2yr     → mode: subscription (recurring yearly)
+ * WL 5yr           → mode: payment (one-time, admin-generated link with security token)
  * Premium plans → mode: subscription (recurring yearly)
  *
  * Env: STRIPE_SECRET_KEY, STRIPE_PRICE_BOT, STRIPE_PRICE_PROB, STRIPE_PRICE_PRO,
@@ -16,12 +16,12 @@ const STRIPE_SECRET = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 const APP_URL = Deno.env.get("APP_URL") ?? "http://localhost:5173";
 
 const PRICE_IDS: Record<string, string> = {
-  botIntegration:  Deno.env.get("STRIPE_PRICE_BOT") ?? "",
+  botIntegration:   Deno.env.get("STRIPE_PRICE_BOT")  ?? "",
   probIntelligence: Deno.env.get("STRIPE_PRICE_PROB") ?? "",
-  proPlan:         Deno.env.get("STRIPE_PRICE_PRO") ?? "",
-  wl_1_year:       Deno.env.get("STRIPE_PRICE_WL_1Y") ?? "",
-  wl_2_years:      Deno.env.get("STRIPE_PRICE_WL_2Y") ?? "",
-  wl_5_years:      Deno.env.get("STRIPE_PRICE_WL_5Y") ?? "",
+  proPlan:          Deno.env.get("STRIPE_PRICE_PRO")  ?? "",
+  wl_1_year:        Deno.env.get("STRIPE_PRICE_WL_1Y") ?? "",
+  wl_2_years:       Deno.env.get("STRIPE_PRICE_WL_2Y") ?? "",
+  wl_5_years:       Deno.env.get("STRIPE_PRICE_WL_5Y") ?? "",
 };
 
 const corsHeaders = {

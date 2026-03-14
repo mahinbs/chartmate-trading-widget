@@ -25,7 +25,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import {
   AlertTriangle, ArrowDownRight, ArrowUpRight, Brain,
-  CheckCircle2, Loader2, ShieldAlert, Target, TrendingDown, TrendingUp, Zap,
+  CheckCircle2, Loader2, ShieldAlert, Target, TrendingDown, TrendingUp, Wallet, Zap,
 } from "lucide-react";
 
 export interface PreOrderData {
@@ -39,6 +39,7 @@ export interface PreOrderData {
   stopLoss?:    number;
   takeProfit?:  number;
   investment?:  number;
+  pricetype?:   string;
 }
 
 interface Props {
@@ -79,6 +80,8 @@ export default function PreOrderConfirmSheet({ open, onConfirm, onCancel, order 
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
   const [countdown, setCountdown] = useState(COUNTDOWN_SECS);
+  const [margin, setMargin]       = useState<number | null>(null);
+  const [marginLoading, setMarginLoading] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const clearTimer = () => {
@@ -153,13 +156,46 @@ export default function PreOrderConfirmSheet({ open, onConfirm, onCancel, order 
     return clearTimer;
   }, [open, loading, onConfirm]);
 
+  // ── Fetch margin requirement from broker ─────────────────────────────────
+  const fetchMargin = useCallback(async (o: PreOrderData) => {
+    setMargin(null);
+    setMarginLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await supabase.functions.invoke("broker-data", {
+        body: {
+          action: "margin",
+          positions: [{
+            symbol:    o.symbol,
+            exchange:  o.exchange ?? "NSE",
+            action:    o.action,
+            quantity:  o.quantity,
+            product:   o.product ?? "CNC",
+            pricetype: o.pricetype ?? "MARKET",
+            price:     o.price,
+          }],
+        },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      const raw = (res.data as any)?.data;
+      const val = raw?.required_margin ?? raw?.margin ?? raw?.total_margin ?? null;
+      if (val != null) setMargin(Number(val));
+    } catch {
+      // non-critical — silently ignore
+    } finally {
+      setMarginLoading(false);
+    }
+  }, []);
+
   // ── Fetch analysis when sheet opens ──────────────────────────────────────
   useEffect(() => {
     if (open && order) {
       clearTimer();
+      setMargin(null);
       runAnalysis(order);
+      fetchMargin(order);
     }
-  }, [open, order, runAnalysis]);
+  }, [open, order, runAnalysis, fetchMargin]);
 
   if (!order) return null;
 
@@ -202,6 +238,16 @@ export default function PreOrderConfirmSheet({ open, onConfirm, onCancel, order 
                 {order.quantity} shares @ {currency}{order.price.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
               </p>
               <p className="text-zinc-500 text-xs">= {currency}{orderValue.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</p>
+              {(margin != null || marginLoading) && (
+                <div className="flex items-center justify-end gap-1 mt-0.5">
+                  <Wallet className="h-3 w-3 text-amber-400" />
+                  <p className="text-[10px] text-amber-300">
+                    {marginLoading
+                      ? "Fetching margin…"
+                      : `Margin required: ${currency}${Number(margin).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 

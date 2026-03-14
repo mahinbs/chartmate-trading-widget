@@ -58,6 +58,39 @@ export const PRICING_PLANS: PricingPlan[] = [
     },
 ];
 
+export const ALGO_TRADING_PLAN: PricingPlan = {
+  id: "algoTrading",
+  name: "Algo Trading Setup",
+  price: 49,
+  period: "year",
+  description: "Full OpenAlgo integration — connect your broker, place live orders, auto SL/TP, AI analysis.",
+  features: [
+    "Connect any of 30+ Indian brokers",
+    "Live order placement from ChartMate",
+    "Auto Stop-Loss & Take-Profit exit",
+    "Pre-order deep AI analysis (Gemini)",
+    "Real-time P/L, portfolio & order tracking",
+    "Daily broker token sync (one-click for Zerodha)",
+    "Strategy management & backtesting AI",
+    "1-year access",
+  ],
+  recommended: true,
+};
+
+export const ALGO_TRADING_TEST_PLAN: PricingPlan = {
+  id: "algoTrading_test",
+  name: "Algo Trading — ₹1 Test",
+  price: 1,
+  period: "one-time",
+  description: "Internal test only — same flow as full Algo Trading Setup but charges ₹1.",
+  features: [
+    "Identical to full Algo Trading Setup",
+    "Redirects to /algo-setup on success",
+    "Subscription recorded for 1 year",
+    "For testing payment + onboarding flow only",
+  ],
+};
+
 export const WL_PRICING_PLANS = [
     { id: "wl_1_year", name: "1 Year License", price: 1999, years: 1, stripePriceId: "wl_1_year" },
     { id: "wl_2_years", name: "2 Year License", price: 2499, years: 2, stripePriceId: "wl_2_years", recommended: true },

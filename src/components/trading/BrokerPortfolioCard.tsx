@@ -107,10 +107,12 @@ function StatusBadge({ status }: { status?: string }) {
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function BrokerPortfolioCard() {
-  const [data, setData]           = useState<PortfolioData | null>(null);
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState<string | null>(null);
-  const [actioning, setActioning] = useState<string | null>(null); // orderid or "all"
+  const [data, setData]             = useState<PortfolioData | null>(null);
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState<string | null>(null);
+  const [actioning, setActioning]   = useState<string | null>(null);
+  const [liveLtps, setLiveLtps]     = useState<Record<string, number>>({});
+  const [quotesLoading, setQLoading] = useState(false);
 
   // Modify order dialog state
   const [modifyOrder, setModifyOrder] = useState<OrderRow | null>(null);
@@ -140,6 +142,42 @@ export default function BrokerPortfolioCard() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // ── Fetch live broker LTPs for all positions + holdings ──────────────────
+  const refreshQuotes = useCallback(async (portfolio: PortfolioData) => {
+    const symbols: Array<{ symbol: string; exchange: string }> = [
+      ...portfolio.positions.map(p => ({ symbol: p.tradingsymbol ?? "", exchange: p.exchange ?? "NSE" })),
+      ...portfolio.holdings.map(h => ({ symbol: h.tradingsymbol ?? "", exchange: h.exchange ?? "NSE" })),
+    ].filter(s => s.symbol);
+
+    if (!symbols.length) return;
+    setQLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await supabase.functions.invoke("broker-data", {
+        body: { action: "multiquotes", symbols },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      const raw = (res.data as any)?.data;
+      // OpenAlgo returns array or object keyed by symbol
+      const map: Record<string, number> = {};
+      if (Array.isArray(raw)) {
+        raw.forEach((q: any) => { if (q?.symbol && q?.ltp != null) map[q.symbol] = Number(q.ltp); });
+      } else if (raw && typeof raw === "object") {
+        Object.entries(raw).forEach(([sym, q]: [string, any]) => {
+          if (q?.ltp != null) map[sym] = Number(q.ltp);
+        });
+      }
+      if (Object.keys(map).length) {
+        setLiveLtps(map);
+        toast.success("Live quotes updated");
+      }
+    } catch {
+      toast.error("Could not fetch live quotes");
+    } finally {
+      setQLoading(false);
+    }
+  }, []);
 
   // ── Broker action call ──────────────────────────────────────────────────
   const doAction = useCallback(async (
@@ -292,6 +330,18 @@ export default function BrokerPortfolioCard() {
               )}
               <Button
                 variant="ghost" size="sm"
+                onClick={() => refreshQuotes(data)}
+                disabled={quotesLoading}
+                className="h-7 px-2 text-[11px] text-zinc-400 hover:text-amber-300 border border-zinc-700 hover:border-amber-500/40"
+                title="Fetch live LTP from broker for positions & holdings"
+              >
+                {quotesLoading
+                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                  : <Zap className="h-3 w-3 mr-1" />}
+                Live Quotes
+              </Button>
+              <Button
+                variant="ghost" size="sm"
                 onClick={() => { load(true); toast.success("Refreshed"); }}
                 className="h-7 w-7 p-0 text-zinc-500 hover:text-teal-400"
               >
@@ -351,6 +401,11 @@ export default function BrokerPortfolioCard() {
                   {data.positions.map((p, i) => {
                     const hasQty = Number(p.netqty ?? 0) !== 0;
                     const isClosing = actioning === `close_${p.tradingsymbol}`;
+                    const liveLtp = liveLtps[p.tradingsymbol ?? ""];
+                    const displayLtp = liveLtp ?? Number(p.ltp ?? 0);
+                    const livePnl = liveLtp != null
+                      ? (liveLtp - Number(p.avgprice ?? 0)) * Number(p.netqty ?? 0)
+                      : Number(p.pnl ?? 0);
                     return (
                       <div key={i} className="bg-zinc-800 rounded-lg p-3 flex items-center justify-between gap-2">
                         <div className="min-w-0">
@@ -358,9 +413,14 @@ export default function BrokerPortfolioCard() {
                           <p className="text-[10px] text-zinc-500">
                             {p.exchange} · {p.product} · Qty: {p.netqty} · Avg {fmt(Number(p.avgprice))}
                           </p>
+                          {displayLtp > 0 && (
+                            <p className={`text-[10px] mt-0.5 ${liveLtp ? "text-amber-300" : "text-zinc-500"}`}>
+                              LTP: {fmt(displayLtp)}{liveLtp ? " ●" : ""}
+                            </p>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          <PnlCell value={Number(p.pnl)} />
+                          <PnlCell value={livePnl} />
                           {hasQty && (
                             <Button
                               size="sm"
@@ -388,18 +448,27 @@ export default function BrokerPortfolioCard() {
                 <p className="text-zinc-500 text-xs text-center py-6">No holdings found</p>
               ) : (
                 <div className="space-y-2">
-                  {data.holdings.map((h, i) => (
-                    <div key={i} className="bg-zinc-800 rounded-lg p-3 flex items-center justify-between">
-                      <div>
-                        <p className="font-semibold text-sm text-white">{h.tradingsymbol}</p>
-                        <p className="text-[10px] text-zinc-500">{h.exchange} · Qty: {h.quantity}</p>
+                  {data.holdings.map((h, i) => {
+                    const liveLtp = liveLtps[h.tradingsymbol ?? ""];
+                    const livePnl = liveLtp != null
+                      ? (liveLtp - Number(h.avgprice ?? 0)) * Number(h.quantity ?? 0)
+                      : Number(h.pnl ?? 0);
+                    return (
+                      <div key={i} className="bg-zinc-800 rounded-lg p-3 flex items-center justify-between">
+                        <div>
+                          <p className="font-semibold text-sm text-white">{h.tradingsymbol}</p>
+                          <p className="text-[10px] text-zinc-500">{h.exchange} · Qty: {h.quantity}</p>
+                          {liveLtp && (
+                            <p className="text-[10px] text-amber-300 mt-0.5">LTP: {fmt(liveLtp)} ●</p>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-zinc-400">Avg {fmt(Number(h.avgprice))}</p>
+                          <PnlCell value={livePnl} />
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-xs text-zinc-400">Avg {fmt(Number(h.avgprice))}</p>
-                        <PnlCell value={Number(h.pnl)} />
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </TabsContent>

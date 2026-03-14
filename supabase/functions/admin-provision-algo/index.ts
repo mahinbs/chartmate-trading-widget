@@ -1,20 +1,22 @@
 /**
  * admin-provision-algo — Supabase Edge Function (super-admin only)
  *
- * Provisions a user for live algo trading:
- *  1. Admin provides the user's personal OpenAlgo API key (each user has their own unique key).
- *     Get it from openalgo.tradebrainx.com → create the user account → copy their API key.
- *  2. Saves that API key to user_trading_integration (tied to this specific user only).
- *  3. Creates an algo_user_assignments record with strategy + risk profile.
- *  4. Marks algo_onboarding as "provisioned".
+ * Provisions a user for live algo trading — fully automated:
+ *  1. Fetches the user's email from Supabase auth.
+ *  2. Calls OpenAlgo POST /api/v1/platform/create-user  →  creates their OpenAlgo account
+ *     and returns their unique API key automatically. (Idempotent — safe to re-run.)
+ *  3. Saves API key + broker + strategy to user_trading_integration.
+ *  4. Creates algo_user_assignments record.
+ *  5. Marks algo_onboarding as "provisioned".
  *
- * Body: { onboarding_id, openalgo_api_key }
- * Every user gets a DIFFERENT openalgo_api_key — never reuse the same key across users.
+ * Body: { onboarding_id }
+ * No manual API key entry needed — OpenAlgo generates one per user automatically.
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const OPENALGO_URL = (Deno.env.get("OPENALGO_URL") ?? "").replace(/\/$/, "");
+const APP_KEY      = Deno.env.get("OPENALGO_APP_KEY") ?? "";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin":  "*",
@@ -53,17 +55,16 @@ Deno.serve(async (req: Request) => {
 
     // ── Parse body ────────────────────────────────────────────────────────
     const body = await req.json().catch(() => ({}));
-    const onboardingId: string   = (body.onboarding_id as string)?.trim();
-    const openalgoApiKey: string = (body.openalgo_api_key as string)?.trim();
+    const onboardingId: string = ((body.onboarding_id as string) ?? "").trim();
 
-    if (!onboardingId || !openalgoApiKey) {
+    if (!onboardingId) {
       return new Response(
-        JSON.stringify({ error: "onboarding_id and openalgo_api_key are required. Each user has their own unique API key from OpenAlgo." }),
+        JSON.stringify({ error: "onboarding_id is required" }),
         { status: 400, headers },
       );
     }
 
-    // ── Fetch the onboarding record ───────────────────────────────────────
+    // ── Fetch onboarding record ───────────────────────────────────────────
     const { data: onboarding, error: fetchErr } = await supabase
       .from("algo_onboarding")
       .select("id, user_id, broker, strategy_pref, risk_level, status")
@@ -86,16 +87,67 @@ Deno.serve(async (req: Request) => {
 
     const targetUserId: string = onboarding.user_id;
 
-    // ── Upsert user_trading_integration with the user's personal API key ──
-    // NOTE: openalgoApiKey is unique per user — it was obtained from
-    // openalgo.tradebrainx.com by creating this user's account there.
+    // ── Get user's email from Supabase auth ───────────────────────────────
+    const { data: { user: targetUser }, error: userErr } = await supabase.auth.admin.getUserById(targetUserId);
+    if (userErr || !targetUser) {
+      return new Response(
+        JSON.stringify({ error: "Could not fetch user email from auth" }),
+        { status: 500, headers },
+      );
+    }
+    const targetEmail = targetUser.email ?? `${targetUserId}@chartmate.user`;
+
+    // ── Auto-create user in OpenAlgo via platform API ─────────────────────
+    // This is idempotent — if the user already exists, returns their existing API key.
+    if (!OPENALGO_URL) {
+      return new Response(
+        JSON.stringify({ error: "OPENALGO_URL not configured in Supabase secrets" }),
+        { status: 503, headers },
+      );
+    }
+    if (!APP_KEY) {
+      return new Response(
+        JSON.stringify({ error: "OPENALGO_APP_KEY not configured in Supabase secrets" }),
+        { status: 503, headers },
+      );
+    }
+
+    const oaRes = await fetch(`${OPENALGO_URL}/api/v1/platform/create-user`, {
+      method: "POST",
+      headers: {
+        "Content-Type":   "application/json",
+        "X-Platform-Key": APP_KEY,
+      },
+      body: JSON.stringify({
+        supabase_user_id: targetUserId,
+        email:            targetEmail,
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+
+    const oaData = await oaRes.json().catch(() => ({}));
+    const openalgoApiKey: string  = (oaData as any)?.api_key   ?? "";
+    const openalgoUsername: string = (oaData as any)?.username  ?? "";
+
+    // If OpenAlgo returned an api_key we're good regardless of HTTP status.
+    // If not, surface whatever error OpenAlgo sent back.
+    if (!openalgoApiKey) {
+      const detail = (oaData as any)?.error ?? `OpenAlgo responded HTTP ${oaRes.status} without an api_key`;
+      console.error("admin-provision-algo: OpenAlgo create-user did not return api_key:", detail, oaData);
+      return new Response(
+        JSON.stringify({ error: `OpenAlgo account creation failed: ${detail}` }),
+        { status: 502, headers },
+      );
+    }
+
+    // ── Save to user_trading_integration ─────────────────────────────────
     const { data: integrationRow, error: upsertErr } = await supabase
       .from("user_trading_integration")
       .upsert(
         {
           user_id:           targetUserId,
           integration_type:  "openalgo",
-          base_url:          OPENALGO_URL || "",
+          base_url:          OPENALGO_URL,
           api_key_encrypted: "",
           broker:            onboarding.broker ?? "zerodha",
           openalgo_api_key:  openalgoApiKey,
@@ -116,9 +168,35 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // ── Auto-create default strategy in OpenAlgo ──────────────────────────
+    // This means when the user places their first order, the strategy is already ready.
+    const strategyName = (onboarding.strategy_pref ?? "ChartMate AI").toString().trim();
+    try {
+      const stratRes = await fetch(`${OPENALGO_URL}/api/v1/platform/create-strategy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Platform-Key": APP_KEY },
+        body: JSON.stringify({
+          username:     openalgoUsername,
+          name:         strategyName,
+          trading_mode: "LONG",
+          is_intraday:  true,
+          start_time:   "09:15",
+          end_time:     "15:15",
+          squareoff_time: "15:15",
+          symbols:      [],
+        }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      const stratData = await stratRes.json().catch(() => ({}));
+      console.log(`admin-provision-algo: strategy "${strategyName}" created for ${openalgoUsername}:`, stratData);
+    } catch (stratErr) {
+      // Non-fatal — user can still trade, strategy creation is best-effort
+      console.warn("admin-provision-algo: strategy auto-create failed (non-fatal):", stratErr);
+    }
+
     // ── Upsert algo_user_assignments ──────────────────────────────────────
-    const allowedStrategy = (onboarding.strategy_pref ?? "trend_following").toString().trim();
-    const riskProfile = (onboarding.risk_level ?? "medium").toString().toLowerCase();
+    const allowedStrategy = strategyName;
+    const riskProfile     = (onboarding.risk_level ?? "medium").toString().toLowerCase();
     const { error: assignmentErr } = await supabase
       .from("algo_user_assignments")
       .upsert(
@@ -148,10 +226,14 @@ Deno.serve(async (req: Request) => {
       .update({ status: "provisioned", provisioned_at: new Date().toISOString() })
       .eq("id", onboardingId);
 
+    console.log(`admin-provision-algo: provisioned user ${targetUserId} (${targetEmail}) → OpenAlgo username: ${openalgoUsername}`);
+
     return new Response(
       JSON.stringify({
-        success: true,
-        message: "User provisioned successfully",
+        success:           true,
+        message:           "User provisioned successfully",
+        openalgo_username: openalgoUsername,
+        openalgo_created:  (oaData as any)?.created ?? true,
       }),
       { status: 200, headers },
     );

@@ -7,6 +7,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useTradingIntegration } from "@/hooks/useTradingIntegration";
 import { TradingIntegrationModal } from "@/components/trading/TradingIntegrationModal";
+import { useSubscription } from "@/hooks/useSubscription";
 import logo from '../assets/logo.png'
 
 export default function HomePage() {
@@ -14,7 +15,9 @@ export default function HomePage() {
   const { signOut, user } = useAuth();
   const { isAdmin } = useAdmin();
   const { hasIntegration, save, refresh } = useTradingIntegration();
+  const { isPremium } = useSubscription();
   const [showBrokerModal, setShowBrokerModal] = useState(false);
+  const canAccessOpenAlgoDashboard = isPremium && hasIntegration;
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -91,9 +94,15 @@ export default function HomePage() {
             </CardContent>
           </Card>
 
-          {/* View Current Analyses/Trades */}
+          {/* OpenAlgo Dashboard */}
           <Card className="glass-panel border-secondary/20 hover:border-secondary/40 transition-all duration-300 hover:shadow-[0_0_30px_rgba(14,165,233,0.1)] cursor-pointer group relative overflow-hidden"
-            onClick={() => navigate('/active-trades')}>
+            onClick={() => {
+              if (canAccessOpenAlgoDashboard) {
+                navigate('/trading-dashboard');
+              } else {
+                navigate('/algo-setup');
+              }
+            }}>
             <div className="absolute inset-0 bg-gradient-to-br from-secondary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
             <CardHeader className="relative z-10">
               <CardTitle className="flex items-center gap-4 text-2xl">
@@ -101,9 +110,9 @@ export default function HomePage() {
                   <Eye className="h-8 w-8 text-secondary" />
                 </div>
                 <div>
-                  <div className="font-bold">Active Trades</div>
+                  <div className="font-bold">OpenAlgo Dashboard</div>
                   <p className="text-sm font-normal text-muted-foreground mt-1">
-                    Monitor live positions
+                    Sync broker and place live orders
                   </p>
                 </div>
               </CardTitle>
@@ -112,19 +121,19 @@ export default function HomePage() {
               <ul className="space-y-3 text-sm text-muted-foreground mb-6">
                 <li className="flex items-center gap-3">
                   <div className="h-1.5 w-1.5 bg-secondary rounded-full shadow-[0_0_8px_rgba(14,165,233,0.6)]"></div>
-                  Real-time P&L tracking
+                  Daily broker sync from your own account
                 </li>
                 <li className="flex items-center gap-3">
                   <div className="h-1.5 w-1.5 bg-secondary rounded-full shadow-[0_0_8px_rgba(14,165,233,0.6)]"></div>
-                  Smart alerts & countdown timers
+                  Real portfolio, orderbook, and tradebook
                 </li>
                 <li className="flex items-center gap-3">
                   <div className="h-1.5 w-1.5 bg-secondary rounded-full shadow-[0_0_8px_rgba(14,165,233,0.6)]"></div>
-                  Live price updates every 30s
+                  Place live broker-supported orders
                 </li>
               </ul>
               <Button className="w-full h-12 text-base font-semibold bg-secondary hover:bg-secondary/90 text-white shadow-[0_0_20px_rgba(14,165,233,0.2)] hover:shadow-[0_0_25px_rgba(14,165,233,0.4)] transition-all">
-                View Active Trades
+                {canAccessOpenAlgoDashboard ? "OpenAlgo Dashboard" : "Complete Algo Setup"}
               </Button>
             </CardContent>
           </Card>

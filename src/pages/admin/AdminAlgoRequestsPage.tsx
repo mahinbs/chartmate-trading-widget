@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
+import { ALL_BROKERS } from "@/components/trading/BrokerSyncSection";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -20,7 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { RefreshCw, Zap, CheckCircle2, Loader2, Search, Key } from "lucide-react";
+import { RefreshCw, Zap, CheckCircle2, Loader2, Search } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -32,14 +32,33 @@ interface OnboardingRow {
   broker: string;
   broker_client_id: string | null;
   capital_amount: number | null;
+  capital_currency: string | null;
   risk_level: string;
+  trade_type: string | null;
+  trading_experience: string | null;
+  preferred_timeframe: string | null;
+  target_profit_pct: number | null;
+  stop_loss_pct: number | null;
+  max_drawdown_pct: number | null;
+  leverage_preference: string | null;
+  custom_leverage: string | null;
+  trading_goal: string | null;
+  trading_frequency: string | null;
+  risk_acknowledged: boolean | null;
   strategy_pref: string | null;
+  custom_strategy: string | null;
   notes: string | null;
   plan_id: string;
   status: string;
   provisioned_at: string | null;
   created_at: string;
   email?: string;
+}
+
+function fmtCapital(amount: number | null, currency: string | null) {
+  if (!amount) return "—";
+  const sym = (currency ?? "INR") === "USD" ? "$" : "₹";
+  return `${sym}${Number(amount).toLocaleString()}`;
 }
 
 const STATUS_BADGE: Record<string, { label: string; class: string }> = {
@@ -49,14 +68,9 @@ const STATUS_BADGE: Record<string, { label: string; class: string }> = {
   cancelled:   { label: "Cancelled",   class: "bg-red-500/20 text-red-400 border-red-500/40" },
 };
 
-const BROKER_LABELS: Record<string, string> = {
-  zerodha: "Zerodha",
-  upstox: "Upstox",
-  angel: "Angel One",
-  fyers: "Fyers",
-  dhan: "Dhan",
-  other: "Other",
-};
+const BROKER_LABELS: Record<string, string> = Object.fromEntries(
+  ALL_BROKERS.map(b => [b.value, b.label])
+);
 
 export default function AdminAlgoRequestsPage() {
   const [rows, setRows] = useState<OnboardingRow[]>([]);
@@ -66,7 +80,6 @@ export default function AdminAlgoRequestsPage() {
 
   // Provision dialog
   const [selected, setSelected] = useState<OnboardingRow | null>(null);
-  const [apiKeyInput, setApiKeyInput] = useState("");
   const [provisioning, setProvisioning] = useState(false);
 
   const load = async () => {
@@ -120,34 +133,27 @@ export default function AdminAlgoRequestsPage() {
 
   const openProvisionDialog = (row: OnboardingRow) => {
     setSelected(row);
-    setApiKeyInput("");
   };
 
   const handleProvision = async () => {
     if (!selected) return;
-    if (!apiKeyInput.trim()) {
-      toast.error("Please enter the OpenAlgo API key for this user's account.");
-      return;
-    }
 
     setProvisioning(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const res = await supabase.functions.invoke("admin-provision-algo", {
-        body: {
-          onboarding_id:    selected.id,
-          openalgo_api_key: apiKeyInput.trim(),
-        },
+        body: { onboarding_id: selected.id },
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
 
-      const result = res.data as { success?: boolean; error?: string } | null;
+      const result = res.data as { success?: boolean; error?: string; openalgo_username?: string } | null;
       if (res.error || result?.error) {
         toast.error(result?.error ?? res.error?.message ?? "Provisioning failed");
         return;
       }
 
-      toast.success(`${selected.full_name} provisioned successfully!`);
+      const usernameNote = result?.openalgo_username ? ` (OpenAlgo: ${result.openalgo_username})` : "";
+      toast.success(`${selected.full_name} provisioned successfully!${usernameNote}`);
       setSelected(null);
       await load();
     } catch (e: any) {
@@ -274,9 +280,7 @@ export default function AdminAlgoRequestsPage() {
                       {row.broker_client_id ?? <span className="text-zinc-600">—</span>}
                     </TableCell>
                     <TableCell className="text-zinc-400 text-sm hidden md:table-cell">
-                      {row.capital_amount
-                        ? `₹${row.capital_amount.toLocaleString()}`
-                        : <span className="text-zinc-600">—</span>}
+                      {fmtCapital(row.capital_amount, row.capital_currency)}
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">
                       <div className="text-xs text-zinc-400 capitalize">{row.risk_level}</div>
@@ -309,7 +313,7 @@ export default function AdminAlgoRequestsPage() {
                           onClick={() => openProvisionDialog(row)}
                           className="bg-teal-600 hover:bg-teal-500 text-white text-xs px-3"
                         >
-                          <Key className="h-3 w-3 mr-1" />
+                          <Zap className="h-3 w-3 mr-1" />
                           Provision
                         </Button>
                       ) : (
@@ -344,69 +348,185 @@ export default function AdminAlgoRequestsPage() {
         </Card>
       )}
 
-      {/* Provision dialog */}
+      {/* Provision dialog — full form view */}
       <Dialog open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
-        <DialogContent className="bg-zinc-900 border-zinc-800 text-white max-w-md">
+        <DialogContent className="bg-zinc-900 border-zinc-800 text-white max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Key className="h-4 w-4 text-teal-400" />
-              Provision OpenAlgo Key
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <Zap className="h-5 w-5 text-teal-400" />
+              Provision — {selected?.full_name}
             </DialogTitle>
             <DialogDescription className="text-zinc-400 text-sm">
-              Enter <strong className="text-white">{selected?.full_name}</strong>'s personal
-              OpenAlgo API key. Every user has their own unique key — get it from{" "}
-              <span className="text-teal-400">openalgo.tradebrainx.com → API Keys</span> after
-              creating their account there.
+              Review the user's onboarding details, then click Provision — their OpenAlgo account will be created automatically.
             </DialogDescription>
           </DialogHeader>
 
           {selected && (
-            <div className="space-y-4 py-2">
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="bg-zinc-800 rounded-lg p-3">
-                  <p className="text-zinc-500 text-xs mb-1">Broker</p>
-                  <p className="text-white font-medium">{BROKER_LABELS[selected.broker] ?? selected.broker}</p>
-                  {selected.broker_client_id && (
-                    <p className="text-zinc-400 text-xs mt-0.5">{selected.broker_client_id}</p>
-                  )}
-                </div>
-                <div className="bg-zinc-800 rounded-lg p-3">
-                  <p className="text-zinc-500 text-xs mb-1">Capital / Risk</p>
-                  <p className="text-white font-medium">
-                    {selected.capital_amount ? `₹${selected.capital_amount.toLocaleString()}` : "—"}
-                  </p>
-                  <p className="text-zinc-400 text-xs mt-0.5 capitalize">{selected.risk_level}</p>
+            <div className="space-y-4 py-1">
+
+              {/* ── Identity ───────────────────────────────────────────── */}
+              <div>
+                <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">User Identity</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-zinc-800 rounded-lg p-3">
+                    <p className="text-zinc-500 text-xs mb-0.5">Full Name</p>
+                    <p className="text-white font-semibold text-sm">{selected.full_name}</p>
+                  </div>
+                  <div className="bg-zinc-800 rounded-lg p-3">
+                    <p className="text-zinc-500 text-xs mb-0.5">Phone</p>
+                    <p className="text-white text-sm">{selected.phone ?? <span className="text-zinc-600">—</span>}</p>
+                  </div>
+                  <div className="bg-zinc-800 rounded-lg p-3">
+                    <p className="text-zinc-500 text-xs mb-0.5">User ID</p>
+                    <p className="text-zinc-400 font-mono text-xs break-all">{selected.user_id}</p>
+                  </div>
+                  <div className="bg-zinc-800 rounded-lg p-3">
+                    <p className="text-zinc-500 text-xs mb-0.5">Submitted</p>
+                    <p className="text-white text-sm">{new Date(selected.created_at).toLocaleString()}</p>
+                  </div>
                 </div>
               </div>
 
+              {/* ── Broker ────────────────────────────────────────────── */}
+              <div>
+                <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">Broker Details</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-zinc-800 rounded-lg p-3">
+                    <p className="text-zinc-500 text-xs mb-0.5">Broker</p>
+                    <p className="text-white font-semibold text-sm">
+                      {BROKER_LABELS[selected.broker] ?? selected.broker}
+                    </p>
+                  </div>
+                  <div className="bg-zinc-800 rounded-lg p-3">
+                    <p className="text-zinc-500 text-xs mb-0.5">Broker Client ID</p>
+                    <p className="text-white text-sm font-mono">
+                      {selected.broker_client_id ?? <span className="text-zinc-600">Not provided</span>}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Capital & Risk ─────────────────────────────────────── */}
+              <div>
+                <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">Capital & Risk</p>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-zinc-800 rounded-lg p-3">
+                    <p className="text-zinc-500 text-xs mb-0.5">Capital</p>
+                    <p className="text-white font-semibold text-sm">
+                      {fmtCapital(selected.capital_amount, selected.capital_currency)}
+                    </p>
+                    <p className="text-zinc-600 text-[10px]">{selected.capital_currency ?? "INR"}</p>
+                  </div>
+                  <div className="bg-zinc-800 rounded-lg p-3">
+                    <p className="text-zinc-500 text-xs mb-0.5">Risk Level</p>
+                    <p className="text-white font-semibold text-sm capitalize">{selected.risk_level}</p>
+                  </div>
+                  <div className="bg-zinc-800 rounded-lg p-3">
+                    <p className="text-zinc-500 text-xs mb-0.5">Plan</p>
+                    <p className="text-teal-400 font-semibold text-sm">{selected.plan_id}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Trading Profile ─────────────────────────────────────── */}
+              <div>
+                <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">Trading Profile</p>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-zinc-800 rounded-lg p-3">
+                    <p className="text-zinc-500 text-xs mb-0.5">Trade Type</p>
+                    <p className="text-white text-sm capitalize">{selected.trade_type ?? <span className="text-zinc-600">—</span>}</p>
+                  </div>
+                  <div className="bg-zinc-800 rounded-lg p-3">
+                    <p className="text-zinc-500 text-xs mb-0.5">Experience</p>
+                    <p className="text-white text-sm capitalize">{selected.trading_experience ?? <span className="text-zinc-600">—</span>}</p>
+                  </div>
+                  <div className="bg-zinc-800 rounded-lg p-3">
+                    <p className="text-zinc-500 text-xs mb-0.5">Timeframe</p>
+                    <p className="text-white text-sm capitalize">{selected.preferred_timeframe ?? <span className="text-zinc-600">—</span>}</p>
+                  </div>
+                  <div className="bg-zinc-800 rounded-lg p-3">
+                    <p className="text-zinc-500 text-xs mb-0.5">Target Profit</p>
+                    <p className="text-white text-sm">{selected.target_profit_pct != null ? `${selected.target_profit_pct}%` : <span className="text-zinc-600">—</span>}</p>
+                  </div>
+                  <div className="bg-zinc-800 rounded-lg p-3">
+                    <p className="text-zinc-500 text-xs mb-0.5">Stop Loss</p>
+                    <p className="text-white text-sm">{selected.stop_loss_pct != null ? `${selected.stop_loss_pct}%` : <span className="text-zinc-600">—</span>}</p>
+                  </div>
+                  <div className="bg-zinc-800 rounded-lg p-3">
+                    <p className="text-zinc-500 text-xs mb-0.5">Max Drawdown</p>
+                    <p className="text-white text-sm">{selected.max_drawdown_pct != null ? `${selected.max_drawdown_pct}%` : <span className="text-zinc-600">—</span>}</p>
+                  </div>
+                  <div className="bg-zinc-800 rounded-lg p-3">
+                    <p className="text-zinc-500 text-xs mb-0.5">Leverage</p>
+                    <p className="text-white text-sm capitalize">
+                      {selected.leverage_preference ?? <span className="text-zinc-600">—</span>}
+                      {selected.custom_leverage ? ` (${selected.custom_leverage})` : ""}
+                    </p>
+                  </div>
+                  <div className="bg-zinc-800 rounded-lg p-3">
+                    <p className="text-zinc-500 text-xs mb-0.5">Trading Goal</p>
+                    <p className="text-white text-sm capitalize">{selected.trading_goal ?? <span className="text-zinc-600">—</span>}</p>
+                  </div>
+                  <div className="bg-zinc-800 rounded-lg p-3">
+                    <p className="text-zinc-500 text-xs mb-0.5">Frequency</p>
+                    <p className="text-white text-sm capitalize">{selected.trading_frequency ?? <span className="text-zinc-600">—</span>}</p>
+                  </div>
+                </div>
+                <div className="mt-2">
+                  <p className="text-xs">
+                    Risk Acknowledgement:{" "}
+                    {selected.risk_acknowledged
+                      ? <span className="text-green-400 font-semibold">Accepted</span>
+                      : <span className="text-amber-400">Not recorded</span>}
+                  </p>
+                </div>
+              </div>
+
+              {/* ── Strategy ──────────────────────────────────────────── */}
+              <div>
+                <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">Strategy</p>
+                <div className="bg-zinc-800 rounded-lg p-3">
+                  <p className="text-zinc-500 text-xs mb-0.5">Preferred Strategy</p>
+                  <p className="text-white text-sm capitalize font-medium">
+                    {selected.strategy_pref ?? <span className="text-zinc-600">Not specified</span>}
+                  </p>
+                  {selected.custom_strategy && (
+                    <div className="mt-2 border-t border-zinc-700 pt-2">
+                      <p className="text-zinc-500 text-xs mb-1">Custom Strategy Description</p>
+                      <p className="text-zinc-300 text-sm leading-relaxed">{selected.custom_strategy}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* ── Notes ─────────────────────────────────────────────── */}
               {selected.notes && (
-                <div className="bg-zinc-800/60 border border-zinc-700 rounded-lg p-3 text-xs text-zinc-400">
-                  <span className="text-zinc-300 font-medium">Note: </span>{selected.notes}
+                <div>
+                  <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">User Notes</p>
+                  <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-3 text-sm text-zinc-300 leading-relaxed">
+                    {selected.notes}
+                  </div>
                 </div>
               )}
 
-              <div className="space-y-1.5">
-                <Label className="text-zinc-300 text-sm flex items-center gap-1.5">
-                  <Key className="h-3.5 w-3.5 text-teal-400" />
-                  This User's OpenAlgo API Key
-                  <span className="text-red-400">*</span>
-                </Label>
-                <Input
-                  value={apiKeyInput}
-                  onChange={(e) => setApiKeyInput(e.target.value)}
-                  placeholder="Paste their unique API key from OpenAlgo dashboard → API Keys"
-                  className="bg-zinc-800 border-zinc-700 text-white font-mono text-sm placeholder:text-zinc-600"
-                  autoFocus
-                />
-                <p className="text-xs text-zinc-500">
-                  Each user has a different API key. Go to OpenAlgo admin → create this user's account →
-                  copy their personal API key and paste it here.
-                </p>
+              {/* ── Auto-provision info ────────────────────────────────── */}
+              <div className="border-t border-zinc-800 pt-4">
+                <div className="bg-teal-500/5 border border-teal-500/20 rounded-lg p-3 flex items-start gap-3">
+                  <Zap className="h-4 w-4 text-teal-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-teal-300 text-sm font-semibold">Fully automatic — no manual steps</p>
+                    <p className="text-zinc-400 text-xs mt-0.5">
+                      Clicking Provision will automatically create this user's OpenAlgo account,
+                      generate their unique API key, and attach it to their ChartMate profile.
+                      You don't need to log in to OpenAlgo at all.
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
           )}
 
-          <DialogFooter className="gap-2">
+          <DialogFooter className="gap-2 pt-2">
             <Button
               variant="outline"
               onClick={() => setSelected(null)}
@@ -416,19 +536,13 @@ export default function AdminAlgoRequestsPage() {
             </Button>
             <Button
               onClick={handleProvision}
-              disabled={provisioning || !apiKeyInput.trim()}
-              className="bg-teal-600 hover:bg-teal-500 text-white"
+              disabled={provisioning}
+              className="bg-teal-600 hover:bg-teal-500 text-white font-bold"
             >
               {provisioning ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Provisioning…
-                </>
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Provisioning…</>
               ) : (
-                <>
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  Provision & Activate
-                </>
+                <><CheckCircle2 className="h-4 w-4 mr-2" />Provision & Activate</>
               )}
             </Button>
           </DialogFooter>

@@ -311,6 +311,30 @@ const PredictPage = () => {
           (orderData as any)?.order_id ||
           (orderData as any)?.data?.orderid ||
           brokerOrderId;
+
+        // Background: poll order fill status (non-blocking)
+        if (brokerOrderId && !brokerOrderId.startsWith("OPENALGO-")) {
+          (async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            for (let i = 0; i < 5; i++) {
+              await new Promise(r => setTimeout(r, 2500));
+              try {
+                const pollRes = await supabase.functions.invoke("broker-data", {
+                  body: { action: "orderstatus", orderid: brokerOrderId },
+                  headers: { Authorization: `Bearer ${session?.access_token}` },
+                });
+                const status = ((pollRes.data as any)?.data?.status ?? "").toLowerCase();
+                if (status === "complete") {
+                  toast.success(`Order ${brokerOrderId.slice(-6)} filled successfully ✓`, { duration: 5000 });
+                  break;
+                } else if (status === "rejected" || status === "cancelled") {
+                  toast.error(`Order ${brokerOrderId.slice(-6)} ${status}: ${(pollRes.data as any)?.data?.rejectreason ?? ""}`, { duration: 6000 });
+                  break;
+                }
+              } catch { break; }
+            }
+          })();
+        }
       }
 
       const response = await tradeTrackingService.startTradeSession({
@@ -1349,7 +1373,7 @@ const PredictPage = () => {
                   </Card>
                 )}
 
-                {/* ── Trade CTA — compact, clean ── */}
+                {/* ── Trading mode CTA — OpenAlgo or Paper only ── */}
                 {!placedTrade && (
                   <Card className="glass-panel border border-primary/30 bg-gradient-to-br from-background/80 to-primary/5 shadow-xl">
                     <CardContent className="p-5 space-y-3">
@@ -1372,12 +1396,7 @@ const PredictPage = () => {
                         </div>
                       </div>
 
-                      {/* Broker sync status — shown for paid users in live mode */}
-                      {isPremium && !isPaperTrade && (
-                        <BrokerSyncSection compact />
-                      )}
-
-                      {/* Subscription status for paid users */}
+                      {/* Subscription status for OpenAlgo users */}
                       {isPremium && (
                         <div className="space-y-2">
                           <div className="flex flex-wrap items-center gap-2">
@@ -1430,7 +1449,6 @@ const PredictPage = () => {
                             setCheckingOnboarding(false);
 
                             if (!onboarding) {
-                              // No onboarding form submitted yet
                               navigate("/algo-setup");
                               return;
                             }
@@ -1438,50 +1456,12 @@ const PredictPage = () => {
                               toast.info("Your algo trading account is being set up. Our team will activate it within 24 hours.", { duration: 5000 });
                               return;
                             }
-                            // provisioned or active — load enforced assignment + account mapping
-                            const { data: assignment } = await (supabase as any)
-                              .from("algo_user_assignments")
-                              .select("allowed_strategy, risk_profile, integration_id, status")
-                              .eq("user_id", user?.id)
-                              .eq("status", "active")
-                              .maybeSingle();
-                            if (!assignment?.allowed_strategy) {
-                              toast.error("Your strategy assignment is not ready yet. Please contact support.");
-                              return;
-                            }
-                            const { data: integration } = await (supabase as any)
-                              .from("user_trading_integration")
-                              .select("id, is_active, broker")
-                              .eq("user_id", user?.id)
-                              .eq("is_active", true)
-                              .maybeSingle();
-                            if (!integration?.id) {
-                              toast.error("No active broker account mapping found. Please contact support.");
-                              return;
-                            }
-                            if (assignment.integration_id && assignment.integration_id !== integration.id) {
-                              toast.error("Assigned account mismatch. Please contact support.");
-                              return;
-                            }
-
-                            setIsPaperTrade(false);
-                            setAssignedStrategy(assignment.allowed_strategy);
-                            setUserProfile((prev) => ({
-                              ...prev,
-                              riskTolerance: (assignment.risk_profile ?? prev.riskTolerance) as any,
-                            }));
-                            const label = STRATEGIES.find(s => s.value === assignment.allowed_strategy)?.label ?? assignment.allowed_strategy;
-                            setLastUsedStrategy({
-                              strategyType: assignment.allowed_strategy,
-                              product: "CNC",
-                              label,
-                            });
-                            setShowStrategyDialog(true);
+                            navigate("/algo-setup");
                           }}
                           className="py-5 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600"
                         >
                           {checkingOnboarding ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Timer className="mr-2 h-4 w-4" />}
-                          Place Order
+                          OpenAlgo Dashboard
                         </Button>
                       <Button
                         variant="outline"
@@ -1507,7 +1487,7 @@ const PredictPage = () => {
 
                       <p className="text-[11px] text-center text-muted-foreground/70">
                         <strong className="text-muted-foreground">Paper Trade</strong> is free & simulated — no real money.
-                        {" "}<strong className="text-muted-foreground">Place Order</strong> requires a premium plan.
+                        {" "}<strong className="text-muted-foreground">OpenAlgo Dashboard</strong> requires a premium plan.
                       </p>
                     </CardContent>
                   </Card>
