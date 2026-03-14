@@ -53,7 +53,14 @@ Deno.serve(async (req: Request) => {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      return new Response(JSON.stringify({ strategies: data ?? [] }), { status: 200, headers });
+      // Enrich each strategy with the full webhook URL so the client doesn't need to know OPENALGO_URL
+      const strategies = (data ?? []).map((s: any) => ({
+        ...s,
+        webhook_url: s.openalgo_webhook_id && OPENALGO_URL
+          ? `${OPENALGO_URL}/webhook/${s.openalgo_webhook_id}`
+          : null,
+      }));
+      return new Response(JSON.stringify({ strategies }), { status: 200, headers });
     }
 
     // ── CREATE ────────────────────────────────────────────────────────────

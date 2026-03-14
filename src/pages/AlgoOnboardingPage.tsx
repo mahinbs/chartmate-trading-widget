@@ -30,6 +30,7 @@ import {
 import { toast } from "sonner";
 import BrokerSyncSection, { ALL_BROKERS } from "@/components/trading/BrokerSyncSection";
 import BrokerPortfolioCard from "@/components/trading/BrokerPortfolioCard";
+import { getTradingIntegration } from "@/services/openalgoIntegrationService";
 
 interface OnboardingForm {
   full_name: string;
@@ -151,6 +152,17 @@ export default function AlgoOnboardingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [form, setForm] = useState<OnboardingForm>(EMPTY_FORM);
+  const [hasBrokerIntegration, setHasBrokerIntegration] = useState(false);
+
+  const checkBrokerIntegration = async () => {
+    const { data } = await getTradingIntegration();
+    const connected =
+      !!data?.is_active &&
+      !!data?.broker &&
+      !!data?.openalgo_api_key?.trim() &&
+      !!data?.api_key_encrypted?.trim();
+    setHasBrokerIntegration(connected);
+  };
 
   useEffect(() => {
     (async () => {
@@ -192,9 +204,22 @@ export default function AlgoOnboardingPage() {
         setExistingBroker(existing.broker ?? null);
       }
 
+      await checkBrokerIntegration();
       setChecking(false);
     })();
   }, [navigate]);
+
+  useEffect(() => {
+    if (!(done || alreadySubmitted)) return;
+    const status = done ? "pending" : (existingStatus ?? "pending");
+    const isProvisioned = status === "provisioned" || status === "active";
+    if (!isProvisioned) return;
+
+    const id = setInterval(() => {
+      checkBrokerIntegration();
+    }, 10_000);
+    return () => clearInterval(id);
+  }, [done, alreadySubmitted, existingStatus]);
 
   const set = (k: keyof OnboardingForm, v: string | boolean) =>
     setForm((f) => ({ ...f, [k]: v }));
@@ -336,15 +361,22 @@ export default function AlgoOnboardingPage() {
           {isProvisioned && (
             <>
               <BrokerSyncSection broker={broker} />
-              <BrokerPortfolioCard />
+              {hasBrokerIntegration ? (
+                <BrokerPortfolioCard />
+              ) : (
+                <div className="text-xs text-zinc-400 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2">
+                  Connect your broker above to load portfolio, holdings, positions and order controls.
+                </div>
+              )}
             </>
           )}
 
           <Button
             onClick={() => navigate("/trading-dashboard")}
+            disabled={isProvisioned && !hasBrokerIntegration}
             className="w-full bg-teal-500 hover:bg-teal-400 text-black font-bold px-8 rounded-xl"
           >
-            Go to Trading Dashboard
+            {isProvisioned && !hasBrokerIntegration ? "Connect Broker to Continue" : "Go to Trading Dashboard"}
             <ChevronRight className="h-4 w-4 ml-1" />
           </Button>
         </div>

@@ -57,48 +57,48 @@ export const ALL_BROKERS: Array<{
   value: string;
   label: string;
   color: string;
-  portal: string;
-  tokenHelp: string;
-  oauthSupported: boolean;
+  portal: string;           // direct link to token-generation page
+  tokenHelp: string;        // step-by-step hint shown in UI
+  oauthSupported: boolean;  // true = one-click OAuth; false = manual token paste
 }> = [
   {
     value: "zerodha",
     label: "Zerodha",
     color: "text-orange-400",
-    portal: "https://kite.zerodha.com/connect/login",
-    tokenHelp: "Log in to kite.zerodha.com → Console → API → generate access token",
+    portal: "https://kite.zerodha.com",
+    tokenHelp: "Click 'Connect Zerodha' — you'll be taken to Zerodha login and redirected back automatically.",
     oauthSupported: true,
   },
   {
     value: "upstox",
     label: "Upstox",
     color: "text-purple-400",
-    portal: "https://developer.upstox.com/",
-    tokenHelp: "Log in to developer.upstox.com → Your Apps → generate today's access token",
+    portal: "https://developer.upstox.com/apps",
+    tokenHelp: "Open Upstox Developer portal → select your App → click 'Get Access Token' → copy and paste here.",
     oauthSupported: false,
   },
   {
     value: "angel",
     label: "Angel One (SmartAPI)",
     color: "text-blue-400",
-    portal: "https://smartapi.angelbroking.com/",
-    tokenHelp: "Log in to smartapi.angelbroking.com → Apps → generate daily JWT token",
+    portal: "https://smartapi.angelbroking.com/token-generator",
+    tokenHelp: "Open SmartAPI Token Generator → enter your Client ID + TOTP → copy the JWT token and paste here.",
     oauthSupported: false,
   },
   {
     value: "fyers",
     label: "Fyers",
     color: "text-green-400",
-    portal: "https://myapi.fyers.in/",
-    tokenHelp: "Log in to myapi.fyers.in → Dashboard → generate today's access token",
+    portal: "https://api.fyers.in/api/v2/generate-authcode?client_id=",
+    tokenHelp: "Open Fyers API portal → Dashboard → click 'Generate Token' for your app → copy access_token and paste here.",
     oauthSupported: false,
   },
   {
     value: "dhan",
     label: "Dhan",
     color: "text-teal-400",
-    portal: "https://dhanhq.co/",
-    tokenHelp: "Log in to dhanhq.co → My Apps → generate access token",
+    portal: "https://dhanhq.co/developer/apps",
+    tokenHelp: "Open DhanHQ Developer → My Apps → Access Token → generate today's token and paste here.",
     oauthSupported: false,
   },
   {
@@ -106,7 +106,7 @@ export const ALL_BROKERS: Array<{
     label: "Alice Blue",
     color: "text-sky-400",
     portal: "https://ant.aliceblueonline.com/",
-    tokenHelp: "Log in to ant.aliceblueonline.com → API Settings → generate session token",
+    tokenHelp: "Open ANT Web → Settings → API Settings → click 'Regenerate Session Token' → copy and paste here.",
     oauthSupported: false,
   },
   {
@@ -114,23 +114,23 @@ export const ALL_BROKERS: Array<{
     label: "Compositedge",
     color: "text-indigo-400",
     portal: "https://compositedge.com/",
-    tokenHelp: "Log in to your Compositedge account → API section → generate today's token",
+    tokenHelp: "Log in to Compositedge → API section → generate today's access token → copy and paste here.",
     oauthSupported: false,
   },
   {
     value: "definedge",
     label: "Definedge",
     color: "text-yellow-400",
-    portal: "https://definedge.com/",
-    tokenHelp: "Log in to Definedge portal → API → generate access token",
+    portal: "https://suite.definedge.com/",
+    tokenHelp: "Log in to Definedge Suite → Profile → API → generate today's access token and paste here.",
     oauthSupported: false,
   },
   {
     value: "firstock",
     label: "Firstock",
     color: "text-pink-400",
-    portal: "https://firstock.in/",
-    tokenHelp: "Log in to firstock.in → Developer → generate session token",
+    portal: "https://connect.thefirstock.com/",
+    tokenHelp: "Log in to Firstock Connect → generate today's session token → copy and paste here.",
     oauthSupported: false,
   },
   {
@@ -138,7 +138,7 @@ export const ALL_BROKERS: Array<{
     label: "5Paisa",
     color: "text-lime-400",
     portal: "https://dev-openapi.5paisa.com/",
-    tokenHelp: "Log in to dev-openapi.5paisa.com → generate today's access token",
+    tokenHelp: "Open 5Paisa Developer portal → log in → generate today's access token → copy and paste here.",
     oauthSupported: false,
   },
   {
@@ -146,23 +146,23 @@ export const ALL_BROKERS: Array<{
     label: "5Paisa XTS",
     color: "text-lime-300",
     portal: "https://dev-openapi.5paisa.com/",
-    tokenHelp: "Log in to 5Paisa XTS API portal → generate today's access token",
+    tokenHelp: "Open 5Paisa XTS API portal → generate today's market token → copy and paste here.",
     oauthSupported: false,
   },
   {
     value: "flattrade",
     label: "Flattrade",
     color: "text-orange-300",
-    portal: "https://flattrade.in/",
-    tokenHelp: "Log in to flattrade.in → API → generate session token",
+    portal: "https://auth.flattrade.in/",
+    tokenHelp: "Open Flattrade auth portal → log in → copy the access token from the redirect URL and paste here.",
     oauthSupported: false,
   },
   {
     value: "groww",
     label: "Groww",
     color: "text-emerald-400",
-    portal: "https://developer.groww.in/",
-    tokenHelp: "Log in to developer.groww.in → Apps → generate today's access token",
+    portal: "https://developer.groww.in/apps",
+    tokenHelp: "Open Groww Developer → your App → Generate Access Token → copy and paste here.",
     oauthSupported: false,
   },
   {
@@ -170,7 +170,7 @@ export const ALL_BROKERS: Array<{
     label: "IBULLS (Indiabulls)",
     color: "text-blue-300",
     portal: "https://indiabulls.com/",
-    tokenHelp: "Log in to Indiabulls API portal → generate today's session token",
+    tokenHelp: "Log in to Indiabulls Securities API portal → generate today's session token → copy and paste here.",
     oauthSupported: false,
   },
   {
@@ -178,7 +178,7 @@ export const ALL_BROKERS: Array<{
     label: "IIFL Securities",
     color: "text-amber-400",
     portal: "https://api.iiflsecurities.com/",
-    tokenHelp: "Log in to api.iiflsecurities.com → generate today's access token",
+    tokenHelp: "Open IIFL API portal → generate today's interactive token → copy and paste here.",
     oauthSupported: false,
   },
   {
@@ -186,7 +186,7 @@ export const ALL_BROKERS: Array<{
     label: "INDmoney",
     color: "text-green-300",
     portal: "https://indmoney.com/",
-    tokenHelp: "Log in to INDmoney Developer → generate today's access token",
+    tokenHelp: "Open INDmoney Developer section → generate access token → copy and paste here.",
     oauthSupported: false,
   },
   {
@@ -194,7 +194,7 @@ export const ALL_BROKERS: Array<{
     label: "Jainam XTS",
     color: "text-violet-400",
     portal: "https://jainam.in/",
-    tokenHelp: "Log in to Jainam XTS API portal → generate session token",
+    tokenHelp: "Log in to Jainam XTS API portal → generate today's market + interactive token → paste here.",
     oauthSupported: false,
   },
   {
@@ -202,7 +202,7 @@ export const ALL_BROKERS: Array<{
     label: "Kotak Neo",
     color: "text-red-300",
     portal: "https://napi.kotaksecurities.com/",
-    tokenHelp: "Log in to Kotak Neo API → napi.kotaksecurities.com → generate access token",
+    tokenHelp: "Open Kotak Neo API portal → generate today's token using your Mobile + MPIN + TOTP → paste here.",
     oauthSupported: false,
   },
   {
@@ -210,7 +210,7 @@ export const ALL_BROKERS: Array<{
     label: "Motilal Oswal",
     color: "text-yellow-300",
     portal: "https://openapi.motilaloswal.com/",
-    tokenHelp: "Log in to openapi.motilaloswal.com → generate today's access token",
+    tokenHelp: "Open Motilal OpenAPI portal → log in → Dashboard → generate today's access token → paste here.",
     oauthSupported: false,
   },
   {
@@ -218,15 +218,15 @@ export const ALL_BROKERS: Array<{
     label: "mStock (Mirae Asset)",
     color: "text-cyan-400",
     portal: "https://mstock.in/",
-    tokenHelp: "Log in to mStock API portal → generate today's session token",
+    tokenHelp: "Open mStock API portal → log in with your Client ID + Password + TOTP → copy token and paste here.",
     oauthSupported: false,
   },
   {
     value: "nubra",
-    label: "Nubra",
+    label: "Nubra (Angel Arc)",
     color: "text-fuchsia-400",
-    portal: "https://nubra.in/",
-    tokenHelp: "Log in to Nubra API portal → generate today's access token",
+    portal: "https://smartapi.angelbroking.com/",
+    tokenHelp: "Open Angel SmartAPI → generate today's token using TOTP → copy and paste here.",
     oauthSupported: false,
   },
   {
@@ -234,15 +234,15 @@ export const ALL_BROKERS: Array<{
     label: "Paytm Money",
     color: "text-blue-400",
     portal: "https://developer.paytmmoney.com/",
-    tokenHelp: "Log in to developer.paytmmoney.com → Apps → generate today's access token",
+    tokenHelp: "Open Paytm Money Developer → Apps → Authorize → copy the access token from the URL and paste here.",
     oauthSupported: false,
   },
   {
     value: "pocketful",
     label: "Pocketful",
     color: "text-rose-400",
-    portal: "https://pocketful.in/",
-    tokenHelp: "Log in to Pocketful API portal → generate today's access token",
+    portal: "https://pocketful.in/developer",
+    tokenHelp: "Open Pocketful Developer portal → OAuth → generate today's access token → paste here.",
     oauthSupported: false,
   },
   {
@@ -250,23 +250,23 @@ export const ALL_BROKERS: Array<{
     label: "SAMCO",
     color: "text-teal-300",
     portal: "https://developers.samco.in/",
-    tokenHelp: "Log in to developers.samco.in → generate today's access token",
+    tokenHelp: "Open SAMCO Developer portal → login API → generate session token using your Year of Birth → paste here.",
     oauthSupported: false,
   },
   {
     value: "shoonya",
     label: "Shoonya (Finvasia)",
     color: "text-green-400",
-    portal: "https://shoonya.com/",
-    tokenHelp: "Log in to Shoonya API portal → generate today's session token",
+    portal: "https://shoonya.finvasia.com/",
+    tokenHelp: "Open Shoonya web portal → log in with User ID + Password + TOTP → copy session token and paste here.",
     oauthSupported: false,
   },
   {
     value: "tradejini",
     label: "Tradejini",
     color: "text-orange-400",
-    portal: "https://tradejini.com/",
-    tokenHelp: "Log in to Tradejini API portal → generate today's access token",
+    portal: "https://api.tradejini.com/",
+    tokenHelp: "Open Tradejini API portal → generate today's access token using your credentials → paste here.",
     oauthSupported: false,
   },
   {
@@ -274,23 +274,23 @@ export const ALL_BROKERS: Array<{
     label: "Wisdom Capital",
     color: "text-amber-300",
     portal: "https://wisdomcapital.in/",
-    tokenHelp: "Log in to Wisdom Capital API portal → generate today's session token",
+    tokenHelp: "Open Wisdom Capital API portal → generate today's session token → copy and paste here.",
     oauthSupported: false,
   },
   {
     value: "zebu",
     label: "Zebu",
     color: "text-sky-300",
-    portal: "https://zebuetrade.com/",
-    tokenHelp: "Log in to Zebu API portal → generate today's access token",
+    portal: "https://in.zebuetrade.com/",
+    tokenHelp: "Open Zebu API portal → log in with User ID + Password + TOTP → copy access token and paste here.",
     oauthSupported: false,
   },
   {
     value: "dhan_sandbox",
     label: "Dhan (Sandbox)",
     color: "text-zinc-400",
-    portal: "https://dhanhq.co/",
-    tokenHelp: "Dhan sandbox mode — use test access token from dhanhq.co developer console",
+    portal: "https://dhanhq.co/developer/apps",
+    tokenHelp: "Dhan sandbox — open DhanHQ Developer → Sandbox → copy test access token and paste here.",
     oauthSupported: false,
   },
 ];
@@ -533,39 +533,58 @@ export default function BrokerSyncSection({ broker: brokerProp, compact = false 
             /* ── All other brokers: paste token ────────────────────────── */
             <>
               {!showPaste ? (
-                <Button
-                  onClick={() => setShowPaste(true)}
-                  variant="outline"
-                  className="w-full border-zinc-700 hover:bg-zinc-800 font-bold"
-                  disabled={!brokerKey}
-                >
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  {fresh ? `Re-sync ${brokerInfo.label} Token` : `Connect ${brokerInfo.label}`}
-                </Button>
-              ) : (
-                <div className="space-y-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-zinc-300 text-sm flex items-center gap-1.5">
-                      <Zap className="h-3.5 w-3.5 text-teal-400" />
-                      Today's Access Token — {brokerInfo.label}
-                    </Label>
-                    <Input
-                      value={manualToken}
-                      onChange={(e) => setManualToken(e.target.value)}
-                      placeholder="Paste your daily access token here"
-                      className="bg-zinc-800 border-zinc-700 text-white font-mono text-xs placeholder:text-zinc-600"
-                      autoFocus
-                    />
-                    <p className="text-[10px] text-zinc-500">{brokerInfo.tokenHelp}</p>
+                <div className="space-y-2">
+                  <Button
+                    onClick={() => setShowPaste(true)}
+                    variant="outline"
+                    className="w-full border-zinc-700 hover:bg-zinc-800 font-bold"
+                    disabled={!brokerKey}
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    {fresh ? `Re-sync ${brokerInfo.label} Token` : `Connect ${brokerInfo.label}`}
+                  </Button>
+                  {brokerKey && (
                     <a
                       href={brokerInfo.portal}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-[10px] text-teal-400 hover:text-teal-300 flex items-center gap-1 w-fit"
+                      className="flex items-center justify-center gap-1.5 text-[11px] text-zinc-500 hover:text-teal-400 transition-colors"
                     >
                       <ExternalLink className="h-3 w-3" />
-                      Open {brokerInfo.label} portal
+                      Open {brokerInfo.label} portal to get today's token
                     </a>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {/* Step guide */}
+                  <div className="bg-zinc-800/60 rounded-lg p-3 space-y-1.5 border border-zinc-700/50">
+                    <p className="text-[11px] font-semibold text-zinc-300 mb-2">
+                      How to connect {brokerInfo.label}
+                    </p>
+                    <p className="text-[10px] text-zinc-400 leading-relaxed">{brokerInfo.tokenHelp}</p>
+                    <a
+                      href={brokerInfo.portal}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-[10px] text-teal-400 hover:text-teal-300 font-medium mt-1"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      Open {brokerInfo.label} portal →
+                    </a>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-zinc-300 text-xs flex items-center gap-1.5">
+                      <Zap className="h-3.5 w-3.5 text-teal-400" />
+                      Paste today's access token
+                    </Label>
+                    <Input
+                      value={manualToken}
+                      onChange={(e) => setManualToken(e.target.value)}
+                      placeholder="Paste your access token here…"
+                      className="bg-zinc-800 border-zinc-700 text-white font-mono text-xs placeholder:text-zinc-600"
+                      autoFocus
+                    />
                   </div>
                   <div className="flex gap-2">
                     <Button

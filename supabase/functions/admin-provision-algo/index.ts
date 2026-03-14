@@ -201,13 +201,14 @@ Deno.serve(async (req: Request) => {
       .from("algo_user_assignments")
       .upsert(
         {
-          user_id:          targetUserId,
-          integration_id:   integrationRow?.id ?? null,
-          allowed_strategy: allowedStrategy,
-          risk_profile:     riskProfile,
-          status:           "active",
-          assigned_by:      user.id,
-          updated_at:       new Date().toISOString(),
+          user_id:            targetUserId,
+          integration_id:     integrationRow?.id ?? null,
+          allowed_strategy:   allowedStrategy,
+          risk_profile:       riskProfile,
+          openalgo_username:  openalgoUsername,   // needed for broker OAuth callbacks
+          status:             "active",
+          assigned_by:        user.id,
+          updated_at:         new Date().toISOString(),
         },
         { onConflict: "user_id" },
       );

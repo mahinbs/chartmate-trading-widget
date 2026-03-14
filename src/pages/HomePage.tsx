@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, Activity, BarChart3, PlusCircle, Eye, Sparkles, ShieldCheck, KeyRound, BrainCircuit } from "lucide-react";
+import { TrendingUp, Activity, BarChart3, PlusCircle, Eye, Sparkles, ShieldCheck, KeyRound, BrainCircuit, Lock } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useTradingIntegration } from "@/hooks/useTradingIntegration";
@@ -55,8 +55,8 @@ export default function HomePage() {
         </div>
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-          {/* Create New Analysis */}
+        <div className={`grid grid-cols-1 ${isPremium ? "md:grid-cols-2" : ""} gap-6 mb-8`}>
+          {/* Create New Analysis — always visible */}
           <Card className="glass-panel border-primary/20 hover:border-primary/40 transition-all duration-300 hover:shadow-[0_0_30px_rgba(20,184,166,0.1)] cursor-pointer group relative overflow-hidden"
             onClick={() => navigate('/predict')}>
             <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
@@ -94,50 +94,74 @@ export default function HomePage() {
             </CardContent>
           </Card>
 
-          {/* OpenAlgo Dashboard */}
-          <Card className="glass-panel border-secondary/20 hover:border-secondary/40 transition-all duration-300 hover:shadow-[0_0_30px_rgba(14,165,233,0.1)] cursor-pointer group relative overflow-hidden"
-            onClick={() => {
-              if (canAccessOpenAlgoDashboard) {
-                navigate('/trading-dashboard');
-              } else {
-                navigate('/algo-setup');
-              }
-            }}>
-            <div className="absolute inset-0 bg-gradient-to-br from-secondary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-            <CardHeader className="relative z-10">
-              <CardTitle className="flex items-center gap-4 text-2xl">
-                <div className="p-3.5 bg-secondary/10 rounded-xl border border-secondary/20 group-hover:scale-110 transition-transform duration-300 shadow-lg shadow-secondary/5">
-                  <Eye className="h-8 w-8 text-secondary" />
+          {/* Live Trading Dashboard — PAID USERS ONLY */}
+          {isPremium && (
+            <Card
+              className="glass-panel border-secondary/20 hover:border-secondary/40 transition-all duration-300 hover:shadow-[0_0_30px_rgba(14,165,233,0.1)] cursor-pointer group relative overflow-hidden"
+              onClick={() => canAccessOpenAlgoDashboard ? navigate('/trading-dashboard') : navigate('/algo-setup')}
+            >
+              <div className="absolute inset-0 bg-gradient-to-br from-secondary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <CardHeader className="relative z-10">
+                <CardTitle className="flex items-center gap-4 text-2xl">
+                  <div className="p-3.5 bg-secondary/10 rounded-xl border border-secondary/20 group-hover:scale-110 transition-transform duration-300 shadow-lg shadow-secondary/5">
+                    <Eye className="h-8 w-8 text-secondary" />
+                  </div>
+                  <div>
+                    <div className="font-bold">Live Trading</div>
+                    <p className="text-sm font-normal text-muted-foreground mt-1">
+                      Sync broker and place live orders
+                    </p>
+                  </div>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="relative z-10">
+                <ul className="space-y-3 text-sm text-muted-foreground mb-6">
+                  <li className="flex items-center gap-3">
+                    <div className="h-1.5 w-1.5 bg-secondary rounded-full shadow-[0_0_8px_rgba(14,165,233,0.6)]"></div>
+                    Real portfolio, positions &amp; tradebook
+                  </li>
+                  <li className="flex items-center gap-3">
+                    <div className="h-1.5 w-1.5 bg-secondary rounded-full shadow-[0_0_8px_rgba(14,165,233,0.6)]"></div>
+                    Place live broker-supported orders
+                  </li>
+                  <li className="flex items-center gap-3">
+                    <div className="h-1.5 w-1.5 bg-secondary rounded-full shadow-[0_0_8px_rgba(14,165,233,0.6)]"></div>
+                    Auto-execute strategies via signals
+                  </li>
+                </ul>
+                <Button className="w-full h-12 text-base font-semibold bg-secondary hover:bg-secondary/90 text-white shadow-[0_0_20px_rgba(14,165,233,0.2)] hover:shadow-[0_0_25px_rgba(14,165,233,0.4)] transition-all">
+                  {canAccessOpenAlgoDashboard ? "Open Live Dashboard →" : "Complete Setup →"}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+
+        {/* Upsell banner for FREE users — shown below the main card */}
+        {!isPremium && (
+          <Card className="mb-8 border border-dashed border-white/10 bg-white/2 relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-r from-secondary/5 via-transparent to-primary/5" />
+            <CardContent className="relative z-10 py-5 flex flex-col sm:flex-row items-center gap-4 justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-secondary/10 border border-secondary/20 shrink-0">
+                  <Lock className="h-5 w-5 text-secondary" />
                 </div>
                 <div>
-                  <div className="font-bold">OpenAlgo Dashboard</div>
-                  <p className="text-sm font-normal text-muted-foreground mt-1">
-                    Sync broker and place live orders
+                  <p className="font-semibold text-white text-sm">Unlock Live Trading</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Connect your broker, place real orders &amp; auto-execute strategies — available on paid plans.
                   </p>
                 </div>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="relative z-10">
-              <ul className="space-y-3 text-sm text-muted-foreground mb-6">
-                <li className="flex items-center gap-3">
-                  <div className="h-1.5 w-1.5 bg-secondary rounded-full shadow-[0_0_8px_rgba(14,165,233,0.6)]"></div>
-                  Daily broker sync from your own account
-                </li>
-                <li className="flex items-center gap-3">
-                  <div className="h-1.5 w-1.5 bg-secondary rounded-full shadow-[0_0_8px_rgba(14,165,233,0.6)]"></div>
-                  Real portfolio, orderbook, and tradebook
-                </li>
-                <li className="flex items-center gap-3">
-                  <div className="h-1.5 w-1.5 bg-secondary rounded-full shadow-[0_0_8px_rgba(14,165,233,0.6)]"></div>
-                  Place live broker-supported orders
-                </li>
-              </ul>
-              <Button className="w-full h-12 text-base font-semibold bg-secondary hover:bg-secondary/90 text-white shadow-[0_0_20px_rgba(14,165,233,0.2)] hover:shadow-[0_0_25px_rgba(14,165,233,0.4)] transition-all">
-                {canAccessOpenAlgoDashboard ? "OpenAlgo Dashboard" : "Complete Algo Setup"}
+              </div>
+              <Button
+                onClick={() => { window.location.href = '/#pricing'; }}
+                className="shrink-0 bg-secondary hover:bg-secondary/90 text-white text-sm px-5 h-10"
+              >
+                Upgrade to Pro →
               </Button>
             </CardContent>
           </Card>
-        </div>
+        )}
 
         {/* Additional Options */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

@@ -1,14 +1,8 @@
 /**
  * BrokerPortfolioCard
  *
- * Live broker account data from OpenAlgo:
- *   - Funds / cash balance
- *   - Open positions (intraday) with Close Position button
- *   - Holdings (long-term)
- *   - Orders with Cancel / Modify buttons
- *   - Cancel All Orders + Close All Positions panic buttons
- *
- * All data looks like ChartMate's own — OpenAlgo is invisible.
+ * Full broker account view — funds, positions, holdings, orders, tradebook.
+ * All data pulled live from OpenAlgo → broker. OpenAlgo is completely invisible to user.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -24,8 +18,12 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie,
+} from "recharts";
+import {
   AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3,
   Briefcase, ClipboardList, Loader2, RefreshCw, Wallet, X, Pencil, Zap,
+  TrendingUp, TrendingDown, BookOpen,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -39,51 +37,54 @@ interface PortfolioData {
   positions: PositionRow[];
   holdings: HoldingRow[];
   orders: OrderRow[];
+  tradebook: TradeRow[];
   errors: Record<string, string | null>;
 }
 
 interface PositionRow {
   tradingsymbol?: string; exchange?: string; product?: string;
   netqty?: number; avgprice?: number; ltp?: number; pnl?: number;
+  buyqty?: number; sellqty?: number; buyavgprice?: number; sellavgprice?: number;
   [key: string]: unknown;
 }
-
 interface HoldingRow {
   tradingsymbol?: string; exchange?: string; quantity?: number;
-  avgprice?: number; ltp?: number; pnl?: number;
+  avgprice?: number; ltp?: number; pnl?: number; close?: number;
   [key: string]: unknown;
 }
-
 interface OrderRow {
   orderid?: string; tradingsymbol?: string; exchange?: string;
-  transactiontype?: string; quantity?: number; averageprice?: number;
-  price?: number; product?: string; pricetype?: string;
-  status?: string; updatetime?: string; ordertime?: string;
-  rejectreason?: string;
+  transactiontype?: string; quantity?: number; filledquantity?: number;
+  averageprice?: number; price?: number; product?: string; pricetype?: string;
+  status?: string; updatetime?: string; ordertime?: string; rejectreason?: string;
+  [key: string]: unknown;
+}
+interface TradeRow {
+  tradingsymbol?: string; exchange?: string; transactiontype?: string;
+  tradedquantity?: string | number; averageprice?: string | number;
+  product?: string; orderid?: string; fillid?: string;
+  pnl?: string | number; tradetime?: string; ordertime?: string;
   [key: string]: unknown;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const BROKER_LABELS: Record<string, string> = {
-  zerodha: "Zerodha", upstox: "Upstox", angel: "Angel One",
-  fyers: "Fyers", dhan: "Dhan",
-};
-
 const CANCELLABLE = ["open", "pending", "trigger pending", "after market order req received"];
 
-function fmt(v: number | undefined | null) {
+function fmt(v: number | undefined | null, prefix = "₹") {
   if (v == null || isNaN(Number(v))) return "—";
-  return `₹${Number(v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const n = Number(v);
+  return `${prefix}${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function PnlCell({ value }: { value: number | undefined | null }) {
+function PnlBadge({ value }: { value: number | undefined | null }) {
   const n = Number(value ?? 0);
-  if (!n || isNaN(n)) return <span className="text-zinc-500">—</span>;
-  if (Math.abs(n) < 0.005) return <span className="text-zinc-400">₹0.00</span>;
+  if (!n || isNaN(n) || Math.abs(n) < 0.005) return <span className="text-zinc-500 text-xs">₹0.00</span>;
+  const pos = n > 0;
   return (
-    <span className={n > 0 ? "text-emerald-400 font-semibold" : "text-red-400 font-semibold"}>
-      {n > 0 ? "+" : "−"}₹{Math.abs(n).toFixed(2)}
+    <span className={`text-xs font-bold flex items-center gap-0.5 ${pos ? "text-emerald-400" : "text-red-400"}`}>
+      {pos ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+      {pos ? "+" : "−"}₹{Math.abs(n).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
     </span>
   );
 }
@@ -98,7 +99,7 @@ function StatusBadge({ status }: { status?: string }) {
     pending:   "bg-amber-500/20 text-amber-300 border-amber-500/30",
   };
   return (
-    <Badge className={`text-[10px] border ${map[s] ?? "bg-zinc-700 text-zinc-400 border-zinc-600"}`}>
+    <Badge className={`text-[10px] border px-1.5 py-0 ${map[s] ?? "bg-zinc-700 text-zinc-400 border-zinc-600"}`}>
       {status ?? "—"}
     </Badge>
   );
@@ -113,14 +114,12 @@ export default function BrokerPortfolioCard() {
   const [actioning, setActioning]   = useState<string | null>(null);
   const [liveLtps, setLiveLtps]     = useState<Record<string, number>>({});
   const [quotesLoading, setQLoading] = useState(false);
-
-  // Modify order dialog state
   const [modifyOrder, setModifyOrder] = useState<OrderRow | null>(null);
-  const [modifyPrice, setModifyPrice]   = useState("");
-  const [modifyQty, setModifyQty]       = useState("");
-  const [modifyType, setModifyType]     = useState("LIMIT");
+  const [modifyPrice, setModifyPrice] = useState("");
+  const [modifyQty, setModifyQty]     = useState("");
+  const [modifyType, setModifyType]   = useState("LIMIT");
 
-  // ── Data loading ────────────────────────────────────────────────────────
+  // ── Load all portfolio data ───────────────────────────────────────────────
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     setError(null);
@@ -143,13 +142,18 @@ export default function BrokerPortfolioCard() {
 
   useEffect(() => { load(); }, [load]);
 
-  // ── Fetch live broker LTPs for all positions + holdings ──────────────────
+  // Auto-refresh every 60 seconds
+  useEffect(() => {
+    const id = setInterval(() => load(true), 60_000);
+    return () => clearInterval(id);
+  }, [load]);
+
+  // ── Live LTPs ────────────────────────────────────────────────────────────
   const refreshQuotes = useCallback(async (portfolio: PortfolioData) => {
     const symbols: Array<{ symbol: string; exchange: string }> = [
       ...portfolio.positions.map(p => ({ symbol: p.tradingsymbol ?? "", exchange: p.exchange ?? "NSE" })),
       ...portfolio.holdings.map(h => ({ symbol: h.tradingsymbol ?? "", exchange: h.exchange ?? "NSE" })),
     ].filter(s => s.symbol);
-
     if (!symbols.length) return;
     setQLoading(true);
     try {
@@ -159,7 +163,6 @@ export default function BrokerPortfolioCard() {
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
       const raw = (res.data as any)?.data;
-      // OpenAlgo returns array or object keyed by symbol
       const map: Record<string, number> = {};
       if (Array.isArray(raw)) {
         raw.forEach((q: any) => { if (q?.symbol && q?.ltp != null) map[q.symbol] = Number(q.ltp); });
@@ -168,23 +171,13 @@ export default function BrokerPortfolioCard() {
           if (q?.ltp != null) map[sym] = Number(q.ltp);
         });
       }
-      if (Object.keys(map).length) {
-        setLiveLtps(map);
-        toast.success("Live quotes updated");
-      }
-    } catch {
-      toast.error("Could not fetch live quotes");
-    } finally {
-      setQLoading(false);
-    }
+      if (Object.keys(map).length) { setLiveLtps(map); toast.success("Live quotes updated"); }
+    } catch { toast.error("Could not fetch live quotes"); }
+    finally { setQLoading(false); }
   }, []);
 
-  // ── Broker action call ──────────────────────────────────────────────────
-  const doAction = useCallback(async (
-    action: string,
-    params: Record<string, unknown> = {},
-    label: string,
-  ) => {
+  // ── Actions ──────────────────────────────────────────────────────────────
+  const doAction = useCallback(async (action: string, params: Record<string, unknown>, label: string) => {
     const key = (params.orderid as string) ?? action;
     setActioning(key);
     try {
@@ -194,157 +187,122 @@ export default function BrokerPortfolioCard() {
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
       const d = res.data as any;
-      if (res.error || d?.error) {
-        toast.error(`${label} failed: ${d?.error ?? res.error?.message}`);
-        return false;
-      }
+      if (res.error || d?.error) { toast.error(`${label} failed: ${d?.error ?? res.error?.message}`); return false; }
       toast.success(`${label} successful`);
       await load(true);
       return true;
-    } catch (e: any) {
-      toast.error(`${label} error: ${e.message}`);
-      return false;
-    } finally {
-      setActioning(null);
-    }
+    } catch (e: any) { toast.error(`${label} error: ${e.message}`); return false; }
+    finally { setActioning(null); }
   }, [load]);
 
-  // ── Cancel order ────────────────────────────────────────────────────────
-  const handleCancel = (order: OrderRow) =>
-    doAction("cancel", { orderid: order.orderid }, "Cancel order");
-
-  // ── Modify order submit ─────────────────────────────────────────────────
+  const handleCancel       = (o: OrderRow) => doAction("cancel", { orderid: o.orderid }, "Cancel order");
+  const handleCloseAll     = async () => { if (!confirm("Close ALL open positions? This cannot be undone.")) return; await doAction("close_all_pos", {}, "Close all positions"); };
+  const handleCancelAll    = async () => { if (!confirm("Cancel ALL open orders?")) return; await doAction("cancel_all", {}, "Cancel all orders"); };
   const handleModifySubmit = async () => {
     if (!modifyOrder) return;
     const ok = await doAction("modify", {
-      orderid:      modifyOrder.orderid,
-      symbol:       modifyOrder.tradingsymbol,
-      exchange:     modifyOrder.exchange ?? "NSE",
-      order_action: modifyOrder.transactiontype ?? "BUY",
-      product:      modifyOrder.product ?? "CNC",
-      pricetype:    modifyType,
-      price:        Number(modifyPrice),
-      quantity:     Number(modifyQty),
+      orderid: modifyOrder.orderid, symbol: modifyOrder.tradingsymbol,
+      exchange: modifyOrder.exchange ?? "NSE", order_action: modifyOrder.transactiontype ?? "BUY",
+      product: modifyOrder.product ?? "CNC", pricetype: modifyType,
+      price: Number(modifyPrice), quantity: Number(modifyQty),
     }, "Modify order");
     if (ok) setModifyOrder(null);
   };
 
-  // ── Close a single position ─────────────────────────────────────────────
-  const handleClosePosition = async (pos: PositionRow) => {
-    if (!confirm(`Close position: ${pos.tradingsymbol} (Qty ${pos.netqty})?`)) return;
-    await doAction("close_all_pos", {}, `Close ${pos.tradingsymbol}`);
-  };
-
-  // ── Panic: close all positions ──────────────────────────────────────────
-  const handleCloseAll = async () => {
-    if (!confirm("Close ALL open positions? This cannot be undone.")) return;
-    await doAction("close_all_pos", {}, "Close all positions");
-  };
-
-  // ── Panic: cancel all orders ────────────────────────────────────────────
-  const handleCancelAll = async () => {
-    if (!confirm("Cancel ALL open orders?")) return;
-    await doAction("cancel_all", {}, "Cancel all orders");
-  };
-
-  // ── Render states ───────────────────────────────────────────────────────
+  // ── Loading / Error states ───────────────────────────────────────────────
   if (loading) {
     return (
       <Card className="bg-zinc-900 border-zinc-800">
         <CardContent className="flex items-center justify-center py-12">
           <Loader2 className="h-6 w-6 animate-spin text-teal-400 mr-2" />
-          <span className="text-zinc-400 text-sm">Loading your account…</span>
+          <span className="text-zinc-400 text-sm">Loading account data…</span>
         </CardContent>
       </Card>
     );
   }
-
   if (error) {
     const noInt = error.includes("NO_INTEGRATION") || error.includes("No active broker");
     return (
       <Alert className="bg-zinc-900 border-zinc-800">
         <AlertTriangle className="h-4 w-4 text-amber-400" />
         <AlertDescription className="text-zinc-400 text-sm">
-          {noInt
-            ? "Broker not connected yet. Sync your daily token above to view live account data."
-            : error}
+          {noInt ? "Broker not connected. Sync your daily token above to view live account data." : error}
         </AlertDescription>
       </Alert>
     );
   }
-
   if (!data) return null;
 
-  const brokerLabel = BROKER_LABELS[data.broker ?? ""] ?? data.broker ?? "Broker";
-  const available   = (data.funds as any)?.availablecash ?? (data.funds as any)?.net ?? (data.funds as any)?.available_cash ?? null;
-  const used        = (data.funds as any)?.utiliseddebits ?? (data.funds as any)?.used_margin ?? null;
-  const totalPnl    = data.positions.reduce((s, p) => s + Number(p.pnl ?? 0), 0)
-                    + data.holdings.reduce((s, h) => s + Number(h.pnl ?? 0), 0);
+  // ── Derived values ───────────────────────────────────────────────────────
+  const funds = data.funds as any ?? {};
 
-  const openOrders  = data.orders.filter(o => CANCELLABLE.includes((o.status ?? "").toLowerCase()));
-  const openPosCnt  = data.positions.filter(p => Number(p.netqty ?? 0) !== 0).length;
+  // Try every known field name across all brokers
+  const available   = funds.availablecash ?? funds.net ?? funds.available_balance ?? funds.available_cash ?? funds.cash ?? 0;
+  const used        = funds.utiliseddebits ?? funds.used_margin ?? funds.utilised_debits ?? funds.marginused ?? 0;
+  const collateral  = funds.collateral ?? funds.collateral_liquid ?? 0;
+  const m2m         = funds.m2munrealized ?? funds.m2m_unrealised ?? funds.mtm ?? 0;
+
+  const openPositions  = data.positions.filter(p => Number(p.netqty ?? 0) !== 0);
+  const positionsPnl   = data.positions.reduce((s, p) => s + Number(p.pnl ?? 0), 0);
+  const holdingsPnl    = data.holdings.reduce((s, h) => s + Number(h.pnl ?? 0), 0);
+  const totalPnl       = positionsPnl + holdingsPnl;
+  const openOrders     = data.orders.filter(o => CANCELLABLE.includes((o.status ?? "").toLowerCase()));
+  const completedToday = data.orders.filter(o => (o.status ?? "").toLowerCase() === "complete").length;
+
+  // Pie chart data for positions P&L
+  const pieData = openPositions.map(p => ({
+    name: p.tradingsymbol ?? "",
+    value: Math.abs(Number(p.pnl ?? 0)),
+    color: Number(p.pnl ?? 0) >= 0 ? "#10b981" : "#ef4444",
+  })).filter(d => d.value > 0);
+
+  // Bar chart for tradebook buy/sell breakdown
+  const tradeStats = (() => {
+    const buys  = data.tradebook.filter(t => (t.transactiontype ?? "").toUpperCase() === "BUY");
+    const sells = data.tradebook.filter(t => (t.transactiontype ?? "").toUpperCase() === "SELL");
+    const buyVal  = buys.reduce((s, t)  => s + Number(t.tradedquantity ?? 0) * Number(t.averageprice ?? 0), 0);
+    const sellVal = sells.reduce((s, t) => s + Number(t.tradedquantity ?? 0) * Number(t.averageprice ?? 0), 0);
+    return { buyCnt: buys.length, sellCnt: sells.length, buyVal, sellVal };
+  })();
 
   return (
     <>
       <Card className="bg-zinc-900 border-zinc-800">
-        <CardHeader className="pb-3">
+        <CardHeader className="pb-2">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <CardTitle className="text-base font-bold text-white flex items-center gap-2">
               <BarChart3 className="h-4 w-4 text-teal-400" />
-              {brokerLabel} Account
+              {(data.broker ?? "Broker").charAt(0).toUpperCase() + (data.broker ?? "broker").slice(1)} Account
             </CardTitle>
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 flex-wrap">
               {data.token_expired && (
                 <Badge className="bg-amber-500/10 text-amber-400 border border-amber-500/30 text-[10px]">
                   <AlertTriangle className="h-3 w-3 mr-1" /> Session Expired
                 </Badge>
               )}
-              {/* Panic buttons */}
-              {openPosCnt > 0 && (
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  onClick={handleCloseAll}
-                  disabled={!!actioning}
-                  className="h-7 text-[11px] px-2.5 bg-red-600/80 hover:bg-red-600"
-                >
-                  {actioning === "close_all_pos"
-                    ? <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                    : <Zap className="h-3 w-3 mr-1" />}
-                  Close All ({openPosCnt})
+              {openPositions.length > 0 && (
+                <Button size="sm" variant="destructive" onClick={handleCloseAll} disabled={!!actioning}
+                  className="h-7 text-[11px] px-2 bg-red-600/80 hover:bg-red-600">
+                  {actioning === "close_all_pos" ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Zap className="h-3 w-3 mr-1" />}
+                  Close All ({openPositions.length})
                 </Button>
               )}
               {openOrders.length > 0 && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleCancelAll}
-                  disabled={!!actioning}
-                  className="h-7 text-[11px] px-2.5 border-orange-500/50 text-orange-400 hover:bg-orange-500/10"
-                >
-                  {actioning === "cancel_all"
-                    ? <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                    : <X className="h-3 w-3 mr-1" />}
-                  Cancel All Orders ({openOrders.length})
+                <Button size="sm" variant="outline" onClick={handleCancelAll} disabled={!!actioning}
+                  className="h-7 text-[11px] px-2 border-orange-500/50 text-orange-400 hover:bg-orange-500/10">
+                  {actioning === "cancel_all" ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <X className="h-3 w-3 mr-1" />}
+                  Cancel All ({openOrders.length})
                 </Button>
               )}
-              <Button
-                variant="ghost" size="sm"
-                onClick={() => refreshQuotes(data)}
-                disabled={quotesLoading}
-                className="h-7 px-2 text-[11px] text-zinc-400 hover:text-amber-300 border border-zinc-700 hover:border-amber-500/40"
-                title="Fetch live LTP from broker for positions & holdings"
-              >
-                {quotesLoading
-                  ? <Loader2 className="h-3 w-3 animate-spin" />
-                  : <Zap className="h-3 w-3 mr-1" />}
-                Live Quotes
-              </Button>
-              <Button
-                variant="ghost" size="sm"
-                onClick={() => { load(true); toast.success("Refreshed"); }}
-                className="h-7 w-7 p-0 text-zinc-500 hover:text-teal-400"
-              >
+              {data.positions.length + data.holdings.length > 0 && (
+                <Button variant="ghost" size="sm" onClick={() => refreshQuotes(data)} disabled={quotesLoading}
+                  className="h-7 px-2 text-[11px] text-amber-400 hover:text-amber-300 border border-zinc-700 hover:border-amber-500/40">
+                  {quotesLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3 mr-1" />}
+                  Live LTP
+                </Button>
+              )}
+              <Button variant="ghost" size="sm" onClick={() => { load(true); toast.success("Refreshed"); }}
+                className="h-7 w-7 p-0 text-zinc-500 hover:text-teal-400">
                 <RefreshCw className="h-3.5 w-3.5" />
               </Button>
             </div>
@@ -352,192 +310,362 @@ export default function BrokerPortfolioCard() {
         </CardHeader>
 
         <CardContent className="space-y-4">
-          {/* Balance row */}
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-zinc-800 rounded-lg p-3 text-center">
-              <p className="text-[10px] text-zinc-500 mb-1 flex items-center justify-center gap-1">
-                <Wallet className="h-3 w-3" /> Available
-              </p>
-              <p className="font-bold text-sm text-white">{fmt(Number(available))}</p>
-            </div>
-            <div className="bg-zinc-800 rounded-lg p-3 text-center">
-              <p className="text-[10px] text-zinc-500 mb-1 flex items-center justify-center gap-1">
-                <Briefcase className="h-3 w-3" /> Used Margin
-              </p>
-              <p className="font-bold text-sm text-white">{fmt(Number(used))}</p>
-            </div>
-            <div className="bg-zinc-800 rounded-lg p-3 text-center">
-              <p className="text-[10px] text-zinc-500 mb-1">Today's P/L</p>
-              <p className="font-bold text-sm"><PnlCell value={totalPnl} /></p>
-            </div>
-          </div>
-          <p className="text-[10px] text-zinc-600 text-center -mt-1">
-            To add funds, open your {brokerLabel} app directly. Balance updates here automatically.
-          </p>
 
-          {/* Tabs */}
+          {/* ── Funds Overview ─────────────────────────────────────────── */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {[
+              { label: "Available Cash", value: Number(available), icon: <Wallet className="h-3 w-3" />, color: "text-teal-400" },
+              { label: "Used Margin",    value: Number(used),      icon: <Briefcase className="h-3 w-3" />, color: "text-amber-400" },
+              { label: "Collateral",     value: Number(collateral),icon: <BarChart3 className="h-3 w-3" />,  color: "text-blue-400" },
+              { label: "Today's P/L",   value: totalPnl,           icon: totalPnl >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />, color: totalPnl >= 0 ? "text-emerald-400" : "text-red-400" },
+            ].map(({ label, value, icon, color }) => (
+              <div key={label} className="bg-zinc-800 rounded-xl p-3 border border-zinc-700/50">
+                <p className={`text-[10px] flex items-center gap-1 mb-1 ${color}`}>{icon}{label}</p>
+                <p className={`font-bold text-sm ${color}`}>
+                  {label === "Today's P/L"
+                    ? (Math.abs(value) < 0.005 ? "₹0.00" : `${value > 0 ? "+" : "−"}₹${Math.abs(value).toFixed(2)}`)
+                    : fmt(value)}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          {/* ── Quick Stats ────────────────────────────────────────────── */}
+          <div className="grid grid-cols-4 gap-2 text-center">
+            {[
+              { label: "Open Positions", value: openPositions.length, color: "text-blue-400" },
+              { label: "Holdings",       value: data.holdings.length, color: "text-purple-400" },
+              { label: "Open Orders",    value: openOrders.length,    color: "text-amber-400" },
+              { label: "Filled Today",   value: completedToday,       color: "text-emerald-400" },
+            ].map(({ label, value, color }) => (
+              <div key={label} className="bg-zinc-800/50 rounded-lg p-2 border border-zinc-800">
+                <p className={`font-bold text-lg ${color}`}>{value}</p>
+                <p className="text-[9px] text-zinc-500 leading-tight mt-0.5">{label}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* ── P&L Chart (positions) ──────────────────────────────────── */}
+          {pieData.length > 0 && (
+            <div className="bg-zinc-800/40 rounded-xl border border-zinc-700/50 p-3">
+              <p className="text-xs text-zinc-400 font-semibold mb-2">Open Positions P&L Breakdown</p>
+              <div className="flex items-center gap-4">
+                <ResponsiveContainer width={120} height={100}>
+                  <PieChart>
+                    <Pie data={pieData} dataKey="value" innerRadius={28} outerRadius={48} strokeWidth={0}>
+                      {pieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                    </Pie>
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="flex-1 space-y-1">
+                  {pieData.slice(0, 5).map((d, i) => (
+                    <div key={i} className="flex items-center justify-between text-xs">
+                      <span className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full" style={{ background: d.color }} />
+                        <span className="text-zinc-300 font-mono">{d.name}</span>
+                      </span>
+                      <span style={{ color: d.color }}>₹{d.value.toFixed(0)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Tradebook bar chart ────────────────────────────────────── */}
+          {data.tradebook.length > 0 && (
+            <div className="bg-zinc-800/40 rounded-xl border border-zinc-700/50 p-3">
+              <p className="text-xs text-zinc-400 font-semibold mb-2">Today's Trading Activity</p>
+              <div className="flex items-center gap-4 mb-2">
+                <span className="text-xs text-emerald-400">Buys: <strong>{tradeStats.buyCnt}</strong> (₹{(tradeStats.buyVal / 1000).toFixed(0)}K)</span>
+                <span className="text-xs text-red-400">Sells: <strong>{tradeStats.sellCnt}</strong> (₹{(tradeStats.sellVal / 1000).toFixed(0)}K)</span>
+                <span className="text-xs text-zinc-500">Total: {data.tradebook.length} trades</span>
+              </div>
+              <ResponsiveContainer width="100%" height={60}>
+                <BarChart data={[{ name: "Today", Buy: tradeStats.buyCnt, Sell: tradeStats.sellCnt }]} barGap={4}>
+                  <XAxis dataKey="name" hide />
+                  <YAxis hide />
+                  <Tooltip contentStyle={{ background: "#18181b", border: "1px solid #3f3f46", fontSize: 11 }} />
+                  <Bar dataKey="Buy"  fill="#10b981" radius={[4,4,0,0]} />
+                  <Bar dataKey="Sell" fill="#ef4444" radius={[4,4,0,0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* ── Tabs ──────────────────────────────────────────────────── */}
           <Tabs defaultValue="positions">
-            <TabsList className="bg-zinc-800 border border-zinc-700 h-8 w-full">
-              <TabsTrigger value="positions" className="text-xs flex-1 h-6 data-[state=active]:bg-teal-500 data-[state=active]:text-black">
-                <ArrowUpRight className="h-3 w-3 mr-1" />
-                Positions ({data.positions.length})
-              </TabsTrigger>
-              <TabsTrigger value="holdings" className="text-xs flex-1 h-6 data-[state=active]:bg-teal-500 data-[state=active]:text-black">
-                <Briefcase className="h-3 w-3 mr-1" />
-                Holdings ({data.holdings.length})
-              </TabsTrigger>
-              <TabsTrigger value="orders" className="text-xs flex-1 h-6 data-[state=active]:bg-teal-500 data-[state=active]:text-black">
-                <ClipboardList className="h-3 w-3 mr-1" />
-                Orders ({data.orders.length})
-              </TabsTrigger>
+            <TabsList className="bg-zinc-800 border border-zinc-700 h-8 w-full grid grid-cols-4">
+              {[
+                { value: "positions", label: "Positions", icon: <ArrowUpRight className="h-3 w-3 mr-0.5" />, count: data.positions.length },
+                { value: "holdings",  label: "Holdings",  icon: <Briefcase className="h-3 w-3 mr-0.5" />,    count: data.holdings.length },
+                { value: "orders",    label: "Orders",    icon: <ClipboardList className="h-3 w-3 mr-0.5" />, count: data.orders.length },
+                { value: "tradebook", label: "Trades",    icon: <BookOpen className="h-3 w-3 mr-0.5" />,      count: data.tradebook.length },
+              ].map(tab => (
+                <TabsTrigger key={tab.value} value={tab.value}
+                  className="text-[11px] h-6 data-[state=active]:bg-teal-500 data-[state=active]:text-black flex items-center gap-0.5">
+                  {tab.icon}{tab.label} ({tab.count})
+                </TabsTrigger>
+              ))}
             </TabsList>
 
             {/* ── Positions ─────────────────────────────────────────── */}
-            <TabsContent value="positions" className="mt-3">
+            <TabsContent value="positions" className="mt-2">
               {data.positions.length === 0 ? (
-                <p className="text-zinc-500 text-xs text-center py-6">No open positions today</p>
+                <div className="text-center py-10">
+                  <ArrowUpRight className="h-8 w-8 text-zinc-700 mx-auto mb-2" />
+                  <p className="text-zinc-500 text-sm">No positions today</p>
+                  <p className="text-zinc-600 text-xs mt-1">Place an order to start trading</p>
+                </div>
               ) : (
-                <div className="space-y-2">
-                  {data.positions.map((p, i) => {
-                    const hasQty = Number(p.netqty ?? 0) !== 0;
-                    const isClosing = actioning === `close_${p.tradingsymbol}`;
-                    const liveLtp = liveLtps[p.tradingsymbol ?? ""];
-                    const displayLtp = liveLtp ?? Number(p.ltp ?? 0);
-                    const livePnl = liveLtp != null
-                      ? (liveLtp - Number(p.avgprice ?? 0)) * Number(p.netqty ?? 0)
-                      : Number(p.pnl ?? 0);
-                    return (
-                      <div key={i} className="bg-zinc-800 rounded-lg p-3 flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="font-semibold text-sm text-white truncate">{p.tradingsymbol}</p>
-                          <p className="text-[10px] text-zinc-500">
-                            {p.exchange} · {p.product} · Qty: {p.netqty} · Avg {fmt(Number(p.avgprice))}
-                          </p>
-                          {displayLtp > 0 && (
-                            <p className={`text-[10px] mt-0.5 ${liveLtp ? "text-amber-300" : "text-zinc-500"}`}>
-                              LTP: {fmt(displayLtp)}{liveLtp ? " ●" : ""}
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <PnlCell value={livePnl} />
-                          {hasQty && (
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => handleClosePosition(p)}
-                              disabled={!!actioning}
-                              className="h-6 text-[10px] px-2 bg-red-600/80 hover:bg-red-600"
-                            >
-                              {isClosing
-                                ? <Loader2 className="h-3 w-3 animate-spin" />
-                                : "Close"}
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                <div className="overflow-x-auto rounded-lg border border-zinc-800">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-zinc-800 bg-zinc-800/50">
+                        {["Symbol", "Qty", "Avg", "LTP", "P&L", "Product", ""].map(h => (
+                          <th key={h} className="text-left text-zinc-500 font-medium px-3 py-2">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.positions.map((p, i) => {
+                        const hasQty  = Number(p.netqty ?? 0) !== 0;
+                        const liveLtp = liveLtps[p.tradingsymbol ?? ""];
+                        const ltp     = liveLtp ?? Number(p.ltp ?? 0);
+                        const pnl     = liveLtp != null
+                          ? (liveLtp - Number(p.avgprice ?? 0)) * Number(p.netqty ?? 0)
+                          : Number(p.pnl ?? 0);
+                        return (
+                          <tr key={i} className="border-b border-zinc-800/60 hover:bg-zinc-800/30 transition-colors">
+                            <td className="px-3 py-2.5">
+                              <p className="font-semibold text-white font-mono">{p.tradingsymbol}</p>
+                              <p className="text-zinc-600 text-[10px]">{p.exchange}</p>
+                            </td>
+                            <td className="px-3 py-2.5">
+                              <span className={`font-bold ${Number(p.netqty ?? 0) > 0 ? "text-emerald-400" : "text-red-400"}`}>
+                                {p.netqty}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2.5 text-zinc-300 font-mono">{fmt(Number(p.avgprice))}</td>
+                            <td className="px-3 py-2.5">
+                              <span className={`font-mono ${liveLtp ? "text-amber-300" : "text-zinc-300"}`}>{ltp > 0 ? fmt(ltp) : "—"}</span>
+                              {liveLtp && <span className="text-[9px] text-amber-400 ml-0.5">●</span>}
+                            </td>
+                            <td className="px-3 py-2.5"><PnlBadge value={pnl} /></td>
+                            <td className="px-3 py-2.5 text-zinc-500">{p.product}</td>
+                            <td className="px-3 py-2.5">
+                              {hasQty && (
+                                <Button size="sm" variant="destructive" disabled={!!actioning}
+                                  onClick={() => doAction("close_all_pos", {}, `Close ${p.tradingsymbol}`)}
+                                  className="h-6 text-[10px] px-2 bg-red-600/70 hover:bg-red-600">
+                                  Close
+                                </Button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </TabsContent>
 
             {/* ── Holdings ──────────────────────────────────────────── */}
-            <TabsContent value="holdings" className="mt-3">
+            <TabsContent value="holdings" className="mt-2">
               {data.holdings.length === 0 ? (
-                <p className="text-zinc-500 text-xs text-center py-6">No holdings found</p>
+                <div className="text-center py-10">
+                  <Briefcase className="h-8 w-8 text-zinc-700 mx-auto mb-2" />
+                  <p className="text-zinc-500 text-sm">No holdings</p>
+                  <p className="text-zinc-600 text-xs mt-1">Buy stocks with CNC to see them here</p>
+                </div>
               ) : (
-                <div className="space-y-2">
-                  {data.holdings.map((h, i) => {
-                    const liveLtp = liveLtps[h.tradingsymbol ?? ""];
-                    const livePnl = liveLtp != null
-                      ? (liveLtp - Number(h.avgprice ?? 0)) * Number(h.quantity ?? 0)
-                      : Number(h.pnl ?? 0);
-                    return (
-                      <div key={i} className="bg-zinc-800 rounded-lg p-3 flex items-center justify-between">
-                        <div>
-                          <p className="font-semibold text-sm text-white">{h.tradingsymbol}</p>
-                          <p className="text-[10px] text-zinc-500">{h.exchange} · Qty: {h.quantity}</p>
-                          {liveLtp && (
-                            <p className="text-[10px] text-amber-300 mt-0.5">LTP: {fmt(liveLtp)} ●</p>
-                          )}
-                        </div>
-                        <div className="text-right">
-                          <p className="text-xs text-zinc-400">Avg {fmt(Number(h.avgprice))}</p>
-                          <PnlCell value={livePnl} />
-                        </div>
-                      </div>
-                    );
-                  })}
+                <div className="overflow-x-auto rounded-lg border border-zinc-800">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-zinc-800 bg-zinc-800/50">
+                        {["Symbol", "Qty", "Avg", "LTP", "Current Value", "P&L", "%"].map(h => (
+                          <th key={h} className="text-left text-zinc-500 font-medium px-3 py-2">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.holdings.map((h, i) => {
+                        const liveLtp   = liveLtps[h.tradingsymbol ?? ""];
+                        const ltp       = liveLtp ?? Number(h.ltp ?? h.close ?? 0);
+                        const pnl       = liveLtp != null
+                          ? (liveLtp - Number(h.avgprice ?? 0)) * Number(h.quantity ?? 0)
+                          : Number(h.pnl ?? 0);
+                        const curVal    = ltp * Number(h.quantity ?? 0);
+                        const pct       = Number(h.avgprice ?? 0) > 0
+                          ? ((ltp - Number(h.avgprice ?? 0)) / Number(h.avgprice ?? 1)) * 100
+                          : 0;
+                        return (
+                          <tr key={i} className="border-b border-zinc-800/60 hover:bg-zinc-800/30 transition-colors">
+                            <td className="px-3 py-2.5">
+                              <p className="font-semibold text-white font-mono">{h.tradingsymbol}</p>
+                              <p className="text-zinc-600 text-[10px]">{h.exchange}</p>
+                            </td>
+                            <td className="px-3 py-2.5 text-zinc-300">{h.quantity}</td>
+                            <td className="px-3 py-2.5 text-zinc-300 font-mono">{fmt(Number(h.avgprice))}</td>
+                            <td className="px-3 py-2.5">
+                              <span className={`font-mono ${liveLtp ? "text-amber-300" : "text-zinc-300"}`}>{ltp > 0 ? fmt(ltp) : "—"}</span>
+                              {liveLtp && <span className="text-[9px] text-amber-400 ml-0.5">●</span>}
+                            </td>
+                            <td className="px-3 py-2.5 text-zinc-300 font-mono">{curVal > 0 ? fmt(curVal) : "—"}</td>
+                            <td className="px-3 py-2.5"><PnlBadge value={pnl} /></td>
+                            <td className="px-3 py-2.5">
+                              <span className={`text-xs font-semibold ${pct >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                                {pct >= 0 ? "+" : ""}{pct.toFixed(2)}%
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </TabsContent>
 
             {/* ── Orders ────────────────────────────────────────────── */}
-            <TabsContent value="orders" className="mt-3">
+            <TabsContent value="orders" className="mt-2">
               {data.orders.length === 0 ? (
-                <p className="text-zinc-500 text-xs text-center py-6">No orders today</p>
-              ) : (
-                <div className="space-y-2 max-h-80 overflow-y-auto pr-0.5">
-                  {data.orders.slice(0, 60).map((o, i) => {
-                    const canCancel = CANCELLABLE.includes((o.status ?? "").toLowerCase());
-                    const isCancelling = actioning === o.orderid;
-                    return (
-                      <div key={i} className="bg-zinc-800 rounded-lg p-3 flex items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5 mb-0.5">
-                            {(o.transactiontype ?? "").toUpperCase() === "BUY"
-                              ? <ArrowUpRight className="h-3 w-3 text-emerald-400 shrink-0" />
-                              : <ArrowDownRight className="h-3 w-3 text-red-400 shrink-0" />}
-                            <p className="font-semibold text-sm text-white truncate">{o.tradingsymbol}</p>
-                          </div>
-                          <p className="text-[10px] text-zinc-500">
-                            {o.transactiontype} · Qty {o.quantity}
-                            {o.averageprice ? ` · @${fmt(Number(o.averageprice))}` : ""}
-                          </p>
-                          {o.rejectreason && (
-                            <p className="text-[10px] text-red-400 mt-0.5 truncate">{o.rejectreason}</p>
-                          )}
-                        </div>
-                        <div className="flex flex-col items-end gap-1.5 shrink-0">
-                          <StatusBadge status={o.status} />
-                          {canCancel && (
-                            <div className="flex gap-1">
-                              {/* Modify */}
-                              <Button
-                                size="sm" variant="outline"
-                                onClick={() => {
-                                  setModifyOrder(o);
-                                  setModifyPrice(String(o.price ?? o.averageprice ?? ""));
-                                  setModifyQty(String(o.quantity ?? ""));
-                                  setModifyType(o.pricetype ?? "LIMIT");
-                                }}
-                                disabled={!!actioning}
-                                className="h-5 px-1.5 text-[10px] border-blue-500/40 text-blue-400 hover:bg-blue-500/10"
-                              >
-                                <Pencil className="h-2.5 w-2.5" />
-                              </Button>
-                              {/* Cancel */}
-                              <Button
-                                size="sm" variant="destructive"
-                                onClick={() => handleCancel(o)}
-                                disabled={!!actioning}
-                                className="h-5 px-1.5 text-[10px] bg-red-600/70 hover:bg-red-600"
-                              >
-                                {isCancelling
-                                  ? <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                                  : <X className="h-2.5 w-2.5" />}
-                              </Button>
-                            </div>
-                          )}
-                          <p className="text-[10px] text-zinc-600">
-                            {(o.updatetime ?? o.ordertime ?? "").slice(0, 8)}
-                          </p>
-                        </div>
-                      </div>
-                    );
-                  })}
+                <div className="text-center py-10">
+                  <ClipboardList className="h-8 w-8 text-zinc-700 mx-auto mb-2" />
+                  <p className="text-zinc-500 text-sm">No orders today</p>
                 </div>
+              ) : (
+                <div className="overflow-x-auto rounded-lg border border-zinc-800 max-h-72 overflow-y-auto">
+                  <table className="w-full text-xs">
+                    <thead className="sticky top-0 bg-zinc-900 z-10">
+                      <tr className="border-b border-zinc-800 bg-zinc-800/80">
+                        {["Symbol", "Type", "Qty/Filled", "Price", "Product", "Status", "Time", ""].map(h => (
+                          <th key={h} className="text-left text-zinc-500 font-medium px-3 py-2">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.orders.slice(0, 50).map((o, i) => {
+                        const canCancel  = CANCELLABLE.includes((o.status ?? "").toLowerCase());
+                        const isBuy      = (o.transactiontype ?? "").toUpperCase() === "BUY";
+                        return (
+                          <tr key={i} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
+                            <td className="px-3 py-2">
+                              <div className="flex items-center gap-1">
+                                {isBuy
+                                  ? <ArrowUpRight className="h-3 w-3 text-emerald-400 shrink-0" />
+                                  : <ArrowDownRight className="h-3 w-3 text-red-400 shrink-0" />}
+                                <span className="font-mono text-white font-semibold">{o.tradingsymbol}</span>
+                              </div>
+                              <p className="text-zinc-600 text-[10px] ml-4">{o.exchange}</p>
+                            </td>
+                            <td className="px-3 py-2">
+                              <span className={`font-bold text-[11px] ${isBuy ? "text-emerald-400" : "text-red-400"}`}>{o.transactiontype}</span>
+                            </td>
+                            <td className="px-3 py-2 text-zinc-300">
+                              {o.quantity}
+                              {o.filledquantity != null && o.filledquantity !== o.quantity && (
+                                <span className="text-zinc-600"> / {o.filledquantity}</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-zinc-300 font-mono">
+                              {o.averageprice ? fmt(Number(o.averageprice)) : fmt(Number(o.price))}
+                            </td>
+                            <td className="px-3 py-2 text-zinc-500">{o.product}</td>
+                            <td className="px-3 py-2"><StatusBadge status={o.status} /></td>
+                            <td className="px-3 py-2 text-zinc-600 text-[10px]">
+                              {(o.updatetime ?? o.ordertime ?? "").slice(11, 19)}
+                            </td>
+                            <td className="px-3 py-2">
+                              {canCancel && (
+                                <div className="flex gap-1">
+                                  <Button size="sm" variant="outline" disabled={!!actioning}
+                                    onClick={() => { setModifyOrder(o); setModifyPrice(String(o.price ?? o.averageprice ?? "")); setModifyQty(String(o.quantity ?? "")); setModifyType(o.pricetype ?? "LIMIT"); }}
+                                    className="h-5 px-1.5 text-[10px] border-blue-500/40 text-blue-400 hover:bg-blue-500/10">
+                                    <Pencil className="h-2.5 w-2.5" />
+                                  </Button>
+                                  <Button size="sm" variant="destructive" disabled={!!actioning}
+                                    onClick={() => handleCancel(o)}
+                                    className="h-5 px-1.5 text-[10px] bg-red-600/70 hover:bg-red-600">
+                                    {actioning === o.orderid ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <X className="h-2.5 w-2.5" />}
+                                  </Button>
+                                </div>
+                              )}
+                              {o.rejectreason && (
+                                <p className="text-[9px] text-red-400 max-w-[120px] truncate">{o.rejectreason}</p>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </TabsContent>
+
+            {/* ── Tradebook ─────────────────────────────────────────── */}
+            <TabsContent value="tradebook" className="mt-2">
+              {data.tradebook.length === 0 ? (
+                <div className="text-center py-10">
+                  <BookOpen className="h-8 w-8 text-zinc-700 mx-auto mb-2" />
+                  <p className="text-zinc-500 text-sm">No executed trades today</p>
+                  <p className="text-zinc-600 text-xs mt-1">Confirmed fills will appear here</p>
+                </div>
+              ) : (
+                <>
+                  {/* Summary row */}
+                  <div className="grid grid-cols-3 gap-2 mb-3">
+                    <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2 text-center">
+                      <p className="text-emerald-400 text-xs font-bold">{tradeStats.buyCnt} Buys</p>
+                      <p className="text-zinc-400 text-[10px]">₹{(tradeStats.buyVal/1000).toFixed(1)}K value</p>
+                    </div>
+                    <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 text-center">
+                      <p className="text-red-400 text-xs font-bold">{tradeStats.sellCnt} Sells</p>
+                      <p className="text-zinc-400 text-[10px]">₹{(tradeStats.sellVal/1000).toFixed(1)}K value</p>
+                    </div>
+                    <div className="bg-zinc-800 border border-zinc-700 rounded-lg p-2 text-center">
+                      <p className="text-zinc-300 text-xs font-bold">{data.tradebook.length} Total</p>
+                      <p className="text-zinc-500 text-[10px]">Filled trades</p>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto rounded-lg border border-zinc-800 max-h-72 overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead className="sticky top-0 bg-zinc-900 z-10">
+                        <tr className="border-b border-zinc-800 bg-zinc-800/80">
+                          {["Symbol", "Side", "Qty", "Avg Price", "Product", "Time"].map(h => (
+                            <th key={h} className="text-left text-zinc-500 font-medium px-3 py-2">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.tradebook.map((t, i) => {
+                          const isBuy = (t.transactiontype ?? "").toUpperCase() === "BUY";
+                          return (
+                            <tr key={i} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
+                              <td className="px-3 py-2">
+                                <p className="font-mono text-white font-semibold">{t.tradingsymbol}</p>
+                                <p className="text-zinc-600 text-[10px]">{t.exchange}</p>
+                              </td>
+                              <td className="px-3 py-2">
+                                <Badge className={`text-[10px] font-bold border ${isBuy ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-red-500/10 text-red-400 border-red-500/20"}`}>
+                                  {t.transactiontype}
+                                </Badge>
+                              </td>
+                              <td className="px-3 py-2 text-zinc-300">{t.tradedquantity}</td>
+                              <td className="px-3 py-2 text-zinc-300 font-mono">₹{Number(t.averageprice ?? 0).toFixed(2)}</td>
+                              <td className="px-3 py-2 text-zinc-500">{t.product}</td>
+                              <td className="px-3 py-2 text-zinc-600 text-[10px]">
+                                {(t.tradetime ?? t.ordertime ?? "").slice(11, 19)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </TabsContent>
           </Tabs>
@@ -553,24 +681,16 @@ export default function BrokerPortfolioCard() {
               Modify Order — {modifyOrder?.tradingsymbol}
             </DialogTitle>
             <DialogDescription className="text-zinc-400 text-sm">
-              Update price and/or quantity. The order must still be open/pending.
+              Update price and/or quantity.
             </DialogDescription>
           </DialogHeader>
-
           <div className="space-y-3 py-2">
             <div className="space-y-1.5">
               <Label className="text-zinc-300 text-sm">Price Type</Label>
               <div className="flex gap-2">
-                {["LIMIT", "MARKET", "SL", "SL-M"].map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setModifyType(t)}
-                    className={`text-xs px-3 py-1.5 rounded-md border transition-colors ${
-                      modifyType === t
-                        ? "bg-teal-500 text-black border-teal-500 font-bold"
-                        : "bg-zinc-800 text-zinc-400 border-zinc-700 hover:border-zinc-500"
-                    }`}
-                  >
+                {["LIMIT", "MARKET", "SL", "SL-M"].map(t => (
+                  <button key={t} onClick={() => setModifyType(t)}
+                    className={`text-xs px-3 py-1.5 rounded-md border transition-colors ${modifyType === t ? "bg-teal-500 text-black border-teal-500 font-bold" : "bg-zinc-800 text-zinc-400 border-zinc-700"}`}>
                     {t}
                   </button>
                 ))}
@@ -579,43 +699,18 @@ export default function BrokerPortfolioCard() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-zinc-300 text-sm">Price</Label>
-                <Input
-                  type="number" step="0.05" min="0"
-                  value={modifyPrice}
-                  onChange={(e) => setModifyPrice(e.target.value)}
-                  className="bg-zinc-800 border-zinc-700 text-white"
-                  placeholder="0.00"
-                />
+                <Input type="number" step="0.05" min="0" value={modifyPrice} onChange={e => setModifyPrice(e.target.value)} className="bg-zinc-800 border-zinc-700 text-white" />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-zinc-300 text-sm">Quantity</Label>
-                <Input
-                  type="number" min="1" step="1"
-                  value={modifyQty}
-                  onChange={(e) => setModifyQty(e.target.value)}
-                  className="bg-zinc-800 border-zinc-700 text-white"
-                  placeholder="1"
-                />
+                <Input type="number" min="1" step="1" value={modifyQty} onChange={e => setModifyQty(e.target.value)} className="bg-zinc-800 border-zinc-700 text-white" />
               </div>
             </div>
           </div>
-
           <DialogFooter className="gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setModifyOrder(null)}
-              className="border-zinc-700 hover:bg-zinc-800"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleModifySubmit}
-              disabled={!!actioning || !modifyPrice || !modifyQty}
-              className="bg-blue-600 hover:bg-blue-500 text-white font-bold"
-            >
-              {actioning === modifyOrder?.orderid
-                ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Modifying…</>
-                : <><Pencil className="h-3.5 w-3.5 mr-1.5" />Modify Order</>}
+            <Button variant="outline" onClick={() => setModifyOrder(null)} className="border-zinc-700">Cancel</Button>
+            <Button onClick={handleModifySubmit} disabled={!!actioning || !modifyPrice || !modifyQty} className="bg-blue-600 hover:bg-blue-500 font-bold">
+              {actioning === modifyOrder?.orderid ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Modifying…</> : <><Pencil className="h-3.5 w-3.5 mr-1.5" />Modify Order</>}
             </Button>
           </DialogFooter>
         </DialogContent>
