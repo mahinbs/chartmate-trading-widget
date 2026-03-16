@@ -52,7 +52,7 @@ function TradingViewChart({ symbol, exchange, height = 320 }: { symbol: string; 
     script.async = true;
     script.innerHTML = JSON.stringify({
       autosize: true,
-      symbol: `${exchange}:${symbol}`,
+      symbol: tvSymbol(symbol, exchange),
       interval: "D",
       timezone: "Asia/Kolkata",
       theme: "dark",
@@ -223,17 +223,88 @@ function StatusBadge({ status }: { status?: string }) {
   );
 }
 
-const getSymbol = (row: any) => String(row?.tradingsymbol ?? row?.symbol ?? "").toUpperCase();
-const getAction = (row: any) => String(row?.transactiontype ?? row?.action ?? "").toUpperCase();
-const getOrderStatus = (row: any) => String(row?.status ?? row?.order_status ?? "");
-const getQty = (row: any) => Number(row?.netqty ?? row?.quantity ?? row?.tradedquantity ?? row?.traded_quantity ?? 0);
-const getAvgPrice = (row: any) => Number(row?.avgprice ?? row?.averageprice ?? row?.average_price ?? 0);
-const getLtp = (row: any) => Number(row?.ltp ?? row?.last_price ?? row?.close ?? 0);
-const getTime = (row: any) => String(
-  row?.tradetime ?? row?.ordertime ?? row?.updatetime ??
-  row?.timestamp ?? row?.fill_timestamp ?? row?.order_timestamp ??
-  row?.exchange_timestamp ?? ""
-);
+// ── Universal field helpers — works across ALL 39 OpenAlgo broker adapters ────
+// Each broker may return slightly different field names; we chain all known variants.
+
+const getSymbol = (row: any): string =>
+  String(
+    row?.tradingsymbol ?? row?.symbol ?? row?.scrip_code ?? row?.scripcode ??
+    row?.instrument_name ?? row?.isin ?? ""
+  ).toUpperCase().trim();
+
+const getAction = (row: any): string => {
+  const raw = String(
+    row?.transactiontype ?? row?.transaction_type ?? row?.action ??
+    row?.side ?? row?.type ?? row?.trade_type ?? row?.order_side ?? ""
+  ).toUpperCase().trim();
+  // Normalise single-char shortcodes some brokers use
+  if (raw === "B" || raw === "1")  return "BUY";
+  if (raw === "S" || raw === "2" || raw === "-1") return "SELL";
+  return raw;
+};
+
+const getOrderStatus = (row: any): string =>
+  String(
+    row?.status ?? row?.order_status ?? row?.orderstatus ?? row?.state ??
+    row?.order_state ?? ""
+  ).toLowerCase().trim();
+
+const getQty = (row: any): number =>
+  // Positions use netqty/net_quantity; orders/trades use quantity/filledquantity
+  Math.abs(Number(
+    row?.netqty ?? row?.net_quantity ?? row?.net_qty ??
+    row?.quantity ?? row?.qty ??
+    row?.tradedquantity ?? row?.traded_quantity ?? row?.filledquantity ??
+    row?.filled_quantity ?? 0
+  )) || 0;
+
+const getFilledQty = (row: any): number =>
+  Number(
+    row?.filledquantity ?? row?.filled_quantity ?? row?.tradedquantity ??
+    row?.traded_quantity ?? row?.quantity ?? 0
+  ) || 0;
+
+const getAvgPrice = (row: any): number =>
+  Number(
+    row?.avgprice ?? row?.averageprice ?? row?.average_price ?? row?.avg_price ??
+    row?.tradedprice ?? row?.trade_price ?? row?.fill_price ??
+    row?.buy_average ?? row?.sell_average ?? 0
+  ) || 0;
+
+const getLtp = (row: any): number =>
+  Number(
+    row?.ltp ?? row?.last_price ?? row?.lastprice ?? row?.last_traded_price ??
+    row?.close ?? row?.closing_price ?? 0
+  ) || 0;
+
+const getTime = (row: any): string =>
+  String(
+    row?.tradetime ?? row?.trade_time ?? row?.filltime ?? row?.fill_time ??
+    row?.ordertime ?? row?.order_time ?? row?.updatetime ?? row?.update_time ??
+    row?.timestamp ?? row?.fill_timestamp ?? row?.order_timestamp ??
+    row?.exchange_timestamp ?? row?.created_at ?? ""
+  );
+
+const getExchange = (row: any): string =>
+  String(row?.exchange ?? row?.exch ?? row?.exchange_code ?? "NSE").toUpperCase().trim();
+
+const getProduct = (row: any): string =>
+  String(row?.product ?? row?.producttype ?? row?.product_type ?? row?.segment ?? "CNC").toUpperCase().trim();
+
+// All Indian exchanges (all 39 brokers operate on these)
+const INDIAN_EXCHANGES = new Set(["NSE", "BSE", "NFO", "BFO", "MCX", "CDS", "NCDEX", "BCD", "NCE", "NSECD"]);
+
+// TradingView symbol format per exchange
+const tvSymbol = (symbol: string, exchange: string): string => {
+  const exch = exchange.toUpperCase();
+  // Map OpenAlgo exchanges → TradingView exchange prefixes
+  const TV_EXCHANGE_MAP: Record<string, string> = {
+    NSE: "NSE", BSE: "BSE", NFO: "NSE", BFO: "BSE",
+    MCX: "MCX", CDS: "NSE", NCDEX: "NCDEX", BCD: "BSE",
+  };
+  const tvExch = TV_EXCHANGE_MAP[exch] ?? exch;
+  return `${tvExch}:${symbol.toUpperCase()}`;
+};
 // Smart money formatter: shows ₹8.23 for small amounts, ₹1.2K for thousands, ₹2.3L for lakhs
 const fmtMoney = (v: number): string => {
   if (v === 0) return "₹0";
@@ -505,8 +576,8 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
   // ── Live LTPs ────────────────────────────────────────────────────────────
   const refreshQuotes = useCallback(async (portfolio: PortfolioData, silent = false) => {
     const symbols: Array<{ symbol: string; exchange: string }> = [
-      ...portfolio.positions.map(p => ({ symbol: getSymbol(p), exchange: String(p.exchange ?? "NSE").toUpperCase() })),
-      ...portfolio.holdings.map(h => ({ symbol: getSymbol(h), exchange: String(h.exchange ?? "NSE").toUpperCase() })),
+      ...portfolio.positions.map(p => ({ symbol: getSymbol(p), exchange: getExchange(p) })),
+      ...portfolio.holdings.map(h => ({ symbol: getSymbol(h), exchange: getExchange(h) })),
     ].filter(s => s.symbol);
     const uniqSymbols = Array.from(new Map(symbols.map(s => [`${s.exchange}:${s.symbol}`, s])).values());
     if (!uniqSymbols.length) return;
@@ -522,8 +593,9 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
       const results = Array.isArray(raw?.results) ? raw.results : (Array.isArray(raw) ? raw : []);
       if (results.length) {
         results.forEach((q: any) => {
-          const sym = String(q?.symbol ?? q?.tradingsymbol ?? "").toUpperCase();
-          const ltp = q?.ltp ?? q?.data?.ltp ?? q?.data?.last_price;
+          const sym = String(q?.symbol ?? q?.tradingsymbol ?? q?.scrip_code ?? "").toUpperCase();
+          const ltp = q?.ltp ?? q?.last_price ?? q?.lastprice ?? q?.last_traded_price ??
+                      q?.close ?? q?.data?.ltp ?? q?.data?.last_price ?? q?.data?.close;
           if (sym && ltp != null && !Number.isNaN(Number(ltp))) map[sym] = Number(ltp);
         });
       } else if (raw && typeof raw === "object") {

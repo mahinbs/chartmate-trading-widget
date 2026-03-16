@@ -156,9 +156,15 @@ const TradingViewMiniChart = memo(function TradingViewMiniChart({
     script.type = "text/javascript";
     script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
     script.async = true;
+    // Map OpenAlgo exchange names → TradingView exchange prefixes
+    const TV_EXCHANGE_MAP: Record<string, string> = {
+      NSE: "NSE", BSE: "BSE", NFO: "NSE", BFO: "BSE",
+      MCX: "MCX", CDS: "NSE", NCDEX: "NCDEX", BCD: "BSE",
+    };
+    const tvExch = TV_EXCHANGE_MAP[exchange?.toUpperCase()] ?? exchange?.toUpperCase() ?? "NSE";
     script.innerHTML = JSON.stringify({
       autosize: true,
-      symbol: `${exchange}:${symbol}`,
+      symbol: `${tvExch}:${symbol}`,
       interval: "D",
       timezone: "Asia/Kolkata",
       theme: "dark",

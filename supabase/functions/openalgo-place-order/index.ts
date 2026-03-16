@@ -1,12 +1,12 @@
 /**
  * openalgo-place-order — Supabase Edge Function
  *
- * Uses the REAL OpenAlgo API:
+ * Calls the OpenAlgo universal order API (works for all 39+ supported brokers):
  *   POST /api/v1/placeorder
  *   { apikey, strategy, exchange, symbol, action, quantity, pricetype, product, price }
  *
- * The user's OpenAlgo API key is stored in user_trading_integration.openalgo_api_key
- * (set once from openalgo.tradebrainx.com after logging in with Zerodha).
+ * The user's OpenAlgo API key is stored in user_trading_integration.openalgo_api_key.
+ * OpenAlgo handles the broker-specific translation transparently.
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -85,7 +85,7 @@ Deno.serve(async (req: Request) => {
     if (!openalgoApiKey.trim()) {
       return new Response(
         JSON.stringify({
-          error: "OpenAlgo API key missing. Open 'Connect Broker' and paste your key from openalgo.tradebrainx.com → API Keys.",
+          error: "OpenAlgo API key missing. Open 'Connect Broker', log in to openalgo.tradebrainx.com, and paste your API key.",
           error_code: "NO_OPENALGO_KEY",
         }),
         { status: 400, headers },
@@ -199,24 +199,39 @@ Deno.serve(async (req: Request) => {
     }
 
     const resolvedExchange = (exchange ?? "NSE").toUpperCase();
-    const isIndianExchange = ["NSE", "BSE", "NFO", "BFO"].includes(resolvedExchange);
 
-    // ── Indian market hours guard: Mon–Fri 09:00–15:30 IST ───────────────
+    // All Indian exchanges across all 39 supported brokers
+    const INDIAN_EQUITY_EXCHANGES  = new Set(["NSE", "BSE"]);
+    const INDIAN_DERIV_EXCHANGES   = new Set(["NFO", "BFO", "CDS", "BCD", "NSECD"]);
+    const INDIAN_COMMODITY_EXCHANGES = new Set(["MCX", "NCDEX", "NCE"]);
+    const isIndianExchange =
+      INDIAN_EQUITY_EXCHANGES.has(resolvedExchange) ||
+      INDIAN_DERIV_EXCHANGES.has(resolvedExchange)  ||
+      INDIAN_COMMODITY_EXCHANGES.has(resolvedExchange);
+
+    // ── Indian market hours guard (IST) ──────────────────────────────────
+    // Equity / Derivatives: Mon–Fri 09:00–15:30
+    // Commodity (MCX/NCDEX): Mon–Fri 09:00–23:30 (extended evening session)
     if (isIndianExchange) {
       const IST_OFFSET_MS = 330 * 60 * 1000;
       const nowIst = new Date(Date.now() + IST_OFFSET_MS);
-      const day    = nowIst.getUTCDay();
+      const day    = nowIst.getUTCDay();   // 0=Sun, 6=Sat
       const mins   = nowIst.getUTCHours() * 60 + nowIst.getUTCMinutes();
 
-      if (day === 0 || day === 6 || mins < 540 || mins > 930) {
+      const isCommodity = INDIAN_COMMODITY_EXCHANGES.has(resolvedExchange);
+      const openMins    = 540;             // 09:00 IST
+      const closeMins   = isCommodity ? 1410 : 930; // 23:30 or 15:30
+
+      if (day === 0 || day === 6 || mins < openMins || mins > closeMins) {
+        const closeStr = isCommodity ? "23:30" : "15:30";
         await writeAudit({
           status: "failed",
           errorCode: "MARKET_CLOSED",
-          errorMessage: "Indian market is closed for new orders",
+          errorMessage: `Market (${resolvedExchange}) is closed`,
         });
         return new Response(
           JSON.stringify({
-            error: "Indian market is closed. Orders can only be placed Mon–Fri between 09:00 and 15:30 IST.",
+            error: `Market is currently closed for ${resolvedExchange}. Orders can be placed Mon–Fri 09:00–${closeStr} IST.`,
             error_code: "MARKET_CLOSED",
           }),
           { status: 400, headers },
@@ -264,7 +279,7 @@ Deno.serve(async (req: Request) => {
         });
         return new Response(
           JSON.stringify({
-            error: "Your OpenAlgo API key is invalid or expired. Please reconnect your broker.",
+            error: "Your OpenAlgo API key is invalid or expired. Please reconnect your broker in Settings.",
             error_code: "INVALID_OPENALGO_KEY",
           }),
           { status: 401, headers },
