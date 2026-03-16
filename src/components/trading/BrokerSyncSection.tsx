@@ -434,187 +434,102 @@ export default function BrokerSyncSection({ broker: brokerProp, compact = false 
 
   // ── Full card ─────────────────────────────────────────────────────────────
   return (
-    <Card className={`bg-zinc-900 border-zinc-800 ${fresh ? "border-teal-500/30" : expired ? "border-amber-500/30" : ""}`}>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base font-bold text-white flex items-center gap-2">
-            <Link2 className="h-4 w-4 text-teal-400" />
-            Daily Broker Sync
-          </CardTitle>
+    <div className={`flex flex-col md:flex-row items-center justify-between gap-4 p-3 rounded-xl border bg-zinc-950/50 backdrop-blur-sm ${fresh ? "border-teal-500/20" : expired ? "border-amber-500/20" : "border-zinc-800"}`}>
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
           {fresh ? (
-            <Badge className="bg-teal-500/10 text-teal-400 border border-teal-500/30 text-[10px]">
-              <CheckCircle2 className="h-3 w-3 mr-1" /> Connected Today
-            </Badge>
+            <div className="h-8 w-8 rounded-full bg-teal-500/10 flex items-center justify-center border border-teal-500/20">
+              <Link2 className="h-4 w-4 text-teal-400" />
+            </div>
           ) : expired ? (
-            <Badge className="bg-amber-500/10 text-amber-400 border border-amber-500/30 text-[10px]">
-              <AlertTriangle className="h-3 w-3 mr-1" /> Session Expired
-            </Badge>
+            <div className="h-8 w-8 rounded-full bg-amber-500/10 flex items-center justify-center border border-amber-500/20">
+              <Link2Off className="h-4 w-4 text-amber-400" />
+            </div>
           ) : (
-            <Badge className="bg-zinc-700 text-zinc-400 border border-zinc-600 text-[10px]">
-              <Link2Off className="h-3 w-3 mr-1" /> Not Connected
-            </Badge>
+            <div className="h-8 w-8 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
+              <Link2Off className="h-4 w-4 text-zinc-400" />
+            </div>
           )}
+          <div>
+            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+              Broker Sync
+              {fresh ? (
+                <Badge className="bg-teal-500/10 text-teal-400 border-teal-500/30 text-[9px] px-1.5 py-0">Connected</Badge>
+              ) : expired ? (
+                <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/30 text-[9px] px-1.5 py-0">Expired</Badge>
+              ) : (
+                <Badge className="bg-zinc-800 text-zinc-400 border-zinc-700 text-[9px] px-1.5 py-0">Not Connected</Badge>
+              )}
+            </h3>
+            <p className="text-[11px] text-zinc-500">
+              {fresh && integration?.token_expires_at ? (
+                <>Valid until {new Date(integration.token_expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</>
+              ) : (
+                <>Session resets daily at midnight IST</>
+              )}
+            </p>
+          </div>
         </div>
-        <CardDescription className="text-zinc-400 text-xs mt-1">
-          Your broker session is valid for one trading day (resets midnight IST).
-          Sync each morning before placing live orders.
-        </CardDescription>
-      </CardHeader>
+      </div>
 
-      <CardContent className="space-y-4">
+      <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
+        {!brokerProp && (!fresh || !integration) && (
+          <Select value={selectedBroker} onValueChange={setSelectedBroker}>
+            <SelectTrigger className="bg-zinc-900 border-zinc-700 text-white h-9 w-[180px] text-xs">
+              <SelectValue placeholder="Choose broker…" />
+            </SelectTrigger>
+            <SelectContent className="bg-zinc-900 border-zinc-700 max-h-72">
+              {ALL_BROKERS.map((b) => (
+                <SelectItem key={b.value} value={b.value} className="text-zinc-200 text-xs">
+                  <span className={b.color}>{b.label}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 
-        {/* Broker selector — shown when no broker is pre-set from onboarding */}
-        {!brokerProp && (
-          <div className="space-y-1.5">
-            <Label className="text-zinc-400 text-xs">Select your broker</Label>
-            <Select value={selectedBroker} onValueChange={setSelectedBroker}>
-              <SelectTrigger className="bg-zinc-800 border-zinc-700 text-white">
-                <SelectValue placeholder="Choose broker…" />
-              </SelectTrigger>
-              <SelectContent className="bg-zinc-900 border-zinc-700 max-h-72 overflow-y-auto">
-                {ALL_BROKERS.map((b) => (
-                  <SelectItem key={b.value} value={b.value} className="text-zinc-200 focus:bg-zinc-800">
-                    <span className={b.color}>{b.label}</span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        {(fresh && integration) && (
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900 rounded-md border border-zinc-800">
+            <span className={`text-xs font-semibold ${brokerInfo.color}`}>{brokerInfo.label}</span>
           </div>
         )}
 
-        {/* Current connected status */}
-        {fresh && integration && (
-          <div className="bg-zinc-800 rounded-lg p-3 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-zinc-500">Connected Broker</p>
-              <p className={`font-semibold text-sm ${brokerInfo.color}`}>{brokerInfo.label}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-xs text-zinc-500">Expires</p>
-              <p className="text-xs text-zinc-300">
-                {integration.token_expires_at
-                  ? new Date(integration.token_expires_at).toLocaleString(undefined, {
-                      hour: "2-digit", minute: "2-digit", hour12: true,
-                    }) + " (midnight IST)"
-                  : "Tonight"}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {expired && (
-          <Alert className="bg-amber-500/10 border-amber-500/40 py-2.5">
-            <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />
-            <AlertDescription className="text-amber-300 text-xs">
-              Your {brokerInfo.label} session expired. Re-sync to place live orders today.
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {/* Action area */}
-        <div className="space-y-3">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           {brokerInfo.oauthSupported ? (
-            /* ── Zerodha: one-click OAuth ──────────────────────────────── */
-            <>
-              <Button
-                onClick={handleZerodhaOAuth}
-                disabled={oauthLoading}
-                className="w-full bg-orange-500 hover:bg-orange-400 text-white font-bold"
-              >
-                {oauthLoading
-                  ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Connecting…</>
-                  : <><Zap className="h-4 w-4 mr-2" />{fresh ? "Re-sync Zerodha" : "Connect Zerodha"}</>}
-              </Button>
-              <p className="text-[10px] text-zinc-500 text-center">
-                You'll be taken to Zerodha login and redirected back automatically.
-              </p>
-            </>
+            <Button onClick={handleZerodhaOAuth} disabled={oauthLoading} size="sm" className="h-9 px-4 bg-orange-500 hover:bg-orange-400 text-white font-bold w-full sm:w-auto">
+              {oauthLoading ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Zap className="h-3.5 w-3.5 mr-1.5" />}
+              {fresh ? "Re-sync" : "Connect"}
+            </Button>
           ) : (
-            /* ── All other brokers: paste token ────────────────────────── */
             <>
               {!showPaste ? (
-                <div className="space-y-2">
-                  <Button
-                    onClick={() => setShowPaste(true)}
-                    variant="outline"
-                    className="w-full border-zinc-700 hover:bg-zinc-800 font-bold"
-                    disabled={!brokerKey}
-                  >
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    {fresh ? `Re-sync ${brokerInfo.label} Token` : `Connect ${brokerInfo.label}`}
-                  </Button>
-                  {brokerKey && (
-                    <a
-                      href={brokerInfo.portal}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center justify-center gap-1.5 text-[11px] text-zinc-500 hover:text-teal-400 transition-colors"
-                    >
-                      <ExternalLink className="h-3 w-3" />
-                      Open {brokerInfo.label} portal to get today's token
-                    </a>
-                  )}
-                </div>
+                <Button onClick={() => setShowPaste(true)} variant="outline" size="sm" disabled={!brokerKey} className="h-9 border-zinc-700 hover:bg-zinc-800 font-bold w-full sm:w-auto">
+                  <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                  {fresh ? "Re-sync" : "Connect"}
+                </Button>
               ) : (
-                <div className="space-y-3">
-                  {/* Step guide */}
-                  <div className="bg-zinc-800/60 rounded-lg p-3 space-y-1.5 border border-zinc-700/50">
-                    <p className="text-[11px] font-semibold text-zinc-300 mb-2">
-                      How to connect {brokerInfo.label}
-                    </p>
-                    <p className="text-[10px] text-zinc-400 leading-relaxed">{brokerInfo.tokenHelp}</p>
-                    <a
-                      href={brokerInfo.portal}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-[10px] text-teal-400 hover:text-teal-300 font-medium mt-1"
-                    >
-                      <ExternalLink className="h-3 w-3" />
-                      Open {brokerInfo.label} portal →
-                    </a>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-zinc-300 text-xs flex items-center gap-1.5">
-                      <Zap className="h-3.5 w-3.5 text-teal-400" />
-                      Paste today's access token
-                    </Label>
-                    <Input
-                      value={manualToken}
-                      onChange={(e) => setManualToken(e.target.value)}
-                      placeholder="Paste your access token here…"
-                      className="bg-zinc-800 border-zinc-700 text-white font-mono text-xs placeholder:text-zinc-600"
+                <div className="flex items-center gap-2 w-full sm:w-auto bg-zinc-900 p-1 rounded-lg border border-zinc-700">
+                  <Input value={manualToken} onChange={(e) => setManualToken(e.target.value)} placeholder="Paste your access token here…"
+                      className="bg-zinc-950 border-0 text-xs text-white placeholder:text-zinc-600 focus-visible:ring-0 h-7 w-[180px]"
                       autoFocus
                     />
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline" size="sm"
-                      onClick={() => { setShowPaste(false); setManualToken(""); }}
-                      className="border-zinc-700 hover:bg-zinc-800 flex-1"
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={handleSaveToken}
-                      disabled={saving || !manualToken.trim()}
-                      className="bg-teal-500 hover:bg-teal-400 text-black font-bold flex-1"
-                    >
-                      {saving
-                        ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Saving…</>
-                        : <><CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />Save & Connect</>}
-                    </Button>
-                  </div>
+                  <Button onClick={handleSaveToken} disabled={saving} size="sm" className="h-7 px-3 bg-teal-500 hover:bg-teal-400 text-black text-xs font-bold">
+                    {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
+                  </Button>
+                  <Button onClick={() => { setShowPaste(false); setManualToken(""); }} variant="ghost" size="sm" className="h-7 px-2 text-zinc-400 hover:text-white">
+                    Cancel
+                  </Button>
                 </div>
+              )}
+              {brokerKey && !showPaste && (
+                <a href={brokerInfo.portal} target="_blank" rel="noopener noreferrer" className="hidden sm:flex items-center justify-center gap-1.5 h-9 px-3 rounded-md bg-zinc-900 border border-zinc-800 text-[11px] text-zinc-400 hover:text-teal-400 hover:border-teal-500/30 transition-colors">
+                  <ExternalLink className="h-3 w-3" /> Get Token
+                </a>
               )}
             </>
           )}
         </div>
-
-        <p className="text-[10px] text-zinc-600 text-center">
-          Your token is stored securely and only used to route orders from ChartMate to your broker.
-        </p>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

@@ -15,6 +15,9 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import {
@@ -23,9 +26,61 @@ import {
 import {
   AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3,
   Briefcase, ClipboardList, Loader2, RefreshCw, Wallet, X, Pencil, Zap,
-  TrendingUp, TrendingDown, BookOpen,
+  TrendingUp, TrendingDown, BookOpen, Plus, Trash2, Copy, CheckCircle2,
+  ChevronRight, Webhook, Send,
 } from "lucide-react";
 import { toast } from "sonner";
+import PlaceOrderPanel from "@/components/trading/PlaceOrderPanel";
+
+// ── Strategy types ────────────────────────────────────────────────────────────
+
+interface Strategy {
+  id: string;
+  name: string;
+  trading_mode: string;
+  is_active: boolean;
+  is_intraday: boolean;
+  start_time: string;
+  end_time: string;
+  squareoff_time: string;
+  symbols: string[];
+  webhook_url?: string | null;
+  risk_per_trade_pct: number;
+  stop_loss_pct: number;
+  take_profit_pct: number;
+  created_at: string;
+}
+
+interface StrategyForm {
+  name: string;
+  description: string;
+  trading_mode: string;
+  is_intraday: boolean;
+  start_time: string;
+  end_time: string;
+  squareoff_time: string;
+  risk_per_trade_pct: string;
+  stop_loss_pct: string;
+  take_profit_pct: string;
+  symbols_raw: string;
+}
+
+const EMPTY_STRATEGY: StrategyForm = {
+  name: "",
+  description: "",
+  trading_mode: "LONG",
+  is_intraday: true,
+  start_time: "09:15",
+  end_time: "15:15",
+  squareoff_time: "15:15",
+  risk_per_trade_pct: "1",
+  stop_loss_pct: "2",
+  take_profit_pct: "4",
+  symbols_raw: "",
+};
+
+const EXCHANGES_LIST = ["NSE","BSE","NFO","BFO","CDS","MCX","NCDEX"];
+const PRODUCT_LIST   = ["CNC","MIS","NRML","CO","BO"];
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -107,7 +162,7 @@ function StatusBadge({ status }: { status?: string }) {
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
-export default function BrokerPortfolioCard() {
+export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }) {
   const [data, setData]             = useState<PortfolioData | null>(null);
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState<string | null>(null);
@@ -118,6 +173,130 @@ export default function BrokerPortfolioCard() {
   const [modifyPrice, setModifyPrice] = useState("");
   const [modifyQty, setModifyQty]     = useState("");
   const [modifyType, setModifyType]   = useState("LIMIT");
+  const [showOrderModal, setShowOrderModal] = useState(false);
+
+  // ── Strategy state ─────────────────────────────────────────────────────────
+  const [strategies, setStrategies]       = useState<Strategy[]>([]);
+  const [stratLoading, setStratLoading]   = useState(true);
+  const [showCreate, setShowCreate]       = useState(false);
+  const [form, setForm]                   = useState<StrategyForm>(EMPTY_STRATEGY);
+  const [creating, setCreating]           = useState(false);
+  const [toggleLoading, setToggleLoading] = useState<string | null>(null);
+  const [copiedId, setCopiedId]           = useState<string | null>(null);
+  const [showGuide, setShowGuide]         = useState(false);
+  const [firePanel, setFirePanel]         = useState<Record<string, {
+    open: boolean; symbol: string; exchange: string; quantity: string; product: string; firing: boolean;
+  }>>({});
+  const brokerLabel = (broker || "Broker").charAt(0).toUpperCase() + (broker || "broker").slice(1);
+
+  const setF = <K extends keyof StrategyForm>(k: K, v: StrategyForm[K]) =>
+    setForm(f => ({ ...f, [k]: v }));
+
+  const getFireState = (id: string) => firePanel[id] ?? {
+    open: false, symbol: "", exchange: "NSE", quantity: "1", product: "MIS", firing: false,
+  };
+  const setFireState = (id: string, patch: Partial<typeof firePanel[string]>) =>
+    setFirePanel(fp => ({ ...fp, [id]: { ...getFireState(id), ...patch } }));
+
+  const loadStrategies = useCallback(async () => {
+    setStratLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await supabase.functions.invoke("manage-strategy", {
+        body: { action: "list" },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      setStrategies((res.data as any)?.strategies ?? []);
+    } catch { /* silent */ } finally { setStratLoading(false); }
+  }, []);
+
+  useEffect(() => { loadStrategies(); }, [loadStrategies]);
+
+  const toggleStrategy = async (id: string) => {
+    setToggleLoading(id);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      await supabase.functions.invoke("manage-strategy", {
+        body: { action: "toggle", strategy_id: id },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      await loadStrategies();
+    } finally { setToggleLoading(null); }
+  };
+
+  const deleteStrategy = async (id: string, name: string) => {
+    if (!confirm(`Delete strategy "${name}"?`)) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      await supabase.functions.invoke("manage-strategy", {
+        body: { action: "delete", strategy_id: id },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      toast.success("Strategy deleted");
+      await loadStrategies();
+    } catch { toast.error("Failed to delete strategy"); }
+  };
+
+  const createStrategy = async () => {
+    if (!form.name.trim()) { toast.error("Strategy name is required"); return; }
+    const riskPct = parseFloat(form.risk_per_trade_pct);
+    const slPct   = parseFloat(form.stop_loss_pct);
+    const tpPct   = parseFloat(form.take_profit_pct);
+    if (isNaN(riskPct) || riskPct <= 0) { toast.error("Risk % must be > 0"); return; }
+    if (isNaN(slPct)   || slPct <= 0)   { toast.error("Stop-loss % must be > 0"); return; }
+    if (isNaN(tpPct)   || tpPct <= 0)   { toast.error("Take-profit % must be > 0"); return; }
+    const symbols = form.symbols_raw.split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
+    setCreating(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await supabase.functions.invoke("manage-strategy", {
+        body: {
+          action: "create", name: form.name.trim(), description: form.description.trim(),
+          trading_mode: form.trading_mode, is_intraday: form.is_intraday,
+          start_time: form.start_time, end_time: form.end_time, squareoff_time: form.squareoff_time,
+          risk_per_trade_pct: riskPct, stop_loss_pct: slPct, take_profit_pct: tpPct, symbols,
+        },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (res.error || (res.data as any)?.error) {
+        toast.error((res.data as any)?.error ?? "Failed to create strategy"); return;
+      }
+      toast.success(`Strategy "${form.name.trim()}" created`);
+      setForm(EMPTY_STRATEGY);
+      setShowCreate(false);
+      await loadStrategies();
+    } finally { setCreating(false); }
+  };
+
+  const copyWebhook = (s: Strategy) => {
+    if (!s.webhook_url) { toast.error("No webhook URL yet"); return; }
+    navigator.clipboard.writeText(s.webhook_url);
+    setCopiedId(s.id);
+    toast.success("Webhook URL copied");
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const fireSignal = async (strategy: Strategy, action: "BUY" | "SELL") => {
+    const fs  = getFireState(strategy.id);
+    const sym = fs.symbol.trim().toUpperCase() || (strategy.symbols?.[0] ?? "");
+    if (!sym) { toast.error("Enter a symbol to fire this signal"); return; }
+    setFireState(strategy.id, { firing: true });
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await supabase.functions.invoke("fire-strategy-signal", {
+        body: { strategy_id: strategy.id, symbol: sym, exchange: fs.exchange, action, quantity: parseInt(fs.quantity) || 1, product: fs.product },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      const result = res.data as any;
+      if (res.error || result?.error) { toast.error(result?.error ?? "Signal failed"); }
+      else {
+        const oid = result?.orderid ?? result?.broker_order_id ?? "placed";
+        toast.success(`${action} signal fired on "${strategy.name}" — ${sym} · #${String(oid).slice(-8)}`, { duration: 5000 });
+        setFireState(strategy.id, { open: false });
+      }
+    } catch (e: any) { toast.error(e?.message ?? "Signal failed"); }
+    finally { setFireState(strategy.id, { firing: false }); }
+  };
 
   // ── Load all portfolio data ───────────────────────────────────────────────
   const load = useCallback(async (silent = false) => {
@@ -301,6 +480,13 @@ export default function BrokerPortfolioCard() {
                   Live LTP
                 </Button>
               )}
+              <Button
+                onClick={() => setShowOrderModal(true)}
+                size="sm"
+                className="h-7 text-[11px] px-2.5 bg-teal-500 hover:bg-teal-400 text-black font-bold"
+              >
+                <Send className="h-3 w-3 mr-1" /> Place Order
+              </Button>
               <Button variant="ghost" size="sm" onClick={() => { load(true); toast.success("Refreshed"); }}
                 className="h-7 w-7 p-0 text-zinc-500 hover:text-teal-400">
                 <RefreshCw className="h-3.5 w-3.5" />
@@ -395,12 +581,13 @@ export default function BrokerPortfolioCard() {
 
           {/* ── Tabs ──────────────────────────────────────────────────── */}
           <Tabs defaultValue="positions">
-            <TabsList className="bg-zinc-800 border border-zinc-700 h-8 w-full grid grid-cols-4">
+            <TabsList className="bg-zinc-800 border border-zinc-700 h-8 w-full grid grid-cols-5">
               {[
-                { value: "positions", label: "Positions", icon: <ArrowUpRight className="h-3 w-3 mr-0.5" />, count: data.positions.length },
-                { value: "holdings",  label: "Holdings",  icon: <Briefcase className="h-3 w-3 mr-0.5" />,    count: data.holdings.length },
-                { value: "orders",    label: "Orders",    icon: <ClipboardList className="h-3 w-3 mr-0.5" />, count: data.orders.length },
-                { value: "tradebook", label: "Trades",    icon: <BookOpen className="h-3 w-3 mr-0.5" />,      count: data.tradebook.length },
+                { value: "positions",  label: "Positions", icon: <ArrowUpRight className="h-3 w-3 mr-0.5" />, count: data.positions.length },
+                { value: "holdings",   label: "Holdings",  icon: <Briefcase className="h-3 w-3 mr-0.5" />,    count: data.holdings.length },
+                { value: "orders",     label: "Orders",    icon: <ClipboardList className="h-3 w-3 mr-0.5" />, count: data.orders.length },
+                { value: "tradebook",  label: "Trades",    icon: <BookOpen className="h-3 w-3 mr-0.5" />,      count: data.tradebook.length },
+                { value: "strategies", label: "Strategies",icon: <Zap className="h-3 w-3 mr-0.5" />,          count: strategies.length },
               ].map(tab => (
                 <TabsTrigger key={tab.value} value={tab.value}
                   className="text-[11px] h-6 data-[state=active]:bg-teal-500 data-[state=active]:text-black flex items-center gap-0.5">
@@ -668,9 +855,363 @@ export default function BrokerPortfolioCard() {
                 </>
               )}
             </TabsContent>
+            {/* ── Strategies ────────────────────────────────────────── */}
+            <TabsContent value="strategies" className="mt-2 space-y-3">
+              {/* Header row with Add button */}
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-zinc-400 font-semibold flex items-center gap-1.5">
+                  <Zap className="h-3.5 w-3.5 text-purple-400" /> Auto Strategies
+                </p>
+                <div className="flex items-center gap-1.5">
+                  <button onClick={loadStrategies} className="p-1 text-zinc-600 hover:text-zinc-300 transition-colors" title="Refresh">
+                    <RefreshCw className={`h-3 w-3 ${stratLoading ? "animate-spin" : ""}`} />
+                  </button>
+                  <button
+                    onClick={() => setShowCreate(true)}
+                    className="flex items-center gap-1 px-2 py-1 rounded border border-zinc-700 text-[11px] text-zinc-400 hover:text-white hover:border-purple-500/50 transition-colors"
+                  >
+                    <Plus className="h-3 w-3" /> New Strategy
+                  </button>
+                </div>
+              </div>
+
+              {/* Strategy list */}
+              {stratLoading ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="h-5 w-5 animate-spin text-zinc-600" />
+                </div>
+              ) : strategies.length === 0 ? (
+                <div className="text-center py-8">
+                  <Zap className="h-8 w-8 text-zinc-800 mx-auto mb-2" />
+                  <p className="text-xs text-zinc-600">No strategies yet</p>
+                  <p className="text-[10px] text-zinc-700 mt-0.5">Create one to get a webhook URL for auto-execution</p>
+                  <button
+                    onClick={() => setShowCreate(true)}
+                    className="mt-3 flex items-center gap-1.5 mx-auto px-3 py-1.5 rounded-lg border border-purple-500/30 text-[11px] text-purple-400 hover:bg-purple-500/10 transition-colors"
+                  >
+                    <Plus className="h-3 w-3" /> Create your first strategy
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {strategies.map(s => {
+                    const fs = getFireState(s.id);
+                    return (
+                      <div key={s.id} className={`rounded-xl border transition-colors ${
+                        s.is_active ? "bg-purple-500/5 border-purple-500/20" : "bg-zinc-900 border-zinc-800"
+                      }`}>
+                        {/* Header */}
+                        <div className="flex items-center gap-2 p-3">
+                          <span className="flex-1 text-sm font-semibold text-white truncate">{s.name}</span>
+                          {/* Fire Signal */}
+                          <button
+                            onClick={() => setFireState(s.id, { open: !fs.open })}
+                            className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold border transition-all ${
+                              fs.open ? "bg-teal-500/20 border-teal-500/40 text-teal-300" : "border-zinc-700 text-zinc-500 hover:border-teal-500/40 hover:text-teal-400"
+                            }`}
+                          >
+                            <Zap className="h-3 w-3" /> Execute
+                          </button>
+                          {/* Active toggle */}
+                          <button
+                            onClick={() => toggleStrategy(s.id)}
+                            disabled={toggleLoading === s.id}
+                            className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                              s.is_active ? "bg-purple-600" : "bg-zinc-700"
+                            } disabled:opacity-60`}
+                            title={s.is_active ? "Deactivate" : "Activate"}
+                          >
+                            {toggleLoading === s.id
+                              ? <Loader2 className="h-3 w-3 text-white mx-auto animate-spin" />
+                              : <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                                  s.is_active ? "translate-x-[18px]" : "translate-x-0.5"
+                                }`} />}
+                          </button>
+                          {/* Delete */}
+                          <button onClick={() => deleteStrategy(s.id, s.name)} className="p-0.5 text-zinc-700 hover:text-red-400 transition-colors">
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+
+                        {/* Meta badges */}
+                        <div className="flex items-center gap-1.5 flex-wrap px-3 pb-2">
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                            s.is_active ? "bg-purple-500/15 text-purple-300" : "bg-zinc-800 text-zinc-500"
+                          }`}>{s.is_active ? "● ACTIVE" : "○ INACTIVE"}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">{s.trading_mode}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">{s.is_intraday ? "Intraday" : "Positional"}</span>
+                          <span className="text-[10px] text-zinc-700">{s.start_time}–{s.end_time}</span>
+                          {s.stop_loss_pct && <span className="text-[10px] text-red-500/70">SL {s.stop_loss_pct}%</span>}
+                          {s.take_profit_pct && <span className="text-[10px] text-green-500/70">TP {s.take_profit_pct}%</span>}
+                        </div>
+
+                        {/* Fire Signal panel */}
+                        {fs.open && (
+                          <div className="mx-3 mb-3 rounded-lg border border-teal-500/20 bg-zinc-950 p-3 space-y-3">
+                            <p className="text-[11px] font-semibold text-teal-400 flex items-center gap-1.5">
+                              <Zap className="h-3 w-3" /> Fire Signal — {s.name}
+                            </p>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-1">
+                                <Label className="text-zinc-600 text-[10px]">Symbol *</Label>
+                                <Input
+                                  placeholder={s.symbols?.[0] ?? "RELIANCE"}
+                                  value={fs.symbol}
+                                  onChange={e => setFireState(s.id, { symbol: e.target.value.toUpperCase() })}
+                                  className="bg-zinc-900 border-zinc-700 text-white font-mono text-xs h-8"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-zinc-600 text-[10px]">Exchange</Label>
+                                <Select value={fs.exchange} onValueChange={v => setFireState(s.id, { exchange: v })}>
+                                  <SelectTrigger className="bg-zinc-900 border-zinc-700 text-zinc-200 h-8 text-xs">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent className="bg-zinc-900 border-zinc-700">
+                                    {EXCHANGES_LIST.map(e => (
+                                      <SelectItem key={e} value={e} className="text-xs text-zinc-200">{e}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-1">
+                                <Label className="text-zinc-600 text-[10px]">Quantity</Label>
+                                <Input
+                                  type="number" min={1}
+                                  value={fs.quantity}
+                                  onChange={e => setFireState(s.id, { quantity: e.target.value })}
+                                  className="bg-zinc-900 border-zinc-700 text-white text-xs h-8"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-zinc-600 text-[10px]">Product</Label>
+                                <Select value={fs.product} onValueChange={v => setFireState(s.id, { product: v })}>
+                                  <SelectTrigger className="bg-zinc-900 border-zinc-700 text-zinc-200 h-8 text-xs">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent className="bg-zinc-900 border-zinc-700">
+                                    {PRODUCT_LIST.map(p => (
+                                      <SelectItem key={p} value={p} className="text-xs text-zinc-200">{p}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                onClick={() => fireSignal(s, "BUY")} disabled={fs.firing}
+                                className="py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50"
+                              >
+                                {fs.firing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><TrendingUp className="h-3.5 w-3.5" /> BUY Signal</>}
+                              </button>
+                              <button
+                                onClick={() => fireSignal(s, "SELL")} disabled={fs.firing}
+                                className="py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50"
+                              >
+                                {fs.firing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><TrendingDown className="h-3.5 w-3.5" /> SELL Signal</>}
+                              </button>
+                            </div>
+                            <p className="text-[10px] text-zinc-700 text-center">MARKET order · executes instantly on {brokerLabel}</p>
+                          </div>
+                        )}
+
+                        {/* Webhook URL */}
+                        {s.webhook_url && (
+                          <div className="flex items-center gap-1.5 mx-3 mb-3 bg-black/30 border border-zinc-800 rounded p-1.5">
+                            <Webhook className="h-3 w-3 text-zinc-600 shrink-0" />
+                            <code className="text-[9px] text-zinc-600 truncate flex-1">{s.webhook_url}</code>
+                            <button onClick={() => copyWebhook(s)} className="shrink-0 text-zinc-700 hover:text-zinc-400 transition-colors">
+                              {copiedId === s.id ? <CheckCircle2 className="h-3 w-3 text-teal-400" /> : <Copy className="h-3 w-3" />}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Webhook guide toggle */}
+              <button
+                onClick={() => setShowGuide(g => !g)}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-lg border border-zinc-800 bg-zinc-900/50 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
+                <span className="flex items-center gap-1.5"><Webhook className="h-3 w-3 text-zinc-600" /> Connect external signal source (optional)</span>
+                <ChevronRight className={`h-3 w-3 transition-transform ${showGuide ? "rotate-90" : ""}`} />
+              </button>
+              {showGuide && (
+                <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-lg p-3 space-y-2">
+                  <p className="text-[10px] text-zinc-400">Each strategy has a webhook URL. Any system that can make HTTP POST requests can trigger orders automatically — your own script, Pine Script alert, cron job, anything.</p>
+                  <div className="p-2 bg-zinc-950 rounded text-[9px] text-zinc-500 font-mono break-all">
+                    {`POST {webhook_url}`}<br/>{`{"action":"BUY","symbol":"RELIANCE","exchange":"NSE","quantity":10,"product":"MIS","pricetype":"MARKET"}`}
+                  </div>
+                </div>
+              )}
+            </TabsContent>
           </Tabs>
         </CardContent>
       </Card>
+
+      {/* ── Create Strategy Dialog ──────────────────────────────────────────── */}
+      <Dialog open={showCreate} onOpenChange={(o) => { if (!o) { setShowCreate(false); setForm(EMPTY_STRATEGY); } }}>
+        <DialogContent className="bg-zinc-900 border-zinc-700 text-white max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-white">
+              <Plus className="h-4 w-4 text-purple-400" />
+              New Strategy
+            </DialogTitle>
+            <DialogDescription className="text-zinc-400 text-sm">
+              Define your strategy parameters and get a webhook URL for auto-execution.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Name + Description */}
+            <div className="space-y-2.5">
+              <div className="space-y-1">
+                <Label className="text-zinc-500 text-[11px]">Strategy Name *</Label>
+                <Input
+                  placeholder="e.g. NIFTY Scalper, BTST Momentum"
+                  value={form.name}
+                  onChange={e => setF("name", e.target.value)}
+                  className="bg-zinc-950 border-zinc-700 text-white text-xs h-8"
+                  autoFocus
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-zinc-500 text-[11px]">Description (optional)</Label>
+                <Input
+                  placeholder="Short description of the strategy"
+                  value={form.description}
+                  onChange={e => setF("description", e.target.value)}
+                  className="bg-zinc-950 border-zinc-700 text-white text-xs h-8"
+                />
+              </div>
+            </div>
+
+            {/* Direction + Session */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-zinc-500 text-[11px]">Direction</Label>
+                <Select value={form.trading_mode} onValueChange={v => setF("trading_mode", v)}>
+                  <SelectTrigger className="bg-zinc-950 border-zinc-700 text-zinc-200 h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-zinc-900 border-zinc-700">
+                    <SelectItem value="LONG"  className="text-xs text-zinc-200">LONG only</SelectItem>
+                    <SelectItem value="SHORT" className="text-xs text-zinc-200">SHORT only</SelectItem>
+                    <SelectItem value="BOTH"  className="text-xs text-zinc-200">LONG &amp; SHORT</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-zinc-500 text-[11px]">Session Type</Label>
+                <div className="grid grid-cols-2 gap-1 p-0.5 bg-zinc-950 border border-zinc-700 rounded-md h-8">
+                  <button
+                    onClick={() => setF("is_intraday", true)}
+                    className={`rounded text-[11px] font-medium transition-colors ${form.is_intraday ? "bg-purple-600 text-white" : "text-zinc-500 hover:text-zinc-300"}`}
+                  >Intraday</button>
+                  <button
+                    onClick={() => setF("is_intraday", false)}
+                    className={`rounded text-[11px] font-medium transition-colors ${!form.is_intraday ? "bg-purple-600 text-white" : "text-zinc-500 hover:text-zinc-300"}`}
+                  >Positional</button>
+                </div>
+              </div>
+            </div>
+
+            {/* Trading Hours */}
+            <div>
+              <Label className="text-zinc-500 text-[11px] block mb-1.5">Trading Hours (IST)</Label>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { label: "Start",    field: "start_time"    as const, val: form.start_time },
+                  { label: "End",      field: "end_time"      as const, val: form.end_time },
+                  { label: "Squareoff",field: "squareoff_time"as const, val: form.squareoff_time },
+                ].map(({ label, field, val }) => (
+                  <div key={field} className="space-y-1">
+                    <Label className="text-zinc-600 text-[10px]">{label}</Label>
+                    <Input type="time" value={val} onChange={e => setF(field, e.target.value)}
+                      className="bg-zinc-950 border-zinc-700 text-white text-xs h-8 px-2" />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Risk Management */}
+            <div>
+              <Label className="text-zinc-500 text-[11px] block mb-1.5">Risk Management</Label>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { label: "Risk / Trade %",  field: "risk_per_trade_pct" as const, val: form.risk_per_trade_pct, color: "text-white" },
+                  { label: "Stop-Loss %",     field: "stop_loss_pct"      as const, val: form.stop_loss_pct,      color: "text-red-400" },
+                  { label: "Take-Profit %",   field: "take_profit_pct"    as const, val: form.take_profit_pct,    color: "text-green-400" },
+                ].map(({ label, field, val, color }) => (
+                  <div key={field} className="space-y-1">
+                    <Label className="text-zinc-600 text-[10px]">{label}</Label>
+                    <div className="relative">
+                      <Input type="number" min="0.1" step="0.1" max="100" value={val}
+                        onChange={e => setF(field, e.target.value)}
+                        className={`bg-zinc-950 border-zinc-700 text-xs h-8 pr-5 ${color}`} />
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500">%</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[10px] text-zinc-700 mt-1.5">Risk/trade: % of capital per signal. SL &amp; TP: % move from entry.</p>
+            </div>
+
+            {/* Symbols */}
+            <div className="space-y-1">
+              <Label className="text-zinc-500 text-[11px]">Symbols (optional, comma-separated)</Label>
+              <Input
+                placeholder="RELIANCE, TCS, NIFTY25MARFUT"
+                value={form.symbols_raw}
+                onChange={e => setF("symbols_raw", e.target.value.toUpperCase())}
+                className="bg-zinc-950 border-zinc-700 text-white font-mono text-xs h-8"
+              />
+              <p className="text-[10px] text-zinc-700">Leave blank to allow any symbol via webhook payload</p>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => { setShowCreate(false); setForm(EMPTY_STRATEGY); }} className="border-zinc-700">
+              Cancel
+            </Button>
+            <Button
+              onClick={createStrategy}
+              disabled={creating || !form.name.trim()}
+              className="bg-purple-600 hover:bg-purple-500 font-bold"
+            >
+              {creating
+                ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Creating…</>
+                : <><Zap className="h-3.5 w-3.5 mr-1.5" />Create Strategy &amp; Get Webhook</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Place Order Dialog ────────────────────────────────────────────── */}
+      <Dialog open={showOrderModal} onOpenChange={setShowOrderModal}>
+        <DialogContent className="bg-zinc-950 border-zinc-800 text-white max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-white">
+              <Send className="h-4 w-4 text-teal-400" />
+              Place Order
+              <span className="ml-auto text-[10px] text-zinc-600 font-normal">via {brokerLabel}</span>
+            </DialogTitle>
+            <DialogDescription className="text-zinc-500 text-xs sr-only">
+              Place a live or AMO order via your connected broker.
+            </DialogDescription>
+          </DialogHeader>
+          <PlaceOrderPanel
+            broker={broker}
+            onOrderPlaced={() => { setShowOrderModal(false); load(true); }}
+            asModal
+          />
+        </DialogContent>
+      </Dialog>
 
       {/* ── Modify Order Dialog ─────────────────────────────────────────────── */}
       <Dialog open={!!modifyOrder} onOpenChange={(o) => !o && setModifyOrder(null)}>
