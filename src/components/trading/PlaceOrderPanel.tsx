@@ -3,9 +3,11 @@
  *
  * Self-contained order entry form. Used both inline (right column) and as a
  * Dialog modal inside BrokerPortfolioCard.
+ *
+ * Flow: Fill form → "Analyse & Confirm" → AI analysis runs → Confirm button → Order placed → Success card
  */
 
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback, useRef, useEffect, memo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,7 +17,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  AlertTriangle, Clock, Info, Loader2, Search, Send,
+  AlertTriangle, BarChart3 as BarChart3Icon, Brain, CheckCircle2, Clock, Info, Loader2, Search, Send,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -91,10 +93,10 @@ function computeMarketStatus(): MarketStatus {
   const now = toMinutes(h, m);
   const PRE = toMinutes(9, 0), MKT = toMinutes(9, 15), END = toMinutes(15, 30), POST = toMinutes(16, 0);
   if (day === 0 || day === 6) return { session: "weekend", label: "Market Closed", sublabel: "Weekend — opens Mon 9:15 AM IST", color: "text-zinc-400", bg: "bg-zinc-800/40 border-zinc-700/40", dot: "bg-zinc-500" };
-  if (now < PRE)    return { session: "closed",      label: "Market Closed",     sublabel: `Pre-market starts 9:00 AM IST`,                         color: "text-zinc-400",  bg: "bg-zinc-800/40 border-zinc-700/40",   dot: "bg-zinc-500" };
-  if (now < MKT)    return { session: "pre_market",  label: "Pre-Market",        sublabel: `Call auction — opens in ${fmtDur(MKT - now)}`,           color: "text-amber-400", bg: "bg-amber-500/10 border-amber-500/20", dot: "bg-amber-400" };
-  if (now < END)    return { session: "open",        label: "Market Open",       sublabel: `NSE/BSE live — closes in ${fmtDur(END - now)}`,          color: "text-green-400", bg: "bg-green-500/10 border-green-500/20", dot: "bg-green-400" };
-  if (now < POST)   return { session: "post_market", label: "After-Market (AMO)", sublabel: "Orders queued & executed at next open",                 color: "text-blue-400",  bg: "bg-blue-500/10 border-blue-500/20",   dot: "bg-blue-400" };
+  if (now < PRE)    return { session: "closed",      label: "Market Closed",      sublabel: `Pre-market starts 9:00 AM IST`,                         color: "text-zinc-400",  bg: "bg-zinc-800/40 border-zinc-700/40",   dot: "bg-zinc-500" };
+  if (now < MKT)    return { session: "pre_market",  label: "Pre-Market",         sublabel: `Call auction — opens in ${fmtDur(MKT - now)}`,           color: "text-amber-400", bg: "bg-amber-500/10 border-amber-500/20", dot: "bg-amber-400" };
+  if (now < END)    return { session: "open",        label: "Market Open",        sublabel: `NSE/BSE live — closes in ${fmtDur(END - now)}`,          color: "text-green-400", bg: "bg-green-500/10 border-green-500/20", dot: "bg-green-400" };
+  if (now < POST)   return { session: "post_market", label: "After-Market (AMO)", sublabel: "Orders queued & executed at next open",                  color: "text-blue-400",  bg: "bg-blue-500/10 border-blue-500/20",   dot: "bg-blue-400" };
   return { session: "closed", label: "Market Closed", sublabel: "Opens 9:00 AM IST (Mon–Fri)", color: "text-zinc-400", bg: "bg-zinc-800/40 border-zinc-700/40", dot: "bg-zinc-500" };
 }
 
@@ -133,6 +135,55 @@ const EMPTY_ORDER: OrderForm = {
   quantity: "", product: "CNC", pricetype: "MARKET",
   price: "", trigger_price: "",
 };
+
+// ── TradingView Mini Chart ────────────────────────────────────────────────────
+
+const TradingViewMiniChart = memo(function TradingViewMiniChart({
+  symbol, exchange, fill = false,
+}: { symbol: string; exchange: string; fill?: boolean }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!containerRef.current || !symbol) return;
+    containerRef.current.innerHTML = "";
+
+    const inner = document.createElement("div");
+    inner.className = "tradingview-widget-container__widget";
+    inner.style.height = "100%";
+    containerRef.current.appendChild(inner);
+
+    const script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
+    script.async = true;
+    script.innerHTML = JSON.stringify({
+      autosize: true,
+      symbol: `${exchange}:${symbol}`,
+      interval: "D",
+      timezone: "Asia/Kolkata",
+      theme: "dark",
+      style: "1",
+      locale: "en",
+      hide_legend: false,
+      hide_side_toolbar: true,
+      allow_symbol_change: false,
+      save_image: false,
+      calendar: false,
+      hide_volume: false,
+      backgroundColor: "rgba(9,9,11,1)",
+      gridColor: "rgba(39,39,42,0.6)",
+    });
+    containerRef.current.appendChild(script);
+  }, [symbol, exchange]);
+
+  return (
+    <div
+      ref={containerRef}
+      className="tradingview-widget-container rounded-lg overflow-hidden border border-zinc-800"
+      style={fill ? { height: "100%", width: "100%" } : { height: "220px", width: "100%" }}
+    />
+  );
+});
 
 // ── SymbolSearchInput ─────────────────────────────────────────────────────────
 
@@ -225,26 +276,71 @@ function SymbolSearchInput({
 
 // ── PlaceOrderPanel ───────────────────────────────────────────────────────────
 
-/**
- * @param asModal  When true, strips the outer Card wrapper so it can be
- *                 embedded cleanly inside a Dialog.
- */
 export default function PlaceOrderPanel({
   broker,
   onOrderPlaced,
   asModal = false,
+  fullscreen = false,
+  prefill,
 }: {
   broker: string;
   onOrderPlaced: () => void;
   asModal?: boolean;
+  fullscreen?: boolean;
+  prefill?: Partial<OrderForm>;
 }) {
-  const [order, setOrder] = useState<OrderForm>(EMPTY_ORDER);
+  const [order, setOrder] = useState<OrderForm>({ ...EMPTY_ORDER, ...prefill });
   const [placing, setPlacing] = useState(false);
+  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [orderSuccess, setOrderSuccess] = useState<{
+    symbol: string; action: string; qty: string;
+    orderId: string; exchange: string; product: string; pricetype: string;
+  } | null>(null);
   const market = useMarketStatus();
-  const brokerLabel = broker.charAt(0).toUpperCase() + broker.slice(1);
+  const brokerLabel = broker ? broker.charAt(0).toUpperCase() + broker.slice(1) : "Broker";
 
   const set = <K extends keyof OrderForm>(k: K, v: OrderForm[K]) =>
     setOrder(o => ({ ...o, [k]: v }));
+
+  // Whenever key fields change, reset the confirm + analysis step
+  useEffect(() => {
+    setShowConfirm(false);
+    setAiAnalysis(null);
+  }, [order.symbol, order.action, order.exchange, order.quantity, order.product]);
+
+  const runAnalysis = async () => {
+    if (!order.symbol.trim()) { toast.error("Enter a symbol first"); return; }
+    if (!order.quantity || parseInt(order.quantity) < 1) { toast.error("Enter a valid quantity"); return; }
+    setAiLoading(true);
+    setAiAnalysis(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await supabase.functions.invoke("analyze-trade", {
+        body: {
+          symbol: order.symbol.toUpperCase(),
+          exchange: order.exchange,
+          action: order.action,
+          quantity: parseInt(order.quantity) || 1,
+          product: order.product,
+        },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      const txt = (res.data as any)?.analysis ?? null;
+      if (txt) {
+        setAiAnalysis(txt);
+      } else {
+        setAiAnalysis("No AI analysis available for this symbol. You may proceed.");
+      }
+      setShowConfirm(true);
+    } catch {
+      setAiAnalysis("AI analysis unavailable. You may still place the order.");
+      setShowConfirm(true);
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   const placeOrder = async () => {
     if (!order.symbol.trim()) { toast.error("Enter a symbol"); return; }
@@ -274,11 +370,19 @@ export default function PlaceOrderPanel({
         toast.error(result?.error ?? res.error?.message ?? "Order failed");
       } else {
         const oid = result?.orderid ?? result?.broker_order_id ?? "placed";
+        setOrderSuccess({
+          symbol: order.symbol.trim().toUpperCase(),
+          action: order.action,
+          qty: order.quantity,
+          orderId: String(oid),
+          exchange: order.exchange,
+          product: order.product,
+          pricetype: order.pricetype,
+        });
         toast.success(
           `${order.action} ${order.symbol} placed — #${String(oid).slice(-8)}`,
           { duration: 6000 }
         );
-        setOrder(EMPTY_ORDER);
         setTimeout(onOrderPlaced, 1500);
       }
     } catch (e: any) {
@@ -288,9 +392,67 @@ export default function PlaceOrderPanel({
     }
   };
 
+  const resetAll = () => {
+    setOrder({ ...EMPTY_ORDER, ...(prefill ?? {}) });
+    setAiAnalysis(null);
+    setShowConfirm(false);
+    setOrderSuccess(null);
+  };
+
   const needsLimit   = order.pricetype === "LIMIT" || order.pricetype === "SL";
   const needsTrigger = order.pricetype === "SL"    || order.pricetype === "SL-M";
   const isBuy        = order.action === "BUY";
+
+  // ── Order Success State ──────────────────────────────────────────────────────
+  if (orderSuccess) {
+    return (
+      <div className="space-y-4">
+        <div className={`rounded-xl border-2 p-4 text-center space-y-3 ${
+          orderSuccess.action === "BUY"
+            ? "bg-green-500/5 border-green-500/30"
+            : "bg-red-500/5 border-red-500/30"
+        }`}>
+          <CheckCircle2 className={`h-10 w-10 mx-auto ${orderSuccess.action === "BUY" ? "text-green-400" : "text-red-400"}`} />
+          <div>
+            <p className={`text-lg font-bold ${orderSuccess.action === "BUY" ? "text-green-300" : "text-red-300"}`}>
+              {orderSuccess.action} Order Placed!
+            </p>
+            <p className="text-zinc-400 text-sm mt-0.5">Your order has been sent to the broker</p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-xs text-left">
+            {[
+              ["Symbol",   orderSuccess.symbol],
+              ["Exchange", orderSuccess.exchange],
+              ["Action",   orderSuccess.action],
+              ["Qty",      orderSuccess.qty],
+              ["Product",  orderSuccess.product],
+              ["Type",     orderSuccess.pricetype],
+            ].map(([k, v]) => (
+              <div key={k} className="bg-zinc-900/80 rounded-lg px-3 py-2">
+                <p className="text-zinc-500 text-[10px]">{k}</p>
+                <p className={`font-bold font-mono mt-0.5 ${
+                  k === "Action" ? (v === "BUY" ? "text-green-400" : "text-red-400") : "text-white"
+                }`}>{v}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="bg-zinc-900 rounded-lg p-2">
+            <p className="text-zinc-600 text-[10px]">Order ID</p>
+            <p className="text-zinc-400 font-mono text-xs">{orderSuccess.orderId}</p>
+          </div>
+        </div>
+
+        <button
+          onClick={resetAll}
+          className="w-full py-2.5 rounded-lg border border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-500 text-sm transition-colors"
+        >
+          Place Another Order
+        </button>
+      </div>
+    );
+  }
 
   const body = (
     <div className="space-y-3">
@@ -440,32 +602,152 @@ export default function PlaceOrderPanel({
         </div>
       )}
 
-      {/* Submit */}
-      <button
-        onClick={placeOrder}
-        disabled={placing || !order.symbol || !order.quantity}
-        className={`w-full py-3.5 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed ${
-          isBuy
-            ? "bg-green-600 hover:bg-green-500 active:bg-green-700 text-white shadow-lg shadow-green-900/30"
-            : "bg-red-600 hover:bg-red-500 active:bg-red-700 text-white shadow-lg shadow-red-900/30"
-        }`}
-      >
-        {placing ? (
-          <><Loader2 className="h-4 w-4 animate-spin" />Placing…</>
-        ) : market.session === "open" ? (
-          <><Send className="h-4 w-4" />{isBuy ? "▲ BUY" : "▼ SELL"} {order.symbol || "Order"}</>
-        ) : (
-          <><Send className="h-4 w-4" />{isBuy ? "▲ BUY" : "▼ SELL"} {order.symbol || "AMO Order"} (AMO)</>
-        )}
-      </button>
+      {/* ── AI Analysis Step ─────────────────────────────────────────────── */}
+      {showConfirm && aiAnalysis && (
+        <div className="rounded-xl border border-purple-500/30 bg-purple-500/5 p-3 space-y-2">
+          <p className="text-[11px] font-semibold text-purple-300 flex items-center gap-1.5">
+            <Brain className="h-3.5 w-3.5" /> AI Analysis — {order.symbol}
+          </p>
+          <p className="text-[11px] text-zinc-300 leading-relaxed whitespace-pre-wrap max-h-36 overflow-y-auto">
+            {aiAnalysis}
+          </p>
+        </div>
+      )}
 
-      <p className="text-[10px] text-center text-zinc-700">
-        {market.session === "open"
-          ? "Live order · executes instantly · Real money at risk"
-          : "AMO order · queued · executes at next market open"}
-      </p>
+      {/* ── Primary Action Button ─────────────────────────────────────────── */}
+      {!showConfirm ? (
+        /* Step 1: Analyse */
+        <button
+          onClick={runAnalysis}
+          disabled={aiLoading || !order.symbol.trim() || !order.quantity}
+          className={`w-full py-3.5 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed ${
+            isBuy
+              ? "bg-green-600/80 hover:bg-green-600 text-white border border-green-500/40"
+              : "bg-red-600/80 hover:bg-red-600 text-white border border-red-500/40"
+          }`}
+        >
+          {aiLoading ? (
+            <><Loader2 className="h-4 w-4 animate-spin" /> Analysing with AI…</>
+          ) : (
+            <><Brain className="h-4 w-4" /> Analyse &amp; Continue →</>
+          )}
+        </button>
+      ) : (
+        /* Step 2: Confirm */
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => { setShowConfirm(false); setAiAnalysis(null); }}
+              className="py-2.5 rounded-lg border border-zinc-700 text-zinc-400 hover:text-white text-sm transition-colors"
+            >
+              ← Edit Order
+            </button>
+            <button
+              onClick={placeOrder}
+              disabled={placing}
+              className={`py-2.5 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50 ${
+                isBuy
+                  ? "bg-green-600 hover:bg-green-500 text-white shadow-lg shadow-green-900/30"
+                  : "bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-900/30"
+              }`}
+            >
+              {placing
+                ? <><Loader2 className="h-4 w-4 animate-spin" />Placing…</>
+                : <><Send className="h-4 w-4" />{isBuy ? "▲ Confirm BUY" : "▼ Confirm SELL"}</>
+              }
+            </button>
+          </div>
+          <p className="text-[10px] text-center text-zinc-600">
+            {market.session === "open"
+              ? "⚠ Real money — order executes instantly on broker"
+              : "⚠ AMO — queued, executes at next market open"}
+          </p>
+        </div>
+      )}
     </div>
   );
+
+  if (fullscreen) {
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 h-full">
+        {/* LEFT: Chart panel */}
+        <div className="flex flex-col p-5 border-b lg:border-b-0 lg:border-r border-zinc-800 bg-zinc-950 h-full">
+          <div className="flex items-center gap-3 mb-3">
+            <div>
+              <h2 className="text-lg font-bold text-white font-mono">
+                {order.symbol || "—"}
+              </h2>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-[10px] border border-zinc-700 text-zinc-400 px-1.5 py-0.5 rounded">{order.exchange}</span>
+                <span className="text-[10px] border border-teal-700/50 text-teal-400 px-1.5 py-0.5 rounded">{order.product}</span>
+                <span className={`text-[10px] border px-1.5 py-0.5 rounded font-bold ${
+                  order.action === "BUY" ? "border-green-700/50 text-green-400" : "border-red-700/50 text-red-400"
+                }`}>{order.action}</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex-1 min-h-0">
+            {order.symbol.trim().length >= 1 ? (
+              <TradingViewMiniChart symbol={order.symbol.trim()} exchange={order.exchange} fill />
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center text-zinc-700 border border-zinc-800 rounded-lg">
+                <BarChart3Icon className="h-12 w-12 mb-3 opacity-30" />
+                <p className="text-sm">Enter a symbol to see the chart</p>
+              </div>
+            )}
+          </div>
+          {/* AI analysis panel */}
+          {(aiLoading || aiAnalysis) && (
+            <div className="mt-3 rounded-xl border border-purple-500/25 bg-purple-500/5 p-3 space-y-1.5 shrink-0">
+              <p className="text-[11px] font-semibold text-purple-300 flex items-center gap-1.5">
+                <Brain className="h-3.5 w-3.5" /> AI Analysis
+                {aiLoading && <Loader2 className="h-3 w-3 animate-spin ml-1" />}
+              </p>
+              {aiLoading ? (
+                <p className="text-[11px] text-zinc-500 animate-pulse">Analysing {order.symbol}…</p>
+              ) : (
+                <p className="text-[11px] text-zinc-300 leading-relaxed whitespace-pre-wrap">{aiAnalysis}</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* RIGHT: Order form */}
+        <div className="p-5 overflow-y-auto h-full">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-base font-semibold text-white flex items-center gap-2">
+              <Send className="h-4 w-4 text-teal-400" />
+              Place Order
+            </h3>
+            <span className="text-[10px] text-zinc-600">via {brokerLabel}</span>
+          </div>
+          {orderSuccess ? (
+            <div className="space-y-4">
+              <div className={`rounded-xl border-2 p-4 text-center space-y-3 ${
+                orderSuccess.action === "BUY" ? "bg-green-500/5 border-green-500/30" : "bg-red-500/5 border-red-500/30"
+              }`}>
+                <CheckCircle2 className={`h-10 w-10 mx-auto ${orderSuccess.action === "BUY" ? "text-green-400" : "text-red-400"}`} />
+                <p className={`text-lg font-bold ${orderSuccess.action === "BUY" ? "text-green-300" : "text-red-300"}`}>{orderSuccess.action} Order Placed!</p>
+                <div className="grid grid-cols-2 gap-2 text-xs text-left">
+                  {[["Symbol", orderSuccess.symbol], ["Exchange", orderSuccess.exchange], ["Action", orderSuccess.action], ["Qty", orderSuccess.qty], ["Product", orderSuccess.product], ["Type", orderSuccess.pricetype]].map(([k, v]) => (
+                    <div key={k} className="bg-zinc-900/80 rounded-lg px-3 py-2">
+                      <p className="text-zinc-500 text-[10px]">{k}</p>
+                      <p className={`font-bold font-mono mt-0.5 ${k === "Action" ? (v === "BUY" ? "text-green-400" : "text-red-400") : "text-white"}`}>{v}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="bg-zinc-900 rounded-lg p-2">
+                  <p className="text-zinc-600 text-[10px]">Order ID</p>
+                  <p className="text-zinc-400 font-mono text-xs">{orderSuccess.orderId}</p>
+                </div>
+              </div>
+              <button onClick={resetAll} className="w-full py-2.5 rounded-lg border border-zinc-700 text-zinc-400 hover:text-white text-sm transition-colors">Place Another Order</button>
+            </div>
+          ) : body}
+        </div>
+      </div>
+    );
+  }
 
   if (asModal) return body;
 
