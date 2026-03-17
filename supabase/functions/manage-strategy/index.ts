@@ -76,6 +76,7 @@ Deno.serve(async (req: Request) => {
       const slPct        = Number(body.stop_loss_pct       ?? 2.0);
       const tpPct        = Number(body.take_profit_pct     ?? 4.0);
       const symbols      = (body.symbols as unknown[])    ?? [];
+      const paperStrategyType = ((body.paper_strategy_type as string) ?? "").trim() || null;
 
       if (!name) {
         return new Response(JSON.stringify({ error: "name is required" }), { status: 400, headers });
@@ -139,6 +140,7 @@ Deno.serve(async (req: Request) => {
           stop_loss_pct:        slPct,
           take_profit_pct:      tpPct,
           symbols,
+          paper_strategy_type:  paperStrategyType,
           openalgo_strategy_id: openalgoStrategyId,
           openalgo_webhook_id:  openalgoWebhookId,
         })

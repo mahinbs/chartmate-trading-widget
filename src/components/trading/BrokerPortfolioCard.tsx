@@ -26,11 +26,98 @@ import {
 import {
   AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3,
   Briefcase, ClipboardList, Loader2, RefreshCw, Wallet, X, Pencil, Zap,
-  TrendingUp, TrendingDown, BookOpen, Plus, Trash2, Copy, CheckCircle2,
-  ChevronRight, Webhook, Send, Brain,
+  TrendingUp, TrendingDown, BookOpen, Plus, Trash2, CheckCircle2, Send, Brain, Search,
 } from "lucide-react";
 import { toast } from "sonner";
 import PlaceOrderPanel from "@/components/trading/PlaceOrderPanel";
+import { STRATEGIES } from "@/components/trading/StrategySelectionDialog";
+import { getStrategyParams } from "@/constants/strategyParams";
+
+// ── SymbolSearchInput (same UX as PlaceOrderPanel) ────────────────────────────
+type SymbolResult = { symbol: string; description: string; full_symbol: string; exchange: string; type: string };
+function SymbolSearchInput({
+  value, onChange, onSelect,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onSelect: (symbol: string, exchange: string) => void;
+}) {
+  const [results, setResults] = useState<SymbolResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [open, setOpen] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const search = useCallback(async (q: string) => {
+    if (q.length < 2) { setResults([]); setOpen(false); return; }
+    setSearching(true);
+    try {
+      const res = await supabase.functions.invoke("search-symbols", { body: { q } });
+      const data: SymbolResult[] = (res.data as any[]) ?? [];
+      const indian = data.filter(d => d.full_symbol?.endsWith(".NS") || d.full_symbol?.endsWith(".BO"));
+      setResults(indian.slice(0, 8));
+      if (indian.length > 0) setOpen(true);
+    } catch { /* silent */ } finally { setSearching(false); }
+  }, []);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = e.target.value.toUpperCase();
+    onChange(v);
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => search(v), 320);
+  };
+
+  const handleSelect = (item: SymbolResult) => {
+    onSelect(item.symbol, item.full_symbol?.endsWith(".BO") ? "BSE" : "NSE");
+    setOpen(false);
+    setResults([]);
+  };
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <div className="relative">
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-500 pointer-events-none" />
+        <Input
+          placeholder="Search symbol…"
+          value={value}
+          onChange={handleChange}
+          onFocus={() => results.length > 0 && setOpen(true)}
+          className="bg-zinc-900 border-zinc-700 text-white font-mono pl-8 pr-8 uppercase text-xs h-8"
+        />
+        {searching && (
+          <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-zinc-500" />
+        )}
+      </div>
+      {open && results.length > 0 && (
+        <div className="absolute top-full left-0 right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl z-50 overflow-hidden">
+          {results.map((item, i) => (
+            <button
+              key={i}
+              className="w-full flex items-center justify-between px-3 py-2 hover:bg-zinc-800 text-left transition-colors border-b border-zinc-800 last:border-0"
+              onMouseDown={() => handleSelect(item)}
+            >
+              <div className="min-w-0">
+                <span className="font-mono text-white text-sm font-semibold">{item.symbol}</span>
+                <p className="text-[11px] text-zinc-500 truncate">{item.description}</p>
+              </div>
+              <span className="text-[10px] text-teal-400 bg-teal-500/10 border border-teal-500/20 px-1.5 py-0.5 rounded ml-2 shrink-0">
+                {item.full_symbol?.endsWith(".BO") ? "BSE" : "NSE"}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── TradingView Chart Widget ──────────────────────────────────────────────────
 
@@ -79,7 +166,19 @@ function TradingViewChart({ symbol, exchange, height = 320 }: { symbol: string; 
   );
 }
 
-// ── Strategy types ────────────────────────────────────────────────────────────
+// Paper strategy → direction mapping
+const PAPER_DIRECTION: Record<string, "LONG" | "SHORT" | "BOTH"> = {
+  trend_following: "BOTH", breakout_breakdown: "BOTH", mean_reversion: "BOTH",
+  momentum: "LONG", scalping: "BOTH", swing_trading: "BOTH", range_trading: "BOTH",
+  news_based: "BOTH", options_buying: "LONG", options_selling: "SHORT", pairs_trading: "BOTH",
+};
+
+// Paper strategy → session (MIS=intraday, CNC/NRML=positional)
+const PAPER_TO_INTRADAY: Record<string, boolean> = {
+  trend_following: false, breakout_breakdown: false, mean_reversion: false,
+  momentum: true, scalping: true, swing_trading: false, range_trading: false,
+  news_based: true, options_buying: false, options_selling: false, pairs_trading: false,
+};
 
 interface Strategy {
   id: string;
@@ -92,6 +191,7 @@ interface Strategy {
   squareoff_time: string;
   symbols: string[];
   webhook_url?: string | null;
+  paper_strategy_type?: string | null;
   risk_per_trade_pct: number;
   stop_loss_pct: number;
   take_profit_pct: number;
@@ -345,11 +445,27 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
   const [showCreate, setShowCreate]       = useState(false);
   const [form, setForm]                   = useState<StrategyForm>(EMPTY_STRATEGY);
   const [creating, setCreating]           = useState(false);
+  const [useFromPaper, setUseFromPaper]   = useState(false);
+  const [paperType, setPaperType]         = useState("");
+  const [backtestSymbol, setBacktestSymbol] = useState("RELIANCE");
+  const [autoNameFromPaper, setAutoNameFromPaper] = useState(true);
+  const [autoTimesFromPaper, setAutoTimesFromPaper] = useState(true);
+  const [backtestResult, setBacktestResult] = useState<{
+    totalTrades: number; wins: number; losses: number; winRate: number;
+    totalReturn: number; avgReturn: number; maxDrawdown: number; profitFactor: number;
+    strategyAchieved: boolean; symbol: string; strategy: string; sampleTrades?: { entryDate: string; exitDate: string; returnPct: number; profitable: boolean }[];
+  } | null>(null);
+  const [backtestLoading, setBacktestLoading] = useState(false);
   const [toggleLoading, setToggleLoading] = useState<string | null>(null);
-  const [copiedId, setCopiedId]           = useState<string | null>(null);
-  const [showGuide, setShowGuide]         = useState(false);
   const [firePanel, setFirePanel]         = useState<Record<string, {
     open: boolean; symbol: string; exchange: string; quantity: string; product: string; firing: boolean;
+    backtestPaperType?: string; backtestResult?: {
+      totalTrades: number; wins: number; losses: number; winRate: number; totalReturn: number;
+      maxDrawdown?: number; profitFactor?: number; backtestPeriod?: string; strategyAchieved?: boolean; achievementReason?: string;
+      sampleTrades?: { entryDate: string; exitDate: string; returnPct: number; profitable: boolean }[];
+      currentIndicators?: { price?: number; sma20?: number | null; rsi14?: number | null; high20d?: number; low20d?: number };
+    } | null; backtestLoading?: boolean; backtestAiAnalysis?: string | null; backtestAiLoading?: boolean;
+    lastFired?: { action: "BUY" | "SELL"; symbol: string; exchange: string; quantity: string; product: string };
   }>>({});
   const brokerLabel = (broker || "Broker").charAt(0).toUpperCase() + (broker || "broker").slice(1);
 
@@ -427,8 +543,112 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
   const setF = <K extends keyof StrategyForm>(k: K, v: StrategyForm[K]) =>
     setForm(f => ({ ...f, [k]: v }));
 
+  const applyPaperPrefill = useCallback((code: string, opts?: { forceName?: boolean; forceTimes?: boolean }) => {
+    if (!code) return;
+    const params = getStrategyParams(code);
+    const dir  = PAPER_DIRECTION[code] ?? "BOTH";
+    const intraday = PAPER_TO_INTRADAY[code] ?? false;
+    const s = STRATEGIES.find(x => x.value === code);
+    const shouldName = (opts?.forceName ?? false) || autoNameFromPaper;
+    const shouldTimes = (opts?.forceTimes ?? false) || autoTimesFromPaper;
+    const defaultStart = "09:15";
+    const defaultEnd = "15:15";
+    const defaultSq = "15:15";
+    setForm(f => ({
+      ...f,
+      trading_mode: dir,
+      is_intraday: intraday,
+      stop_loss_pct: String(params.stopLossPercentage),
+      take_profit_pct: String(params.targetProfitPercentage),
+      risk_per_trade_pct: "1",
+      start_time: shouldTimes ? defaultStart : f.start_time,
+      end_time: shouldTimes ? defaultEnd : f.end_time,
+      squareoff_time: shouldTimes ? defaultSq : f.squareoff_time,
+      name: shouldName ? (s ? `${s.label} Live` : "Strategy") : f.name,
+      description: f.description.trim() ? f.description : (s ? `Based on ${s.label} paper strategy` : ""),
+    }));
+  }, [autoNameFromPaper, autoTimesFromPaper]);
+
+  const runBacktestForFire = useCallback(async (strategyId: string, symbol: string, stratModel: string) => {
+    const sym = symbol.trim().toUpperCase();
+    if (!sym) { toast.error("Enter a symbol first"); return; }
+    const strat = stratModel || "trend_following";
+    setFireState(strategyId, { backtestLoading: true, backtestResult: null, backtestAiAnalysis: null });
+    try {
+      const res = await supabase.functions.invoke("backtest-strategy", {
+        body: { symbol: sym, strategy: strat, action: "BUY" },
+      });
+      const d = res.data as any;
+      if (res.error || d?.error) {
+        toast.error(d?.error ?? "Backtest failed");
+        setFireState(strategyId, { backtestLoading: false });
+        return;
+      }
+      setFireState(strategyId, {
+        backtestLoading: false,
+        backtestResult: {
+          totalTrades: d.totalTrades ?? 0,
+          wins: d.wins ?? 0,
+          losses: d.losses ?? 0,
+          winRate: d.winRate ?? 0,
+          totalReturn: d.totalReturn ?? 0,
+          maxDrawdown: d.maxDrawdown,
+          profitFactor: d.profitFactor,
+          backtestPeriod: d.backtestPeriod,
+          strategyAchieved: d.strategyAchieved,
+          achievementReason: d.achievementReason,
+          sampleTrades: d.sampleTrades,
+          currentIndicators: d.currentIndicators,
+        },
+      });
+      toast.success(`Backtest: ${d.totalTrades} trades, ${d.winRate}% win rate`);
+    } catch {
+      setFireState(strategyId, { backtestLoading: false });
+      toast.error("Backtest failed");
+    }
+  }, []);
+
+  const runBacktest = useCallback(async () => {
+    const sym = backtestSymbol.trim().toUpperCase() || "RELIANCE";
+    const strat = paperType || "trend_following";
+    setBacktestLoading(true);
+    setBacktestResult(null);
+    try {
+      const res = await supabase.functions.invoke("backtest-strategy", {
+        body: { symbol: sym, strategy: strat, action: "BUY" },
+      });
+      const d = res.data as any;
+      if (res.error || d?.error) {
+        toast.error(d?.error ?? "Backtest failed");
+        return;
+      }
+      setBacktestResult({
+        totalTrades: d.totalTrades ?? 0,
+        wins: d.wins ?? 0,
+        losses: d.losses ?? 0,
+        winRate: d.winRate ?? 0,
+        totalReturn: d.totalReturn ?? 0,
+        avgReturn: d.avgReturn ?? 0,
+        maxDrawdown: d.maxDrawdown ?? 0,
+        profitFactor: d.profitFactor ?? 0,
+        strategyAchieved: d.strategyAchieved ?? false,
+        symbol: d.symbol ?? sym,
+        strategy: d.strategy ?? strat,
+        sampleTrades: d.sampleTrades,
+      });
+      toast.success(`Backtest done: ${d.totalTrades} trades, ${d.winRate}% win rate`);
+    } finally {
+      setBacktestLoading(false);
+    }
+  }, [backtestSymbol, paperType]);
+
   const getFireState = (id: string) => firePanel[id] ?? {
     open: false, symbol: "", exchange: "NSE", quantity: "1", product: "MIS", firing: false,
+    backtestPaperType: "trend_following",
+    backtestResult: null as any,
+    backtestLoading: false,
+    backtestAiAnalysis: null as string | null,
+    backtestAiLoading: false,
   };
   const setFireState = (id: string, patch: Partial<typeof firePanel[string]>) =>
     setFirePanel(fp => ({ ...fp, [id]: { ...getFireState(id), ...patch } }));
@@ -490,6 +710,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
           trading_mode: form.trading_mode, is_intraday: form.is_intraday,
           start_time: form.start_time, end_time: form.end_time, squareoff_time: form.squareoff_time,
           risk_per_trade_pct: riskPct, stop_loss_pct: slPct, take_profit_pct: tpPct, symbols,
+          paper_strategy_type: useFromPaper ? (paperType || "trend_following") : null,
         },
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
@@ -501,14 +722,6 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
       setShowCreate(false);
       await loadStrategies();
     } finally { setCreating(false); }
-  };
-
-  const copyWebhook = (s: Strategy) => {
-    if (!s.webhook_url) { toast.error("No webhook URL yet"); return; }
-    navigator.clipboard.writeText(s.webhook_url);
-    setCopiedId(s.id);
-    toast.success("Webhook URL copied");
-    setTimeout(() => setCopiedId(null), 2000);
   };
 
   const fireSignal = async (strategy: Strategy, action: "BUY" | "SELL") => {
@@ -538,6 +751,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
       else {
         const oid = result?.orderid ?? result?.broker_order_id ?? "placed";
         toast.success(`${action} signal fired on "${strategy.name}" — ${sym} · #${String(oid).slice(-8)}`, { duration: 5000 });
+        setFireState(strategy.id, { lastFired: { action, symbol: sym, exchange: fs.exchange, quantity: fs.quantity, product: fs.product } });
         setFireState(strategy.id, { open: false });
       }
     } catch (e: any) { toast.error(e?.message ?? "Signal failed"); }
@@ -1198,7 +1412,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                 <div className="text-center py-8">
                   <Zap className="h-8 w-8 text-zinc-800 mx-auto mb-2" />
                   <p className="text-xs text-zinc-600">No strategies yet</p>
-                  <p className="text-[10px] text-zinc-700 mt-0.5">Create one to get a webhook URL for auto-execution</p>
+                  <p className="text-[10px] text-zinc-700 mt-0.5">Create strategies for auto-execution</p>
                   <button
                     onClick={() => setShowCreate(true)}
                     className="mt-3 flex items-center gap-1.5 mx-auto px-3 py-1.5 rounded-lg border border-purple-500/30 text-[11px] text-purple-400 hover:bg-purple-500/10 transition-colors"
@@ -1254,7 +1468,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                           }`}>{s.is_active ? "● ACTIVE" : "○ INACTIVE"}</span>
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">{s.trading_mode}</span>
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">{s.is_intraday ? "Intraday" : "Positional"}</span>
-                          <span className="text-[10px] text-zinc-700">{s.start_time}–{s.end_time}</span>
+                          <span className="text-[10px] text-zinc-700" title="Session window (IST). Fire from UI = executes immediately. Webhook = when conditions met within this window.">{s.start_time}–{s.end_time}</span>
                           {s.stop_loss_pct && <span className="text-[10px] text-red-500/70">SL {s.stop_loss_pct}%</span>}
                           {s.take_profit_pct && <span className="text-[10px] text-green-500/70">TP {s.take_profit_pct}%</span>}
                         </div>
@@ -1268,11 +1482,10 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                             <div className="grid grid-cols-2 gap-2">
                               <div className="space-y-1">
                                 <Label className="text-zinc-600 text-[10px]">Symbol *</Label>
-                                <Input
-                                  placeholder={s.symbols?.[0] ?? "RELIANCE"}
+                                <SymbolSearchInput
                                   value={fs.symbol}
-                                  onChange={e => setFireState(s.id, { symbol: e.target.value.toUpperCase() })}
-                                  className="bg-zinc-900 border-zinc-700 text-white font-mono text-xs h-8"
+                                  onChange={(v) => setFireState(s.id, { symbol: v })}
+                                  onSelect={(sym, ex) => setFireState(s.id, { symbol: sym, exchange: ex })}
                                 />
                               </div>
                               <div className="space-y-1">
@@ -1313,63 +1526,149 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                                 </Select>
                               </div>
                             </div>
+                            {/* Backtest option — available for every order and strategy including custom */}
+                            <div className="rounded border border-amber-900/50 bg-amber-950/20 p-2.5 space-y-2">
+                              <p className="text-[10px] font-medium text-amber-500 flex items-center gap-1">
+                                <BarChart3 className="h-3 w-3" /> Backtest (optional)
+                              </p>
+                              <div className="flex flex-wrap items-end gap-2">
+                                <div className="flex-1 min-w-[160px]">
+                                  <p className="text-[9px] text-zinc-600">Strategy model</p>
+                                  <p className="text-[10px] text-zinc-200 font-semibold">
+                                    {(() => {
+                                      const code = String(s.paper_strategy_type ?? "trend_following");
+                                      const label = STRATEGIES.find(x => x.value === code)?.label;
+                                      return label ?? code.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+                                    })()}
+                                  </p>
+                                </div>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-[10px] border-amber-700/50 text-amber-400 hover:bg-amber-900/30"
+                                  disabled={fs.backtestLoading || !fs.symbol.trim()}
+                                  onClick={() => runBacktestForFire(s.id, fs.symbol, String(s.paper_strategy_type ?? "trend_following"))}
+                                >
+                                  {fs.backtestLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <BarChart3 className="h-3 w-3" />}
+                                  <span className="ml-1">{fs.backtestLoading ? "Running…" : "Run Backtest"}</span>
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-[10px] border-purple-700/50 text-purple-300 hover:bg-purple-900/30"
+                                  disabled={fs.backtestAiLoading || !fs.symbol.trim()}
+                                  onClick={async () => {
+                                    const sym = fs.symbol.trim().toUpperCase();
+                                    if (!sym) return;
+                                    setFireState(s.id, { backtestAiLoading: true });
+                                    try {
+                                      const { data: { session } } = await supabase.auth.getSession();
+                                      const aiRes = await supabase.functions.invoke("analyze-trade", {
+                                        body: {
+                                          symbol: sym,
+                                          exchange: fs.exchange,
+                                          action: "BUY",
+                                          quantity: parseInt(fs.quantity) || 1,
+                                          product: fs.product,
+                                          backtest_summary: fs.backtestResult ?? null,
+                                        },
+                                        headers: { Authorization: `Bearer ${session?.access_token}` },
+                                      });
+                                      const analysis = (aiRes.data as any)?.analysis ?? "No AI analysis available.";
+                                      setFireState(s.id, { backtestAiAnalysis: analysis });
+                                      toast.info(`AI: ${analysis}`, { duration: 10000, id: `ai-bt-${s.id}` });
+                                    } catch {
+                                      toast.error("AI analysis failed");
+                                    } finally {
+                                      setFireState(s.id, { backtestAiLoading: false });
+                                    }
+                                  }}
+                                >
+                                  {fs.backtestAiLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Brain className="h-3 w-3" />}
+                                  <span className="ml-1">{fs.backtestAiLoading ? "Analysing…" : "AI Analysis"}</span>
+                                </Button>
+                              </div>
+                              {fs.backtestResult && (
+                                <div className="text-[10px] space-y-2">
+                                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                                    <span className="text-zinc-500">Trades</span><span className="text-zinc-500">Win</span><span className="text-zinc-500">Win rate</span><span className="text-zinc-500">Return</span>
+                                    <span className="font-mono">{fs.backtestResult.totalTrades}</span>
+                                    <span className="font-mono text-zinc-200">{fs.backtestResult.wins}/{fs.backtestResult.losses}</span>
+                                    <span className="font-mono text-emerald-400">{fs.backtestResult.winRate}%</span>
+                                    <span className={`font-mono ${fs.backtestResult.totalReturn >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fs.backtestResult.totalReturn >= 0 ? "+" : ""}{fs.backtestResult.totalReturn}%</span>
+                                  </div>
+                                  {typeof fs.backtestResult.profitFactor === "number" && (
+                                    <div className="grid grid-cols-3 gap-2 text-center">
+                                      <span className="text-zinc-500">PF</span><span className="text-zinc-500">Max DD</span><span className="text-zinc-500">Now</span>
+                                      <span className="font-mono">{fs.backtestResult.profitFactor}</span>
+                                      <span className="font-mono">{fs.backtestResult.maxDrawdown ?? "—"}%</span>
+                                      <span className={`font-mono ${fs.backtestResult.strategyAchieved ? "text-emerald-400" : "text-zinc-400"}`}>{fs.backtestResult.strategyAchieved ? "MET" : "NOT MET"}</span>
+                                    </div>
+                                  )}
+                                  {fs.backtestResult.achievementReason && (
+                                    <p className="text-[10px] text-zinc-500">{fs.backtestResult.achievementReason}</p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                             <div className="grid grid-cols-2 gap-2">
                               <button
                                 onClick={() => fireSignal(s, "BUY")} disabled={fs.firing}
                                 className="py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50"
                               >
-                                {fs.firing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><TrendingUp className="h-3.5 w-3.5" /> BUY Signal</>}
+                                {fs.firing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><TrendingUp className="h-3.5 w-3.5" /> BUY</>}
                               </button>
                               <button
                                 onClick={() => fireSignal(s, "SELL")} disabled={fs.firing}
                                 className="py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50"
                               >
-                                {fs.firing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><TrendingDown className="h-3.5 w-3.5" /> SELL Signal</>}
+                                {fs.firing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><TrendingDown className="h-3.5 w-3.5" /> SELL</>}
                               </button>
                             </div>
-                            <p className="text-[10px] text-zinc-700 text-center">MARKET order · executes instantly on {brokerLabel}</p>
+                            {fs.lastFired && (
+                              <button
+                                onClick={() => {
+                                  setFireState(s.id, {
+                                    symbol: fs.lastFired!.symbol,
+                                    exchange: fs.lastFired!.exchange,
+                                    quantity: fs.lastFired!.quantity,
+                                    product: fs.lastFired!.product,
+                                  });
+                                  fireSignal(s, fs.lastFired!.action);
+                                }}
+                                disabled={fs.firing}
+                                className="w-full py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-semibold flex items-center justify-center gap-1.5 disabled:opacity-50"
+                              >
+                                <RefreshCw className="h-3.5 w-3.5" /> Re-execute last ({fs.lastFired.action})
+                              </button>
+                            )}
+                            <p className="text-[10px] text-zinc-700 text-center">
+                              Option to backtest every order and strategy (including custom). Fire executes immediately.
+                            </p>
                           </div>
                         )}
 
-                        {/* Webhook URL */}
-                        {s.webhook_url && (
-                          <div className="flex items-center gap-1.5 mx-3 mb-3 bg-black/30 border border-zinc-800 rounded p-1.5">
-                            <Webhook className="h-3 w-3 text-zinc-600 shrink-0" />
-                            <code className="text-[9px] text-zinc-600 truncate flex-1">{s.webhook_url}</code>
-                            <button onClick={() => copyWebhook(s)} className="shrink-0 text-zinc-700 hover:text-zinc-400 transition-colors">
-                              {copiedId === s.id ? <CheckCircle2 className="h-3 w-3 text-teal-400" /> : <Copy className="h-3 w-3" />}
-                            </button>
-                          </div>
-                        )}
                       </div>
                     );
                   })}
                 </div>
               )}
 
-              {/* Webhook guide toggle */}
-              <button
-                onClick={() => setShowGuide(g => !g)}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-lg border border-zinc-800 bg-zinc-900/50 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
-              >
-                <span className="flex items-center gap-1.5"><Webhook className="h-3 w-3 text-zinc-600" /> Connect external signal source (optional)</span>
-                <ChevronRight className={`h-3 w-3 transition-transform ${showGuide ? "rotate-90" : ""}`} />
-              </button>
-              {showGuide && (
-                <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-lg p-3 space-y-2">
-                  <p className="text-[10px] text-zinc-400">Each strategy has a webhook URL. Any system that can make HTTP POST requests can trigger orders automatically — your own script, Pine Script alert, cron job, anything.</p>
-                  <div className="p-2 bg-zinc-950 rounded text-[9px] text-zinc-500 font-mono break-all">
-                    {`POST {webhook_url}`}<br/>{`{"action":"BUY","symbol":"RELIANCE","exchange":"NSE","quantity":10,"product":"MIS","pricetype":"MARKET"}`}
-                  </div>
-                </div>
-              )}
             </TabsContent>
           </Tabs>
         </CardContent>
       </Card>
 
       {/* ── Create Strategy Dialog ──────────────────────────────────────────── */}
-      <Dialog open={showCreate} onOpenChange={(o) => { if (!o) { setShowCreate(false); setForm(EMPTY_STRATEGY); } }}>
+      <Dialog open={showCreate} onOpenChange={(o) => {
+        if (!o) {
+          setShowCreate(false);
+          setForm(EMPTY_STRATEGY);
+          setUseFromPaper(false);
+          setPaperType("");
+          setBacktestResult(null);
+        }
+      }}>
         <DialogContent className="bg-zinc-900 border-zinc-700 text-white max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-white">
@@ -1377,7 +1676,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
               New Strategy
             </DialogTitle>
             <DialogDescription className="text-zinc-400 text-sm">
-              Define your strategy parameters and get a webhook URL for auto-execution.
+              Define your strategy parameters. Webhook is stored in backend for real-time execution.
             </DialogDescription>
           </DialogHeader>
 
@@ -1389,10 +1688,22 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                 <Input
                   placeholder="e.g. NIFTY Scalper, BTST Momentum"
                   value={form.name}
-                  onChange={e => setF("name", e.target.value)}
+                  onChange={e => { setAutoNameFromPaper(false); setF("name", e.target.value); }}
                   className="bg-zinc-950 border-zinc-700 text-white text-xs h-8"
                   autoFocus
                 />
+                {useFromPaper && (
+                  <div className="flex items-center justify-between mt-1">
+                    <button
+                      onClick={() => { setAutoNameFromPaper(true); applyPaperPrefill(paperType || "trend_following", { forceName: true }); }}
+                      className="text-[10px] text-purple-400 hover:text-purple-300"
+                      type="button"
+                    >
+                      Auto-name from paper strategy
+                    </button>
+                    <span className="text-[10px] text-zinc-600">{autoNameFromPaper ? "ON" : "OFF"}</span>
+                  </div>
+                )}
               </div>
               <div className="space-y-1">
                 <Label className="text-zinc-500 text-[11px]">Description (optional)</Label>
@@ -1403,6 +1714,56 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                   className="bg-zinc-950 border-zinc-700 text-white text-xs h-8"
                 />
               </div>
+            </div>
+
+            {/* Start from paper strategy */}
+            <div className="space-y-2 p-3 rounded-lg border border-zinc-800 bg-zinc-950/50">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const next = !useFromPaper;
+                    setUseFromPaper(next);
+                    if (next) {
+                      const pt = paperType || "trend_following";
+                      if (!paperType) setPaperType(pt);
+                      setAutoNameFromPaper(true);
+                      setAutoTimesFromPaper(true);
+                      applyPaperPrefill(pt, { forceName: true, forceTimes: true });
+                    } else {
+                      setBacktestResult(null);
+                    }
+                  }}
+                  className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-medium transition-colors ${useFromPaper ? "bg-purple-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"}`}
+                >
+                  <BarChart3 className="h-3 w-3" />
+                  Start from paper strategy
+                </button>
+                {useFromPaper && (
+                  <button
+                    type="button"
+                    onClick={() => applyPaperPrefill(paperType || "trend_following", { forceName: autoNameFromPaper, forceTimes: true })}
+                    className="ml-auto text-[10px] text-zinc-400 hover:text-zinc-200"
+                    title="Re-apply direction/session/times"
+                  >
+                    Re-apply defaults
+                  </button>
+                )}
+              </div>
+              {useFromPaper && (
+                <div className="space-y-1 pt-2 border-t border-zinc-800">
+                  <Label className="text-zinc-500 text-[11px]">Paper strategy type</Label>
+                  <Select value={paperType} onValueChange={(v) => { setPaperType(v); applyPaperPrefill(v, { forceTimes: true }); setBacktestResult(null); }}>
+                    <SelectTrigger className="bg-zinc-950 border-zinc-700 text-zinc-200 h-8 text-xs">
+                      <SelectValue placeholder="Pick strategy" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-zinc-900 border-zinc-700 max-h-64">
+                      {STRATEGIES.map((s) => (
+                        <SelectItem key={s.value} value={s.value} className="text-xs text-zinc-200">{s.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
 
             {/* Direction + Session */}
@@ -1446,11 +1807,23 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                 ].map(({ label, field, val }) => (
                   <div key={field} className="space-y-1">
                     <Label className="text-zinc-600 text-[10px]">{label}</Label>
-                    <Input type="time" value={val} onChange={e => setF(field, e.target.value)}
+                    <Input type="time" value={val} onChange={e => { setAutoTimesFromPaper(false); setF(field, e.target.value); }}
                       className="bg-zinc-950 border-zinc-700 text-white text-xs h-8 px-2" />
                   </div>
                 ))}
               </div>
+              {useFromPaper && (
+                <div className="flex items-center justify-between mt-1">
+                  <button
+                    type="button"
+                    onClick={() => { setAutoTimesFromPaper(true); applyPaperPrefill(paperType || "trend_following", { forceTimes: true }); }}
+                    className="text-[10px] text-purple-400 hover:text-purple-300"
+                  >
+                    Auto-times from paper strategy
+                  </button>
+                  <span className="text-[10px] text-zinc-600">{autoTimesFromPaper ? "ON" : "OFF"}</span>
+                </div>
+              )}
             </div>
 
             {/* Risk Management */}
@@ -1500,7 +1873,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
             >
               {creating
                 ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Creating…</>
-                : <><Zap className="h-3.5 w-3.5 mr-1.5" />Create Strategy &amp; Get Webhook</>}
+                : <><Zap className="h-3.5 w-3.5 mr-1.5" />Create Strategy</>}
             </Button>
           </DialogFooter>
         </DialogContent>

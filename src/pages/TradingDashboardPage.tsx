@@ -331,7 +331,7 @@ function StrategiesPanel({ broker }: { broker: string }) {
       const result = res.data as any;
       if (res.error || result?.error) {
         toast.error(result?.error ?? "Signal failed");
-      } else {
+    } else {
         const oid = result?.orderid ?? result?.broker_order_id ?? "placed";
         toast.success(
           `${action} signal fired on "${strategy.name}" — ${sym} · #${String(oid).slice(-8)}`,
@@ -476,8 +476,8 @@ function StrategiesPanel({ broker }: { broker: string }) {
         </div>
         <p className="text-[10px] text-zinc-600 mt-1">
           Execute trades directly from ChartMate or connect any signal source
-        </p>
-      </CardHeader>
+          </p>
+        </CardHeader>
 
       <CardContent className="px-4 pb-4 space-y-3">
         {/* Create form — full details */}
@@ -500,14 +500,14 @@ function StrategiesPanel({ broker }: { broker: string }) {
             <div className="space-y-2.5">
               <div className="space-y-1">
                 <Label className="text-zinc-500 text-[11px]">Strategy Name *</Label>
-                <Input
+                        <Input
                   placeholder="e.g. NIFTY Scalper, BTST Momentum"
                   value={form.name}
                   onChange={e => setF("name", e.target.value)}
                   className="bg-zinc-950 border-zinc-700 text-white text-xs h-8"
                   autoFocus
                 />
-              </div>
+                    </div>
               <div className="space-y-1">
                 <Label className="text-zinc-500 text-[11px]">Description (optional)</Label>
                 <Input
@@ -526,14 +526,14 @@ function StrategiesPanel({ broker }: { broker: string }) {
                 <Select value={form.trading_mode} onValueChange={v => setF("trading_mode", v)}>
                   <SelectTrigger className="bg-zinc-950 border-zinc-700 text-zinc-200 h-8 text-xs">
                     <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-zinc-900 border-zinc-700">
+                        </SelectTrigger>
+                        <SelectContent className="bg-zinc-900 border-zinc-700">
                     <SelectItem value="LONG"  className="text-xs text-zinc-200">LONG only</SelectItem>
                     <SelectItem value="SHORT" className="text-xs text-zinc-200">SHORT only</SelectItem>
                     <SelectItem value="BOTH"  className="text-xs text-zinc-200">LONG &amp; SHORT</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+                        </SelectContent>
+                      </Select>
+                    </div>
               <div className="space-y-1">
                 <Label className="text-zinc-500 text-[11px]">Session Type</Label>
                 <div className="grid grid-cols-2 gap-1 p-0.5 bg-zinc-950 border border-zinc-700 rounded-md h-8">
@@ -553,9 +553,9 @@ function StrategiesPanel({ broker }: { broker: string }) {
                   >
                     Positional
                   </button>
-          </div>
-        </div>
-            </div>
+                    </div>
+                  </div>
+                </div>
 
             {/* Trading Hours */}
             <div>
@@ -569,7 +569,7 @@ function StrategiesPanel({ broker }: { broker: string }) {
                     onChange={e => setF("start_time", e.target.value)}
                     className="bg-zinc-950 border-zinc-700 text-white text-xs h-8 px-2"
                   />
-          </div>
+                    </div>
                 <div className="space-y-1">
                   <Label className="text-zinc-600 text-[10px]">End</Label>
                   <Input
@@ -588,8 +588,8 @@ function StrategiesPanel({ broker }: { broker: string }) {
                     className="bg-zinc-950 border-zinc-700 text-white text-xs h-8 px-2"
                   />
                 </div>
-              </div>
-            </div>
+                  </div>
+                </div>
 
             {/* Risk Management */}
             <div>
@@ -598,31 +598,31 @@ function StrategiesPanel({ broker }: { broker: string }) {
                 <div className="space-y-1">
                   <Label className="text-zinc-600 text-[10px]">Risk / Trade %</Label>
                   <div className="relative">
-                    <Input
+                        <Input
                       type="number" min="0.1" step="0.1" max="100"
                       value={form.risk_per_trade_pct}
                       onChange={e => setF("risk_per_trade_pct", e.target.value)}
                       className="bg-zinc-950 border-zinc-700 text-white text-xs h-8 pr-5"
                     />
                     <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500">%</span>
-                  </div>
-                </div>
+                      </div>
+                    </div>
                 <div className="space-y-1">
                   <Label className="text-zinc-600 text-[10px]">Stop-Loss %</Label>
                   <div className="relative">
-                    <Input
+                      <Input
                       type="number" min="0.1" step="0.1" max="100"
                       value={form.stop_loss_pct}
                       onChange={e => setF("stop_loss_pct", e.target.value)}
                       className="bg-zinc-950 border-zinc-700 text-red-400 text-xs h-8 pr-5"
                     />
                     <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500">%</span>
-                </div>
+                    </div>
               </div>
                 <div className="space-y-1">
                   <Label className="text-zinc-600 text-[10px]">Take-Profit %</Label>
                   <div className="relative">
-                    <Input
+                      <Input
                       type="number" min="0.1" step="0.1" max="100"
                       value={form.take_profit_pct}
                       onChange={e => setF("take_profit_pct", e.target.value)}
@@ -635,19 +635,19 @@ function StrategiesPanel({ broker }: { broker: string }) {
               <p className="text-[10px] text-zinc-700 mt-1.5">
                 Risk/trade: % of capital per signal. SL &amp; TP: % move from entry.
               </p>
-            </div>
+                    </div>
 
             {/* Symbols */}
             <div className="space-y-1">
               <Label className="text-zinc-500 text-[11px]">Symbols (optional, comma-separated)</Label>
-              <Input
+                      <Input
                 placeholder="RELIANCE, TCS, NIFTY25MARFUT"
                 value={form.symbols_raw}
                 onChange={e => setF("symbols_raw", e.target.value.toUpperCase())}
                 className="bg-zinc-950 border-zinc-700 text-white font-mono text-xs h-8"
               />
               <p className="text-[10px] text-zinc-700">Leave blank to allow any symbol via webhook payload</p>
-                </div>
+                    </div>
 
             {/* Submit */}
             <button
@@ -667,7 +667,7 @@ function StrategiesPanel({ broker }: { broker: string }) {
         {loading ? (
           <div className="flex justify-center py-6">
             <Loader2 className="h-5 w-5 animate-spin text-zinc-600" />
-                  </div>
+                    </div>
         ) : strategies.length === 0 ? (
           <div className="text-center py-5">
             <Zap className="h-7 w-7 text-zinc-800 mx-auto mb-2" />
@@ -675,7 +675,7 @@ function StrategiesPanel({ broker }: { broker: string }) {
             <p className="text-[10px] text-zinc-700 mt-0.5">Create one to get a webhook URL for auto-execution</p>
           </div>
         ) : (
-          <div className="space-y-2">
+                    <div className="space-y-2">
             {strategies.map(s => {
               const fs = getFireState(s.id);
               return (
@@ -751,7 +751,7 @@ function StrategiesPanel({ broker }: { broker: string }) {
                     {s.take_profit_pct && (
                       <span className="text-[10px] text-green-500/70">TP {s.take_profit_pct}%</span>
                     )}
-              </div>
+                </div>
 
                   {/* ── Fire Signal panel ── */}
                   {fs.open && (
@@ -777,14 +777,14 @@ function StrategiesPanel({ broker }: { broker: string }) {
                           <Select value={fs.exchange} onValueChange={v => setFireState(s.id, { exchange: v })}>
                             <SelectTrigger className="bg-zinc-900 border-zinc-700 text-zinc-200 h-8 text-xs">
                               <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent className="bg-zinc-900 border-zinc-700">
+                        </SelectTrigger>
+                        <SelectContent className="bg-zinc-900 border-zinc-700">
                               {EXCHANGES.map(e => (
                                 <SelectItem key={e.value} value={e.value} className="text-xs text-zinc-200">{e.value}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-          </div>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                       </div>
 
                       {/* Qty + Product */}
@@ -803,15 +803,15 @@ function StrategiesPanel({ broker }: { broker: string }) {
                           <Select value={fs.product} onValueChange={v => setFireState(s.id, { product: v })}>
                             <SelectTrigger className="bg-zinc-900 border-zinc-700 text-zinc-200 h-8 text-xs">
                               <SelectValue />
-                    </SelectTrigger>
-                            <SelectContent className="bg-zinc-900 border-zinc-700">
+                        </SelectTrigger>
+                        <SelectContent className="bg-zinc-900 border-zinc-700">
                               {PRODUCT_TYPES.map(p => (
                                 <SelectItem key={p.value} value={p.value} className="text-xs text-zinc-200">{p.label}</SelectItem>
-                              ))}
-                    </SelectContent>
-                  </Select>
-                        </div>
-                      </div>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                  </div>
+                </div>
 
                       {/* BUY / SELL fire buttons */}
                       <div className="grid grid-cols-2 gap-2">
@@ -840,7 +840,7 @@ function StrategiesPanel({ broker }: { broker: string }) {
                       <p className="text-[10px] text-zinc-700 text-center">
                         MARKET order · executes instantly on {brokerLabel}
                       </p>
-              </div>
+                    </div>
                   )}
 
                   {/* Webhook URL (for external integrations) */}
@@ -859,11 +859,11 @@ function StrategiesPanel({ broker }: { broker: string }) {
                         }
                       </button>
                     </div>
-                  )}
-                </div>
+                        )}
+                      </div>
               );
             })}
-          </div>
+                    </div>
         )}
 
         {/* External integrations — collapsible, optional */}
@@ -906,8 +906,8 @@ function StrategiesPanel({ broker }: { broker: string }) {
             </p>
           </div>
               )}
-            </CardContent>
-          </Card>
+        </CardContent>
+      </Card>
   );
 }
 
@@ -926,31 +926,31 @@ function LiveDashboard({ broker }: { broker: string }) {
             <a href="/algo-setup" className="text-zinc-500 hover:text-zinc-300 transition-colors">
               <ArrowLeft className="h-4 w-4" />
             </a>
-            <div>
+          <div>
               <h1 className="text-base font-bold text-white tracking-tight">Live Trading Dashboard</h1>
               <p className="text-[11px] text-zinc-500">Powered by {brokerLabel} via OpenAlgo</p>
-            </div>
+          </div>
           </div>
           <div className="flex items-center gap-2">
             {/* Market status chip */}
             <span className={`hidden sm:flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border ${market.bg} ${market.color}`}>
               <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${market.dot} ${market.session === "open" ? "animate-pulse" : ""}`} />
               {market.label}
-            </span>
+                  </span>
             {/* Broker chip */}
             <span className="flex items-center gap-1.5 text-xs text-teal-400 bg-teal-500/10 border border-teal-500/20 px-3 py-1.5 rounded-full">
               <span className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse" />
               {brokerLabel} Connected
-            </span>
-          </div>
-        </div>
+                  </span>
+                </div>
+              </div>
       </header>
 
       <main className="container mx-auto px-4 py-5">
         {/* Broker Sync bar — full width */}
         <div className="mb-5">
           <BrokerSyncSection broker={broker} />
-        </div>
+                </div>
 
         {/* Two-column grid */}
         <div className="grid grid-cols-1 lg:grid-cols-1 gap-5 items-start">
@@ -959,7 +959,7 @@ function LiveDashboard({ broker }: { broker: string }) {
           <div className="min-w-0">
             <BrokerPortfolioCard key={portfolioKey} broker={broker} />
           </div>
-        </div>
+              </div>
       </main>
     </div>
   );

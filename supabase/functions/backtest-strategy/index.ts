@@ -426,6 +426,7 @@ serve(async (req) => {
     const rawSymbol: string    = body?.symbol   ?? "AAPL";
     const strategy: string     = body?.strategy  ?? "trend_following";
     const action: "BUY"|"SELL" = (body?.action   ?? "BUY") === "SELL" ? "SELL" : "BUY";
+    const checkOnly: boolean   = body?.mode === "check" || body?.check_only === true;
 
     const isIndian = isIndianSymbol(rawSymbol);
     const isCrypto = isCryptoSymbol(rawSymbol);
@@ -475,6 +476,23 @@ serve(async (req) => {
     const { achieved, reason } = checkStrategyAchieved(
       strategy, action, latestClose, latestSMA20, latestRSI, high20d, low20d,
     );
+
+    if (checkOnly) {
+      return new Response(JSON.stringify({
+        symbol: rawSymbol,
+        strategy,
+        action,
+        strategyAchieved: achieved,
+        achievementReason: reason,
+        currentIndicators: {
+          price:  parseFloat(latestClose.toFixed(2)),
+          sma20:  latestSMA20 != null ? parseFloat(latestSMA20.toFixed(2)) : null,
+          rsi14:  latestRSI   != null ? parseFloat(latestRSI.toFixed(1))   : null,
+          high20d: parseFloat(high20d.toFixed(2)),
+          low20d:  parseFloat(low20d.toFixed(2)),
+        },
+      }), { status: 200, headers: JSON_HEADERS });
+    }
 
     // 4. Run backtest simulation
     const trades  = simulateTrades(strategy, action, closes, highs, lows, sma20, rsi14);
