@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, Activity, BarChart3, PlusCircle, Eye, Sparkles, ShieldCheck, KeyRound, BrainCircuit, Lock } from "lucide-react";
+import { TrendingUp, Activity, BarChart3, PlusCircle, Eye, Sparkles, ShieldCheck, KeyRound, BrainCircuit, Lock, Newspaper } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useTradingIntegration } from "@/hooks/useTradingIntegration";
@@ -195,6 +195,23 @@ export default function HomePage() {
             <CardContent>
               <p className="text-sm text-muted-foreground">
                 Analyze your trading performance, win rates, and P&L stats.
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="minimal-panel hover:bg-white/5 transition-colors cursor-pointer group"
+            onClick={() => navigate('/news')}>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-3 text-lg">
+                <div className="p-2 rounded-lg bg-muted group-hover:bg-blue-500/10 transition-colors">
+                  <Newspaper className="h-5 w-5 text-blue-500" />
+                </div>
+                Latest News
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                Get real-time market updates, IPO news, and global signals.
               </p>
             </CardContent>
           </Card>
