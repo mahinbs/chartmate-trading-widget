@@ -47,6 +47,8 @@ import TradingDashboardPage from "./pages/TradingDashboardPage";
 import WlCheckoutPage from "./pages/WlCheckoutPage";
 import AlgoOnboardingPage from "./pages/AlgoOnboardingPage";
 import StrategiesPage from "./pages/StrategiesPage";
+import NewsPage from "./pages/NewsPage";
+import NewsDetailPage from "./pages/NewsDetailPage";
 
 // OpenAlgo ping temporarily disabled in mock-order mode to avoid CORS noise
 
@@ -142,6 +144,22 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <ActiveTradesPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/news"
+                element={
+                  <ProtectedRoute>
+                    <NewsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/news/:articleId"
+                element={
+                  <ProtectedRoute>
+                    <NewsDetailPage />
                   </ProtectedRoute>
                 }
               />
