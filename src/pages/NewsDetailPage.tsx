@@ -244,7 +244,7 @@ export default function NewsDetailPage() {
               )}
 
               {/* AI Extracted Content or Error */}
-              <div className="prose prose-invert prose-lg max-w-none prose-slate prose-headings:text-white prose-p:text-slate-300 prose-p:leading-relaxed prose-li:text-slate-300">
+              <div className="prose prose-invert prose-xl max-w-none prose-slate prose-headings:text-white prose-p:text-slate-300 prose-p:leading-relaxed prose-li:text-slate-300">
                 {contentLoading ? (
                   <div className="space-y-6">
                     <div className="h-4 w-full bg-white/5 rounded-full animate-pulse" />
@@ -307,26 +307,6 @@ export default function NewsDetailPage() {
                   </div>
                 </div>
               )}
-
-              {/* Engagement Stats */}
-              <div className="mt-16 flex items-center gap-8 justify-center py-10 border-y border-white/5">
-                <Button variant="ghost" className="gap-2 group transition-all hover:scale-105">
-                  <ThumbsUp className="h-5 w-5 text-slate-500 group-hover:text-primary transition-colors" />
-                  <span className="font-bold">Useful</span>
-                </Button>
-                <Button variant="ghost" className="gap-2 group transition-all hover:scale-105">
-                  <MessageSquare className="h-5 w-5 text-slate-500 group-hover:text-primary transition-colors" />
-                  <span className="font-bold">Discuss</span>
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="gap-2 group transition-all hover:scale-105"
-                  onClick={() => window.open(metadata.url, '_blank')}
-                >
-                  <ExternalLink className="h-5 w-5 text-slate-500 group-hover:text-primary transition-colors" />
-                  <span className="font-bold">Original Source</span>
-                </Button>
-              </div>
             </article>
           </div>
 
@@ -370,16 +350,6 @@ export default function NewsDetailPage() {
                 </div>
               </div>
 
-              {/* Market Insight Widget Placeholder */}
-              <Card className="mt-10 bg-gradient-to-br from-primary/10 to-transparent border-primary/20 rounded-3xl overflow-hidden">
-                <CardContent className="p-8">
-                  <h4 className="text-white font-black text-xl mb-4 leading-tight">Trading Signal Engine</h4>
-                  <p className="text-sm text-slate-400 mb-6 leading-relaxed">Get AI-powered entry and exit points based on this news pattern.</p>
-                  <Button className="w-full bg-primary hover:bg-primary/90 text-white font-bold rounded-xl shadow-lg shadow-primary/20">
-                    Run Analysis
-                  </Button>
-                </CardContent>
-              </Card>
             </div>
           </aside>
         </div>
@@ -396,9 +366,10 @@ export default function NewsDetailPage() {
 
       <style>{`
         .article-body-content p {
-          margin-bottom: 2rem;
+          margin-bottom: 2.5rem;
           line-height: 1.8;
           color: #cbd5e1;
+          font-size: 1.25rem;
         }
         .article-body-content h2, .article-body-content h3 {
           margin-top: 3rem;
