@@ -385,6 +385,18 @@ const getTime = (row: any): string =>
     row?.exchange_timestamp ?? row?.created_at ?? ""
   );
 
+const getOrderId = (row: any): string => {
+  const v =
+    row?.orderid ?? row?.order_id ??
+    row?.broker_order_id ?? row?.brokerOrderId ??
+    row?.exchange_order_id ?? row?.exchangeOrderId ??
+    row?.orderno ?? row?.order_no ?? row?.order_number ??
+    row?.parentorderid ?? row?.parent_order_id ??
+    row?.oms_order_id ?? row?.app_order_id ??
+    "";
+  return String(v ?? "").trim();
+};
+
 const getExchange = (row: any): string =>
   String(row?.exchange ?? row?.exch ?? row?.exchange_code ?? "NSE").toUpperCase().trim();
 
@@ -428,6 +440,8 @@ const fmtTime = (t: string): string => {
 
 export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }) {
   const [data, setData]             = useState<PortfolioData | null>(null);
+  const [strategyByOrderId, setStrategyByOrderId] = useState<Record<string, string>>({});
+  const [autoExitByEntryOrderId, setAutoExitByEntryOrderId] = useState<Record<string, { status: string; exit_orderid?: string | null }>>({});
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState<string | null>(null);
   const [actioning, setActioning]   = useState<string | null>(null);
@@ -728,6 +742,19 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
     const fs  = getFireState(strategy.id);
     const sym = fs.symbol.trim().toUpperCase() || (strategy.symbols?.[0] ?? "");
     if (!sym) { toast.error("Enter a symbol to fire this signal"); return; }
+
+    // If the strategy was created with an explicit symbol list, enforce it
+    try {
+      const rawList = (strategy as any)?.symbols;
+      const list = Array.isArray(rawList)
+        ? rawList.map((x: any) => String(x?.symbol ?? x ?? "").toUpperCase().trim()).filter(Boolean)
+        : [];
+      if (list.length && !list.includes(sym)) {
+        toast.error(`This strategy is restricted to: ${list.slice(0, 6).join(", ")}${list.length > 6 ? "…" : ""}`);
+        return;
+      }
+    } catch { /* non-blocking */ }
+
     setFireState(strategy.id, { firing: true });
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -747,7 +774,15 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
       const result = res.data as any;
-      if (res.error || result?.error) { toast.error(result?.error ?? "Signal failed"); }
+      if (res.error || result?.error) {
+        const msg =
+          result?.error ??
+          result?.message ??
+          res.error?.message ??
+          "Signal failed";
+        console.error("fireSignal failed:", { error: res.error, data: result });
+        toast.error(msg);
+      }
       else {
         const oid = result?.orderid ?? result?.broker_order_id ?? "placed";
         toast.success(`${action} signal fired on "${strategy.name}" — ${sym} · #${String(oid).slice(-8)}`, { duration: 5000 });
@@ -770,7 +805,49 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
       if (res.error || (res.data as any)?.error) {
         setError((res.data as any)?.error ?? res.error?.message ?? "Failed to load portfolio");
       } else {
-        setData(res.data as PortfolioData);
+        const portfolio = res.data as PortfolioData;
+        setData(portfolio);
+
+        // Load recent strategy mapping from audit logs (orderid -> strategy name)
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          const uid = user?.id;
+          if (uid) {
+            const { data: logs } = await (supabase as any)
+              .from("order_audit_logs")
+              .select("created_at, request_payload, response_payload, status")
+              .eq("user_id", uid)
+              .order("created_at", { ascending: false })
+              .limit(200);
+
+            const map: Record<string, string> = {};
+            for (const l of (logs ?? [])) {
+              const rp = (l as any)?.request_payload ?? {};
+              const resp = (l as any)?.response_payload ?? {};
+              const oid = String(resp?.orderid ?? resp?.broker_order_id ?? resp?.data?.orderid ?? "").trim();
+              const strat = String(rp?.strategy ?? rp?.strategy_name ?? "").trim();
+              if (oid && strat && !map[oid]) map[oid] = strat;
+            }
+            setStrategyByOrderId(map);
+
+            // Load recent auto-exit tracked trades (entry orderid -> status)
+            try {
+              const ae = await supabase.functions.invoke("auto-exit-trades", {
+                headers: { Authorization: `Bearer ${session?.access_token}` },
+              });
+              const rows = (ae.data as any)?.trades ?? [];
+              const aeMap: Record<string, { status: string; exit_orderid?: string | null }> = {};
+              for (const r of rows) {
+                const entry = String(r?.entry_orderid ?? "").trim();
+                if (!entry) continue;
+                if (!aeMap[entry]) aeMap[entry] = { status: String(r?.status ?? ""), exit_orderid: r?.exit_orderid ?? null };
+              }
+              setAutoExitByEntryOrderId(aeMap);
+            } catch {
+              // non-blocking
+            }
+          }
+        } catch { /* non-blocking */ }
       }
     } catch (e: any) {
       setError(e.message ?? "Unknown error");
@@ -908,7 +985,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
   const m2m         = funds.m2munrealized ?? funds.m2m_unrealised ?? funds.mtm ?? 0;
 
   const openPositions  = data.positions.filter(p => getQty(p) !== 0);
-  const positionsPnl   = data.positions.reduce((s, p) => s + Number(p.pnl ?? 0), 0);
+  const positionsPnl   = data.positions.reduce((s, p) => s + Number((p as any).pnl ?? 0), 0);
   const holdingsPnl    = data.holdings.reduce((s, h) => s + Number(h.pnl ?? 0), 0);
   const totalPnl       = positionsPnl + holdingsPnl;
   const openOrders     = data.orders.filter(o => CANCELLABLE.includes(getOrderStatus(o).toLowerCase()));
@@ -916,7 +993,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
 
   // Pie chart data for positions P&L
   const pieData = openPositions.map(p => ({
-    name: p.tradingsymbol ?? "",
+    name: getSymbol(p) || (p.tradingsymbol ?? ""),
     value: Math.abs(Number(p.pnl ?? 0)),
     color: Number(p.pnl ?? 0) >= 0 ? "#10b981" : "#ef4444",
   })).filter(d => d.value > 0);
@@ -1020,7 +1097,18 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
           {/* ── P&L Chart (positions) ──────────────────────────────────── */}
           {pieData.length > 0 && (
             <div className="bg-zinc-800/40 rounded-xl border border-zinc-700/50 p-3">
-              <p className="text-xs text-zinc-400 font-semibold mb-2">Open Positions P&L Breakdown</p>
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <p className="text-xs text-zinc-400 font-semibold">Open Positions P&L Breakdown</p>
+                <p className="text-[10px] text-zinc-500">
+                  Open positions P/L:{" "}
+                  <span className={openPositions.reduce((s, p) => s + Number((p as any).pnl ?? 0), 0) >= 0 ? "text-emerald-400" : "text-red-400"}>
+                    {(() => {
+                      const v = openPositions.reduce((s, p) => s + Number((p as any).pnl ?? 0), 0);
+                      return Math.abs(v) < 0.005 ? "₹0.00" : `${v > 0 ? "+" : "−"}₹${Math.abs(v).toFixed(2)}`;
+                    })()}
+                  </span>
+                </p>
+              </div>
               <div className="flex items-center gap-4">
                 <ResponsiveContainer width={120} height={100}>
                   <PieChart>
@@ -1036,7 +1124,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                         <span className="w-2 h-2 rounded-full" style={{ background: d.color }} />
                         <span className="text-zinc-300 font-mono">{d.name}</span>
                       </span>
-                      <span style={{ color: d.color }}>₹{d.value.toFixed(0)}</span>
+                      <span style={{ color: d.color }}>₹{d.value.toFixed(2)}</span>
                     </div>
                   ))}
                 </div>
@@ -1233,7 +1321,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                   <table className="w-full text-xs">
                     <thead className="sticky top-0 bg-zinc-900 z-10">
                       <tr className="border-b border-zinc-800 bg-zinc-800/80">
-                        {["Symbol", "Type", "Qty/Filled", "Price", "Product", "Status", "Time", ""].map(h => (
+                        {["Symbol", "Type", "Qty/Filled", "Price", "Product", "Status", "Strategy", "Time", ""].map(h => (
                           <th key={h} className="text-left text-zinc-500 font-medium px-3 py-2">{h}</th>
                         ))}
                       </tr>
@@ -1248,6 +1336,8 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                         const filledQty  = Number(o.filledquantity ?? o.filled_quantity ?? 0);
                         const avgPrice   = Number(o.averageprice ?? o.average_price ?? 0);
                         const limitPrice = Number(o.price ?? 0);
+                        const oid        = getOrderId(o);
+                        const strat      = oid ? strategyByOrderId[oid] : "";
                         return (
                           <tr key={i} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
                             <td className="px-3 py-2">
@@ -1271,6 +1361,32 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                             </td>
                             <td className="px-3 py-2 text-zinc-500">{o.product}</td>
                             <td className="px-3 py-2"><StatusBadge status={status} /></td>
+                            <td className="px-3 py-2">
+                              <div className="flex flex-col gap-1">
+                                {strat ? (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded border border-purple-500/20 bg-purple-500/10 text-purple-300 w-fit">
+                                    {strat}
+                                  </span>
+                                ) : (
+                                  <span className="text-zinc-700">—</span>
+                                )}
+                                {(() => {
+                                  const ae = oid ? autoExitByEntryOrderId[oid] : null;
+                                  if (!ae?.status) return null;
+                                  const s = String(ae.status);
+                                  const cls =
+                                    s === "active" ? "border-teal-500/20 bg-teal-500/10 text-teal-300" :
+                                    s === "closed" ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300" :
+                                    s === "await_fill" ? "border-amber-500/20 bg-amber-500/10 text-amber-300" :
+                                    "border-red-500/20 bg-red-500/10 text-red-300";
+                                  return (
+                                    <span className={`text-[10px] px-1.5 py-0.5 rounded border ${cls} w-fit`}>
+                                      Auto-exit: {s}
+                                    </span>
+                                  );
+                                })()}
+                              </div>
+                            </td>
                             <td className="px-3 py-2 text-zinc-600 text-[10px]">
                               {getTime(o).slice(11, 19)}
                             </td>
@@ -1331,7 +1447,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                     <table className="w-full text-xs">
                       <thead className="sticky top-0 bg-zinc-900 z-10">
                         <tr className="border-b border-zinc-800 bg-zinc-800/80">
-                          {["Symbol", "Side", "Qty", "Avg Price", "Product", "Time"].map(h => (
+                          {["Symbol", "Side", "Qty", "Avg Price", "Product", "Strategy", "Time"].map(h => (
                             <th key={h} className="text-left text-zinc-500 font-medium px-3 py-2">{h}</th>
                           ))}
                         </tr>
@@ -1343,6 +1459,8 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                           const qty = getQty(t);
                           const avg = getAvgPrice(t);
                           const isBuy = side === "BUY";
+                          const oid = getOrderId(t);
+                          const strat = oid ? strategyByOrderId[oid] : "";
                           return (
                             <tr
                               key={i}
@@ -1371,6 +1489,32 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                               </td>
                               <td className="px-3 py-2 text-zinc-300 font-mono">₹{avg.toFixed(2)}</td>
                               <td className="px-3 py-2 text-zinc-500">{t.product}</td>
+                              <td className="px-3 py-2">
+                                <div className="flex flex-col gap-1">
+                                  {strat ? (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded border border-purple-500/20 bg-purple-500/10 text-purple-300 w-fit">
+                                      {strat}
+                                    </span>
+                                  ) : (
+                                    <span className="text-zinc-700">—</span>
+                                  )}
+                                  {(() => {
+                                    const ae = oid ? autoExitByEntryOrderId[oid] : null;
+                                    if (!ae?.status) return null;
+                                    const s = String(ae.status);
+                                    const cls =
+                                      s === "active" ? "border-teal-500/20 bg-teal-500/10 text-teal-300" :
+                                      s === "closed" ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300" :
+                                      s === "await_fill" ? "border-amber-500/20 bg-amber-500/10 text-amber-300" :
+                                      "border-red-500/20 bg-red-500/10 text-red-300";
+                                    return (
+                                      <span className={`text-[10px] px-1.5 py-0.5 rounded border ${cls} w-fit`}>
+                                        Auto-exit: {s}
+                                      </span>
+                                    );
+                                  })()}
+                                </div>
+                              </td>
                               <td className="px-3 py-2 text-zinc-600 text-[10px]">
                                 {fmtTime(getTime(t))}
                               </td>
