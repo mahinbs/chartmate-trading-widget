@@ -76,6 +76,7 @@ Deno.serve(async (req: Request) => {
       const slPct        = Number(body.stop_loss_pct       ?? 2.0);
       const tpPct        = Number(body.take_profit_pct     ?? 4.0);
       const symbols      = (body.symbols as unknown[])    ?? [];
+      const paperStrategyType = ((body.paper_strategy_type as string) ?? "").trim() || null;
 
       if (!name) {
         return new Response(JSON.stringify({ error: "name is required" }), { status: 400, headers });
@@ -110,6 +111,8 @@ Deno.serve(async (req: Request) => {
             start_time:    startTime,
             end_time:      endTime,
             squareoff_time: squareoff,
+            stop_loss_pct: slPct,
+            take_profit_pct: tpPct,
             symbols,
           }),
         });
@@ -139,6 +142,7 @@ Deno.serve(async (req: Request) => {
           stop_loss_pct:        slPct,
           take_profit_pct:      tpPct,
           symbols,
+          paper_strategy_type:  paperStrategyType,
           openalgo_strategy_id: openalgoStrategyId,
           openalgo_webhook_id:  openalgoWebhookId,
         })
@@ -188,6 +192,38 @@ Deno.serve(async (req: Request) => {
           JSON.stringify({ error: "Failed to update: " + updateErr.message }),
           { status: 500, headers },
         );
+      }
+
+      // Best-effort: sync risk changes to OpenAlgo so the auto-exit engine uses latest SL/TP%
+      try {
+        const wantsRiskSync = body.stop_loss_pct !== undefined || body.take_profit_pct !== undefined;
+        if (wantsRiskSync && OPENALGO_URL && OPENALGO_APP_KEY) {
+          const { data: integration } = await supabase
+            .from("user_trading_integration")
+            .select("openalgo_username")
+            .eq("user_id", user.id)
+            .eq("is_active", true)
+            .maybeSingle();
+
+          const openalgoUsername = (integration as any)?.openalgo_username ?? "";
+          if (openalgoUsername) {
+            await fetch(`${OPENALGO_URL}/api/v1/platform/update-strategy-risk`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-Platform-Key": OPENALGO_APP_KEY,
+              },
+              body: JSON.stringify({
+                username: openalgoUsername,
+                name: String((updated as any)?.name ?? ""),
+                stop_loss_pct: (updated as any)?.stop_loss_pct,
+                take_profit_pct: (updated as any)?.take_profit_pct,
+              }),
+            });
+          }
+        }
+      } catch (_e) {
+        // ignore sync failures
       }
 
       return new Response(JSON.stringify({ strategy: updated }), { status: 200, headers });

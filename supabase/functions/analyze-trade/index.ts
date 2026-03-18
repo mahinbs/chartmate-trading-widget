@@ -49,6 +49,7 @@ Deno.serve(async (req: Request) => {
     const action   = String(body.action   ?? "BUY").toUpperCase().trim();
     const quantity = Number(body.quantity ?? 1);
     const product  = String(body.product  ?? "CNC").toUpperCase().trim();
+    const backtestSummary = body.backtest_summary as { totalTrades?: number; winRate?: number; totalReturn?: number; strategyAchieved?: boolean } | undefined;
 
     if (!symbol) {
       return new Response(JSON.stringify({ error: "symbol is required" }), { status: 400, headers });
@@ -61,10 +62,14 @@ Deno.serve(async (req: Request) => {
     let analysis = "";
 
     if (GEMINI_API_KEY) {
+      const backtestCtx = backtestSummary
+        ? `\nBacktest (historical market data): ${backtestSummary.totalTrades ?? 0} trades, ${backtestSummary.winRate ?? 0}% win rate, ${(backtestSummary.totalReturn ?? 0) >= 0 ? "+" : ""}${backtestSummary.totalReturn ?? 0}% total return. Conditions currently met: ${backtestSummary.strategyAchieved ?? false}.`
+        : "";
+
       const prompt = `You are a sharp, no-nonsense Indian stock market analyst. Give a VERY SHORT trade analysis — exactly 3-4 sentences, plain text, no bullet points, no markdown.
 
 Trade: ${action} ${quantity} × ${symbol} on ${exchange}
-Product: ${product} (${isDelivery ? "Delivery/CNC" : isIntraday ? "Intraday/MIS" : "F&O carry"})
+Product: ${product} (${isDelivery ? "Delivery/CNC" : isIntraday ? "Intraday/MIS" : "F&O carry"})${backtestCtx}
 
 Your 3-4 sentences must cover:
 1. Is this a good time to ${action}? (yes/no/wait and why in one line)
