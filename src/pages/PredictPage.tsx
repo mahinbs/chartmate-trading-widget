@@ -890,52 +890,6 @@ const PredictPage = () => {
         </Container>
       </div>
 
-      {/* Live Chart Section - Always at top */}
-      <Container className="py-4">
-        <div className={`transition-all duration-300 ${currentStep === 'analysis' ? 'hidden' : ''}`}>
-          <Card className="glass-panel overflow-hidden border-white/5 bg-gradient-to-b from-card/80 to-background/90 shadow-2xl h-[520px] sm:h-[580px] flex flex-col max-w-6xl mx-auto">
-            <CardHeader className="pb-3 border-b border-white/5">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base sm:text-lg text-white">Live Market Chart</CardTitle>
-                {symbol && (
-                  <Badge variant="outline" className="text-xs border-white/10">
-                    {symbol}
-                  </Badge>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent className="p-0 flex-1 relative">
-              <div className="absolute inset-0">
-                <YahooChartPanel
-                  symbol={selectedSymbol?.full_symbol || symbol || "BTC-USD"}
-                  displayName={selectedSymbol?.description || selectedSymbol?.symbol || symbol}
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          {chartAnalysis && (
-            <div className="max-w-4xl mx-auto mt-4">
-              <Card className="glass-panel">
-                <CardHeader className={isMobile ? 'pb-2' : ''}>
-                  <CardTitle className={`${isMobile ? 'text-base' : 'text-lg'} text-white`}>Chart Analysis</CardTitle>
-                </CardHeader>
-                <CardContent className={isMobile ? 'pt-2' : ''}>
-                  <div className="space-y-3">
-                    <p className={`leading-relaxed ${isMobile ? 'text-sm' : 'text-sm'} text-muted-foreground`}>{chartAnalysis}</p>
-                    {chartDataSource && (
-                      <p className="text-xs text-muted-foreground/60">
-                        Data source: {chartDataSource}
-                      </p>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          )}
-        </div>
-      </Container>
-
       {/* Main Content */}
       <Container className="py-4 sm:py-8">
         <div className={`grid grid-cols-1 gap-4 sm:gap-8`}>
@@ -1828,6 +1782,52 @@ const PredictPage = () => {
           </div>
         </div >
       </Container >
+
+            {/* Live Chart Section - Always at top */}
+      <Container className="py-4">
+        <div className={`transition-all duration-300 ${currentStep === 'analysis' ? 'hidden' : ''}`}>
+          <Card className="glass-panel overflow-hidden border-white/5 bg-gradient-to-b from-card/80 to-background/90 shadow-2xl h-[520px] sm:h-[580px] flex flex-col max-w-6xl mx-auto">
+            <CardHeader className="pb-3 border-b border-white/5">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base sm:text-lg text-white">Live Market Chart</CardTitle>
+                {symbol && (
+                  <Badge variant="outline" className="text-xs border-white/10">
+                    {symbol}
+                  </Badge>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 flex-1 relative">
+              <div className="absolute inset-0">
+                <YahooChartPanel
+                  symbol={selectedSymbol?.full_symbol || symbol || "BTC-USD"}
+                  displayName={selectedSymbol?.description || selectedSymbol?.symbol || symbol}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {chartAnalysis && (
+            <div className="max-w-4xl mx-auto mt-4">
+              <Card className="glass-panel">
+                <CardHeader className={isMobile ? 'pb-2' : ''}>
+                  <CardTitle className={`${isMobile ? 'text-base' : 'text-lg'} text-white`}>Chart Analysis</CardTitle>
+                </CardHeader>
+                <CardContent className={isMobile ? 'pt-2' : ''}>
+                  <div className="space-y-3">
+                    <p className={`leading-relaxed ${isMobile ? 'text-sm' : 'text-sm'} text-muted-foreground`}>{chartAnalysis}</p>
+                    {chartDataSource && (
+                      <p className="text-xs text-muted-foreground/60">
+                        Data source: {chartDataSource}
+                      </p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </div>
+      </Container>
 
       {/* ── Buy More Dialog ── */}
       <Dialog open={showBuyMoreDialog} onOpenChange={setShowBuyMoreDialog}>

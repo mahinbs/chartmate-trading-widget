@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, Activity, BarChart3, PlusCircle, Eye, Sparkles, ShieldCheck, KeyRound, BrainCircuit, Lock, Newspaper } from "lucide-react";
+import { TrendingUp, Activity, BarChart3, PlusCircle, Eye, Sparkles, ShieldCheck, KeyRound, BrainCircuit, Lock, Newspaper, BarChart2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useTradingIntegration } from "@/hooks/useTradingIntegration";
@@ -164,7 +164,7 @@ export default function HomePage() {
         )}
 
         {/* Additional Options */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
           <Card className="minimal-panel hover:bg-white/5 transition-colors cursor-pointer group"
             onClick={() => navigate('/predictions')}>
             <CardHeader className="pb-3">
@@ -212,6 +212,23 @@ export default function HomePage() {
             <CardContent>
               <p className="text-sm text-muted-foreground">
                 Get real-time market updates, IPO news, and global signals.
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="minimal-panel hover:bg-white/5 transition-colors cursor-pointer group"
+            onClick={() => navigate('/tick-chart')}>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-3 text-lg">
+                <div className="p-2 rounded-lg bg-muted group-hover:bg-emerald-500/10 transition-colors">
+                  <BarChart2 className="h-5 w-5 text-emerald-500" />
+                </div>
+                Live Tick Chart
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                Monitor real-time order flow and footprint imbalances.
               </p>
             </CardContent>
           </Card>

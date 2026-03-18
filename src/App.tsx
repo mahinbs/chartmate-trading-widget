@@ -49,6 +49,7 @@ import AlgoOnboardingPage from "./pages/AlgoOnboardingPage";
 import StrategiesPage from "./pages/StrategiesPage";
 import NewsPage from "./pages/NewsPage";
 import NewsDetailPage from "./pages/NewsDetailPage";
+import TickChart from "./pages/TickChart";
 
 // OpenAlgo ping temporarily disabled in mock-order mode to avoid CORS noise
 
@@ -83,6 +84,7 @@ const App = () => (
               />
               <Route path="/wl-checkout/:token" element={<WlCheckoutPage />} />
               <Route path="/algo-setup" element={<AlgoOnboardingPage />} />
+              <Route path="/tick-chart" element={<TickChart />} />
               <Route
                 path="/strategies"
                 element={
