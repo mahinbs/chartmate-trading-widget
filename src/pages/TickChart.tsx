@@ -43,25 +43,40 @@ const getTextColor = (bgColor: string) => {
   return '#ffffff'; // white on colored
 };
 
+const TIMEFRAMES = ['1m', '5m', '30m', '1h', '1d', '1w', '1M'];
+
+const refreshRateMap: Record<string, number> = {
+  '1m':  3000,
+  '5m':  3000,
+  '30m': 8000,
+  '1h':  15000,
+  '1d':  30000,
+  '1w':  60000,
+  '1M':  120000,
+};
+
 const TickChart: React.FC = () => {
   const navigate = useNavigate();
   const [symbol, setSymbol] = useState(TICK_SYMBOLS[0]);
+  const [timeframe, setTimeframe] = useState('5m');
   const [chartState, setChartState] = useState<ChartSimState | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setChartState(generateInitialState(symbol));
-  }, [symbol]);
+    setChartState(generateInitialState(symbol, timeframe));
+  }, [symbol, timeframe]);
 
   useEffect(() => {
     if (!chartState) return;
-    
+
+    const rate = refreshRateMap[timeframe] ?? 3000;
+
     const intervalId = setInterval(() => {
       setChartState(prev => prev ? simulateNextTick(prev) : null);
-    }, 3000);
+    }, rate);
 
     return () => clearInterval(intervalId);
-  }, [chartState?.symbol]); 
+  }, [chartState?.symbol, timeframe]);
 
   // Auto-scroll to latest column
   useEffect(() => {
@@ -153,6 +168,22 @@ const TickChart: React.FC = () => {
             <ChevronDown className="absolute right-2 top-1.5 w-4 h-4 text-gray-400 pointer-events-none" />
           </div>
           
+          <div className="flex items-center space-x-1">
+            {TIMEFRAMES.map(tf => (
+              <button
+                key={tf}
+                onClick={() => setTimeframe(tf)}
+                className={`px-2 py-1 text-[11px] rounded transition-colors ${
+                  timeframe === tf
+                    ? 'bg-cyan-600 text-white font-semibold'
+                    : 'bg-[#1e1e1e] text-gray-400 hover:bg-[#2a2a2a] hover:text-white'
+                }`}
+              >
+                {tf}
+              </button>
+            ))}
+          </div>
+
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-gray-400">
             <span>O: <span className="text-white">{stats.O.toFixed(1)}</span></span>
             <span>H: <span className="text-white">{stats.H.toFixed(1)}</span></span>

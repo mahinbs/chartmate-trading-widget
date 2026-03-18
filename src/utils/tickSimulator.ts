@@ -36,6 +36,7 @@ export interface OrderBookRowData {
 
 export interface ChartSimState {
   symbol: string;
+  timeframe: string;
   currentPrice: number;
   priceLevels: number[];
   columns: TickColumnData[];
@@ -55,7 +56,17 @@ export interface ChartSimState {
   };
 }
 
-export function generateInitialState(symbol: string): ChartSimState {
+const intervalMap: Record<string, number> = {
+  '1m':  60 * 1000,
+  '5m':  5 * 60 * 1000,
+  '30m': 30 * 60 * 1000,
+  '1h':  60 * 60 * 1000,
+  '1d':  24 * 60 * 60 * 1000,
+  '1w':  7 * 24 * 60 * 60 * 1000,
+  '1M':  30 * 24 * 60 * 60 * 1000,
+};
+
+export function generateInitialState(symbol: string, timeframe: string = '5m'): ChartSimState {
   const config = SYMBOL_CONFIGS[symbol];
   const { basePrice, increment, rows } = config;
   
@@ -70,14 +81,15 @@ export function generateInitialState(symbol: string): ChartSimState {
   const now = new Date();
   
   for (let i = 0; i < 18; i++) {
-    const colTime = new Date(now.getTime() - (18 - i) * 60000); 
-    columns.push(generateColumnData(priceLevels, colTime));
+    const colTime = new Date(now.getTime() - (18 - i) * intervalMap[timeframe]);
+    columns.push(generateColumnData(priceLevels, colTime, timeframe));
   }
 
   const orderBook = generateOrderBook(priceLevels, basePrice);
 
   return {
     symbol,
+    timeframe,
     currentPrice: basePrice,
     priceLevels,
     columns,
@@ -86,7 +98,7 @@ export function generateInitialState(symbol: string): ChartSimState {
   };
 }
 
-export function generateColumnData(priceLevels: number[], time: Date): TickColumnData {
+export function generateColumnData(priceLevels: number[], time: Date, timeframe: string = '5m'): TickColumnData {
   const prices: Record<number, TickCellData> = {};
   const totalRows = priceLevels.length;
 
@@ -119,10 +131,19 @@ export function generateColumnData(priceLevels: number[], time: Date): TickColum
     prices[p] = { bid, ask, isHighVolume: isSpike };
   });
 
-  const m = time.getMinutes().toString().padStart(2, '0');
   const h = time.getHours().toString().padStart(2, '0');
+  const m = time.getMinutes().toString().padStart(2, '0');
+  const day = time.getDate().toString().padStart(2, '0');
+  const month = (time.getMonth() + 1).toString().padStart(2, '0');
 
-  return { timeLabel: `${h}:${m}`, prices };
+  let timeLabel = '';
+  if (timeframe === '1d' || timeframe === '1w' || timeframe === '1M') {
+    timeLabel = `${day}/${month}`;
+  } else {
+    timeLabel = `${h}:${m}`;
+  }
+
+  return { timeLabel, prices };
 }
 
 export function generateOrderBook(priceLevels: number[], currentPrice: number): OrderBookRowData[] {
@@ -157,12 +178,17 @@ function generateStats(basePrice: number) {
 }
 
 export function simulateNextTick(prevState: ChartSimState): ChartSimState {
-  const { symbol, priceLevels, columns } = prevState;
+  const { symbol, timeframe, priceLevels, columns } = prevState;
   const config = SYMBOL_CONFIGS[symbol];
   
   const newColumns = [...columns.slice(1)];
-  const now = new Date();
-  newColumns.push(generateColumnData(priceLevels, now));
+  const lastTime = new Date(
+    columns[columns.length - 1].timeLabel
+      ? Date.now()
+      : Date.now()
+  );
+  const nextTime = new Date(Date.now() + intervalMap[timeframe]);
+  newColumns.push(generateColumnData(priceLevels, nextTime, timeframe));
   
   const maxDelta = config.basePrice * 0.005;
   const newPrice = prevState.currentPrice + (Math.random() * maxDelta * 2 - maxDelta);
