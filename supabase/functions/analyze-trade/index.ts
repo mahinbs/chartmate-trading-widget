@@ -50,6 +50,23 @@ Deno.serve(async (req: Request) => {
     const quantity = Number(body.quantity ?? 1);
     const product  = String(body.product  ?? "CNC").toUpperCase().trim();
     const backtestSummary = body.backtest_summary as { totalTrades?: number; winRate?: number; totalReturn?: number; strategyAchieved?: boolean } | undefined;
+    const timingReview = body.timing_review as {
+      mode?: string;
+      strategy_label?: string;
+      stop_loss_pct?: number;
+      take_profit_pct?: number;
+      session_start?: string;
+      session_end?: string;
+      squareoff_time?: string;
+      vectorbt?: Record<string, unknown>;
+    } | undefined;
+
+    const combinedBacktest = body.combined_backtest as {
+      edge?: { dataSource?: string; totalTrades?: number; winRate?: number; totalReturn?: number; strategyAchieved?: boolean };
+      vectorbt?: { dataSource?: string; totalTrades?: number; winRate?: number; totalReturn?: number; strategyAchieved?: boolean; sharpeRatio?: number } | null;
+      dataConsistency?: { aligned?: boolean; pctDiff?: number; notes?: string[] };
+      agreement?: string;
+    } | undefined;
 
     if (!symbol) {
       return new Response(JSON.stringify({ error: "symbol is required" }), { status: 400, headers });
@@ -62,19 +79,51 @@ Deno.serve(async (req: Request) => {
     let analysis = "";
 
     if (GEMINI_API_KEY) {
-      const backtestCtx = backtestSummary
-        ? `\nBacktest (historical market data): ${backtestSummary.totalTrades ?? 0} trades, ${backtestSummary.winRate ?? 0}% win rate, ${(backtestSummary.totalReturn ?? 0) >= 0 ? "+" : ""}${backtestSummary.totalReturn ?? 0}% total return. Conditions currently met: ${backtestSummary.strategyAchieved ?? false}.`
-        : "";
+      let backtestCtx = "";
+      if (timingReview?.vectorbt) {
+        const v = timingReview.vectorbt;
+        backtestCtx = `\nBACKTEST TIMING REVIEW (VectorBT on real daily OHLC — Historify or Yahoo):
+Mode: ${timingReview.mode ?? "—"}. ${timingReview.strategy_label ? `Strategy: ${timingReview.strategy_label}. ` : ""}
+User params: Stop-loss ${timingReview.stop_loss_pct ?? "?"}%, Take-profit ${timingReview.take_profit_pct ?? "?"}%.
+Session IST: ${timingReview.session_start ?? "?"}–${timingReview.session_end ?? "?"}, Square-off ${timingReview.squareoff_time ?? "?"}.
+Backtest results: ${v.totalTrades ?? 0} trades, ${v.winRate ?? 0}% win rate, ${Number(v.totalReturn ?? 0) >= 0 ? "+" : ""}${v.totalReturn ?? 0}% return, Sharpe ${v.sharpeRatio ?? "n/a"}, data: ${v.data_source ?? "?"}. Conditions met now: ${v.strategyAchieved ?? false}.
+Your job in 3-4 sentences ONLY: Are this SL% and TP% reasonable vs the backtest? Is the session/square-off window sensible for intraday vs delivery? Should entry/exit timing or signals be tightened? Be direct. India market. Plain text.`;
+        const promptTr = `You are an Indian markets risk coach. ${backtestCtx}`;
+        try {
+          analysis = await callGemini(promptTr);
+        } catch (e) {
+          console.warn("Gemini timing review failed:", e);
+        }
+        if (analysis) {
+          /* skip generic trade prompt below */
+        }
+      }
+      if (!analysis && combinedBacktest?.edge) {
+        const e = combinedBacktest.edge;
+        const v = combinedBacktest.vectorbt;
+        const notes = (combinedBacktest.dataConsistency?.notes ?? []).join(" ");
+        const align = combinedBacktest.dataConsistency?.aligned;
+        backtestCtx = `\nDUAL BACKTEST — Edge (${e.dataSource ?? "?"}): ${e.totalTrades ?? 0} trades, ${e.winRate ?? 0}% WR, ${(e.totalReturn ?? 0) >= 0 ? "+" : ""}${e.totalReturn ?? 0}% return, setup met: ${e.strategyAchieved ?? false}.`;
+        if (v) {
+          backtestCtx += ` VectorBT (${v.dataSource ?? "?"}): ${v.totalTrades ?? 0} trades, ${v.winRate ?? 0}% WR, ${(v.totalReturn ?? 0) >= 0 ? "+" : ""}${v.totalReturn ?? 0}%, Sharpe ${v.sharpeRatio ?? "—"}, setup met: ${v.strategyAchieved ?? false}.`;
+        }
+        backtestCtx += ` Engines agreement: ${combinedBacktest.agreement ?? "—"}. Price data check: ${align === true ? "aligned" : align === false ? "minor mismatch between sources" : "n/a"}. ${notes}`;
+      } else if (!analysis && backtestSummary) {
+        backtestCtx = `\nBacktest (historical market data): ${backtestSummary.totalTrades ?? 0} trades, ${backtestSummary.winRate ?? 0}% win rate, ${(backtestSummary.totalReturn ?? 0) >= 0 ? "+" : ""}${backtestSummary.totalReturn ?? 0}% total return. Conditions currently met: ${backtestSummary.strategyAchieved ?? false}.`;
+      }
 
+      if (analysis) {
+        /* timing review or prior branch filled analysis */
+      } else {
       const prompt = `You are a sharp, no-nonsense Indian stock market analyst. Give a VERY SHORT trade analysis — exactly 3-4 sentences, plain text, no bullet points, no markdown.
 
 Trade: ${action} ${quantity} × ${symbol} on ${exchange}
 Product: ${product} (${isDelivery ? "Delivery/CNC" : isIntraday ? "Intraday/MIS" : "F&O carry"})${backtestCtx}
 
 Your 3-4 sentences must cover:
-1. Is this a good time to ${action}? (yes/no/wait and why in one line)
+1. Is this a good time to ${action}? If dual backtest data disagrees, say so briefly.
 2. Key price level to watch right now
-3. One risk and one thing in favour of this trade
+3. One risk and one thing in favour; mention data quality if sources diverged
 4. What to do right now (proceed / wait / set SL at X)
 
 Be extremely direct. India-market-context. No markdown. Plain text only. Max 4 sentences.`;
@@ -83,6 +132,7 @@ Be extremely direct. India-market-context. No markdown. Plain text only. Max 4 s
         analysis = await callGemini(prompt);
       } catch (e) {
         console.warn("Gemini failed, using rule-based fallback:", e);
+      }
       }
     }
 

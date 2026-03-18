@@ -428,6 +428,7 @@ serve(async (req) => {
     const action: "BUY"|"SELL" = (body?.action   ?? "BUY") === "SELL" ? "SELL" : "BUY";
     const checkOnly: boolean   = body?.mode === "check" || body?.check_only === true;
 
+    const exchangeHint = String(body?.exchange ?? "").toUpperCase().trim();
     const isIndian = isIndianSymbol(rawSymbol);
     const isCrypto = isCryptoSymbol(rawSymbol);
     const isForex  = isForexSymbol(rawSymbol);
@@ -435,10 +436,14 @@ serve(async (req) => {
     const normalized = normalizeSymbol(rawSymbol);
 
     // ── Data routing ──────────────────────────────────────────────────────────
-    // Indian stocks → Yahoo Finance (primary, best NSE/BSE data)
+    // NSE/BSE from UI (symbol without .NS/.BO) → Yahoo with correct suffix
+    // Indian suffix in symbol → Yahoo as-is
     // US / crypto / forex → TwelveData (primary) → Alpha Vantage → Yahoo (fallbacks)
     let ohlcv: any = null;
-    if (isIndian) {
+    if (exchangeHint === "NSE" || exchangeHint === "BSE") {
+      const ySym = exchangeHint === "BSE" ? `${normalized}.BO` : `${normalized}.NS`;
+      ohlcv = await fetchDailyOHLCFromYahoo(ySym);
+    } else if (isIndian) {
       ohlcv = await fetchDailyOHLCFromYahoo(rawSymbol);
     } else {
       if (tdKey && (isUs || isCrypto || isForex)) {

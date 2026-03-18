@@ -12,7 +12,7 @@ import {
   ArrowLeft, Send, Loader2, Info, Zap, Copy, RefreshCw,
   TrendingUp, TrendingDown, Search, ChevronDown, Plus,
   Trash2, ToggleLeft, ToggleRight, Webhook, BookOpen,
-  AlertTriangle, CheckCircle2, ExternalLink, Clock, ChevronRight,
+  AlertTriangle, CheckCircle2, ExternalLink, Clock, ChevronRight, LineChart, ScrollText,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -30,6 +31,8 @@ import { supabase } from "@/integrations/supabase/client";
 import BrokerSyncSection from "@/components/trading/BrokerSyncSection";
 import BrokerPortfolioCard from "@/components/trading/BrokerPortfolioCard";
 import PlaceOrderPanel from "@/components/trading/PlaceOrderPanel";
+import BacktestingSection from "@/components/trading/BacktestingSection";
+import StatementSection from "@/components/trading/StatementSection";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const EXCHANGES = [
@@ -957,7 +960,34 @@ function LiveDashboard({ broker }: { broker: string }) {
 
           {/* ── Left: Portfolio ── */}
           <div className="min-w-0">
-            <BrokerPortfolioCard key={portfolioKey} broker={broker} />
+            <Tabs defaultValue="portfolio" className="w-full">
+              <TabsList className="grid w-full grid-cols-3 bg-zinc-900 border border-zinc-800 h-auto gap-1 p-1 mb-3">
+                <TabsTrigger value="portfolio" className="data-[state=active]:bg-teal-500/20 data-[state=active]:text-teal-300 text-xs sm:text-sm">
+                  <BookOpen className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+                  Portfolio
+                </TabsTrigger>
+                <TabsTrigger value="backtest" className="data-[state=active]:bg-teal-500/20 data-[state=active]:text-teal-300 text-xs sm:text-sm">
+                  <LineChart className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+                  Backtesting
+                </TabsTrigger>
+                <TabsTrigger value="statement" className="data-[state=active]:bg-teal-500/20 data-[state=active]:text-teal-300 text-xs sm:text-sm">
+                  <ScrollText className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+                  Statement
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="portfolio" className="pt-0">
+                <BrokerPortfolioCard key={portfolioKey} broker={broker} />
+              </TabsContent>
+
+              <TabsContent value="backtest" className="pt-0">
+                <BacktestingSection />
+              </TabsContent>
+
+              <TabsContent value="statement" className="pt-0">
+                <StatementSection />
+              </TabsContent>
+            </Tabs>
           </div>
               </div>
       </main>

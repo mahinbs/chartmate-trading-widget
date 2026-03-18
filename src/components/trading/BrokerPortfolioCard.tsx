@@ -473,11 +473,12 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
   const [toggleLoading, setToggleLoading] = useState<string | null>(null);
   const [firePanel, setFirePanel]         = useState<Record<string, {
     open: boolean; symbol: string; exchange: string; quantity: string; product: string; firing: boolean;
-    backtestPaperType?: string; backtestResult?: {
+    backtestPaperType?: string;     backtestResult?: {
       totalTrades: number; wins: number; losses: number; winRate: number; totalReturn: number;
       maxDrawdown?: number; profitFactor?: number; backtestPeriod?: string; strategyAchieved?: boolean; achievementReason?: string;
       sampleTrades?: { entryDate: string; exitDate: string; returnPct: number; profitable: boolean }[];
       currentIndicators?: { price?: number; sma20?: number | null; rsi14?: number | null; high20d?: number; low20d?: number };
+      engine?: string; dataSource?: string; sharpeRatio?: number;
     } | null; backtestLoading?: boolean; backtestAiAnalysis?: string | null; backtestAiLoading?: boolean;
     lastFired?: { action: "BUY" | "SELL"; symbol: string; exchange: string; quantity: string; product: string };
   }>>({});
@@ -583,22 +584,32 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
     }));
   }, [autoNameFromPaper, autoTimesFromPaper]);
 
-  const runBacktestForFire = useCallback(async (strategyId: string, symbol: string, stratModel: string) => {
-    const sym = symbol.trim().toUpperCase();
+  const runBacktestForFire = useCallback(async (strategy: Strategy) => {
+    const fs = {
+      open: false, symbol: "", exchange: "NSE", quantity: "1", product: "MIS", firing: false,
+      backtestPaperType: "trend_following", backtestResult: null as any,
+      backtestLoading: false, backtestAiAnalysis: null as string | null, backtestAiLoading: false,
+      ...firePanel[strategy.id],
+    };
+    const sym = fs.symbol.trim().toUpperCase();
     if (!sym) { toast.error("Enter a symbol first"); return; }
-    const strat = stratModel || "trend_following";
-    setFireState(strategyId, { backtestLoading: true, backtestResult: null, backtestAiAnalysis: null });
+    const strat = String(strategy.paper_strategy_type ?? "trend_following");
+    const sid = strategy.id;
+    setFireState(sid, { backtestLoading: true, backtestResult: null, backtestAiAnalysis: null });
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const auth = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
       const res = await supabase.functions.invoke("backtest-strategy", {
-        body: { symbol: sym, strategy: strat, action: "BUY" },
+        body: { symbol: sym, strategy: strat, action: "BUY", exchange: fs.exchange || "NSE" },
+        headers: auth,
       });
       const d = res.data as any;
       if (res.error || d?.error) {
         toast.error(d?.error ?? "Backtest failed");
-        setFireState(strategyId, { backtestLoading: false });
+        setFireState(sid, { backtestLoading: false });
         return;
       }
-      setFireState(strategyId, {
+      setFireState(sid, {
         backtestLoading: false,
         backtestResult: {
           totalTrades: d.totalTrades ?? 0,
@@ -613,14 +624,16 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
           achievementReason: d.achievementReason,
           sampleTrades: d.sampleTrades,
           currentIndicators: d.currentIndicators,
+          engine: "edge",
+          dataSource: d.dataSource,
         },
       });
-      toast.success(`Backtest: ${d.totalTrades} trades, ${d.winRate}% win rate`);
+      toast.success(`Backtest (${d.dataSource ?? "?"}): ${d.totalTrades} trades · use Algo → Backtesting for VectorBT`);
     } catch {
-      setFireState(strategyId, { backtestLoading: false });
+      setFireState(strategy.id, { backtestLoading: false });
       toast.error("Backtest failed");
     }
-  }, []);
+  }, [firePanel]);
 
   const runBacktest = useCallback(async () => {
     const sym = backtestSymbol.trim().toUpperCase() || "RELIANCE";
@@ -1673,7 +1686,10 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                             {/* Backtest option — available for every order and strategy including custom */}
                             <div className="rounded border border-amber-900/50 bg-amber-950/20 p-2.5 space-y-2">
                               <p className="text-[10px] font-medium text-amber-500 flex items-center gap-1">
-                                <BarChart3 className="h-3 w-3" /> Backtest (optional)
+                                <BarChart3 className="h-3 w-3" /> Quick backtest (Edge)
+                              </p>
+                              <p className="text-[9px] text-zinc-600">
+                                VectorBT + SL/TP timing review → <span className="text-teal-500/90">Algo Trading → Backtesting</span>
                               </p>
                               <div className="flex flex-wrap items-end gap-2">
                                 <div className="flex-1 min-w-[160px]">
@@ -1691,7 +1707,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                                   variant="outline"
                                   className="h-7 text-[10px] border-amber-700/50 text-amber-400 hover:bg-amber-900/30"
                                   disabled={fs.backtestLoading || !fs.symbol.trim()}
-                                  onClick={() => runBacktestForFire(s.id, fs.symbol, String(s.paper_strategy_type ?? "trend_following"))}
+                                  onClick={() => runBacktestForFire(s)}
                                 >
                                   {fs.backtestLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <BarChart3 className="h-3 w-3" />}
                                   <span className="ml-1">{fs.backtestLoading ? "Running…" : "Run Backtest"}</span>
@@ -1707,6 +1723,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                                     setFireState(s.id, { backtestAiLoading: true });
                                     try {
                                       const { data: { session } } = await supabase.auth.getSession();
+                                      const br = fs.backtestResult;
                                       const aiRes = await supabase.functions.invoke("analyze-trade", {
                                         body: {
                                           symbol: sym,
@@ -1714,7 +1731,12 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                                           action: "BUY",
                                           quantity: parseInt(fs.quantity) || 1,
                                           product: fs.product,
-                                          backtest_summary: fs.backtestResult ?? null,
+                                          backtest_summary: br ? {
+                                            totalTrades: br.totalTrades,
+                                            winRate: br.winRate,
+                                            totalReturn: br.totalReturn,
+                                            strategyAchieved: br.strategyAchieved,
+                                          } : undefined,
                                         },
                                         headers: { Authorization: `Bearer ${session?.access_token}` },
                                       });
@@ -1734,6 +1756,11 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                               </div>
                               {fs.backtestResult && (
                                 <div className="text-[10px] space-y-2">
+                                  {fs.backtestResult.dataSource && (
+                                    <p className="text-zinc-500">
+                                      Data: <span className="text-teal-400/90">{fs.backtestResult.dataSource}</span>
+                                    </p>
+                                  )}
                                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
                                     <span className="text-zinc-500">Trades</span><span className="text-zinc-500">Win</span><span className="text-zinc-500">Win rate</span><span className="text-zinc-500">Return</span>
                                     <span className="font-mono">{fs.backtestResult.totalTrades}</span>

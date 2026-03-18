@@ -29,8 +29,9 @@ import {
 } from "@/components/ui/select";
 import {
   AlertTriangle, ArrowLeft, BarChart3, BookOpen, Brain,
-  ChevronRight, Loader2, ShoppingCart, TrendingDown, TrendingUp, Zap,
+  ChevronRight, Loader2, ShoppingCart, TrendingDown, TrendingUp, Zap, LineChart,
 } from "lucide-react";
+import BacktestingSection from "@/components/trading/BacktestingSection";
 import { toast } from "sonner";
 
 // ── Broker capability map ─────────────────────────────────────────────────────
@@ -285,17 +286,21 @@ export default function AlgoTradingDashboard() {
 
         {/* ── Main tabs ────────────────────────────────────────────────────── */}
         <Tabs defaultValue="trade">
-          <TabsList className="grid w-full grid-cols-3 bg-zinc-900 border border-zinc-800">
-            <TabsTrigger value="trade" className="data-[state=active]:bg-teal-500/20 data-[state=active]:text-teal-300">
-              <ShoppingCart className="h-3.5 w-3.5 mr-1.5" />
+          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 bg-zinc-900 border border-zinc-800 h-auto gap-1 p-1">
+            <TabsTrigger value="trade" className="data-[state=active]:bg-teal-500/20 data-[state=active]:text-teal-300 text-xs sm:text-sm">
+              <ShoppingCart className="h-3.5 w-3.5 mr-1.5 shrink-0" />
               Place Order
             </TabsTrigger>
-            <TabsTrigger value="portfolio" className="data-[state=active]:bg-teal-500/20 data-[state=active]:text-teal-300">
-              <BookOpen className="h-3.5 w-3.5 mr-1.5" />
+            <TabsTrigger value="portfolio" className="data-[state=active]:bg-teal-500/20 data-[state=active]:text-teal-300 text-xs sm:text-sm">
+              <BookOpen className="h-3.5 w-3.5 mr-1.5 shrink-0" />
               Portfolio
             </TabsTrigger>
-            <TabsTrigger value="sync" className="data-[state=active]:bg-teal-500/20 data-[state=active]:text-teal-300">
-              <Zap className="h-3.5 w-3.5 mr-1.5" />
+            <TabsTrigger value="backtest" className="data-[state=active]:bg-teal-500/20 data-[state=active]:text-teal-300 text-xs sm:text-sm">
+              <LineChart className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+              Backtesting
+            </TabsTrigger>
+            <TabsTrigger value="sync" className="data-[state=active]:bg-teal-500/20 data-[state=active]:text-teal-300 text-xs sm:text-sm">
+              <Zap className="h-3.5 w-3.5 mr-1.5 shrink-0" />
               Broker Sync
             </TabsTrigger>
           </TabsList>
@@ -562,6 +567,16 @@ export default function AlgoTradingDashboard() {
                 </Card>
               )
             }
+          </TabsContent>
+
+          <TabsContent value="backtest" className="pt-2 space-y-3">
+            <Alert className="bg-zinc-800/80 border-zinc-700">
+              <BarChart3 className="h-4 w-4 text-teal-400" />
+              <AlertDescription className="text-zinc-400 text-xs">
+                VectorBT runs on your OpenAlgo server (E2E). Data: broker history (if available) → Historify → Yahoo — real daily bars, not mock data.
+              </AlertDescription>
+            </Alert>
+            <BacktestingSection />
           </TabsContent>
 
           {/* ── TAB: BROKER SYNC ─────────────────────────────────────────────── */}
