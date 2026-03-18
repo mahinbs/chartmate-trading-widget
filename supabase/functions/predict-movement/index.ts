@@ -274,7 +274,7 @@ function initializePipeline(): { pipeline: PipelineStep[]; meta: Partial<Pipelin
     { name: 'multi_horizon_forecast', status: 'pending' },
     { name: 'risk_assessment', status: 'pending' }
   ];
-  
+
   return {
     pipeline: steps,
     meta: {
@@ -286,16 +286,16 @@ function initializePipeline(): { pipeline: PipelineStep[]; meta: Partial<Pipelin
 
 // Update pipeline step
 function updatePipelineStep(
-  pipeline: PipelineStep[], 
-  stepName: string, 
+  pipeline: PipelineStep[],
+  stepName: string,
   status: 'running' | 'completed' | 'error',
   details?: string
 ): void {
   const step = pipeline.find(s => s.name === stepName);
   if (!step) return;
-  
+
   const now = Date.now();
-  
+
   if (status === 'running') {
     step.status = 'running';
     step.startTime = now;
@@ -337,11 +337,11 @@ function normalizeToYahooSymbol(raw: string): { yahooSymbol: string; assetType: 
     'DOGEUSD': 'DOGE-USD',
     'DOGE-USD': 'DOGE-USD',
   };
-  
+
   if (cryptoMap[cleanSymbol]) {
     return { yahooSymbol: cryptoMap[cleanSymbol], assetType: 'crypto' };
   }
-  
+
   // Stocks mapping
   if (/^[A-Z]{1,5}$/.test(cleanSymbol)) {
     // Indian stocks get .NS suffix
@@ -350,10 +350,10 @@ function normalizeToYahooSymbol(raw: string): { yahooSymbol: string; assetType: 
     }
     return { yahooSymbol: cleanSymbol, assetType: 'stock' };
   }
-  
+
   // Forex mapping
   const forexPairs = ['EUR', 'USD', 'GBP', 'JPY', 'CHF', 'CAD', 'AUD', 'NZD'];
-  
+
   // Handle EUR_USD, EUR/USD, EURUSD formats
   let forexBase = '', forexQuote = '';
   if (cleanSymbol.includes('_')) {
@@ -364,22 +364,22 @@ function normalizeToYahooSymbol(raw: string): { yahooSymbol: string; assetType: 
     forexBase = cleanSymbol.slice(0, 3);
     forexQuote = cleanSymbol.slice(3);
   }
-  
+
   if (forexPairs.includes(forexBase) && forexPairs.includes(forexQuote)) {
     return { yahooSymbol: `${forexBase}${forexQuote}=X`, assetType: 'forex' };
   }
-  
+
   // Index mapping
   const indexMap: Record<string, string> = {
     'SPX': '^GSPC',
     'DJI': '^DJI',
     'NDX': '^NDX',
   };
-  
+
   if (indexMap[cleanSymbol]) {
     return { yahooSymbol: indexMap[cleanSymbol], assetType: 'index' };
   }
-  
+
   // Commodity mapping
   const commodityMap: Record<string, string> = {
     'GOLD': 'GC=F',
@@ -389,11 +389,11 @@ function normalizeToYahooSymbol(raw: string): { yahooSymbol: string; assetType: 
     'OIL': 'CL=F',
     'CL1!': 'CL=F',
   };
-  
+
   if (commodityMap[cleanSymbol]) {
     return { yahooSymbol: commodityMap[cleanSymbol], assetType: 'commodity' };
   }
-  
+
   // Default to stock
   return { yahooSymbol: cleanSymbol, assetType: 'stock' };
 }
@@ -465,7 +465,7 @@ function mapInterval(interval: string): { yahooInterval: string; needsAggregatio
     'D': { yahooInterval: '1d' },
     'W': { yahooInterval: '1wk' }
   };
-  
+
   return mapping[interval] || { yahooInterval: '1d' };
 }
 
@@ -479,22 +479,22 @@ function pickRangeForInterval(yahooInterval: string): string {
     '1d': '1y',
     '1wk': '2y'
   };
-  
+
   return rangeMap[yahooInterval] || '1y';
 }
 
 // Resample candles for aggregation (e.g., 60m to 240m)
 function resampleCandles(candles: Candle[], targetMinutes: number): Candle[] {
   if (!candles.length) return [];
-  
+
   const sourceMinutes = 60; // Source is 60m
   const ratio = targetMinutes / sourceMinutes; // 4 for 240m
-  
+
   const resampled: Candle[] = [];
   for (let i = 0; i < candles.length; i += ratio) {
     const group = candles.slice(i, i + ratio);
     if (group.length === 0) continue;
-    
+
     const aggregated: Candle = {
       timestamp: group[0].timestamp,
       open: group[0].open,
@@ -503,10 +503,10 @@ function resampleCandles(candles: Candle[], targetMinutes: number): Candle[] {
       close: group[group.length - 1].close,
       volume: group.reduce((sum, c) => sum + c.volume, 0)
     };
-    
+
     resampled.push(aggregated);
   }
-  
+
   return resampled;
 }
 
@@ -515,17 +515,17 @@ function deriveStockDataFromCandles(candles: Candle[]): StockData {
   if (!candles.length) {
     throw new Error('No candles available to derive stock data');
   }
-  
+
   // Sort by timestamp to ensure proper order
   const sortedCandles = [...candles].sort((a, b) => a.timestamp - b.timestamp);
   const latestCandle = sortedCandles[sortedCandles.length - 1];
   const previousCandle = sortedCandles.length > 1 ? sortedCandles[sortedCandles.length - 2] : latestCandle;
-  
+
   const currentPrice = latestCandle.close;
   const previousClose = previousCandle.close;
   const change = currentPrice - previousClose;
   const changePercent = previousClose !== 0 ? (change / previousClose) * 100 : 0;
-  
+
   return {
     currentPrice,
     openPrice: latestCandle.open,
@@ -541,7 +541,7 @@ function deriveStockDataFromCandles(candles: Candle[]): StockData {
 async function fetchIntradayCandlesForQuote(yahooSymbol: string): Promise<Candle[]> {
   const intervals = ['1m', '5m', '15m', '60m']; // Try intraday first
   const range = '1d'; // Just today's data for quote
-  
+
   for (const interval of intervals) {
     try {
       console.log(`🟡 Trying ${interval} candles for quote data: ${yahooSymbol}`);
@@ -555,7 +555,7 @@ async function fetchIntradayCandlesForQuote(yahooSymbol: string): Promise<Candle
       continue;
     }
   }
-  
+
   // Fallback to daily if intraday fails
   try {
     console.log(`🟡 Fallback to daily candles for quote: ${yahooSymbol}`);
@@ -567,7 +567,7 @@ async function fetchIntradayCandlesForQuote(yahooSymbol: string): Promise<Candle
   } catch (error) {
     console.log(`❌ Daily candles also failed for ${yahooSymbol}:`, error.message);
   }
-  
+
   throw new Error(`Unable to fetch any candle data for ${yahooSymbol}`);
 }
 
@@ -575,7 +575,7 @@ async function fetchIntradayCandlesForQuote(yahooSymbol: string): Promise<Candle
 async function fetchYahooChart(params: { yahooSymbol: string; interval: string; range: string }): Promise<Candle[]> {
   const { yahooSymbol, interval, range } = params;
   console.log(`🟡 Fetching Yahoo chart: ${yahooSymbol}, interval: ${interval}, range: ${range}`);
-  
+
   const response = await fetch(
     `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=${interval}&range=${range}`,
     {
@@ -585,25 +585,25 @@ async function fetchYahooChart(params: { yahooSymbol: string; interval: string; 
       signal: AbortSignal.timeout(15000)
     }
   );
-  
+
   if (!response.ok) {
     throw new Error(`Yahoo chart HTTP ${response.status}: ${await response.text()}`);
   }
-  
+
   const data = await response.json();
-  
+
   if (!data.chart?.result?.[0]) {
     throw new Error('No chart data found in Yahoo response');
   }
-  
+
   const result = data.chart.result[0];
   const timestamps = result.timestamp || [];
   const indicators = result.indicators?.quote?.[0];
-  
+
   if (!indicators || !timestamps.length) {
     throw new Error('No price data in Yahoo chart response');
   }
-  
+
   const candles: Candle[] = [];
   for (let i = 0; i < timestamps.length; i++) {
     if (indicators.open?.[i] !== null && indicators.close?.[i] !== null) {
@@ -617,7 +617,7 @@ async function fetchYahooChart(params: { yahooSymbol: string; interval: string; 
       });
     }
   }
-  
+
   console.log(`✅ Yahoo chart success: ${candles.length} candles for ${yahooSymbol}`);
   return candles;
 }
@@ -719,8 +719,8 @@ async function fetchAlphaVantageCandles(symbol: string, timeframe: string): Prom
         close: Number(row['4. close'] || 0),
         volume: Number(row['6. volume'] || row['5. volume'] || 0),
       }))
-      .filter((c) => c.close > 0)
-      .sort((a, b) => a.timestamp - b.timestamp);
+        .filter((c) => c.close > 0)
+        .sort((a, b) => a.timestamp - b.timestamp);
 
       return candles;
     }
@@ -1093,9 +1093,9 @@ async function buildProviderIntelligence(
   const route = getAssetRouteInfo(symbol);
 
   const computedBB = {
-    upper:  technicalContext.indicators.bbUpper,
+    upper: technicalContext.indicators.bbUpper,
     middle: technicalContext.indicators.bbMiddle,
-    lower:  technicalContext.indicators.bbLower,
+    lower: technicalContext.indicators.bbLower,
   };
 
   // Computed fallback baseline (always populated)
@@ -1134,9 +1134,9 @@ async function buildProviderIntelligence(
     const tdSymbol = toTwelveDataSymbol(symbol, route.assetType);
     const tdInterval = timeframe === '15m' ? '15min'
       : timeframe === '30m' ? '30min'
-      : timeframe === '1h' ? '1h'
-      : timeframe === '4h' ? '4h'
-      : '1day';
+        : timeframe === '1h' ? '1h'
+          : timeframe === '4h' ? '4h'
+            : '1day';
 
     try {
       console.log(`📊 TwelveData (primary) for ${tdSymbol} [${route.assetType}]`);
@@ -1241,11 +1241,11 @@ async function fetchTwelveDataCandles(
   if (!values.length) throw new Error('TwelveData returned empty values');
   return values.map((v: any) => ({
     timestamp: new Date(v.datetime).getTime() / 1000,
-    open:      parseFloat(v.open),
-    high:      parseFloat(v.high),
-    low:       parseFloat(v.low),
-    close:     parseFloat(v.close),
-    volume:    parseFloat(v.volume ?? '0'),
+    open: parseFloat(v.open),
+    high: parseFloat(v.high),
+    low: parseFloat(v.low),
+    close: parseFloat(v.close),
+    volume: parseFloat(v.volume ?? '0'),
   }));
 }
 
@@ -1341,14 +1341,14 @@ async function fetchHistoricalCandles(symbol: string, timeframe: string): Promis
     const { yahooSymbol, assetType } = normalizeToYahooSymbol(symbol);
     const intervalMapping = mapInterval(timeframe);
     const range = pickRangeForInterval(intervalMapping.yahooInterval);
-    
+
     console.log(`Fetching Yahoo candles: ${symbol} → ${yahooSymbol} (${assetType}), interval: ${intervalMapping.yahooInterval}, range: ${range}`);
-    
+
     // Try different intervals if the requested one fails
     const intervalSequence = [intervalMapping.yahooInterval, '5m', '15m', '60m', '1d'];
     let candles: Candle[] = [];
     let finalInterval = intervalMapping.yahooInterval;
-    
+
     for (const interval of intervalSequence) {
       try {
         candles = await fetchYahooChart({ yahooSymbol, interval, range });
@@ -1359,18 +1359,18 @@ async function fetchHistoricalCandles(symbol: string, timeframe: string): Promis
         continue;
       }
     }
-    
+
     if (!candles.length) {
       console.log(`No candle data found for ${symbol} → ${yahooSymbol}`);
       return { candles: [], meta: null };
     }
-    
+
     // Apply aggregation if needed
     if (intervalMapping.needsAggregation && intervalMapping.aggregateToMinutes) {
       candles = resampleCandles(candles, intervalMapping.aggregateToMinutes);
       console.log(`Resampled to ${intervalMapping.aggregateToMinutes}m: ${candles.length} candles`);
     }
-    
+
     const meta: MarketMeta = {
       provider: 'Yahoo Finance',
       symbol: yahooSymbol,
@@ -1380,7 +1380,7 @@ async function fetchHistoricalCandles(symbol: string, timeframe: string): Promis
       yahooInterval: finalInterval,
       yahooRange: range
     };
-    
+
     return { candles: candles.slice(-100), meta }; // Keep last 100 candles
   } catch (error) {
     console.error(`Error fetching Yahoo candles for ${symbol}:`, error);
@@ -1408,14 +1408,14 @@ async function fetchRealStockData(symbol: string): Promise<StockData> {
         if (q?.close && parseFloat(q.close) > 0) {
           console.log(`✅ TwelveData quote for ${tdSymbol}: ${q.close}`);
           return {
-            currentPrice:  parseFloat(q.close),
-            openPrice:     parseFloat(q.open ?? q.close),
-            highPrice:     parseFloat(q.high ?? q.close),
-            lowPrice:      parseFloat(q.low  ?? q.close),
+            currentPrice: parseFloat(q.close),
+            openPrice: parseFloat(q.open ?? q.close),
+            highPrice: parseFloat(q.high ?? q.close),
+            lowPrice: parseFloat(q.low ?? q.close),
             previousClose: parseFloat(q.previous_close ?? q.close),
-            change:        parseFloat(q.change ?? '0'),
+            change: parseFloat(q.change ?? '0'),
             changePercent: parseFloat(q.percent_change ?? '0'),
-            volume24h:     parseFloat(q.volume ?? '0'),
+            volume24h: parseFloat(q.volume ?? '0'),
           };
         }
       } catch (tdErr: any) {
@@ -1448,7 +1448,7 @@ async function fetchRealStockData(symbol: string): Promise<StockData> {
 
   const { yahooSymbol, assetType } = normalizeToYahooSymbol(symbol);
   console.log(`Mapped ${symbol} → ${yahooSymbol} (${assetType})`);
-  
+
   try {
     // Get candles for quote data (replaces Yahoo quote API)
     const candles = await fetchIntradayCandlesForQuote(yahooSymbol);
@@ -1457,7 +1457,7 @@ async function fetchRealStockData(symbol: string): Promise<StockData> {
     return stockData;
   } catch (error) {
     console.error(`❌ Yahoo candle-based quote failed for ${symbol} → ${yahooSymbol}:`, error);
-    
+
     // Use enhanced fallback if candles fail
     console.log(`🟡 Using enhanced fallback data for ${symbol}`);
     return getEnhancedFallbackData(symbol);
@@ -1565,45 +1565,45 @@ function getEnhancedFallbackData(symbol: string): StockData {
 // Enhanced news fetching system with multiple sources
 async function fetchNewsData(symbol: string): Promise<NewsItem[]> {
   const newsItems: NewsItem[] = [];
-  
+
   try {
     // Try multiple news sources for better coverage
-    
+
     // Source 1: Alpha Vantage (if available)
     const alphaVantageNews = await fetchAlphaVantageNews(symbol);
     if (alphaVantageNews.length > 0) {
       newsItems.push(...alphaVantageNews);
       console.log(`Alpha Vantage: ${alphaVantageNews.length} news items for ${symbol}`);
     }
-    
+
     // Source 2: Yahoo Finance News (more reliable)
     const yahooNews = await fetchYahooFinanceNews(symbol);
     if (yahooNews.length > 0) {
       newsItems.push(...yahooNews);
       console.log(`Yahoo Finance: ${yahooNews.length} news items for ${symbol}`);
     }
-    
+
     // Source 3: MarketWatch News
     const marketWatchNews = await fetchMarketWatchNews(symbol);
     if (marketWatchNews.length > 0) {
       newsItems.push(...marketWatchNews);
       console.log(`MarketWatch: ${marketWatchNews.length} news items for ${symbol}`);
     }
-    
+
     // Source 4: Enhanced fallback news for major stocks
     const fallbackNews = await fetchFallbackNews(symbol);
     if (fallbackNews.length > 0) {
       newsItems.push(...fallbackNews);
       console.log(`Fallback: ${fallbackNews.length} news items for ${symbol}`);
     }
-    
+
     // Remove duplicates and sort by time
     const uniqueNews = removeDuplicateNews(newsItems);
     const sortedNews = uniqueNews.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
-    
+
     console.log(`Total unique news items for ${symbol}: ${sortedNews.length}`);
     return sortedNews.slice(0, 15); // Return top 15 most recent
-    
+
   } catch (error) {
     console.error('Error in enhanced news fetching:', error);
     // Return fallback news even if other sources fail
@@ -1634,7 +1634,7 @@ async function fetchAlphaVantageNews(symbol: string): Promise<NewsItem[]> {
     }
 
     const data = await response.json();
-    
+
     if (!data.feed || !Array.isArray(data.feed)) {
       return [];
     }
@@ -1659,7 +1659,7 @@ async function fetchFullYearHistory(symbol: string): Promise<{ candles: Candle[]
   const route = getAssetRouteInfo(symbol);
   const yahooSymbol = normalizeToYahooSymbol(symbol).yahooSymbol;
   console.log(`📊 Fetching full year history for ${symbol}`);
-  
+
   try {
     if (route.isUsStock) {
       const alphaCandles = await fetchAlphaVantageCandles(route.cleanSymbol, 'D');
@@ -1668,9 +1668,9 @@ async function fetchFullYearHistory(symbol: string): Promise<{ candles: Candle[]
       const endPrice = candles[candles.length - 1]?.close || 0;
       const yearChange = startPrice ? ((endPrice - startPrice) / startPrice) * 100 : 0;
       const yearTrend = yearChange > 15 ? 'strong_uptrend' :
-                        yearChange > 5 ? 'uptrend' :
-                        yearChange > -5 ? 'sideways' :
-                        yearChange > -15 ? 'downtrend' : 'strong_downtrend';
+        yearChange > 5 ? 'uptrend' :
+          yearChange > -5 ? 'sideways' :
+            yearChange > -15 ? 'downtrend' : 'strong_downtrend';
       const avgVolume = candles.length ? candles.reduce((sum, c) => sum + c.volume, 0) / candles.length : 0;
       return { candles, yearTrend, avgVolume };
     }
@@ -1682,16 +1682,16 @@ async function fetchFullYearHistory(symbol: string): Promise<{ candles: Candle[]
         signal: AbortSignal.timeout(15000)
       }
     );
-    
+
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
-    
+
     const data = await response.json();
     const result = data.chart.result[0];
     const timestamps = result.timestamp || [];
     const indicators = result.indicators?.quote?.[0];
-    
+
     const candles: Candle[] = [];
     for (let i = 0; i < timestamps.length; i++) {
       if (indicators.close?.[i] !== null) {
@@ -1705,22 +1705,22 @@ async function fetchFullYearHistory(symbol: string): Promise<{ candles: Candle[]
         });
       }
     }
-    
+
     // Calculate year trend
     const startPrice = candles[0]?.close || 0;
     const endPrice = candles[candles.length - 1]?.close || 0;
     const yearChange = ((endPrice - startPrice) / startPrice) * 100;
-    const yearTrend = yearChange > 15 ? 'strong_uptrend' : 
-                      yearChange > 5 ? 'uptrend' : 
-                      yearChange > -5 ? 'sideways' : 
-                      yearChange > -15 ? 'downtrend' : 'strong_downtrend';
-    
+    const yearTrend = yearChange > 15 ? 'strong_uptrend' :
+      yearChange > 5 ? 'uptrend' :
+        yearChange > -5 ? 'sideways' :
+          yearChange > -15 ? 'downtrend' : 'strong_downtrend';
+
     // Calculate average volume
     const avgVolume = candles.reduce((sum, c) => sum + c.volume, 0) / candles.length;
-    
+
     console.log(`✅ Full year data: ${candles.length} days, trend: ${yearTrend} (${yearChange.toFixed(2)}%)`);
     return { candles, yearTrend, avgVolume };
-    
+
   } catch (error) {
     console.log(`⚠️ Full year history failed: ${error.message}`);
     return { candles: [], yearTrend: 'unknown', avgVolume: 0 };
@@ -1732,7 +1732,7 @@ async function fetchFundamentals(symbol: string): Promise<any> {
   const route = getAssetRouteInfo(symbol);
   const yahooSymbol = normalizeToYahooSymbol(symbol).yahooSymbol;
   console.log(`💼 Fetching fundamentals for ${symbol}`);
-  
+
   try {
     if (route.assetType !== 'stock') {
       return {
@@ -1782,49 +1782,49 @@ async function fetchFundamentals(symbol: string): Promise<any> {
         signal: AbortSignal.timeout(15000)
       }
     );
-    
+
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
-    
+
     const data = await response.json();
     const result = data.quoteSummary?.result?.[0];
-    
+
     if (!result) {
       throw new Error('No summary data');
     }
-    
+
     const fundamentals = {
       // Valuation
       peRatio: result.summaryDetail?.trailingPE?.raw || result.defaultKeyStatistics?.forwardPE?.raw || null,
       pegRatio: result.defaultKeyStatistics?.pegRatio?.raw || null,
       priceToBook: result.defaultKeyStatistics?.priceToBook?.raw || null,
       priceToSales: result.summaryDetail?.priceToSalesTrailing12Months?.raw || null,
-      
+
       // Size & Scale
       marketCap: result.summaryDetail?.marketCap?.raw || null,
       enterpriseValue: result.defaultKeyStatistics?.enterpriseValue?.raw || null,
-      
+
       // Profitability
       eps: result.defaultKeyStatistics?.trailingEps?.raw || null,
       revenuePerShare: result.financialData?.revenuePerShare?.raw || null,
       profitMargins: result.financialData?.profitMargins?.raw || null,
-      
+
       // Growth
       revenueGrowth: result.financialData?.revenueGrowth?.raw || null,
       earningsGrowth: result.financialData?.earningsGrowth?.raw || null,
-      
+
       // Health
       debtToEquity: result.financialData?.debtToEquity?.raw || null,
       currentRatio: result.financialData?.currentRatio?.raw || null,
-      
+
       // Recent Earnings
       earningsQuarterly: result.earnings?.earningsChart?.quarterly || []
     };
-    
+
     console.log(`✅ Fundamentals: P/E=${fundamentals.peRatio}, MCap=${fundamentals.marketCap ? (fundamentals.marketCap / 1e9).toFixed(2) + 'B' : 'N/A'}`);
     return fundamentals;
-    
+
   } catch (error) {
     console.log(`⚠️ Fundamentals fetch failed: ${error.message}`);
     return {
@@ -1842,7 +1842,7 @@ async function fetchEarningsHistory(symbol: string): Promise<any[]> {
   const route = getAssetRouteInfo(symbol);
   const yahooSymbol = normalizeToYahooSymbol(symbol).yahooSymbol;
   console.log(`📈 Fetching earnings history for ${symbol}`);
-  
+
   try {
     if (route.assetType !== 'stock') {
       return [];
@@ -1874,23 +1874,23 @@ async function fetchEarningsHistory(symbol: string): Promise<any[]> {
         signal: AbortSignal.timeout(15000)
       }
     );
-    
+
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
-    
+
     const data = await response.json();
     const result = data.quoteSummary?.result?.[0];
-    
+
     const earningsData = {
       quarterly: result?.earnings?.earningsChart?.quarterly || [],
       history: result?.earningsHistory?.history || [],
       trend: result?.earnings?.financialsChart?.yearly || []
     };
-    
+
     console.log(`✅ Earnings: ${earningsData.quarterly.length} quarters, ${earningsData.history.length} historical`);
     return earningsData.quarterly;
-    
+
   } catch (error) {
     console.log(`⚠️ Earnings history failed: ${error.message}`);
     return [];
@@ -1915,7 +1915,7 @@ async function fetchYahooFinanceNews(symbol: string): Promise<NewsItem[]> {
     }
 
     const data = await response.json();
-    
+
     // Extract news from Yahoo response if available
     if (data.chart?.result?.[0]?.news) {
       return data.chart.result[0].news.map((item: any) => ({
@@ -1927,7 +1927,7 @@ async function fetchYahooFinanceNews(symbol: string): Promise<NewsItem[]> {
         relevance: '1.0'
       }));
     }
-    
+
     return [];
   } catch (error) {
     console.error('Yahoo Finance news error:', error);
@@ -1955,7 +1955,7 @@ async function fetchMarketWatchNews(symbol: string): Promise<NewsItem[]> {
 
     // Parse HTML for news headlines (simplified approach)
     const html = await response.text();
-    
+
     // Extract news headlines using regex patterns
     const headlineMatches = html.match(/<h3[^>]*>([^<]+)<\/h3>/g);
     if (headlineMatches) {
@@ -1971,7 +1971,7 @@ async function fetchMarketWatchNews(symbol: string): Promise<NewsItem[]> {
         };
       });
     }
-    
+
     return [];
   } catch (error) {
     console.error('MarketWatch news error:', error);
@@ -1982,7 +1982,7 @@ async function fetchMarketWatchNews(symbol: string): Promise<NewsItem[]> {
 // Enhanced fallback news for major stocks
 async function fetchFallbackNews(symbol: string): Promise<NewsItem[]> {
   const cleanSymbol = symbol.toUpperCase().replace(/[^A-Z]/g, '');
-  
+
   // Major stock news database
   const majorStockNews: Record<string, Array<{
     headline: string;
@@ -2031,7 +2031,7 @@ async function fetchFallbackNews(symbol: string): Promise<NewsItem[]> {
       { headline: "Amazon expands logistics network", source: "Supply Chain Dive", sentiment: 0.6, timeOffset: 22 }
     ]
   };
-  
+
   // Get news for this symbol
   const stockNews = majorStockNews[cleanSymbol];
   if (!stockNews) {
@@ -2055,7 +2055,7 @@ async function fetchFallbackNews(symbol: string): Promise<NewsItem[]> {
       }
     ];
   }
-  
+
   // Convert to NewsItem format with realistic timestamps
   return stockNews.map(news => ({
     time: new Date(Date.now() - news.timeOffset * 60 * 60 * 1000).toISOString(),
@@ -2090,23 +2090,23 @@ function calculateSMA(prices: number[], period: number): number {
 function calculateEMA(prices: number[], period: number): number {
   if (prices.length === 0) return 0;
   if (prices.length === 1) return prices[0];
-  
+
   const multiplier = 2 / (period + 1);
   let ema = prices[0];
-  
+
   for (let i = 1; i < prices.length; i++) {
     ema = (prices[i] * multiplier) + (ema * (1 - multiplier));
   }
-  
+
   return ema;
 }
 
 function calculateRSI(prices: number[], period: number = 14): number {
   if (prices.length < period + 1) return 50; // Neutral RSI if not enough data
-  
+
   let gains = 0;
   let losses = 0;
-  
+
   for (let i = 1; i <= period; i++) {
     const change = prices[prices.length - i] - prices[prices.length - i - 1];
     if (change > 0) {
@@ -2115,12 +2115,12 @@ function calculateRSI(prices: number[], period: number = 14): number {
       losses -= change;
     }
   }
-  
+
   const avgGain = gains / period;
   const avgLoss = losses / period;
-  
+
   if (avgLoss === 0) return 100;
-  
+
   const rs = avgGain / avgLoss;
   return 100 - (100 / (1 + rs));
 }
@@ -2129,11 +2129,11 @@ function calculateMACD(prices: number[]): { macd: number; signal: number; histog
   const ema12 = calculateEMA(prices, 12);
   const ema26 = calculateEMA(prices, 26);
   const macd = ema12 - ema26;
-  
+
   // Simple signal line approximation
   const signal = macd * 0.8; // Simplified
   const histogram = macd - signal;
-  
+
   return { macd, signal, histogram };
 }
 
@@ -2141,7 +2141,7 @@ function calculateBollingerBands(prices: number[], period: number = 20): { upper
   const sma = calculateSMA(prices, period);
   const variance = prices.slice(-period).reduce((sum, price) => sum + Math.pow(price - sma, 2), 0) / period;
   const standardDeviation = Math.sqrt(variance);
-  
+
   return {
     upper: sma + (2 * standardDeviation),
     middle: sma,
@@ -2151,23 +2151,23 @@ function calculateBollingerBands(prices: number[], period: number = 20): { upper
 
 function calculateATR(candles: Candle[], period: number = 14): number {
   if (candles.length < 2) return 0;
-  
+
   const trueRanges: number[] = [];
-  
+
   for (let i = 1; i < candles.length; i++) {
     const high = candles[i].high;
     const low = candles[i].low;
     const prevClose = candles[i - 1].close;
-    
+
     const tr = Math.max(
       high - low,
       Math.abs(high - prevClose),
       Math.abs(low - prevClose)
     );
-    
+
     trueRanges.push(tr);
   }
-  
+
   return calculateSMA(trueRanges, Math.min(period, trueRanges.length));
 }
 
@@ -2207,7 +2207,7 @@ function computeEnhancedTechnicalContext(candles: Candle[], stockData: StockData
   const volumes = candles.map(c => c.volume);
   const highs = candles.map(c => c.high);
   const lows = candles.map(c => c.low);
-  
+
   // Calculate all technical indicators
   const sma20 = calculateSMA(closePrices, 20);
   const sma50 = calculateSMA(closePrices, 50);
@@ -2225,18 +2225,18 @@ function computeEnhancedTechnicalContext(candles: Candle[], stockData: StockData
   // Enhanced pattern detection with confidence scoring
   const patterns = [];
   const currentPrice = stockData.currentPrice;
-  
+
   // Advanced trend analysis with multiple timeframes
   let trendDirection = "neutral";
   let trendStrength = 0;
-  
+
   // Multi-timeframe trend analysis
   const shortTermTrend = currentPrice > sma20 ? 1 : -1;
   const mediumTermTrend = sma20 > sma50 ? 1 : -1;
   const longTermTrend = sma50 > sma200 ? 1 : -1;
-  
+
   trendStrength = (shortTermTrend + mediumTermTrend + longTermTrend) / 3;
-  
+
   if (trendStrength > 0.3) {
     trendDirection = "bullish";
   } else if (trendStrength < -0.3) {
@@ -2246,12 +2246,12 @@ function computeEnhancedTechnicalContext(candles: Candle[], stockData: StockData
   // Enhanced RSI analysis with divergence detection
   if (rsi > 70) patterns.push("overbought_rsi");
   if (rsi < 30) patterns.push("oversold_rsi");
-  
+
   // RSI divergence detection
   if (candles.length >= 14) {
     const recentRSI = calculateRSI(closePrices.slice(-14), 14);
     const previousRSI = calculateRSI(closePrices.slice(-28, -14), 14);
-    
+
     if (currentPrice > closePrices[closePrices.length - 15] && recentRSI < previousRSI) {
       patterns.push("bearish_rsi_divergence");
     } else if (currentPrice < closePrices[closePrices.length - 15] && recentRSI > previousRSI) {
@@ -2262,7 +2262,7 @@ function computeEnhancedTechnicalContext(candles: Candle[], stockData: StockData
   // Enhanced MACD analysis
   if (macdData.macd > macdData.signal) patterns.push("macd_bullish");
   if (macdData.macd < macdData.signal) patterns.push("macd_bearish");
-  
+
   // MACD histogram momentum
   if (macdData.histogram > 0 && macdData.histogram > Math.abs(macdData.histogram * 0.8)) {
     patterns.push("macd_momentum_bullish");
@@ -2273,11 +2273,11 @@ function computeEnhancedTechnicalContext(candles: Candle[], stockData: StockData
   // Enhanced Bollinger Bands analysis
   if (currentPrice > bbData.upper) patterns.push("bb_breakout_upper");
   if (currentPrice < bbData.lower) patterns.push("bb_breakout_lower");
-  
+
   // Bollinger Band squeeze detection
   const bbWidth = (bbData.upper - bbData.lower) / bbData.middle;
   if (bbWidth < 0.02) patterns.push("bb_squeeze");
-  
+
   // Price position within bands
   const bbPosition = (currentPrice - bbData.lower) / (bbData.upper - bbData.lower);
   if (bbPosition > 0.8) patterns.push("bb_upper_band");
@@ -2286,34 +2286,34 @@ function computeEnhancedTechnicalContext(candles: Candle[], stockData: StockData
   // Enhanced support and resistance with volume confirmation
   const supportLevels = [];
   const resistanceLevels = [];
-  
+
   // Dynamic support/resistance based on recent price action
   const recentHighs = highs.slice(-20);
   const recentLows = lows.slice(-20);
-  
+
   // Find clusters of highs and lows (potential resistance/support)
   const highClusters = findPriceClusters(recentHighs, 0.01);
   const lowClusters = findPriceClusters(recentLows, 0.01);
-  
+
   // Add strongest levels (most touches)
   highClusters.forEach(cluster => {
     if (cluster.count >= 2) {
       resistanceLevels.push({ level: cluster.price, strength: cluster.count / 5 });
     }
   });
-  
+
   lowClusters.forEach(cluster => {
     if (cluster.count >= 2) {
       supportLevels.push({ level: cluster.price, strength: cluster.count / 5 });
     }
   });
-  
+
   // Add technical levels
   supportLevels.push({ level: sma50, strength: 0.7 });
   supportLevels.push({ level: bbData.lower, strength: 0.6 });
   resistanceLevels.push({ level: sma50, strength: 0.7 });
   resistanceLevels.push({ level: bbData.upper, strength: 0.6 });
-  
+
   // Sort by strength
   supportLevels.sort((a, b) => b.strength - a.strength);
   resistanceLevels.sort((a, b) => b.strength - a.strength);
@@ -2323,7 +2323,7 @@ function computeEnhancedTechnicalContext(candles: Candle[], stockData: StockData
   const currentVolume = volumes[volumes.length - 1] || 0;
   let volumeProfile = "normal";
   let volumeConfirmation = 0;
-  
+
   if (currentVolume > avgVolume * 1.5) {
     volumeProfile = "high";
     volumeConfirmation = 1;
@@ -2331,7 +2331,7 @@ function computeEnhancedTechnicalContext(candles: Candle[], stockData: StockData
     volumeProfile = "low";
     volumeConfirmation = -0.5;
   }
-  
+
   // Volume trend analysis
   const volumeTrend = calculateVolumeTrend(volumes, closePrices);
   if (volumeTrend > 0.3) patterns.push("volume_trend_bullish");
@@ -2341,7 +2341,7 @@ function computeEnhancedTechnicalContext(candles: Candle[], stockData: StockData
   const priceRange = atr / currentPrice;
   let volatilityState = "normal_volatility";
   let volatilityRegime = "normal";
-  
+
   if (priceRange > 0.05) {
     volatilityState = "extreme_volatility";
     volatilityRegime = "high";
@@ -2402,9 +2402,9 @@ function computeEnhancedTechnicalContext(candles: Candle[], stockData: StockData
 }
 
 // Helper functions for enhanced analysis
-function findPriceClusters(prices: number[], threshold: number): Array<{price: number, count: number}> {
-  const clusters: Array<{price: number, count: number}> = [];
-  
+function findPriceClusters(prices: number[], threshold: number): Array<{ price: number, count: number }> {
+  const clusters: Array<{ price: number, count: number }> = [];
+
   prices.forEach(price => {
     let found = false;
     for (const cluster of clusters) {
@@ -2419,24 +2419,24 @@ function findPriceClusters(prices: number[], threshold: number): Array<{price: n
       clusters.push({ price, count: 1 });
     }
   });
-  
+
   return clusters;
 }
 
 function calculateVolumeTrend(volumes: number[], prices: number[]): number {
   if (volumes.length < 10 || prices.length < 10) return 0;
-  
+
   const recentVolumes = volumes.slice(-10);
   const recentPrices = prices.slice(-10);
-  
+
   let volumePriceCorrelation = 0;
   const avgVolume = recentVolumes.reduce((a, b) => a + b, 0) / recentVolumes.length;
   const avgPrice = recentPrices.reduce((a, b) => a + b, 0) / recentPrices.length;
-  
+
   for (let i = 0; i < 10; i++) {
     volumePriceCorrelation += (recentVolumes[i] - avgVolume) * (recentPrices[i] - avgPrice);
   }
-  
+
   return volumePriceCorrelation / (10 * Math.sqrt(
     recentVolumes.reduce((sum, v) => sum + Math.pow(v - avgVolume, 2), 0) / 10
   ) * Math.sqrt(
@@ -2446,7 +2446,7 @@ function calculateVolumeTrend(volumes: number[], prices: number[]): number {
 
 function calculateMomentum(prices: number[], period: number): number {
   if (prices.length < period) return 0;
-  
+
   const recent = prices.slice(-period);
   const momentum = (recent[recent.length - 1] - recent[0]) / recent[0];
   return momentum;
@@ -2454,10 +2454,10 @@ function calculateMomentum(prices: number[], period: number): number {
 
 function calculateMeanReversionSignal(prices: number[], sma: number, atr: number): number {
   if (prices.length === 0) return 0;
-  
+
   const currentPrice = prices[prices.length - 1];
   const deviation = (currentPrice - sma) / atr;
-  
+
   // Normalize to -1 to 1 range
   return Math.max(-1, Math.min(1, deviation / 2));
 }
@@ -2504,7 +2504,7 @@ function deriveActionSignal(
   bias: "long" | "short" | "flat",
   confidence: number
 ): { action: "BUY" | "SELL" | "HOLD"; confidence: number; urgency: "HIGH" | "MEDIUM" | "LOW" } {
-  
+
   let action: "BUY" | "SELL" | "HOLD";
   let urgency: "HIGH" | "MEDIUM" | "LOW";
 
@@ -2535,7 +2535,7 @@ function calculateExpectedROI(
   confidence: number,
   volatility: number
 ): { best_case: number; likely_case: number; worst_case: number } {
-  const vol  = Math.max(volatility, 1);   // floor: at least 1% vol
+  const vol = Math.max(volatility, 1);   // floor: at least 1% vol
   const conf = Math.max(confidence, 10);  // floor: at least 10% confidence
 
   let baseReturn = expectedReturnBp / 100; // basis points → percentage
@@ -2548,19 +2548,19 @@ function calculateExpectedROI(
   }
 
   // Best case: confidence boosts the upside
-  const bestCase   = baseReturn * (1 + (conf / 100) * 0.5);
+  const bestCase = baseReturn * (1 + (conf / 100) * 0.5);
   // Likely case: the central expected return
   const likelyCase = baseReturn;
   // Worst case: downside driven by volatility and lack of confidence
-  const downside   = vol * (100 - conf) / 100;
-  const worstCase  = -Math.max(Math.abs(downside), vol * 0.5);
+  const downside = vol * (100 - conf) / 100;
+  const worstCase = -Math.max(Math.abs(downside), vol * 0.5);
 
   // Round to 2 decimal places so small values (e.g. 0.04 %) never collapse to 0.0
   const r2 = (n: number) => Math.round(n * 100) / 100;
   return {
-    best_case:   r2(bestCase),
+    best_case: r2(bestCase),
     likely_case: r2(likelyCase),
-    worst_case:  r2(worstCase),
+    worst_case: r2(worstCase),
   };
 }
 
@@ -2572,7 +2572,7 @@ async function generateEnhancedGeminiAnalysis(
   newsData: NewsItem[],
   investment: number,
   horizons: number[],
-    userContext?: {
+  userContext?: {
     riskTolerance?: string;
     tradingStyle?: string;
     investmentGoal?: string;
@@ -2684,25 +2684,25 @@ ${enhancedData?.providerIntelligence ? `- Source: ${enhancedData.providerIntelli
 - Notes: ${enhancedData.providerIntelligence.sentiment.notes || 'N/A'}` : '- Sentiment block unavailable'}
 
 EARNINGS HISTORY:
-${enhancedData?.earningsHistory && enhancedData.earningsHistory.length > 0 ? 
-  enhancedData.earningsHistory.slice(0, 4).map((e: any) => 
-    `- ${e.date}: Actual: $${e.actual?.toFixed(2) || 'N/A'}, Estimate: $${e.estimate?.toFixed(2) || 'N/A'} (${e.actual && e.estimate ? ((e.actual - e.estimate) / e.estimate * 100).toFixed(1) + '% ' + (e.actual > e.estimate ? 'beat' : 'miss') : ''})`
-  ).join('\n') : '- No recent earnings data'}
+${enhancedData?.earningsHistory && enhancedData.earningsHistory.length > 0 ?
+      enhancedData.earningsHistory.slice(0, 4).map((e: any) =>
+        `- ${e.date}: Actual: $${e.actual?.toFixed(2) || 'N/A'}, Estimate: $${e.estimate?.toFixed(2) || 'N/A'} (${e.actual && e.estimate ? ((e.actual - e.estimate) / e.estimate * 100).toFixed(1) + '% ' + (e.actual > e.estimate ? 'beat' : 'miss') : ''})`
+      ).join('\n') : '- No recent earnings data'}
 
 MARKET CORRELATION ANALYSIS (vs S&P 500):
 ${spyCorrelation ? `- Correlation Coefficient: ${(spyCorrelation.coefficient * 100).toFixed(1)}% (${spyCorrelation.relationship})
 - Stock is moving ${spyCorrelation.movingWith} 
 - SPY Recent Change: ${spyCorrelation.spyChange.toFixed(2)}%
-- Interpretation: ${Math.abs(spyCorrelation.coefficient) > 0.7 ? 
-    'Stock highly correlated with market - macro factors dominate' : 
-    Math.abs(spyCorrelation.coefficient) > 0.4 ? 
-      'Stock moderately tied to market - mix of macro & company-specific' : 
-      'Stock moves independently - focus on company-specific factors'}
-- Risk Insight: ${spyCorrelation.coefficient < 0 ? 
-    '⚠️ NEGATIVE correlation - potential hedge/defensive play' : 
-    spyCorrelation.coefficient > 0.8 ? 
-      '⚠️ BETA risk - will amplify market moves' : 
-      '✓ Moderate market sensitivity'}` : '- Correlation data not available'}
+- Interpretation: ${Math.abs(spyCorrelation.coefficient) > 0.7 ?
+        'Stock highly correlated with market - macro factors dominate' :
+        Math.abs(spyCorrelation.coefficient) > 0.4 ?
+          'Stock moderately tied to market - mix of macro & company-specific' :
+          'Stock moves independently - focus on company-specific factors'}
+- Risk Insight: ${spyCorrelation.coefficient < 0 ?
+        '⚠️ NEGATIVE correlation - potential hedge/defensive play' :
+        spyCorrelation.coefficient > 0.8 ?
+          '⚠️ BETA risk - will amplify market moves' :
+          '✓ Moderate market sensitivity'}` : '- Correlation data not available'}
 
 INVESTMENT CONTEXT:
 - Position Size: $${investment}
@@ -2765,7 +2765,7 @@ PASS 6 - FINAL SYNTHESIS:
 33. Give clear, actionable reasoning that a professional trader would respect
 34. If signals are mixed or weak, recommend HOLD - don't force a trade
 
-Generate forecasts for horizons: ${horizons.map(h => h < 1440 ? `${h}m` : `${h/1440}d`).join(', ')}
+Generate forecasts for horizons: ${horizons.map(h => h < 1440 ? `${h}m` : `${h / 1440}d`).join(', ')}
 
 ⚠️ CRITICAL REQUIREMENTS:
 - Your analysis must be PROFESSIONAL-GRADE, not generic
@@ -2862,12 +2862,12 @@ Respond with a valid JSON object matching this exact schema:
     }
 
     const data = await response.json();
-    
+
     // Log thinking token usage
     if (data.usageMetadata?.thoughtsTokenCount) {
       console.log(`🧠 Gemini 3 Pro Deep Thinking: ${data.usageMetadata.thoughtsTokenCount} thinking tokens, ${data.usageMetadata.candidatesTokenCount} output tokens`);
     }
-    
+
     const generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!generatedText) {
@@ -2900,16 +2900,16 @@ function generateEnsemblePrediction(
   const forecasts = horizons.map(horizon => {
     // Model 1: Technical momentum model
     const technicalScore = calculateTechnicalScore(technicalContext);
-    
+
     // Model 2: Mean reversion model
     const meanReversionScore = calculateMeanReversionScore(technicalContext);
-    
+
     // Model 3: Volume-price model
     const volumePriceScore = calculateVolumePriceScore(technicalContext);
-    
+
     // Model 4: News sentiment model
     const sentimentScore = calculateSentimentScore(newsData);
-    
+
     // Ensemble weights (can be optimized based on historical performance)
     const weights = {
       technical: 0.35,
@@ -2917,18 +2917,18 @@ function generateEnsemblePrediction(
       volumePrice: 0.25,
       sentiment: 0.15
     };
-    
+
     // Combined score
-    const combinedScore = 
+    const combinedScore =
       technicalScore * weights.technical +
       meanReversionScore * weights.meanReversion +
       volumePriceScore * weights.volumePrice +
       sentimentScore * weights.sentiment;
-    
+
     // Determine direction and confidence
     let direction: "up" | "down" | "sideways" = "sideways";
     let confidence = 50;
-    
+
     if (combinedScore > 0.3) {
       direction = "up";
       confidence = Math.min(95, 50 + Math.abs(combinedScore) * 100);
@@ -2936,23 +2936,23 @@ function generateEnsemblePrediction(
       direction = "down";
       confidence = Math.min(95, 50 + Math.abs(combinedScore) * 100);
     }
-    
+
     // Calculate expected returns based on volatility and momentum
-    const volatilityMultiplier = technicalContext.volatilityRegime === 'high' ? 1.5 : 
-                                 technicalContext.volatilityRegime === 'elevated' ? 1.2 : 1.0;
-    
+    const volatilityMultiplier = technicalContext.volatilityRegime === 'high' ? 1.5 :
+      technicalContext.volatilityRegime === 'elevated' ? 1.2 : 1.0;
+
     const baseReturn = Math.abs(combinedScore) * 100; // Base return in basis points
     const expectedReturn = baseReturn * volatilityMultiplier;
-    
+
     // Risk assessment
     const riskFlags = [];
     if (technicalContext.volatilityRegime === 'high') riskFlags.push('high_volatility');
     if (Math.abs(technicalContext.meanReversionSignal) > 0.8) riskFlags.push('extreme_deviation');
     if (technicalContext.volumeConfirmation === 0) riskFlags.push('low_volume_confirmation');
     if (technicalContext.trendStrength < 0.2 && technicalContext.trendStrength > -0.2) riskFlags.push('weak_trend');
-    
+
     return {
-      horizon: horizon < 1440 ? `${horizon}m` : `${horizon/1440}d`,
+      horizon: horizon < 1440 ? `${horizon}m` : `${horizon / 1440}d`,
       direction,
       probabilities: {
         up: direction === 'up' ? confidence / 100 : (1 - confidence / 100) / 2,
@@ -2971,7 +2971,7 @@ function generateEnsemblePrediction(
       invalid_if: getInvalidConditions(horizon, technicalContext)
     };
   });
-  
+
   return {
     symbol,
     as_of: new Date().toISOString(),
@@ -2981,8 +2981,8 @@ function generateEnsemblePrediction(
       resistances: technicalContext.resistanceLevels.map(level => ({ level, strength: 0.7 }))
     },
     positioning_guidance: {
-      bias: forecasts[0]?.direction === 'up' ? 'long' : 
-            forecasts[0]?.direction === 'down' ? 'short' : 'flat',
+      bias: forecasts[0]?.direction === 'up' ? 'long' :
+        forecasts[0]?.direction === 'down' ? 'short' : 'flat',
       notes: generatePositioningNotes(technicalContext, forecasts[0])
     }
   };
@@ -2991,23 +2991,23 @@ function generateEnsemblePrediction(
 // Helper functions for ensemble prediction
 function calculateTechnicalScore(context: TechnicalContext): number {
   let score = 0;
-  
+
   // Trend strength contribution
   score += context.trendStrength * 0.4;
-  
+
   // RSI contribution
   if (context.indicators.rsi < 30) score += 0.3; // Oversold
   else if (context.indicators.rsi > 70) score -= 0.3; // Overbought
   else score += (50 - context.indicators.rsi) / 100; // Neutral zone
-  
+
   // MACD contribution
   if (context.indicators.macd > context.indicators.macdSignal) score += 0.2;
   else score -= 0.2;
-  
+
   // Bollinger Bands contribution
   const bbPosition = (context.indicators.bbUpper - context.indicators.bbLower) / context.indicators.bbMiddle;
   if (bbPosition < 0.02) score += 0.1; // Squeeze potential
-  
+
   return Math.max(-1, Math.min(1, score));
 }
 
@@ -3017,73 +3017,73 @@ function calculateMeanReversionScore(context: TechnicalContext): number {
 
 function calculateVolumePriceScore(context: TechnicalContext): number {
   let score = 0;
-  
+
   // Volume confirmation
   score += context.volumeConfirmation * 0.5;
-  
+
   // Volume trend
   if (context.patterns.includes('volume_trend_bullish')) score += 0.3;
   if (context.patterns.includes('volume_trend_bearish')) score -= 0.3;
-  
+
   return Math.max(-1, Math.min(1, score));
 }
 
 function calculateSentimentScore(newsData: NewsItem[]): number {
   if (newsData.length === 0) return 0;
-  
+
   const avgSentiment = newsData.reduce((sum, news) => sum + news.sentiment_score, 0) / newsData.length;
   return Math.max(-1, Math.min(1, avgSentiment));
 }
 
 function getKeyDrivers(context: TechnicalContext, newsData: NewsItem[]): string[] {
   const drivers = [];
-  
+
   if (context.trendStrength > 0.5) drivers.push('strong_trend');
   if (context.momentum > 0.02) drivers.push('momentum');
   if (context.volumeConfirmation > 0) drivers.push('volume_confirmation');
   if (context.patterns.includes('bb_squeeze')) drivers.push('volatility_breakout_potential');
   if (Math.abs(context.meanReversionSignal) > 0.7) drivers.push('mean_reversion');
-  
+
   if (newsData.length > 0) {
     const avgSentiment = newsData.reduce((sum, news) => sum + news.sentiment_score, 0) / newsData.length;
     if (avgSentiment > 0.3) drivers.push('positive_sentiment');
     else if (avgSentiment < -0.3) drivers.push('negative_sentiment');
   }
-  
+
   return drivers.slice(0, 3);
 }
 
 function getInvalidConditions(horizon: number, context: TechnicalContext): string[] {
   const conditions = [];
-  
+
   if (horizon >= 1440 && context.volatilityRegime === 'extreme') {
     conditions.push('extreme_volatility_unsuitable_for_daily');
   }
-  
+
   if (context.patterns.includes('bb_squeeze')) {
     conditions.push('volatility_breakout_imminent');
   }
-  
+
   return conditions;
 }
 
 function generatePositioningNotes(context: TechnicalContext, forecast: any): string {
   let notes = '';
-  
+
   if (context.trendStrength > 0.5) {
     notes += 'Strong trend following recommended. ';
   } else if (Math.abs(context.meanReversionSignal) > 0.7) {
     notes += 'Mean reversion setup detected. ';
   }
-  
+
   if (context.volumeConfirmation === 0) {
     notes += 'Wait for volume confirmation. ';
   }
-  
+
   if (context.volatilityRegime === 'high') {
     notes += 'High volatility - use tight stops. ';
   }
-  
+
   return notes || 'Mixed signals - consider waiting for clearer setup.';
 }
 
@@ -3143,7 +3143,7 @@ function getPredictionModel(symbol: string): PredictionLearningModel {
 function updateModelWeights(model: PredictionLearningModel, recentAccuracy: number) {
   // Simple exponential moving average update
   const alpha = 0.1; // Learning rate
-  
+
   // Update confidence calibration
   if (recentAccuracy > 80) {
     // Overconfident, reduce scaling
@@ -3152,10 +3152,10 @@ function updateModelWeights(model: PredictionLearningModel, recentAccuracy: numb
     // Underconfident, increase scaling
     model.confidenceCalibration.scaling *= (1 + alpha);
   }
-  
+
   // Keep scaling within reasonable bounds
   model.confidenceCalibration.scaling = Math.max(0.5, Math.min(2.0, model.confidenceCalibration.scaling));
-  
+
   model.lastUpdated = new Date().toISOString();
 }
 
@@ -3168,26 +3168,26 @@ function generateEnhancedEnsemblePrediction(
   horizons: number[]
 ): GeminiForecast {
   const model = getPredictionModel(symbol);
-  
+
   const forecasts = horizons.map(horizon => {
     // Get individual model scores
     const technicalScore = calculateTechnicalScore(technicalContext);
     const meanReversionScore = calculateMeanReversionScore(technicalContext);
     const volumePriceScore = calculateVolumePriceScore(technicalContext);
     const sentimentScore = calculateSentimentScore(newsData);
-    
+
     // Use learned weights
-    const combinedScore = 
+    const combinedScore =
       technicalScore * model.modelWeights.technical +
       meanReversionScore * model.modelWeights.meanReversion +
       volumePriceScore * model.modelWeights.volumePrice +
       sentimentScore * model.modelWeights.sentiment;
-    
+
     // Apply confidence calibration
     let confidence = 50 + Math.abs(combinedScore) * 50;
     confidence = confidence * model.confidenceCalibration.scaling + model.confidenceCalibration.bias;
     confidence = Math.max(10, Math.min(95, confidence));
-    
+
     // Determine direction
     let direction: "up" | "down" | "sideways" = "sideways";
     if (combinedScore > 0.3) {
@@ -3195,27 +3195,27 @@ function generateEnhancedEnsemblePrediction(
     } else if (combinedScore < -0.3) {
       direction = "down";
     }
-    
+
     // Enhanced return calculation with market regime awareness
-    const volatilityMultiplier = technicalContext.volatilityRegime === 'high' ? 1.5 : 
-                                 technicalContext.volatilityRegime === 'elevated' ? 1.2 : 1.0;
-    
+    const volatilityMultiplier = technicalContext.volatilityRegime === 'high' ? 1.5 :
+      technicalContext.volatilityRegime === 'elevated' ? 1.2 : 1.0;
+
     const baseReturn = Math.abs(combinedScore) * 100;
     const expectedReturn = baseReturn * volatilityMultiplier;
-    
+
     // Enhanced risk assessment
     const riskFlags = [];
     if (technicalContext.volatilityRegime === 'high') riskFlags.push('high_volatility');
     if (Math.abs(technicalContext.meanReversionSignal) > 0.8) riskFlags.push('extreme_deviation');
     if (technicalContext.volumeConfirmation === 0) riskFlags.push('low_volume_confirmation');
     if (technicalContext.trendStrength < 0.2 && technicalContext.trendStrength > -0.2) riskFlags.push('weak_trend');
-    
+
     // Add market regime specific risks
     if (technicalContext.volatilityRegime === 'extreme') riskFlags.push('extreme_volatility_regime');
     if (technicalContext.patterns.includes('bb_squeeze')) riskFlags.push('volatility_breakout_imminent');
-    
+
     return {
-      horizon: horizon < 1440 ? `${horizon}m` : `${horizon/1440}d`,
+      horizon: horizon < 1440 ? `${horizon}m` : `${horizon / 1440}d`,
       direction,
       probabilities: {
         up: direction === 'up' ? confidence / 100 : (1 - confidence / 100) / 2,
@@ -3238,7 +3238,7 @@ function generateEnhancedEnsemblePrediction(
       lastModelUpdate: model.lastUpdated
     };
   });
-  
+
   return {
     symbol,
     as_of: new Date().toISOString(),
@@ -3248,8 +3248,8 @@ function generateEnhancedEnsemblePrediction(
       resistances: technicalContext.resistanceLevels.map(level => ({ level, strength: 0.7 }))
     },
     positioning_guidance: {
-      bias: forecasts[0]?.direction === 'up' ? 'long' : 
-            forecasts[0]?.direction === 'down' ? 'short' : 'flat',
+      bias: forecasts[0]?.direction === 'up' ? 'long' :
+        forecasts[0]?.direction === 'down' ? 'short' : 'flat',
       notes: generatePositioningNotes(technicalContext, forecasts[0])
     },
     // Enhanced metadata
@@ -3316,17 +3316,17 @@ interface AlternativeScenario {
 function detectMarketRegime(candles: Candle[], technicalContext: TechnicalContext): MarketRegime {
   const closePrices = candles.map(c => c.close);
   const volumes = candles.map(c => c.volume);
-  
+
   // Advanced trend analysis
   const trendStrength = calculateAdvancedTrendStrength(closePrices);
   const volatilityIndex = calculateVolatilityIndex(closePrices);
   const momentumIndex = calculateMomentumIndex(closePrices, volumes);
   const supportResistance = calculateDynamicSupportResistance(closePrices);
-  
+
   // Market regime classification
   let regimeType: MarketRegime['type'] = 'consolidating';
   let regimeStrength = 0;
-  
+
   if (trendStrength > 0.7) {
     regimeType = 'trending';
     regimeStrength = trendStrength;
@@ -3340,7 +3340,7 @@ function detectMarketRegime(candles: Candle[], technicalContext: TechnicalContex
     regimeType = 'reversal';
     regimeStrength = Math.abs(momentumIndex);
   }
-  
+
   return {
     type: regimeType,
     strength: regimeStrength,
@@ -3355,34 +3355,34 @@ function detectMarketRegime(candles: Candle[], technicalContext: TechnicalContex
 // GODLY PLAN: Advanced Trend Strength Calculation
 function calculateAdvancedTrendStrength(prices: number[]): number {
   if (prices.length < 50) return 0;
-  
+
   // Multiple timeframe trend analysis
   const shortTerm = calculateTrendDirection(prices.slice(-20));
   const mediumTerm = calculateTrendDirection(prices.slice(-50));
   const longTerm = calculateTrendDirection(prices.slice(-100));
-  
+
   // Weighted trend strength
   const weightedStrength = (shortTerm * 0.5) + (mediumTerm * 0.3) + (longTerm * 0.2);
-  
+
   // Trend consistency check
   const consistency = calculateTrendConsistency(prices);
-  
+
   return Math.min(1, weightedStrength * consistency);
 }
 
 // GODLY PLAN: Volatility Index Calculation
 function calculateVolatilityIndex(prices: number[]): number {
   if (prices.length < 20) return 0;
-  
+
   const returns = [];
   for (let i = 1; i < prices.length; i++) {
-    returns.push((prices[i] - prices[i-1]) / prices[i-1]);
+    returns.push((prices[i] - prices[i - 1]) / prices[i - 1]);
   }
-  
+
   const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
   const variance = returns.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / returns.length;
   const stdDev = Math.sqrt(variance);
-  
+
   // Normalize to 0-1 scale
   return Math.min(1, stdDev * 100);
 }
@@ -3390,15 +3390,15 @@ function calculateVolatilityIndex(prices: number[]): number {
 // GODLY PLAN: Momentum Index Calculation
 function calculateMomentumIndex(prices: number[], volumes: number[]): number {
   if (prices.length < 20 || volumes.length < 20) return 0;
-  
+
   // Price momentum
   const priceMomentum = (prices[prices.length - 1] - prices[prices.length - 20]) / prices[prices.length - 20];
-  
+
   // Volume momentum
   const avgVolume = volumes.slice(-20).reduce((a, b) => a + b, 0) / 20;
   const currentVolume = volumes[volumes.length - 1];
   const volumeMomentum = (currentVolume - avgVolume) / avgVolume;
-  
+
   // Combined momentum
   return (priceMomentum * 0.7) + (volumeMomentum * 0.3);
 }
@@ -3406,19 +3406,19 @@ function calculateMomentumIndex(prices: number[], volumes: number[]): number {
 // GODLY PLAN: Dynamic Support/Resistance
 function calculateDynamicSupportResistance(prices: number[]): { support: number; resistance: number } {
   if (prices.length < 20) return { support: prices[0] * 0.95, resistance: prices[0] * 1.05 };
-  
+
   const highs = prices.slice(-20);
   const lows = prices.slice(-20);
-  
+
   // Find significant levels
   const resistance = Math.max(...highs);
   const support = Math.min(...lows);
-  
+
   // Adjust for current price
   const currentPrice = prices[prices.length - 1];
   const adjustedResistance = resistance + (currentPrice * 0.01);
   const adjustedSupport = support - (currentPrice * 0.01);
-  
+
   return {
     support: adjustedSupport,
     resistance: adjustedResistance
@@ -3428,27 +3428,27 @@ function calculateDynamicSupportResistance(prices: number[]): { support: number;
 // GODLY PLAN: Regime Confidence Calculation
 function calculateRegimeConfidence(context: TechnicalContext): number {
   let confidence = 0.5; // Base confidence
-  
+
   // Pattern confidence
   if (context.patterns.includes('strong_trend_bullish') || context.patterns.includes('strong_trend_bearish')) {
     confidence += 0.2;
   }
-  
+
   // Volume confirmation
   if (context.volumeConfirmation > 0) {
     confidence += 0.15;
   }
-  
+
   // RSI confidence
   if (context.indicators.rsi < 30 || context.indicators.rsi > 70) {
     confidence += 0.1;
   }
-  
+
   // MACD confidence
   if (Math.abs(context.indicators.macd) > Math.abs(context.indicators.macdSignal)) {
     confidence += 0.1;
   }
-  
+
   return Math.min(1, confidence);
 }
 
@@ -3500,7 +3500,7 @@ function generateQuantumPrediction(
   marketRegime: MarketRegime,
   horizons: number[]
 ): QuantumPrediction {
-  
+
   // Multi-model ensemble with quantum weighting
   const models = {
     technical: generateTechnicalPrediction(technicalContext, marketRegime),
@@ -3510,19 +3510,19 @@ function generateQuantumPrediction(
     meanReversion: generateMeanReversionPrediction(technicalContext, stockData),
     volatility: generateVolatilityPrediction(technicalContext, marketRegime)
   };
-  
+
   // Quantum weighting based on market regime
   const weights = getQuantumWeights(marketRegime);
-  
+
   // Combine predictions with quantum precision
   const combinedPrediction = combinePredictions(models, weights, horizons);
-  
+
   // Calculate success probability
   const successProbability = calculateSuccessProbability(combinedPrediction, marketRegime);
-  
+
   // Generate alternative scenarios
   const alternativeScenarios = generateAlternativeScenarios(combinedPrediction, marketRegime);
-  
+
   return {
     symbol,
     timestamp: new Date().toISOString(),
@@ -3539,7 +3539,7 @@ function generateQuantumPrediction(
 function generateTechnicalPrediction(context: TechnicalContext, regime: MarketRegime): any {
   let direction: 'up' | 'down' | 'sideways' = 'sideways';
   let confidence = 0.5;
-  
+
   // Advanced pattern recognition
   if (context.patterns.includes('strong_trend_bullish') && regime.momentum === 'bullish') {
     direction = 'up';
@@ -3554,7 +3554,7 @@ function generateTechnicalPrediction(context: TechnicalContext, regime: MarketRe
     direction = 'down';
     confidence = 0.7;
   }
-  
+
   return { direction, confidence };
 }
 
@@ -3563,27 +3563,27 @@ function generateStatisticalPrediction(context: TechnicalContext, stockData: Sto
   // Statistical analysis based on historical patterns
   const rsiSignal = context.indicators.rsi < 30 ? 'up' : context.indicators.rsi > 70 ? 'down' : 'sideways';
   const macdSignal = context.indicators.macd > context.indicators.macdSignal ? 'up' : 'down';
-  
+
   let direction: 'up' | 'down' | 'sideways' = 'sideways';
   let confidence = 0.5;
-  
+
   if (rsiSignal === macdSignal && rsiSignal !== 'sideways') {
     direction = rsiSignal;
     confidence = 0.7;
   }
-  
+
   return { direction, confidence };
 }
 
 // GODLY PLAN: Sentiment Prediction Model
 function generateSentimentPrediction(newsData: NewsItem[], context: TechnicalContext): any {
   if (newsData.length === 0) return { direction: 'sideways', confidence: 0.3 };
-  
+
   const avgSentiment = newsData.reduce((sum, item) => sum + item.sentiment_score, 0) / newsData.length;
-  
+
   let direction: 'up' | 'down' | 'sideways' = 'sideways';
   let confidence = 0.5;
-  
+
   if (avgSentiment > 0.3) {
     direction = 'up';
     confidence = Math.min(0.8, 0.5 + Math.abs(avgSentiment) * 0.3);
@@ -3591,7 +3591,7 @@ function generateSentimentPrediction(newsData: NewsItem[], context: TechnicalCon
     direction = 'down';
     confidence = Math.min(0.8, 0.5 + Math.abs(avgSentiment) * 0.3);
   }
-  
+
   return { direction, confidence };
 }
 
@@ -3599,7 +3599,7 @@ function generateSentimentPrediction(newsData: NewsItem[], context: TechnicalCon
 function generateMomentumPrediction(context: TechnicalContext, stockData: StockData): any {
   let direction: 'up' | 'down' | 'sideways' = 'sideways';
   let confidence = 0.5;
-  
+
   if (context.momentum > 0.02) {
     direction = 'up';
     confidence = Math.min(0.8, 0.5 + context.momentum * 10);
@@ -3607,7 +3607,7 @@ function generateMomentumPrediction(context: TechnicalContext, stockData: StockD
     direction = 'down';
     confidence = Math.min(0.8, 0.5 + Math.abs(context.momentum) * 10);
   }
-  
+
   return { direction, confidence };
 }
 
@@ -3615,7 +3615,7 @@ function generateMomentumPrediction(context: TechnicalContext, stockData: StockD
 function generateMeanReversionPrediction(context: TechnicalContext, stockData: StockData): any {
   let direction: 'up' | 'down' | 'sideways' = 'sideways';
   let confidence = 0.5;
-  
+
   if (context.meanReversionSignal > 0.7) {
     direction = 'up';
     confidence = Math.min(0.8, 0.5 + context.meanReversionSignal * 0.3);
@@ -3623,7 +3623,7 @@ function generateMeanReversionPrediction(context: TechnicalContext, stockData: S
     direction = 'down';
     confidence = Math.min(0.8, 0.5 + Math.abs(context.meanReversionSignal) * 0.3);
   }
-  
+
   return { direction, confidence };
 }
 
@@ -3632,7 +3632,7 @@ function generateVolatilityPrediction(context: TechnicalContext, regime: MarketR
   // Volatility-based predictions
   let direction: 'up' | 'down' | 'sideways' = 'sideways';
   let confidence = 0.5;
-  
+
   if (regime.volatility === 'extreme') {
     // High volatility often leads to mean reversion
     if (context.meanReversionSignal > 0.5) {
@@ -3643,7 +3643,7 @@ function generateVolatilityPrediction(context: TechnicalContext, regime: MarketR
       confidence = 0.6;
     }
   }
-  
+
   return { direction, confidence };
 }
 
@@ -3657,7 +3657,7 @@ function getQuantumWeights(regime: MarketRegime): Record<string, number> {
     meanReversion: 0.15,
     volatility: 0.05
   };
-  
+
   // Adjust weights based on market regime
   if (regime.type === 'trending') {
     baseWeights.momentum += 0.1;
@@ -3669,13 +3669,13 @@ function getQuantumWeights(regime: MarketRegime): Record<string, number> {
     baseWeights.volatility += 0.1;
     baseWeights.technical -= 0.1;
   }
-  
+
   // Normalize weights
   const total = Object.values(baseWeights).reduce((a, b) => a + b, 0);
   Object.keys(baseWeights).forEach(key => {
     baseWeights[key] /= total;
   });
-  
+
   return baseWeights;
 }
 
@@ -3684,25 +3684,25 @@ function combinePredictions(models: any, weights: Record<string, number>, horizo
   // Weighted combination of all models
   let combinedDirection = 'sideways';
   let combinedConfidence = 0;
-  
+
   Object.keys(models).forEach(modelKey => {
     const model = models[modelKey];
     const weight = weights[modelKey];
-    
+
     if (model.direction === 'up') {
       combinedConfidence += model.confidence * weight;
     } else if (model.direction === 'down') {
       combinedConfidence -= model.confidence * weight;
     }
   });
-  
+
   // Determine final direction
   if (combinedConfidence > 0.2) {
     combinedDirection = 'up';
   } else if (combinedConfidence < -0.2) {
     combinedDirection = 'down';
   }
-  
+
   // Generate predictions for different horizons
   const shortTerm: PredictionResult = {
     direction: combinedDirection as any,
@@ -3715,48 +3715,48 @@ function combinePredictions(models: any, weights: Record<string, number>, horizo
     stopLoss: 0.5,
     takeProfit: Math.abs(combinedConfidence) * 3
   };
-  
+
   const mediumTerm: PredictionResult = {
     ...shortTerm,
     timeHorizon: horizons[1] || 240,
     expectedMove: Math.abs(combinedConfidence) * 3,
     takeProfit: Math.abs(combinedConfidence) * 4
   };
-  
+
   const longTerm: PredictionResult = {
     ...shortTerm,
     timeHorizon: horizons[2] || 1440,
     expectedMove: Math.abs(combinedConfidence) * 5,
     takeProfit: Math.abs(combinedConfidence) * 6
   };
-  
+
   return { shortTerm, mediumTerm, longTerm };
 }
 
 // GODLY PLAN: Success Probability Calculation
 function calculateSuccessProbability(predictions: any, regime: MarketRegime): number {
   let baseProbability = 0.5;
-  
+
   // Base probability from prediction confidence
   baseProbability = (predictions.shortTerm.confidence + predictions.mediumTerm.confidence + predictions.longTerm.confidence) / 3;
-  
+
   // Adjust for market regime
   if (regime.type === 'trending' && regime.strength > 0.7) {
     baseProbability += 0.1;
   } else if (regime.type === 'volatile') {
     baseProbability -= 0.1;
   }
-  
+
   // Adjust for regime confidence
   baseProbability *= regime.confidence;
-  
+
   return Math.min(0.95, Math.max(0.05, baseProbability));
 }
 
 // GODLY PLAN: Alternative Scenarios
 function generateAlternativeScenarios(predictions: any, regime: MarketRegime): AlternativeScenario[] {
   const scenarios: AlternativeScenario[] = [];
-  
+
   // Scenario 1: Market regime change
   scenarios.push({
     probability: 0.2,
@@ -3764,7 +3764,7 @@ function generateAlternativeScenarios(predictions: any, regime: MarketRegime): A
     impact: 'neutral',
     triggers: ['economic_data', 'news_events', 'technical_breakdown']
   });
-  
+
   // Scenario 2: Enhanced momentum
   scenarios.push({
     probability: 0.15,
@@ -3772,7 +3772,7 @@ function generateAlternativeScenarios(predictions: any, regime: MarketRegime): A
     impact: predictions.shortTerm.direction === 'up' ? 'positive' : 'negative',
     triggers: ['volume_surge', 'news_catalyst', 'technical_breakout']
   });
-  
+
   // Scenario 3: Mean reversion
   scenarios.push({
     probability: 0.25,
@@ -3780,54 +3780,54 @@ function generateAlternativeScenarios(predictions: any, regime: MarketRegime): A
     impact: predictions.shortTerm.direction === 'up' ? 'negative' : 'positive',
     triggers: ['overbought_oversold', 'support_resistance', 'time_decay']
   });
-  
+
   return scenarios;
 }
 
 // GODLY PLAN: Risk Score Calculation
 function calculateRiskScore(predictions: any, regime: MarketRegime): number {
   let riskScore = 0.5; // Base risk
-  
+
   // Volatility risk
   if (regime.volatility === 'extreme') riskScore += 0.3;
   else if (regime.volatility === 'elevated') riskScore += 0.2;
-  
+
   // Regime stability risk
   if (regime.confidence < 0.7) riskScore += 0.2;
-  
+
   // Prediction confidence risk
   if (predictions.shortTerm.confidence < 0.6) riskScore += 0.2;
-  
+
   return Math.min(1, riskScore);
 }
 
 // GODLY PLAN: Helper Functions
 function calculateTrendDirection(prices: number[]): number {
   if (prices.length < 2) return 0;
-  
+
   const firstPrice = prices[0];
   const lastPrice = prices[prices.length - 1];
   const change = (lastPrice - firstPrice) / firstPrice;
-  
+
   return Math.max(-1, Math.min(1, change * 10)); // Scale to -1 to 1
 }
 
 function calculateTrendConsistency(prices: number[]): number {
   if (prices.length < 10) return 0.5;
-  
+
   let consistentMoves = 0;
   let totalMoves = 0;
-  
+
   for (let i = 1; i < prices.length; i++) {
-    const currentMove = prices[i] > prices[i-1] ? 1 : -1;
-    const previousMove = i > 1 ? (prices[i-1] > prices[i-2] ? 1 : -1) : currentMove;
-    
+    const currentMove = prices[i] > prices[i - 1] ? 1 : -1;
+    const previousMove = i > 1 ? (prices[i - 1] > prices[i - 2] ? 1 : -1) : currentMove;
+
     if (currentMove === previousMove) {
       consistentMoves++;
     }
     totalMoves++;
   }
-  
+
   return consistentMoves / totalMoves;
 }
 // Serve the prediction endpoint
@@ -3841,10 +3841,10 @@ serve(async (req) => {
 
   try {
     const requestBody: PredictionRequest = await req.json();
-    const { 
-      symbol, 
-      investment, 
-      timeframe, 
+    const {
+      symbol,
+      investment,
+      timeframe,
       horizons = [15, 30, 60, 1440],
       riskTolerance,
       tradingStyle,
@@ -3854,7 +3854,7 @@ serve(async (req) => {
       leverage,
       marginType
     } = requestBody;
-    
+
     // Build user context object
     const userContext = {
       riskTolerance,
@@ -3888,7 +3888,7 @@ serve(async (req) => {
     updatePipelineStep(pipeline, 'market_data_fetch', 'completed', `Price: $${stockData.currentPrice.toFixed(2)}`);
 
     console.log("Real stock data fetched:", stockData);
-    
+
     // Step 3: Historical analysis
     updatePipelineStep(pipeline, 'historical_analysis', 'running');
     console.log("Historical candles fetched:", historicalData.candles.length, "candles");
@@ -3909,7 +3909,7 @@ serve(async (req) => {
       earningsQuarters: earningsHistory.length
     });
     const externalSnapshot = await fetchExternalMarketSnapshot(symbol, stockData, fundamentals);
-    updatePipelineStep(pipeline, 'enhanced_data_analysis', 'completed', 
+    updatePipelineStep(pipeline, 'enhanced_data_analysis', 'completed',
       `Year: ${fullYearData.yearTrend}, P/E: ${fundamentals.peRatio?.toFixed(2) || 'N/A'}, ${earningsHistory.length} earnings`);
 
     // Step 3c: Market Correlation Analysis (SPY)
@@ -3920,39 +3920,39 @@ serve(async (req) => {
       if (!routeInfo.isUsStock) {
         updatePipelineStep(pipeline, 'market_correlation', 'completed', 'Skipped for non-US stock');
       } else {
-      // Fetch SPY (S&P 500) data for same timeframe
-      const spyData = await fetchHistoricalCandles('SPY', timeframe);
-      if (spyData.candles.length > 10 && historicalData.candles.length > 10) {
-        // Calculate correlation between stock and SPY
-        const minLength = Math.min(spyData.candles.length, historicalData.candles.length);
-        const stockReturns = historicalData.candles.slice(0, minLength).map((c, i) => 
-          i === 0 ? 0 : (c.close - historicalData.candles[i-1].close) / historicalData.candles[i-1].close
-        );
-        const spyReturns = spyData.candles.slice(0, minLength).map((c, i) => 
-          i === 0 ? 0 : (c.close - spyData.candles[i-1].close) / spyData.candles[i-1].close
-        );
-        
-        // Calculate Pearson correlation
-        const n = stockReturns.length;
-        const sumX = stockReturns.reduce((a, b) => a + b, 0);
-        const sumY = spyReturns.reduce((a, b) => a + b, 0);
-        const sumXY = stockReturns.reduce((sum, x, i) => sum + x * spyReturns[i], 0);
-        const sumX2 = stockReturns.reduce((sum, x) => sum + x * x, 0);
-        const sumY2 = spyReturns.reduce((sum, y) => sum + y * y, 0);
-        
-        const correlation = (n * sumXY - sumX * sumY) / 
-          Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
-        
-        spyCorrelation = {
-          coefficient: isNaN(correlation) ? 0 : Math.max(-1, Math.min(1, correlation)),
-          spyChange: ((spyData.candles[spyData.candles.length - 1].close - spyData.candles[0].close) / spyData.candles[0].close) * 100,
-          relationship: Math.abs(correlation) > 0.7 ? 'strong' : Math.abs(correlation) > 0.4 ? 'moderate' : 'weak',
-          movingWith: correlation > 0 ? 'with market' : 'against market'
-        };
-        console.log(`📊 SPY Correlation: ${(correlation * 100).toFixed(1)}% (${spyCorrelation.relationship})`);
-      }
-      updatePipelineStep(pipeline, 'market_correlation', 'completed', 
-        spyCorrelation ? `Correlation: ${(spyCorrelation.coefficient * 100).toFixed(0)}%` : 'Calculated');
+        // Fetch SPY (S&P 500) data for same timeframe
+        const spyData = await fetchHistoricalCandles('SPY', timeframe);
+        if (spyData.candles.length > 10 && historicalData.candles.length > 10) {
+          // Calculate correlation between stock and SPY
+          const minLength = Math.min(spyData.candles.length, historicalData.candles.length);
+          const stockReturns = historicalData.candles.slice(0, minLength).map((c, i) =>
+            i === 0 ? 0 : (c.close - historicalData.candles[i - 1].close) / historicalData.candles[i - 1].close
+          );
+          const spyReturns = spyData.candles.slice(0, minLength).map((c, i) =>
+            i === 0 ? 0 : (c.close - spyData.candles[i - 1].close) / spyData.candles[i - 1].close
+          );
+
+          // Calculate Pearson correlation
+          const n = stockReturns.length;
+          const sumX = stockReturns.reduce((a, b) => a + b, 0);
+          const sumY = spyReturns.reduce((a, b) => a + b, 0);
+          const sumXY = stockReturns.reduce((sum, x, i) => sum + x * spyReturns[i], 0);
+          const sumX2 = stockReturns.reduce((sum, x) => sum + x * x, 0);
+          const sumY2 = spyReturns.reduce((sum, y) => sum + y * y, 0);
+
+          const correlation = (n * sumXY - sumX * sumY) /
+            Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+
+          spyCorrelation = {
+            coefficient: isNaN(correlation) ? 0 : Math.max(-1, Math.min(1, correlation)),
+            spyChange: ((spyData.candles[spyData.candles.length - 1].close - spyData.candles[0].close) / spyData.candles[0].close) * 100,
+            relationship: Math.abs(correlation) > 0.7 ? 'strong' : Math.abs(correlation) > 0.4 ? 'moderate' : 'weak',
+            movingWith: correlation > 0 ? 'with market' : 'against market'
+          };
+          console.log(`📊 SPY Correlation: ${(correlation * 100).toFixed(1)}% (${spyCorrelation.relationship})`);
+        }
+        updatePipelineStep(pipeline, 'market_correlation', 'completed',
+          spyCorrelation ? `Correlation: ${(spyCorrelation.coefficient * 100).toFixed(0)}%` : 'Calculated');
       }
     } catch (error) {
       console.log('⚠️ SPY correlation failed:', error.message);
@@ -3981,7 +3981,7 @@ serve(async (req) => {
       historicalData.candles,
       technicalContext
     );
-    updatePipelineStep(pipeline, 'technical_indicators', 'completed', 
+    updatePipelineStep(pipeline, 'technical_indicators', 'completed',
       `RSI: ${technicalContext.indicators.rsi.toFixed(1)}, Trend: ${technicalContext.trendDirection}`);
 
     // 🌟 GODLY PLAN: Market Regime Detection 🌟
@@ -3993,15 +3993,15 @@ serve(async (req) => {
       confidence: marketRegime.confidence.toFixed(2),
       volatility: marketRegime.volatility
     });
-    updatePipelineStep(pipeline, 'market_regime_detection', 'completed', 
+    updatePipelineStep(pipeline, 'market_regime_detection', 'completed',
       `Regime: ${marketRegime.type} (${(marketRegime.strength * 100).toFixed(0)}% strength)`);
 
     // Step 6: AI prediction
     updatePipelineStep(pipeline, 'ai_prediction', 'running');
-    
+
     // Step 7: Multi-horizon forecast with ensemble fallback
     updatePipelineStep(pipeline, 'multi_horizon_forecast', 'running');
-    
+
     let geminiForecast: GeminiForecast;
     let predictionSource = 'gemini_ai';
 
@@ -4072,7 +4072,7 @@ serve(async (req) => {
           },
           positioning_guidance: {
             bias: quantumPrediction.predictions.shortTerm.direction === 'up' ? 'long' :
-                  quantumPrediction.predictions.shortTerm.direction === 'down' ? 'short' : 'flat',
+              quantumPrediction.predictions.shortTerm.direction === 'down' ? 'short' : 'flat',
             notes: `Technical model: ${(quantumPrediction.successProbability * 100).toFixed(1)}% success probability. ${quantumPrediction.alternativeScenarios[0]?.description || ''}`
           }
         };
@@ -4093,8 +4093,8 @@ serve(async (req) => {
         updatePipelineStep(pipeline, 'ai_prediction', 'completed', 'Statistical ensemble prediction generated');
       }
     }
-    
-    updatePipelineStep(pipeline, 'multi_horizon_forecast', 'completed', 
+
+    updatePipelineStep(pipeline, 'multi_horizon_forecast', 'completed',
       `${geminiForecast.forecasts.length} horizons analyzed (${predictionSource})`);
 
     console.log("Enhanced Gemini analysis completed");
@@ -4113,16 +4113,16 @@ serve(async (req) => {
     const primaryForecast = geminiForecast.forecasts[0];
     const probabilityScore =
       typeof primaryForecast?.probabilities?.up === 'number' &&
-      typeof primaryForecast?.probabilities?.down === 'number' &&
-      typeof primaryForecast?.probabilities?.sideways === 'number'
+        typeof primaryForecast?.probabilities?.down === 'number' &&
+        typeof primaryForecast?.probabilities?.sideways === 'number'
         ? Math.max(
-            Math.min(1, primaryForecast.probabilities.up || 0),
-            Math.min(1, primaryForecast.probabilities.down || 0),
-            Math.min(1, primaryForecast.probabilities.sideways || 0)
-          )
+          Math.min(1, primaryForecast.probabilities.up || 0),
+          Math.min(1, primaryForecast.probabilities.down || 0),
+          Math.min(1, primaryForecast.probabilities.sideways || 0)
+        )
         : Math.max(0, Math.min(1, (geminiForecast?.deep_analysis?.success_probability || 0) / 100));
     const volatilityPercent = (technicalContext.indicators.atr / stockData.currentPrice) * 100;
-    
+
     // Calculate action signal (BUY/SELL/HOLD)
     // Prefer Gemini's own action_signal if it explicitly returned BUY or SELL —
     // it has full context (news, macro, multi-horizon). Only fall back to the
@@ -4132,11 +4132,11 @@ serve(async (req) => {
       geminiReturnedSignal === "BUY" || geminiReturnedSignal === "SELL"
         ? geminiForecast.action_signal!  // trust Gemini's explicit BUY/SELL
         : deriveActionSignal(
-            primaryForecast.direction,
-            geminiForecast.positioning_guidance.bias,
-            primaryForecast.confidence
-          );
-    
+          primaryForecast.direction,
+          geminiForecast.positioning_guidance.bias,
+          primaryForecast.confidence
+        );
+
     // Calculate risk grade
     const riskGrade = calculateRiskGrade(
       volatilityPercent,
@@ -4144,14 +4144,14 @@ serve(async (req) => {
       primaryForecast.risk_flags,
       primaryForecast.confidence
     );
-    
+
     // Calculate expected ROI ranges
     const expectedROI = calculateExpectedROI(
       primaryForecast.expected_return_bp,
       primaryForecast.confidence,
       volatilityPercent
     );
-    
+
     // Calculate position sizing — crypto allows fractional units, stocks require whole shares
     const isCryptoAsset = routeInfo.assetType === 'crypto';
     const rawQty = investment / stockData.currentPrice;
@@ -4159,7 +4159,7 @@ serve(async (req) => {
       ? parseFloat(rawQty.toFixed(6))  // up to 6 decimal places for crypto
       : Math.floor(rawQty);             // whole shares only for stocks/forex
     const actualCost = sharesQuantity * stockData.currentPrice;
-    
+
     // Add to forecast
     geminiForecast.action_signal = actionSignal;
     geminiForecast.risk_grade = riskGrade;
@@ -4202,7 +4202,7 @@ serve(async (req) => {
       },
       // Legacy fields for backward compatibility
       recommendation: geminiForecast?.positioning_guidance?.bias === "long" ? "bullish" as const :
-                     geminiForecast?.positioning_guidance?.bias === "short" ? "bearish" as const : "neutral" as const,
+        geminiForecast?.positioning_guidance?.bias === "short" ? "bearish" as const : "neutral" as const,
       confidence: geminiForecast?.forecasts?.[0]?.confidence || 75,
       expectedMove: {
         percent: geminiForecast?.forecasts?.[0]?.expected_return_bp ? geminiForecast.forecasts[0].expected_return_bp / 100 : undefined,
@@ -4248,16 +4248,16 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Error in predict-movement:', error);
-    
+
     // Mark remaining steps as error
     pipeline.forEach(step => {
       if (step.status === 'pending' || step.status === 'running') {
         updatePipelineStep(pipeline, step.name, 'error', error.message);
       }
     });
-    
+
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         error: 'Internal server error',
         details: error.message,
         meta: { pipeline: { steps: pipeline } }
