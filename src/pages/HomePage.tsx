@@ -9,6 +9,8 @@ import { useTradingIntegration } from "@/hooks/useTradingIntegration";
 import { TradingIntegrationModal } from "@/components/trading/TradingIntegrationModal";
 import { useSubscription } from "@/hooks/useSubscription";
 import logo from '../assets/logo.png'
+import { PredictionChatbot } from "@/components/PredictionChatbot";
+
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -17,7 +19,9 @@ export default function HomePage() {
   const { hasIntegration, save, refresh } = useTradingIntegration();
   const { isPremium } = useSubscription();
   const [showBrokerModal, setShowBrokerModal] = useState(false);
+  const [showChatbot, setShowChatbot] = useState(false);
   const canAccessOpenAlgoDashboard = isPremium && hasIntegration;
+
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -55,7 +59,7 @@ export default function HomePage() {
         </div>
 
         {/* Quick Actions */}
-        <div className={`grid grid-cols-1 ${isPremium ? "md:grid-cols-2" : ""} gap-6 mb-8`}>
+        <div className={`grid grid-cols-1 ${isPremium ? "md:grid-cols-2" : "md:grid-cols-1"} gap-6 mb-8`}>
           {/* Create New Analysis — always visible */}
           <Card className="glass-panel border-primary/20 hover:border-primary/40 transition-all duration-300 hover:shadow-[0_0_30px_rgba(20,184,166,0.1)] cursor-pointer group relative overflow-hidden"
             onClick={() => navigate('/predict')}>
@@ -93,6 +97,8 @@ export default function HomePage() {
               </Button>
             </CardContent>
           </Card>
+
+
 
           {/* Live Trading Dashboard — PAID USERS ONLY */}
           {isPremium && (
@@ -136,6 +142,7 @@ export default function HomePage() {
             </Card>
           )}
         </div>
+
 
         {/* Upsell banner for FREE users — shown below the main card */}
         {!isPremium && (
@@ -295,7 +302,13 @@ export default function HomePage() {
           onSaved={() => refresh()}
           save={async (params) => save(params)}
         />
+
+        <PredictionChatbot 
+          open={showChatbot} 
+          setOpen={setShowChatbot} 
+        />
       </div>
+
     </div>
   );
 }
