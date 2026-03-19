@@ -7,26 +7,26 @@
 
 @layer base {
   :root {
-    /* Base HSL values */
-    --background: 240 10% 4%; /* Deep Black #09090b */
-    --foreground: 0 0% 98%;
+    /* Base HSL values for E8 Aesthetic */
+    --background: 200 15% 5%; /* Very dark blue/black #0b0e11 */
+    --foreground: 0 0% 95%;
 
-    --card: 240 10% 6%; /* Slightly lighter black #18181b */
-    --card-foreground: 0 0% 98%;
+    --card: 200 12% 8%; /* Slightly lighter #12161a */
+    --card-foreground: 0 0% 95%;
 
-    --popover: 240 10% 6%;
-    --popover-foreground: 0 0% 98%;
+    --popover: 200 12% 8%;
+    --popover-foreground: 0 0% 95%;
 
-    /* Teal Green Primary #14B8A6 */
+    /* Teal Green Primary */
     --primary: 174 77% 40%;
     --primary-foreground: 0 0% 100%;
 
-    /* Teal Blue Secondary #0EA5E9 */
+    /* Teal Blue Secondary */
     --secondary: 199 89% 48%;
     --secondary-foreground: 0 0% 100%;
 
-    --muted: 240 4% 16%;
-    --muted-foreground: 240 5% 65%;
+    --muted: 200 10% 12%;
+    --muted-foreground: 200 10% 55%;
 
     --accent: 174 77% 40%;
     --accent-foreground: 0 0% 100%;
@@ -34,42 +34,49 @@
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 240 4% 16%;
-    --input: 240 4% 16%;
+    --border: 200 15% 12%;
+    --input: 200 15% 12%;
     --ring: 174 77% 40%;
 
     --radius: 0.75rem;
 
     /* Sidebar specific */
-    --sidebar-background: 240 10% 4%;
-    --sidebar-foreground: 240 5% 65%;
+    --sidebar-background: 200 15% 5%;
+    --sidebar-foreground: 200 10% 60%;
     --sidebar-primary: 174 77% 40%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 4% 16%;
+    --sidebar-accent: 200 15% 10%;
     --sidebar-accent-foreground: 0 0% 98%;
-    --sidebar-border: 240 4% 16%;
+    --sidebar-border: 200 15% 12%;
     --sidebar-ring: 174 77% 40%;
+
+    /* Trading specific */
+    --trading-green: 142 71% 45%; 
+    --trading-red: 348 83% 47%;
+    --trading-blue: 199 89% 48%;
+    --trading-dark: 200 15% 4%;
+    --chart-bg: 200 15% 5%;
   }
 
   .dark {
-    --background: 240 10% 4%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 6%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 10% 6%;
-    --popover-foreground: 0 0% 98%;
+    --background: 200 15% 5%;
+    --foreground: 0 0% 95%;
+    --card: 200 12% 8%;
+    --card-foreground: 0 0% 95%;
+    --popover: 200 12% 8%;
+    --popover-foreground: 0 0% 95%;
     --primary: 174 77% 40%;
     --primary-foreground: 0 0% 100%;
     --secondary: 199 89% 48%;
     --secondary-foreground: 0 0% 100%;
-    --muted: 240 4% 16%;
-    --muted-foreground: 240 5% 65%;
+    --muted: 200 10% 12%;
+    --muted-foreground: 200 10% 55%;
     --accent: 174 77% 40%;
     --accent-foreground: 0 0% 100%;
     --destructive: 0 62% 30%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 4% 16%;
-    --input: 240 4% 16%;
+    --border: 200 15% 12%;
+    --input: 200 15% 12%;
     --ring: 174 77% 40%;
   }
 }
@@ -137,6 +144,35 @@
   .no-scrollbar {
     -ms-overflow-style: none;  /* IE and Edge */
     scrollbar-width: none;  /* Firefox */
+  }
+
+  /* Premium Glass Cards & Buttons (E8 Style) */
+  .glass-card-premium {
+    @apply bg-white/5 backdrop-blur-[20px] border border-white/20 rounded-[20px] relative overflow-hidden transition-all duration-300;
+    box-shadow: 
+      0 8px 32px rgba(0, 0, 0, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.3),
+      inset 0 -1px 0 rgba(255, 255, 255, 0.1),
+      inset 0 0 20px 10px rgba(255, 255, 255, 0.04);
+  }
+
+  .glass-card-premium::before {
+    content: '';
+    @apply absolute top-0 left-0 right-0 h-[1px] z-[1] pointer-events-none;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+  }
+
+  .glass-card-premium::after {
+    content: '';
+    @apply absolute top-0 left-0 w-[1px] h-full z-[1] pointer-events-none;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.6), transparent, rgba(255, 255, 255, 0.2));
+  }
+
+  .glass-button-premium {
+    @apply bg-white/10 backdrop-blur-[12px] border border-white/20 rounded-xl relative overflow-hidden transition-all duration-300 hover:bg-white/20 hover:border-white/30;
+    box-shadow: 
+      0 4px 12px rgba(0, 0, 0, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.3);
   }
 }
 
