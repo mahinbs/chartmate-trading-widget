@@ -24,7 +24,10 @@ export function ActionBar({
         <Button
           variant="outline"
           size="sm"
-          onClick={onRefresh}
+          onClick={(e) => {
+            e.stopPropagation()
+            onRefresh()
+          }}
           className="flex items-center gap-2"
         >
           <RefreshCw className="h-4 w-4" />
@@ -36,7 +39,10 @@ export function ActionBar({
         <Button
           variant="outline"
           size="sm"
-          onClick={onAnalyze}
+          onClick={(e) => {
+            e.stopPropagation()
+            onAnalyze()
+          }}
           disabled={isAnalyzing}
           className="flex items-center gap-2"
         >
@@ -52,7 +58,10 @@ export function ActionBar({
       <Button
         variant="ghost"
         size="sm"
-        onClick={onDelete}
+        onClick={(e) => {
+          e.stopPropagation()
+          onDelete()
+        }}
         className="text-red-600 hover:text-red-700 hover:bg-red-50"
       >
         <Trash2 className="h-4 w-4" />

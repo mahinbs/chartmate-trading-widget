@@ -58,6 +58,7 @@ Deno.serve(async (req: Request) => {
     };
 
     const { strategy_id, symbol, action, quantity } = body;
+    const aiOverride = Boolean((body as any).ai_override);
     if (!strategy_id || !symbol || !action || !quantity) {
       return new Response(
         JSON.stringify({ error: "strategy_id, symbol, action and quantity are required" }),
@@ -115,6 +116,74 @@ Deno.serve(async (req: Request) => {
         JSON.stringify({ error: "No active broker connection. Connect your broker first.", error_code: "NO_INTEGRATION" }),
         { status: 400, headers },
       );
+    }
+
+    // ── AI Override: validate trade with AI before execution ────────────────
+    if (aiOverride) {
+      const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
+      const GEMINI_MODEL = "gemini-3.1-pro-preview";
+      if (GEMINI_API_KEY) {
+        const aiPrompt = `You are a trading risk assistant. A user is about to execute a live trade. Evaluate if this is a good idea RIGHT NOW based on the parameters below. Be very strict — reject questionable trades.
+
+Trade details:
+- Symbol: ${symbol}
+- Action: ${action}
+- Quantity: ${quantity}
+- Strategy: ${strategy.name}
+
+Analyze the current market conditions for ${symbol} and determine:
+1. Is this a good time to ${action} ${symbol}?
+2. What are the main risks?
+3. Should this trade be ACCEPTED or REJECTED?
+
+Return ONLY a JSON object (no markdown):
+{
+  "decision": "ACCEPT" | "REJECT",
+  "confidence": number 0-100,
+  "reason": string (2-3 sentences explaining why),
+  "risks": string[],
+  "suggestedAction": string (what the user should do instead if rejected)
+}`;
+
+        try {
+          const aiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+          const aiRes = await fetch(aiUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: aiPrompt }] }],
+              generationConfig: { maxOutputTokens: 2048, temperature: 0.2, responseMimeType: "application/json" },
+            }),
+          });
+
+          if (aiRes.ok) {
+            const aiData = await aiRes.json();
+            const aiText = aiData?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("") ?? "";
+            try {
+              const aiResult = JSON.parse(aiText.replace(/```json\s*/i, "").replace(/\s*```/i, "").trim());
+              if (aiResult.decision === "REJECT") {
+                return new Response(
+                  JSON.stringify({
+                    error: "Trade rejected by AI Override",
+                    ai_override: {
+                      decision: "REJECT",
+                      confidence: aiResult.confidence ?? 0,
+                      reason: aiResult.reason ?? "AI analysis suggests this is not a favorable trade.",
+                      risks: aiResult.risks ?? [],
+                      suggestedAction: aiResult.suggestedAction ?? "Wait for a better entry point.",
+                    },
+                  }),
+                  { status: 422, headers },
+                );
+              }
+              // ACCEPTED — continue to place order, attach AI result
+              console.log(`AI Override ACCEPTED: ${symbol} ${action}, confidence: ${aiResult.confidence}`);
+            } catch { /* parse failed, proceed without AI */ }
+          }
+        } catch (e) {
+          console.error("AI Override error (non-fatal, proceeding):", e);
+        }
+      }
     }
 
     // ── Call OpenAlgo /api/v1/placeorder ────────────────────────────────────

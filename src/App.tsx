@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import HomePage from "./pages/HomePage";
 import PredictPage from "./pages/PredictPage";
 import PredictionsPage from "./pages/PredictionsPage";
+import SavedAnalysisRedirect from "./pages/SavedAnalysisRedirect";
 import IntradayPage from "./pages/IntradayPage";
 import ActiveTradesPage from "./pages/ActiveTradesPage";
 import ActiveTradeDetailsPage from "./pages/ActiveTradeDetailsPage";
@@ -130,6 +131,14 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <PredictionsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/predictions/:predictionId/full"
+                element={
+                  <ProtectedRoute>
+                    <SavedAnalysisRedirect />
                   </ProtectedRoute>
                 }
               />
