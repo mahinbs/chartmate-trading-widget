@@ -481,7 +481,7 @@ export default function ActiveTradesPage() {
 
   if (loading) {
     return (
-      <div className="container max-w-7xl mx-auto p-6">
+      <div className="container max-w-7xl mx-auto p-3 sm:p-6">
         <div className="flex items-center justify-center h-64">
           <RefreshCw className="h-8 w-8 animate-spin text-primary" />
         </div>
@@ -490,13 +490,13 @@ export default function ActiveTradesPage() {
   }
 
   return (
-    <div className="container max-w-7xl mx-auto p-6 space-y-6">
+    <div className="container max-w-7xl mx-auto p-3 sm:p-6 space-y-4 sm:space-y-6">
 
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold text-gradient">Active Trades</h1>
-          <p className="text-muted-foreground">Track your live positions in real-time</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gradient">Active Trades</h1>
+          <p className="text-muted-foreground text-sm">Track your live positions in real-time</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1 rounded-full border border-white/10 px-2 text-xs bg-zinc-900/50 py-2">
@@ -516,24 +516,26 @@ export default function ActiveTradesPage() {
           </div>
           <Button
             variant="ghost"
+            size="sm"
             onClick={() => navigate('/home')}
             className="hover:bg-white/5"
           >
-            <Home className="h-4 w-4 mr-2" />
-            Home
+            <Home className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Home</span>
           </Button>
           <Button
             variant="outline"
+            size="sm"
             onClick={handleRefresh}
             disabled={refreshing}
             className="border-white/10 hover:bg-white/5"
           >
-            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-            Refresh
+            <RefreshCw className={`h-4 w-4 sm:mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">Refresh</span>
           </Button>
-          <Button onClick={() => navigate('/predict')} className="shadow-[0_0_20px_rgba(20,184,166,0.2)] hover:shadow-[0_0_25px_rgba(20,184,166,0.4)]">
-            <TrendingUp className="h-4 w-4 mr-2" />
-            New Analysis
+          <Button size="sm" onClick={() => navigate('/predict')} className="shadow-[0_0_20px_rgba(20,184,166,0.2)]">
+            <TrendingUp className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">New Analysis</span>
           </Button>
         </div>
       </div>
@@ -545,9 +547,9 @@ export default function ActiveTradesPage() {
           <Card className="glass-panel border-teal-500/30 bg-gradient-to-br from-zinc-900/90 to-zinc-950">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                   <span className="h-2 w-2 rounded-full bg-teal-400 animate-pulse" title="Live prices" />
-                  Profit & Loss (Real-time)
+                  Profit &amp; Loss (Real-time)
                 </CardTitle>
                 <Badge variant="secondary" className="text-xs bg-teal-500/20 text-teal-400 border-teal-500/40">
                   Live
@@ -555,24 +557,24 @@ export default function ActiveTradesPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex flex-wrap items-baseline gap-4">
+              <div className="flex flex-wrap items-baseline gap-3 sm:gap-4">
                 <div>
-                  <p className="text-sm text-muted-foreground mb-1">Total P&L</p>
-                  <p className={`text-3xl md:text-4xl font-bold ${stats.totalPnL >= 0 ? 'text-teal-400' : 'text-red-500'}`}>
+                  <p className="text-xs sm:text-sm text-muted-foreground mb-1">Total P&amp;L</p>
+                  <p className={`text-2xl sm:text-3xl md:text-4xl font-bold ${stats.totalPnL >= 0 ? 'text-teal-400' : 'text-red-500'}`}>
                     {stats.totalPnL >= 0 ? '+' : ''}
                     {currencySymbol}
                     {stats.totalPnL.toFixed(2)}
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground mb-1">Return</p>
-                  <p className={`text-2xl md:text-3xl font-bold ${stats.totalPnLPercentage >= 0 ? 'text-teal-400' : 'text-red-500'}`}>
+                  <p className="text-xs sm:text-sm text-muted-foreground mb-1">Return</p>
+                  <p className={`text-xl sm:text-2xl md:text-3xl font-bold ${stats.totalPnLPercentage >= 0 ? 'text-teal-400' : 'text-red-500'}`}>
                     {stats.totalPnLPercentage >= 0 ? '+' : ''}{stats.totalPnLPercentage.toFixed(2)}%
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground mb-1">Invested</p>
-                  <p className="text-xl font-semibold text-white">
+                  <p className="text-xs sm:text-sm text-muted-foreground mb-1">Invested</p>
+                  <p className="text-lg sm:text-xl font-semibold text-white">
                     {currencySymbol}{stats.totalInvested.toFixed(2)}
                   </p>
                 </div>
@@ -605,15 +607,15 @@ export default function ActiveTradesPage() {
             </CardContent>
           </Card>
 
-          <div className="grid md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-3 gap-3 sm:gap-4">
             <Card className="glass-panel">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+              <CardHeader className="pb-2 px-3 sm:px-6">
+                <CardTitle className="text-[10px] sm:text-sm font-medium text-muted-foreground uppercase tracking-wider">
                   Total Invested
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-bold text-white">
+              <CardContent className="px-3 sm:px-6">
+                <p className="text-lg sm:text-2xl font-bold text-white">
                   {currencySymbol}
                   {stats.totalInvested.toFixed(2)}
                 </p>
@@ -621,13 +623,13 @@ export default function ActiveTradesPage() {
             </Card>
 
             <Card className="glass-panel">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                  Total P&L
+              <CardHeader className="pb-2 px-3 sm:px-6">
+                <CardTitle className="text-[10px] sm:text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                  Total P&amp;L
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <p className={`text-2xl font-bold ${stats.totalPnL >= 0 ? 'text-teal-400' : 'text-red-500'}`}>
+              <CardContent className="px-3 sm:px-6">
+                <p className={`text-lg sm:text-2xl font-bold ${stats.totalPnL >= 0 ? 'text-teal-400' : 'text-red-500'}`}>
                   {stats.totalPnL >= 0 ? '+' : ''}
                   {currencySymbol}
                   {stats.totalPnL.toFixed(2)}
@@ -636,13 +638,13 @@ export default function ActiveTradesPage() {
             </Card>
 
             <Card className="glass-panel">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+              <CardHeader className="pb-2 px-3 sm:px-6">
+                <CardTitle className="text-[10px] sm:text-sm font-medium text-muted-foreground uppercase tracking-wider">
                   Portfolio Return
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <p className={`text-2xl font-bold ${stats.totalPnLPercentage >= 0 ? 'text-teal-400' : 'text-red-500'}`}>
+              <CardContent className="px-3 sm:px-6">
+                <p className={`text-lg sm:text-2xl font-bold ${stats.totalPnLPercentage >= 0 ? 'text-teal-400' : 'text-red-500'}`}>
                   {stats.totalPnLPercentage >= 0 ? '+' : ''}{stats.totalPnLPercentage.toFixed(2)}%
                 </p>
               </CardContent>
@@ -653,39 +655,45 @@ export default function ActiveTradesPage() {
 
       {/* Trades Tabs */}
       <Tabs defaultValue="active" className="w-full" onValueChange={(v) => { if (v === "orders" && brokerOrders.length === 0) loadBrokerOrders(false); }}>
-        <TabsList className="grid w-full max-w-3xl grid-cols-4">
-          <TabsTrigger value="active">
-            <Activity className="h-4 w-4 mr-1.5" />
-            Active ({activeTrades.length})
-          </TabsTrigger>
-          <TabsTrigger value="completed">
-            <CheckCircle className="h-4 w-4 mr-1.5" />
-            Completed ({completedTrades.length})
-          </TabsTrigger>
-          <TabsTrigger value="orders">
-            <History className="h-4 w-4 mr-1.5" />
-            Broker Orders
-          </TabsTrigger>
-          <TabsTrigger value="performance">
-            <BarChart3 className="h-4 w-4 mr-1.5" />
-            Performance
-          </TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto pb-1">
+          <TabsList className="grid w-full min-w-[360px] max-w-3xl grid-cols-4">
+            <TabsTrigger value="active" className="text-xs sm:text-sm">
+              <Activity className="h-3.5 w-3.5 mr-1" />
+              <span>Active ({activeTrades.length})</span>
+            </TabsTrigger>
+            <TabsTrigger value="completed" className="text-xs sm:text-sm">
+              <CheckCircle className="h-3.5 w-3.5 mr-1" />
+              <span className="hidden sm:inline">Completed</span>
+              <span className="sm:hidden">Done</span>
+              <span> ({completedTrades.length})</span>
+            </TabsTrigger>
+            <TabsTrigger value="orders" className="text-xs sm:text-sm">
+              <History className="h-3.5 w-3.5 mr-1" />
+              <span className="hidden sm:inline">Broker Orders</span>
+              <span className="sm:hidden">Orders</span>
+            </TabsTrigger>
+            <TabsTrigger value="performance" className="text-xs sm:text-sm">
+              <BarChart3 className="h-3.5 w-3.5 mr-1" />
+              <span className="hidden sm:inline">Performance</span>
+              <span className="sm:hidden">Perf.</span>
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         {/* Active Trades */}
-        <TabsContent value="active" className="space-y-4 mt-6">
+        <TabsContent value="active" className="space-y-4 mt-4">
           {activeTrades.length === 0 ? (
             <Alert className="border-white/10 bg-white/5">
               <Bell className="h-4 w-4 text-primary" />
               <AlertDescription>
-                No active trades. Start by making a <a href="/predict" className="underline font-medium text-primary">new analysis</a> and clicking "Start Tracking".
+                No active trades. Start by making a <a href="/predict" className="underline font-medium text-primary">new analysis</a> and clicking &quot;Start Tracking&quot;.
               </AlertDescription>
             </Alert>
           ) : (
             <>
               <div className="minimal-panel rounded-xl overflow-hidden">
-                {/* Table Header */}
-                <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 px-4 py-3 border-b border-white/5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider bg-black/20">
+                {/* Table Header — hidden on xs, visible sm+ */}
+                <div className="hidden sm:grid grid-cols-[1fr_auto_auto_auto] gap-x-3 px-4 py-3 border-b border-white/5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider bg-black/20">
                   <div>Market</div>
                   <div className="text-right w-24 sm:w-32">Entry</div>
                   <div className="text-right w-24 sm:w-32">Current</div>
@@ -705,25 +713,37 @@ export default function ActiveTradesPage() {
                     return (
                       <div
                         key={trade.id}
-                        className="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 items-center px-4 py-4 hover:bg-white/5 cursor-pointer transition-colors"
+                        className="flex flex-col sm:grid sm:grid-cols-[1fr_auto_auto_auto] gap-x-3 sm:items-center px-3 sm:px-4 py-3 sm:py-4 hover:bg-white/5 cursor-pointer transition-colors"
                         onClick={() => navigate(`/trade/${trade.id}`)}
                       >
-                        {/* Market Column */}
+                        {/* Mobile layout: full width info */}
                         <div className="flex flex-col gap-1 min-w-0">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="font-bold text-sm tracking-tight truncate text-white">
-                              {trade.symbol.replace('-USD', '')}
-                            </span>
-                            <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded leading-none uppercase font-bold ${trade.action === 'BUY' ? 'bg-teal-500/10 text-teal-400' : 'bg-red-500/10 text-red-400'
-                              }`}>
-                              {trade.action}
-                            </span>
+                          <div className="flex items-center justify-between sm:justify-start gap-2 min-w-0">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="font-bold text-sm tracking-tight truncate text-white">
+                                {trade.symbol.replace('-USD', '')}
+                              </span>
+                              <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded leading-none uppercase font-bold ${trade.action === 'BUY' ? 'bg-teal-500/10 text-teal-400' : 'bg-red-500/10 text-red-400'
+                                }`}>
+                                {trade.action}
+                              </span>
+                            </div>
+                            {/* Mobile-only P/L on the right */}
+                            <div className={`sm:hidden flex items-center gap-1 text-sm font-bold ${pnlClass}`}>
+                              {isNeutral ? null : isPositive ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
+                              {pnlPrefix}{currencySymbol}{Math.abs(displayPnl).toFixed(2)}
+                            </div>
                           </div>
-                          <div className={`flex items-center gap-1 text-[11px] font-medium ${pnlClass}`}>
+                          <div className={`hidden sm:flex items-center gap-1 text-[11px] font-medium ${pnlClass}`}>
                             {isNeutral ? null : isPositive ? <TrendingUp className="h-3 w-3 shrink-0" /> : <TrendingDown className="h-3 w-3 shrink-0" />}
                             <span className="truncate">
                               {pnlPrefix}{currencySymbol}{Math.abs(displayPnl).toFixed(2)}
                             </span>
+                          </div>
+                          {/* Mobile price row */}
+                          <div className="flex items-center gap-3 sm:hidden text-xs text-muted-foreground">
+                            <span>Entry: {currencySymbol}{convertAmount(trade.entryPrice, trade.symbol).toFixed(2)}</span>
+                            <span className={`font-semibold ${pnlClass}`}>Now: {currencySymbol}{convertAmount(trade.currentPrice || trade.entryPrice, trade.symbol).toFixed(2)}</span>
                           </div>
                           {/* SL / TP badges */}
                           <div className="flex items-center gap-1.5 flex-wrap">
@@ -742,20 +762,20 @@ export default function ActiveTradesPage() {
                           </div>
                         </div>
 
-                        {/* Entry Price Column */}
-                        <div className="text-right w-24 sm:w-32">
+                        {/* Entry Price Column — desktop only */}
+                        <div className="hidden sm:block text-right w-24 sm:w-32">
                           <span className="text-xs sm:text-sm font-medium text-muted-foreground tabular-nums">
                             {currencySymbol}{convertAmount(trade.entryPrice, trade.symbol).toFixed(2)}
                           </span>
                         </div>
 
-                        {/* Current Price Column */}
-                        <div className={`text-right w-24 sm:w-32 text-xs sm:text-sm font-bold tabular-nums ${pnlClass}`}>
+                        {/* Current Price Column — desktop only */}
+                        <div className={`hidden sm:block text-right w-24 sm:w-32 text-xs sm:text-sm font-bold tabular-nums ${pnlClass}`}>
                           {currencySymbol}{convertAmount(trade.currentPrice || trade.entryPrice, trade.symbol).toFixed(2)}
                         </div>
 
-                        {/* P/L Column */}
-                        <div className={`text-right w-24 sm:w-32 text-xs sm:text-sm font-bold tabular-nums ${pnlClass}`}>
+                        {/* P/L Column — desktop only */}
+                        <div className={`hidden sm:block text-right w-24 sm:w-32 text-xs sm:text-sm font-bold tabular-nums ${pnlClass}`}>
                           {pnlPrefix}{currencySymbol}{Math.abs(displayPnl).toFixed(2)}
                         </div>
                       </div>
@@ -768,7 +788,7 @@ export default function ActiveTradesPage() {
         </TabsContent>
 
         {/* Completed Trades */}
-        <TabsContent value="completed" className="space-y-4 mt-6">
+        <TabsContent value="completed" className="space-y-4 mt-4">
           {completedTrades.length === 0 ? (
             <Alert className="border-white/10 bg-white/5">
               <CheckCircle className="h-4 w-4 text-primary" />
@@ -777,23 +797,23 @@ export default function ActiveTradesPage() {
               </AlertDescription>
             </Alert>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {completedTrades.map((trade) => (
-                <Card key={trade.id} className="p-6 border-white/5 bg-card hover:bg-white/5 transition-colors">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3">
-                        <h3 className="text-xl font-bold text-white">{trade.symbol}</h3>
+                <Card key={trade.id} className="p-4 sm:p-6 border-white/5 bg-card hover:bg-white/5 transition-colors">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-lg sm:text-xl font-bold text-white">{trade.symbol}</h3>
                         <ActionSignal
                           action={trade.action}
                           confidence={trade.confidence || 0}
                           size="sm"
                         />
                       </div>
-                      <p className="text-sm text-muted-foreground mt-1">
+                      <p className="text-xs sm:text-sm text-muted-foreground mt-1">
                         {new Date(trade.entryTime).toLocaleDateString()} - {trade.exitTime && new Date(trade.exitTime).toLocaleDateString()}
                       </p>
-                      <div className="mt-2 text-sm text-muted-foreground">
+                      <div className="mt-2 text-xs sm:text-sm text-muted-foreground space-y-0.5">
                         <p>
                           Invested:{" "}
                           <span className="font-semibold text-zinc-300">
@@ -810,8 +830,8 @@ export default function ActiveTradesPage() {
                         </p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className={`text-2xl font-bold ${(trade.actualPnl || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                    <div className="text-left sm:text-right">
+                      <p className={`text-xl sm:text-2xl font-bold ${(trade.actualPnl || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                         {(trade.actualPnl || 0) >= 0 ? '+' : ''}
                         {currencySymbol}
                         {convertAmount(trade.actualPnl || 0, trade.symbol).toFixed(2)}
@@ -821,11 +841,11 @@ export default function ActiveTradesPage() {
                       </p>
                     </div>
                   </div>
-                  <div className="mt-4 flex items-center gap-2">
-                    <Badge variant="outline" className="capitalize border-white/10 text-muted-foreground">
+                  <div className="mt-3 flex items-center gap-2 flex-wrap">
+                    <Badge variant="outline" className="capitalize border-white/10 text-muted-foreground text-xs">
                       {trade.exitReason?.replace(/_/g, ' ')}
                     </Badge>
-                    <Badge variant="secondary" className="bg-white/10 text-zinc-300 hover:bg-white/20">
+                    <Badge variant="secondary" className="bg-white/10 text-zinc-300 hover:bg-white/20 text-xs">
                       {trade.shares} shares
                     </Badge>
                   </div>
@@ -836,9 +856,9 @@ export default function ActiveTradesPage() {
         </TabsContent>
 
         {/* Broker Orders Tab */}
-        <TabsContent value="orders" className="space-y-4 mt-6">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-zinc-400">
+        <TabsContent value="orders" className="space-y-4 mt-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs sm:text-sm text-zinc-400">
               Real-time orders from your broker via OpenAlgo.
             </p>
             <Button
@@ -865,7 +885,7 @@ export default function ActiveTradesPage() {
             <Alert className="border-white/10 bg-white/5">
               <History className="h-4 w-4 text-zinc-400" />
               <AlertDescription className="text-zinc-400">
-                No broker orders found. Click "Sync from Broker" to fetch your latest orders.
+                No broker orders found. Click &quot;Sync from Broker&quot; to fetch your latest orders.
                 <br />
                 <span className="text-xs text-zinc-500 mt-1 block">
                   Requires an active OpenAlgo integration. Complete onboarding at{" "}
@@ -874,86 +894,144 @@ export default function ActiveTradesPage() {
               </AlertDescription>
             </Alert>
           ) : (
-            <Card className="bg-zinc-900 border-zinc-800 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-zinc-800 text-xs text-zinc-400">
-                      <th className="text-left px-4 py-3">Symbol</th>
-                      <th className="text-left px-4 py-3">Action</th>
-                      <th className="text-right px-4 py-3">Qty</th>
-                      <th className="text-right px-4 py-3">Price</th>
-                      <th className="text-left px-4 py-3">Type</th>
-                      <th className="text-left px-4 py-3">Strategy</th>
-                      <th className="text-left px-4 py-3">Status</th>
-                      <th className="text-left px-4 py-3">Time</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {brokerOrders.map((order) => {
-                      const statusColors: Record<string, string> = {
-                        complete:  "bg-green-500/10 text-green-400 border-green-500/30",
-                        rejected:  "bg-red-500/10 text-red-400 border-red-500/30",
-                        open:      "bg-teal-500/10 text-teal-400 border-teal-500/30",
-                        cancelled: "bg-zinc-700 text-zinc-400 border-zinc-600",
-                        trigger_pending: "bg-amber-500/10 text-amber-400 border-amber-500/30",
-                      };
-                      const sc = statusColors[(order.status ?? "").toLowerCase()] ?? "bg-zinc-700 text-zinc-400 border-zinc-600";
-                      const isBuy = (order.action ?? "").toUpperCase() === "BUY";
+            <>
+              {/* Desktop Table */}
+              <Card className="hidden sm:block bg-zinc-900 border-zinc-800 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-zinc-800 text-xs text-zinc-400">
+                        <th className="text-left px-4 py-3">Symbol</th>
+                        <th className="text-left px-4 py-3">Action</th>
+                        <th className="text-right px-4 py-3">Qty</th>
+                        <th className="text-right px-4 py-3">Price</th>
+                        <th className="text-left px-4 py-3">Type</th>
+                        <th className="text-left px-4 py-3">Strategy</th>
+                        <th className="text-left px-4 py-3">Status</th>
+                        <th className="text-left px-4 py-3">Time</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {brokerOrders.map((order) => {
+                        const statusColors: Record<string, string> = {
+                          complete:  "bg-green-500/10 text-green-400 border-green-500/30",
+                          rejected:  "bg-red-500/10 text-red-400 border-red-500/30",
+                          open:      "bg-teal-500/10 text-teal-400 border-teal-500/30",
+                          cancelled: "bg-zinc-700 text-zinc-400 border-zinc-600",
+                          trigger_pending: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+                        };
+                        const sc = statusColors[(order.status ?? "").toLowerCase()] ?? "bg-zinc-700 text-zinc-400 border-zinc-600";
+                        const isBuy = (order.action ?? "").toUpperCase() === "BUY";
 
-                      return (
-                        <tr key={order.id} className="border-b border-zinc-800/60 hover:bg-zinc-800/30">
-                          <td className="px-4 py-3 font-mono font-medium text-white">
-                            {order.symbol ?? "—"}
-                            {order.exchange && (
-                              <span className="text-[10px] text-zinc-500 ml-1">{order.exchange}</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className={`font-bold text-xs ${isBuy ? "text-green-400" : "text-red-400"}`}>
-                              {order.action ?? "—"}
+                        return (
+                          <tr key={order.id} className="border-b border-zinc-800/60 hover:bg-zinc-800/30">
+                            <td className="px-4 py-3 font-mono font-medium text-white">
+                              {order.symbol ?? "—"}
+                              {order.exchange && (
+                                <span className="text-[10px] text-zinc-500 ml-1">{order.exchange}</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={`font-bold text-xs ${isBuy ? "text-green-400" : "text-red-400"}`}>
+                                {order.action ?? "—"}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-right text-zinc-300">
+                              {order.filled_quantity != null
+                                ? `${order.filled_quantity}/${order.quantity}`
+                                : (order.quantity ?? "—")}
+                            </td>
+                            <td className="px-4 py-3 text-right text-zinc-300">
+                              {order.average_price
+                                ? `₹${order.average_price.toLocaleString()}`
+                                : order.price
+                                ? `₹${order.price.toLocaleString()}`
+                                : "—"}
+                            </td>
+                            <td className="px-4 py-3 text-zinc-400 text-xs">
+                              {[order.order_type, order.product_type].filter(Boolean).join(" · ")}
+                            </td>
+                            <td className="px-4 py-3 text-zinc-400 text-xs max-w-[120px] truncate">
+                              {order.strategy_name ?? "—"}
+                            </td>
+                            <td className="px-4 py-3">
+                              <Badge className={`text-[10px] border ${sc}`}>
+                                {(order.status ?? "unknown").charAt(0).toUpperCase() + (order.status ?? "unknown").slice(1)}
+                              </Badge>
+                              {order.rejection_reason && (
+                                <p className="text-[10px] text-red-400 mt-0.5 max-w-[100px] truncate" title={order.rejection_reason}>
+                                  {order.rejection_reason}
+                                </p>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-zinc-500 text-xs whitespace-nowrap">
+                              {order.order_timestamp
+                                ? new Date(order.order_timestamp).toLocaleString()
+                                : new Date(order.synced_at).toLocaleString()}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+              {/* Mobile Card List */}
+              <div className="sm:hidden space-y-2">
+                {brokerOrders.map((order) => {
+                  const statusColors: Record<string, string> = {
+                    complete:  "bg-green-500/10 text-green-400 border-green-500/30",
+                    rejected:  "bg-red-500/10 text-red-400 border-red-500/30",
+                    open:      "bg-teal-500/10 text-teal-400 border-teal-500/30",
+                    cancelled: "bg-zinc-700 text-zinc-400 border-zinc-600",
+                    trigger_pending: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+                  };
+                  const sc = statusColors[(order.status ?? "").toLowerCase()] ?? "bg-zinc-700 text-zinc-400 border-zinc-600";
+                  const isBuy = (order.action ?? "").toUpperCase() === "BUY";
+                  return (
+                    <Card key={order.id} className="bg-zinc-900 border-zinc-800 p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono font-bold text-white text-sm truncate">{order.symbol ?? "—"}</span>
+                            {order.exchange && <span className="text-[10px] text-zinc-500">{order.exchange}</span>}
+                          </div>
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
+                            <span className={`font-bold text-xs ${isBuy ? "text-green-400" : "text-red-400"}`}>{order.action ?? "—"}</span>
+                            <span className="text-zinc-400 text-xs">
+                              {order.filled_quantity != null ? `${order.filled_quantity}/${order.quantity}` : (order.quantity ?? "—")} shares
                             </span>
-                          </td>
-                          <td className="px-4 py-3 text-right text-zinc-300">
-                            {order.filled_quantity != null
-                              ? `${order.filled_quantity}/${order.quantity}`
-                              : (order.quantity ?? "—")}
-                          </td>
-                          <td className="px-4 py-3 text-right text-zinc-300">
-                            {order.average_price
-                              ? `₹${order.average_price.toLocaleString()}`
-                              : order.price
-                              ? `₹${order.price.toLocaleString()}`
-                              : "—"}
-                          </td>
-                          <td className="px-4 py-3 text-zinc-400 text-xs">
-                            {[order.order_type, order.product_type].filter(Boolean).join(" · ")}
-                          </td>
-                          <td className="px-4 py-3 text-zinc-400 text-xs max-w-[120px] truncate">
-                            {order.strategy_name ?? "—"}
-                          </td>
-                          <td className="px-4 py-3">
-                            <Badge className={`text-[10px] border ${sc}`}>
-                              {(order.status ?? "unknown").charAt(0).toUpperCase() + (order.status ?? "unknown").slice(1)}
-                            </Badge>
-                            {order.rejection_reason && (
-                              <p className="text-[10px] text-red-400 mt-0.5 max-w-[100px] truncate" title={order.rejection_reason}>
-                                {order.rejection_reason}
-                              </p>
+                            {(order.average_price || order.price) && (
+                              <span className="text-zinc-300 text-xs font-mono">
+                                ₹{(order.average_price || order.price)?.toLocaleString()}
+                              </span>
                             )}
-                          </td>
-                          <td className="px-4 py-3 text-zinc-500 text-xs whitespace-nowrap">
+                          </div>
+                          {order.strategy_name && (
+                            <p className="text-[10px] text-zinc-500 mt-0.5 truncate">{order.strategy_name}</p>
+                          )}
+                          <p className="text-[10px] text-zinc-600 mt-0.5">
                             {order.order_timestamp
                               ? new Date(order.order_timestamp).toLocaleString()
                               : new Date(order.synced_at).toLocaleString()}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                          </p>
+                        </div>
+                        <div className="flex-shrink-0">
+                          <Badge className={`text-[10px] border ${sc}`}>
+                            {(order.status ?? "unknown").charAt(0).toUpperCase() + (order.status ?? "unknown").slice(1)}
+                          </Badge>
+                          {order.rejection_reason && (
+                            <p className="text-[10px] text-red-400 mt-0.5 max-w-[120px] truncate" title={order.rejection_reason}>
+                              {order.rejection_reason}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </Card>
+                  );
+                })}
               </div>
-            </Card>
+            </>
           )}
         </TabsContent>
 

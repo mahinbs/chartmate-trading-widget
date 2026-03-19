@@ -449,31 +449,30 @@ export default function PredictionsPage() {
     <div className="min-h-screen bg-background text-foreground">
       {/* Header */}
       <div className="border-b border-white/5 bg-background/80 backdrop-blur-xl sticky top-0 z-50">
-        <Container className="py-4">
-          <div className="flex items-center justify-between mb-4">
-            <Button variant="ghost" onClick={() => navigate('/home')} className="hover:bg-white/5">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Home
+        <Container className="py-3 sm:py-4">
+          <div className="flex items-center justify-between mb-3">
+            <Button variant="ghost" size="sm" onClick={() => navigate('/home')} className="hover:bg-white/5">
+              <ArrowLeft className="h-4 w-4 mr-1.5" />
+              <span className="hidden sm:inline">Home</span>
             </Button>
-            <Button onClick={() => navigate('/predict')} className="shadow-[0_0_20px_rgba(20,184,166,0.2)]">
-              <Plus className="h-4 w-4 mr-2" />
+            <Button size="sm" onClick={() => navigate('/predict')} className="shadow-[0_0_20px_rgba(20,184,166,0.2)]">
+              <Plus className="h-4 w-4 mr-1.5" />
               New Analysis
             </Button>
           </div>
           <div>
-            <h1 className="text-3xl font-bold text-gradient flex items-center gap-2">
-              <History className="h-8 w-8 text-primary" />
+            <h1 className="text-2xl sm:text-3xl font-bold text-gradient flex items-center gap-2">
+              <History className="h-6 w-6 sm:h-8 sm:w-8 text-primary" />
               My Analyses
             </h1>
-            <p className="text-muted-foreground mt-1">
+            <p className="text-muted-foreground mt-1 text-sm sm:text-base">
               Track your AI-powered probability-based analyses and their outcomes
             </p>
           </div>
         </Container>
       </div>
-
       {/* Main Content */}
-      <Container className="py-8">
+      <Container className="py-4 sm:py-8">
         {predictions.length === 0 ? (
           <Card className="glass-panel max-w-md mx-auto text-center">
             <CardContent className="p-8">
@@ -508,9 +507,9 @@ export default function PredictionsPage() {
               return (
                 <Card key={prediction.id} className="glass-panel overflow-hidden flex flex-col">
                   {/* Header with Summary */}
-                  <CardHeader className="pb-4">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
+                  <CardHeader className="pb-3 px-3 sm:px-6">
+                    <div className="flex flex-col items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0 w-full">
                         <SummaryHeader
                           symbol={prediction.symbol}
                           currentPrice={prediction.current_price || 0}
@@ -520,7 +519,7 @@ export default function PredictionsPage() {
                           confidence={prediction.confidence || undefined}
                         />
                       </div>
-                      <div className="flex items-center gap-2 ml-4">
+                      <div className="flex justify-end flex-wrap w-full items-center gap-1.5 flex-shrink-0">
                         <OutcomeBadge outcome={outcome} />
                         <ActionBar
                           onDelete={() => deletePrediction(prediction.id)}
@@ -532,36 +531,36 @@ export default function PredictionsPage() {
                     </div>
                     
                     {/* Time Progress */}
-                    <div className="mt-4 space-y-2">
-                      <div className="flex items-center justify-between text-sm">
+                    <div className="mt-3 space-y-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-sm">
                         <div className="flex items-center gap-2">
-                          <Clock className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-muted-foreground">
+                          <Clock className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                          <span className="text-muted-foreground text-xs sm:text-sm">
                             {isExpired ? 'Completed' : `${formatDuration(timeRemaining)} remaining`}
                           </span>
                         </div>
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-xs text-muted-foreground pl-5 sm:pl-0">
                           {formatDateTime(prediction.created_at)}
                         </span>
                       </div>
-                      <Progress value={isExpired ? 100 : elapsedPercent} className="h-2" />
+                      <Progress value={isExpired ? 100 : elapsedPercent} className="h-1.5" />
                     </div>
                   </CardHeader>
 
-                  <CardContent className="space-y-6">
+                  <CardContent className="space-y-4 px-3 sm:px-6">
                     {/* Investment Details */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-black/20 rounded-lg border border-white/5">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 sm:p-4 bg-black/20 rounded-lg border border-white/5">
                       <div>
-                        <p className="text-xs text-muted-foreground">Investment</p>
-                        <p className="font-semibold text-white">{prediction.investment ? formatCurrency(prediction.investment, 0) : 'N/A'}</p>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground">Investment</p>
+                        <p className="font-semibold text-white text-sm sm:text-base">{prediction.investment ? formatCurrency(prediction.investment, 0) : 'N/A'}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-muted-foreground">Timeframe</p>
-                        <p className="font-semibold text-white">{prediction.timeframe}</p>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground">Timeframe</p>
+                        <p className="font-semibold text-white text-sm sm:text-base">{prediction.timeframe}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-muted-foreground">Expected Move</p>
-                        <p className={`font-semibold ${
+                        <p className="text-[10px] sm:text-xs text-muted-foreground">Expected Move</p>
+                        <p className={`font-semibold text-sm sm:text-base ${
                           prediction.expected_move_direction === 'up' ? 'text-green-400' : 
                           prediction.expected_move_direction === 'down' ? 'text-red-400' : 
                           'text-yellow-400'
@@ -570,10 +569,10 @@ export default function PredictionsPage() {
                         </p>
                       </div>
                       <div>
-                        <p className="text-xs text-muted-foreground">Price Target</p>
-                        <p className="font-semibold text-white">
+                        <p className="text-[10px] sm:text-xs text-muted-foreground">Price Target</p>
+                        <p className="font-semibold text-white text-xs sm:text-sm break-words">
                           {prediction.price_target_min && prediction.price_target_max ? 
-                            `${formatCurrency(prediction.price_target_min, 2)} - ${formatCurrency(prediction.price_target_max, 2)}` : 'N/A'}
+                            `${formatCurrency(prediction.price_target_min, 2)} – ${formatCurrency(prediction.price_target_max, 2)}` : 'N/A'}
                         </p>
                       </div>
                     </div>

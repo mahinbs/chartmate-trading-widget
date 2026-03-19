@@ -152,22 +152,24 @@ export default function NewsPage() {
         </div>
       </div>
 
-      <main className="container mx-auto px-4 py-8 max-w-6xl">
-        <Tabs defaultValue="regional" className="space-y-8" onValueChange={setActiveTab}>
-          <div className="flex items-center justify-between flex-wrap gap-4">
-            <TabsList className="bg-muted/50 p-1 border border-white/5">
-              <TabsTrigger value="trending" className="gap-2 px-6">
-                <TrendingUp className="h-4 w-4" /> Trending
-              </TabsTrigger>
-              <TabsTrigger value="regional" className="gap-2 px-6">
-                <MapPin className="h-4 w-4" /> Regional ({userRegion})
-              </TabsTrigger>
-              <TabsTrigger value="global" className="gap-2 px-6">
-                <Globe className="h-4 w-4" /> Global Markets
-              </TabsTrigger>
-            </TabsList>
+      <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-8 max-w-6xl">
+        <Tabs defaultValue="regional" className="space-y-4 sm:space-y-8" onValueChange={setActiveTab}>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between flex-wrap gap-3">
+            <div className="overflow-x-auto w-full sm:w-auto pb-1">
+              <TabsList className="bg-muted/50 p-1 border border-white/5 min-w-max">
+                <TabsTrigger value="trending" className="gap-1.5 px-3 sm:px-6 text-xs sm:text-sm">
+                  <TrendingUp className="h-3.5 w-3.5" /> Trending
+                </TabsTrigger>
+                <TabsTrigger value="regional" className="gap-1.5 px-3 sm:px-6 text-xs sm:text-sm">
+                  <MapPin className="h-3.5 w-3.5" /> Regional ({userRegion})
+                </TabsTrigger>
+                <TabsTrigger value="global" className="gap-1.5 px-3 sm:px-6 text-xs sm:text-sm">
+                  <Globe className="h-3.5 w-3.5" /> Global
+                </TabsTrigger>
+              </TabsList>
+            </div>
 
-            <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/30 px-3 py-1.5 rounded-full border border-white/5">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/30 px-3 py-1.5 rounded-full border border-white/5 self-start sm:self-auto">
               <TrendingUp className="h-3 w-3 text-primary" />
               AI Impact Scoring Active
             </div>
@@ -185,13 +187,13 @@ export default function NewsPage() {
         </Tabs>
 
         {hasMore && (
-          <div className="mt-12 flex justify-center">
+          <div className="mt-8 sm:mt-12 flex justify-center">
             <Button
               variant="outline"
               size="lg"
               onClick={handleLoadMore}
               disabled={loading}
-              className="px-12 border-white/10 hover:bg-white/5 transition-all"
+              className="px-8 sm:px-12 border-white/10 hover:bg-white/5 transition-all"
             >
               {loading ? "Loading..." : "Load More Articles"}
             </Button>
@@ -206,9 +208,9 @@ function NewsGrid({ articles, loading }: { articles: NewsArticle[], loading: boo
   const navigate = useNavigate();
   if (loading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         {[...Array(6)].map((_, i) => (
-          <div key={i} className="h-[300px] rounded-xl bg-muted/20 animate-pulse border border-white/5" />
+          <div key={i} className="h-[280px] sm:h-[300px] rounded-xl bg-muted/20 animate-pulse border border-white/5" />
         ))}
       </div>
     );
@@ -231,7 +233,7 @@ function NewsGrid({ articles, loading }: { articles: NewsArticle[], loading: boo
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
       {articles.map((article) => (
         <Card
           key={article.id}

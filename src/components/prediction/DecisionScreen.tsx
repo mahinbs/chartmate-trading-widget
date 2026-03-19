@@ -126,7 +126,7 @@ export function DecisionScreen({
             If You Invest {fmt(investment, 0)} Today
           </h3>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid sm:grid-cols-3 gap-4">
             {/* Best Case - use 2 decimals so small investments (e.g. ₹10) don't show ₹0 */}
             <div className="text-center p-4 bg-green-500/10 rounded-lg border border-green-500/20">
               <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">Best Case</div>

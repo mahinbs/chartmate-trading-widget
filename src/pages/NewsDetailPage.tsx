@@ -175,19 +175,19 @@ export default function NewsDetailPage() {
             Back
           </Button>
 
-          <div className="hidden md:flex items-center gap-4">
-            <Button variant="ghost" size="icon" className="text-slate-400 hover:text-white transition-colors">
-              <Share2 className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="icon" className="text-slate-400 hover:text-white transition-colors">
-              <Bookmark className="h-4 w-4" />
-            </Button>
+        <div className="hidden sm:flex items-center gap-4">
+              <Button variant="ghost" size="icon" className="text-slate-400 hover:text-white transition-colors">
+                <Share2 className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="icon" className="text-slate-400 hover:text-white transition-colors">
+                <Bookmark className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
-        </div>
-      </nav>
+        </nav>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-12">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-12">
           {/* Main Content Area */}
           <div className="lg:col-span-8">
             <article>
@@ -211,21 +211,21 @@ export default function NewsDetailPage() {
               </div>
 
               {/* Title */}
-              <h1 className="text-4xl md:text-5xl lg:text-6xl font-black text-white leading-[1.1] mb-8 tracking-tight">
+              <h1 className="text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-black text-white leading-[1.15] sm:leading-[1.1] mb-5 sm:mb-8 tracking-tight">
                 {metadata.title}
               </h1>
 
               {/* Author/Source Info */}
-              <div className="flex items-center gap-4 mb-10 pb-8 border-b border-white/5">
-                <div className="h-12 w-12 rounded-full bg-gradient-to-br from-primary to-primary-foreground flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-primary/20 rotate-3">
+              <div className="flex items-center gap-3 mb-6 sm:mb-10 pb-5 sm:pb-8 border-b border-white/5">
+                <div className="h-9 w-9 sm:h-12 sm:w-12 rounded-full bg-gradient-to-br from-primary to-primary-foreground flex items-center justify-center text-white font-bold text-sm sm:text-lg shadow-lg shadow-primary/20 shrink-0">
                   {metadata.source[0]}
                 </div>
-                <div>
-                  <p className="text-sm font-bold text-white tracking-wide">{metadata.source}</p>
-                  <p className="text-xs text-slate-500 font-medium">Verified Aggregator</p>
+                <div className="min-w-0">
+                  <p className="text-xs sm:text-sm font-bold text-white tracking-wide truncate">{metadata.source}</p>
+                  <p className="text-[10px] sm:text-xs text-slate-500 font-medium">Verified Aggregator</p>
                 </div>
-                <div className="ml-auto flex gap-2">
-                  <Badge variant="outline" className="border-white/10 text-slate-400 rounded-lg px-3 py-1 bg-white/[0.02]">
+                <div className="ml-auto flex gap-2 shrink-0">
+                  <Badge variant="outline" className="border-white/10 text-slate-400 rounded-lg px-2 sm:px-3 py-1 bg-white/[0.02] text-[10px] sm:text-xs">
                     {metadata.region}
                   </Badge>
                 </div>
@@ -233,7 +233,7 @@ export default function NewsDetailPage() {
 
               {/* Cover Image */}
               {metadata.image_url && (
-                <div className="relative aspect-[21/9] mb-12 rounded-3xl overflow-hidden group shadow-2xl shadow-black">
+                <div className="relative aspect-[16/9] sm:aspect-[21/9] mb-6 sm:mb-12 rounded-2xl sm:rounded-3xl overflow-hidden group shadow-2xl shadow-black">
                   <img
                     src={metadata.image_url}
                     alt={metadata.title}
@@ -244,7 +244,7 @@ export default function NewsDetailPage() {
               )}
 
               {/* AI Extracted Content or Error */}
-              <div className="prose prose-invert prose-xl max-w-none prose-slate prose-headings:text-white prose-p:text-slate-300 prose-p:leading-relaxed prose-li:text-slate-300">
+              <div className="prose prose-invert prose-base sm:prose-xl max-w-none prose-slate prose-headings:text-white prose-p:text-slate-300 prose-p:leading-relaxed prose-li:text-slate-300">
                 {contentLoading ? (
                   <div className="space-y-6">
                     <div className="h-4 w-full bg-white/5 rounded-full animate-pulse" />
@@ -312,13 +312,13 @@ export default function NewsDetailPage() {
 
           {/* Sidebar - Related News */}
           <aside className="lg:col-span-4 space-y-10">
-            <div className="sticky top-28">
-              <div className="bg-white/[0.02] border border-white/5 rounded-3xl p-8 backdrop-blur-sm">
-                <h3 className="text-lg font-black text-white mb-8 tracking-tight flex items-center justify-between">
+            <div className="lg:sticky lg:top-28">
+              <div className="bg-white/[0.02] border border-white/5 rounded-2xl sm:rounded-3xl p-5 sm:p-8 backdrop-blur-sm">
+                <h3 className="text-base sm:text-lg font-black text-white mb-5 sm:mb-8 tracking-tight flex items-center justify-between">
                   Related Analysis
                   <ChevronRight className="h-5 w-5 text-primary" />
                 </h3>
-                <div className="space-y-8">
+                <div className="space-y-5 sm:space-y-8">
                   {relatedNews.length > 0 ? relatedNews.map((article) => (
                     <div
                       key={article.id}
@@ -366,17 +366,29 @@ export default function NewsDetailPage() {
 
       <style>{`
         .article-body-content p {
-          margin-bottom: 2.5rem;
+          margin-bottom: 1.5rem;
           line-height: 1.8;
           color: #cbd5e1;
-          font-size: 1.25rem;
+          font-size: 1rem;
+        }
+        @media (min-width: 640px) {
+          .article-body-content p {
+            margin-bottom: 2.5rem;
+            font-size: 1.25rem;
+          }
         }
         .article-body-content h2, .article-body-content h3 {
-          margin-top: 3rem;
-          margin-bottom: 1.5rem;
+          margin-top: 2rem;
+          margin-bottom: 1rem;
           font-weight: 800;
           color: white;
           letter-spacing: -0.02em;
+        }
+        @media (min-width: 640px) {
+          .article-body-content h2, .article-body-content h3 {
+            margin-top: 3rem;
+            margin-bottom: 1.5rem;
+          }
         }
         .article-body-content ul {
           margin-bottom: 2rem;

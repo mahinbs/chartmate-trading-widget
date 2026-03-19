@@ -297,11 +297,11 @@ function fmt(v: number | undefined | null, prefix = "₹") {
 
 function PnlBadge({ value }: { value: number | undefined | null }) {
   const n = Number(value ?? 0);
-  if (!n || isNaN(n) || Math.abs(n) < 0.005) return <span className="text-zinc-500 text-xs">₹0.00</span>;
+  if (!n || isNaN(n) || Math.abs(n) < 0.005) return <span className="text-zinc-500 text-sm font-mono">₹0.00</span>;
   const pos = n > 0;
   return (
-    <span className={`text-xs font-bold flex items-center gap-0.5 ${pos ? "text-emerald-400" : "text-red-400"}`}>
-      {pos ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+    <span className={`text-sm font-bold flex items-center gap-0.5 ${pos ? "text-emerald-400" : "text-red-400"}`}>
+      {pos ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
       {pos ? "+" : "−"}₹{Math.abs(n).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
     </span>
   );
@@ -317,7 +317,7 @@ function StatusBadge({ status }: { status?: string }) {
     pending:   "bg-amber-500/20 text-amber-300 border-amber-500/30",
   };
   return (
-    <Badge className={`text-[10px] border px-1.5 py-0 ${map[s] ?? "bg-zinc-700 text-zinc-400 border-zinc-600"}`}>
+    <Badge className={`text-xs border px-2 py-0.5 ${map[s] ?? "bg-zinc-700 text-zinc-400 border-zinc-600"}`}>
       {status ?? "—"}
     </Badge>
   );
@@ -1074,7 +1074,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
         <CardContent className="space-y-4">
 
           {/* ── Funds Overview ─────────────────────────────────────────── */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="grid sm:grid-cols-2 sm:grid-cols-4 gap-2">
             {[
               { label: "Available Cash", value: Number(available), icon: <Wallet className="h-3 w-3" />, color: "text-teal-400" },
               { label: "Used Margin",    value: Number(used),      icon: <Briefcase className="h-3 w-3" />, color: "text-amber-400" },
@@ -1093,16 +1093,16 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
           </div>
 
           {/* ── Quick Stats ────────────────────────────────────────────── */}
-          <div className="grid grid-cols-4 gap-2 text-center">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
             {[
               { label: "Open Positions", value: openPositions.length, color: "text-blue-400" },
               { label: "Holdings",       value: data.holdings.length, color: "text-purple-400" },
               { label: "Open Orders",    value: openOrders.length,    color: "text-amber-400" },
               { label: "Filled Today",   value: completedToday,       color: "text-emerald-400" },
             ].map(({ label, value, color }) => (
-              <div key={label} className="bg-zinc-800/50 rounded-lg p-2 border border-zinc-800">
-                <p className={`font-bold text-lg ${color}`}>{value}</p>
-                <p className="text-[9px] text-zinc-500 leading-tight mt-0.5">{label}</p>
+              <div key={label} className="bg-zinc-800/50 rounded-lg p-2.5 border border-zinc-800">
+                <p className={`font-bold text-xl ${color}`}>{value}</p>
+                <p className="text-xs text-zinc-500 leading-tight mt-1">{label}</p>
               </div>
             ))}
           </div>
@@ -1110,9 +1110,9 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
           {/* ── P&L Chart (positions) ──────────────────────────────────── */}
           {pieData.length > 0 && (
             <div className="bg-zinc-800/40 rounded-xl border border-zinc-700/50 p-3">
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <p className="text-xs text-zinc-400 font-semibold">Open Positions P&L Breakdown</p>
-                <p className="text-[10px] text-zinc-500">
+              <div className="flex sm:flex-row flex-col sm:items-center justify-between gap-2 mb-2">
+                <p className="text-sm text-zinc-300 font-semibold tracking-wide">Open Positions P&L Breakdown</p>
+                <p className="text-xs text-zinc-500">
                   Open positions P/L:{" "}
                   <span className={openPositions.reduce((s, p) => s + Number((p as any).pnl ?? 0), 0) >= 0 ? "text-emerald-400" : "text-red-400"}>
                     {(() => {
@@ -1122,22 +1122,24 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                   </span>
                 </p>
               </div>
-              <div className="flex items-center gap-4">
-                <ResponsiveContainer width={120} height={100}>
-                  <PieChart>
-                    <Pie data={pieData} dataKey="value" innerRadius={28} outerRadius={48} strokeWidth={0}>
-                      {pieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="flex-1 space-y-1">
+              <div className="flex flex-col sm:flex-row items-center gap-4">
+                <div className="w-full sm:w-auto flex justify-center">
+                  <ResponsiveContainer width={120} height={100}>
+                    <PieChart>
+                      <Pie data={pieData} dataKey="value" innerRadius={28} outerRadius={48} strokeWidth={0}>
+                        {pieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="flex-1 w-full space-y-1.5">
                   {pieData.slice(0, 5).map((d, i) => (
-                    <div key={i} className="flex items-center justify-between text-xs">
-                      <span className="flex items-center gap-1">
+                    <div key={i} className="flex items-center justify-between text-sm">
+                      <span className="flex items-center gap-1.5">
                         <span className="w-2 h-2 rounded-full" style={{ background: d.color }} />
-                        <span className="text-zinc-300 font-mono">{d.name}</span>
+                        <span className="text-zinc-200 font-mono">{d.name}</span>
                       </span>
-                      <span style={{ color: d.color }}>₹{d.value.toFixed(2)}</span>
+                      <span style={{ color: d.color }} className="font-semibold">₹{d.value.toFixed(2)}</span>
                     </div>
                   ))}
                 </div>
@@ -1167,8 +1169,8 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
           )}
 
           {/* ── Tabs ──────────────────────────────────────────────────── */}
-          <Tabs defaultValue="positions">
-            <TabsList className="bg-zinc-800 border border-zinc-700 h-8 w-full grid grid-cols-5">
+          <Tabs defaultValue="positions" className="w-full">
+            <TabsList className="bg-zinc-800 border border-zinc-700 h-auto w-full grid grid-cols-2 sm:grid-cols-5 p-1 gap-1.5">
               {[
                 { value: "positions",  label: "Positions", icon: <ArrowUpRight className="h-3 w-3 mr-0.5" />, count: data.positions.length },
                 { value: "holdings",   label: "Holdings",  icon: <Briefcase className="h-3 w-3 mr-0.5" />,    count: data.holdings.length },
@@ -1177,7 +1179,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                 { value: "strategies", label: "Strategies",icon: <Zap className="h-3 w-3 mr-0.5" />,          count: strategies.length },
               ].map(tab => (
                 <TabsTrigger key={tab.value} value={tab.value}
-                  className="text-[11px] h-6 data-[state=active]:bg-teal-500 data-[state=active]:text-black flex items-center gap-0.5">
+                  className={`text-xs sm:text-sm h-10 px-2 data-[state=active]:bg-teal-500 data-[state=active]:text-black flex items-center justify-center gap-0.5 transition-all w-full ${tab.value === "strategies" ? "col-span-2 sm:col-span-1" : ""}`}>
                   {tab.icon}{tab.label} ({tab.count})
                 </TabsTrigger>
               ))}
@@ -1197,7 +1199,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                     <thead>
                       <tr className="border-b border-zinc-800 bg-zinc-800/50">
                         {["Symbol", "Qty", "Avg", "LTP", "P&L", "Product", ""].map(h => (
-                          <th key={h} className="text-left text-zinc-500 font-medium px-3 py-2">{h}</th>
+                          <th key={h} className="text-left text-zinc-400 font-semibold uppercase tracking-wider text-[11px] px-3 py-2.5">{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -1218,25 +1220,25 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                             className="border-b border-zinc-800/60 hover:bg-zinc-800/30 transition-colors cursor-pointer group"
                             onClick={() => symbol && openQuickTrade(symbol, String(p.exchange ?? "NSE"), qty, avg, ltp, pnl, String(p.product ?? "CNC"), qty > 0 ? "SELL" : "BUY")}
                           >
-                            <td className="px-3 py-2.5">
-                              <p className="font-semibold text-white font-mono group-hover:text-teal-300 transition-colors">
+                            <td className="px-3 py-3">
+                              <p className="font-semibold text-white font-mono group-hover:text-teal-300 transition-all text-sm">
                                 {symbol || "—"}
-                                {symbol && <span className="ml-1 text-[9px] text-zinc-700 group-hover:text-teal-600">↗</span>}
+                                {symbol && <span className="ml-1 text-[11px] text-zinc-600 group-hover:text-teal-500">↗</span>}
                               </p>
-                              <p className="text-zinc-600 text-[10px]">{p.exchange}</p>
+                              <p className="text-zinc-500 text-xs font-medium uppercase tracking-tight">{p.exchange}</p>
                             </td>
                             <td className="px-3 py-2.5">
                               <span className={`font-bold ${qty > 0 ? "text-emerald-400" : "text-red-400"}`}>
                                 {qty}
                               </span>
                             </td>
-                            <td className="px-3 py-2.5 text-zinc-300 font-mono">{fmt(avg)}</td>
-                            <td className="px-3 py-2.5">
-                              <span className={`font-mono ${liveLtp ? "text-amber-300" : "text-zinc-300"}`}>{ltp > 0 ? fmt(ltp) : "—"}</span>
-                              {liveLtp && <span className="text-[9px] text-amber-400 ml-0.5">●</span>}
+                            <td className="px-3 py-3 text-zinc-200 font-mono text-sm">{fmt(avg)}</td>
+                            <td className="px-3 py-3">
+                              <span className={`font-mono text-sm ${liveLtp ? "text-amber-300" : "text-zinc-200"}`}>{ltp > 0 ? fmt(ltp) : "—"}</span>
+                              {liveLtp && <span className="text-[10px] text-amber-500 ml-1">●</span>}
                             </td>
-                            <td className="px-3 py-2.5"><PnlBadge value={pnl} /></td>
-                            <td className="px-3 py-2.5 text-zinc-500">{p.product}</td>
+                            <td className="px-3 py-3"><PnlBadge value={pnl} /></td>
+                            <td className="px-3 py-3 text-zinc-500 text-xs font-semibold uppercase">{p.product}</td>
                             <td className="px-3 py-2.5">
                               {hasQty && (
                                 <Button size="sm" variant="destructive" disabled={!!actioning}
@@ -1269,7 +1271,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                     <thead>
                       <tr className="border-b border-zinc-800 bg-zinc-800/50">
                         {["Symbol", "Qty", "Avg", "LTP", "Current Value", "P&L", "%"].map(h => (
-                          <th key={h} className="text-left text-zinc-500 font-medium px-3 py-2">{h}</th>
+                          <th key={h} className="text-left text-zinc-400 font-semibold uppercase tracking-wider text-[11px] px-3 py-2.5">{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -1293,21 +1295,21 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                             className="border-b border-zinc-800/60 hover:bg-zinc-800/30 transition-colors cursor-pointer group"
                             onClick={() => symbol && openQuickTrade(symbol, String(h.exchange ?? "NSE"), qty, avg, ltp, pnl, String(h.product ?? "CNC"), "SELL")}
                           >
-                            <td className="px-3 py-2.5">
-                              <p className="font-semibold text-white font-mono group-hover:text-teal-300 transition-colors">
+                            <td className="px-3 py-3">
+                              <p className="font-semibold text-white font-mono group-hover:text-teal-300 transition-all text-sm">
                                 {symbol || "—"}
-                                {symbol && <span className="ml-1 text-[9px] text-zinc-700 group-hover:text-teal-600">↗</span>}
+                                {symbol && <span className="ml-1 text-[11px] text-zinc-600 group-hover:text-teal-500">↗</span>}
                               </p>
-                              <p className="text-zinc-600 text-[10px]">{h.exchange}</p>
+                              <p className="text-zinc-500 text-xs font-medium uppercase tracking-tight">{h.exchange}</p>
                             </td>
-                            <td className="px-3 py-2.5 text-zinc-300">{qty || 0}</td>
-                            <td className="px-3 py-2.5 text-zinc-300 font-mono">{fmt(avg)}</td>
-                            <td className="px-3 py-2.5">
-                              <span className={`font-mono ${liveLtp ? "text-amber-300" : "text-zinc-300"}`}>{ltp > 0 ? fmt(ltp) : "—"}</span>
-                              {liveLtp && <span className="text-[9px] text-amber-400 ml-0.5">●</span>}
+                            <td className="px-3 py-3 text-zinc-200 text-sm font-medium tabular-nums">{qty || 0}</td>
+                            <td className="px-3 py-3 text-zinc-200 font-mono text-sm tabular-nums">{fmt(avg)}</td>
+                            <td className="px-3 py-3">
+                              <span className={`font-mono text-sm tabular-nums ${liveLtp ? "text-amber-300" : "text-zinc-200"}`}>{ltp > 0 ? fmt(ltp) : "—"}</span>
+                              {liveLtp && <span className="text-[10px] text-amber-500 ml-1">●</span>}
                             </td>
-                            <td className="px-3 py-2.5 text-zinc-300 font-mono">{curVal > 0 ? fmt(curVal) : "—"}</td>
-                            <td className="px-3 py-2.5"><PnlBadge value={pnl} /></td>
+                            <td className="px-3 py-3 text-zinc-200 font-mono text-sm tabular-nums">{curVal > 0 ? fmt(curVal) : "—"}</td>
+                            <td className="px-3 py-3"><PnlBadge value={pnl} /></td>
                             <td className="px-3 py-2.5">
                               <span className={`text-xs font-semibold ${pct >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                                 {pct >= 0 ? "+" : ""}{pct.toFixed(2)}%
@@ -1335,7 +1337,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                     <thead className="sticky top-0 bg-zinc-900 z-10">
                       <tr className="border-b border-zinc-800 bg-zinc-800/80">
                         {["Symbol", "Type", "Qty/Filled", "Price", "Product", "Status", "Strategy", "Time", ""].map(h => (
-                          <th key={h} className="text-left text-zinc-500 font-medium px-3 py-2">{h}</th>
+                          <th key={h} className="text-left text-zinc-400 font-semibold uppercase tracking-wider text-[11px] px-3 py-2.5">{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -1353,35 +1355,35 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                         const strat      = oid ? strategyByOrderId[oid] : "";
                         return (
                           <tr key={i} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
-                            <td className="px-3 py-2">
-                              <div className="flex items-center gap-1">
+                            <td className="px-3 py-3">
+                              <div className="flex items-center gap-1.5">
                                 {isBuy
-                                  ? <ArrowUpRight className="h-3 w-3 text-emerald-400 shrink-0" />
-                                  : <ArrowDownRight className="h-3 w-3 text-red-400 shrink-0" />}
-                                <span className="font-mono text-white font-semibold">{symbol || "—"}</span>
+                                  ? <ArrowUpRight className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                                  : <ArrowDownRight className="h-3.5 w-3.5 text-red-400 shrink-0" />}
+                                <span className="font-mono text-white font-semibold text-sm tracking-tight">{symbol || "—"}</span>
                               </div>
-                              <p className="text-zinc-600 text-[10px] ml-4">{o.exchange}</p>
+                              <p className="text-zinc-500 text-xs font-medium uppercase tracking-tight ml-5">{o.exchange}</p>
                             </td>
-                            <td className="px-3 py-2">
-                              <span className={`font-bold text-[11px] ${isBuy ? "text-emerald-400" : "text-red-400"}`}>{getAction(o) || "—"}</span>
+                            <td className="px-3 py-3">
+                              <span className={`font-bold text-xs uppercase ${isBuy ? "text-emerald-400" : "text-red-400"}`}>{getAction(o) || "—"}</span>
                             </td>
-                            <td className="px-3 py-2 text-zinc-300 font-mono">
+                            <td className="px-3 py-3 text-zinc-200 font-mono text-sm leading-none tabular-nums">
                               <span className={filledQty > 0 ? "text-white" : "text-zinc-500"}>{filledQty}</span>
-                              <span className="text-zinc-600"> / {qty}</span>
+                              <span className="text-zinc-600 text-xs"> / {qty}</span>
                             </td>
-                            <td className="px-3 py-2 text-zinc-300 font-mono">
+                            <td className="px-3 py-3 text-zinc-200 font-mono text-sm tabular-nums">
                               {avgPrice > 0 ? fmt(avgPrice) : fmt(limitPrice)}
                             </td>
-                            <td className="px-3 py-2 text-zinc-500">{o.product}</td>
+                            <td className="px-3 py-3 text-zinc-500 text-xs font-semibold uppercase tabular-nums">{o.product}</td>
                             <td className="px-3 py-2"><StatusBadge status={status} /></td>
-                            <td className="px-3 py-2">
-                              <div className="flex flex-col gap-1">
+                            <td className="px-3 py-3">
+                              <div className="flex flex-col gap-1.5">
                                 {strat ? (
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded border border-purple-500/20 bg-purple-500/10 text-purple-300 w-fit">
+                                  <span className="text-xs px-2 py-0.5 rounded border border-purple-500/20 bg-purple-500/10 text-purple-300 w-fit font-medium">
                                     {strat}
                                   </span>
                                 ) : (
-                                  <span className="text-zinc-700">—</span>
+                                  <span className="text-zinc-700 text-xs">—</span>
                                 )}
                                 {(() => {
                                   const ae = oid ? autoExitByEntryOrderId[oid] : null;
@@ -1393,14 +1395,14 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                                     s === "await_fill" ? "border-amber-500/20 bg-amber-500/10 text-amber-300" :
                                     "border-red-500/20 bg-red-500/10 text-red-300";
                                   return (
-                                    <span className={`text-[10px] px-1.5 py-0.5 rounded border ${cls} w-fit`}>
+                                    <span className={`text-[11px] px-2 py-0.5 rounded border ${cls} w-fit font-medium`}>
                                       Auto-exit: {s}
                                     </span>
                                   );
                                 })()}
                               </div>
                             </td>
-                            <td className="px-3 py-2 text-zinc-600 text-[10px]">
+                            <td className="px-3 py-3 text-zinc-600 text-[11px] tabular-nums">
                               {getTime(o).slice(11, 19)}
                             </td>
                             <td className="px-3 py-2">
@@ -1432,7 +1434,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
             </TabsContent>
 
             {/* ── Tradebook ─────────────────────────────────────────── */}
-            <TabsContent value="tradebook" className="mt-2">
+            <TabsContent value="tradebook" className="mt-2 text-white">
               {data.tradebook.length === 0 ? (
                 <div className="text-center py-10">
                   <BookOpen className="h-8 w-8 text-zinc-700 mx-auto mb-2" />
@@ -1442,26 +1444,26 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
               ) : (
                 <>
                   {/* Summary row */}
-                  <div className="grid grid-cols-3 gap-2 mb-3">
-                    <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2 text-center">
-                      <p className="text-emerald-400 text-xs font-bold">{tradeStats.buyCnt} Buys</p>
-                      <p className="text-zinc-400 text-[10px]">{fmtMoney(tradeStats.buyVal)} value</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
+                    <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2.5 text-center">
+                      <p className="text-emerald-400 text-sm font-bold">{tradeStats.buyCnt} Buys</p>
+                      <p className="text-zinc-500 text-xs font-medium tabular-nums mt-0.5">{fmtMoney(tradeStats.buyVal)} value</p>
                     </div>
-                    <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 text-center">
-                      <p className="text-red-400 text-xs font-bold">{tradeStats.sellCnt} Sells</p>
-                      <p className="text-zinc-400 text-[10px]">{fmtMoney(tradeStats.sellVal)} value</p>
+                    <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2.5 text-center">
+                      <p className="text-red-400 text-sm font-bold">{tradeStats.sellCnt} Sells</p>
+                      <p className="text-zinc-500 text-xs font-medium tabular-nums mt-0.5">{fmtMoney(tradeStats.sellVal)} value</p>
                     </div>
-                    <div className="bg-zinc-800 border border-zinc-700 rounded-lg p-2 text-center">
-                      <p className="text-zinc-300 text-xs font-bold">{data.tradebook.length} Total</p>
-                      <p className="text-zinc-500 text-[10px]">Filled trades</p>
+                    <div className="bg-zinc-800 border border-zinc-700 rounded-lg p-2.5 text-center">
+                      <p className="text-zinc-200 text-sm font-bold">{data.tradebook.length} Total</p>
+                      <p className="text-zinc-500 text-xs font-medium mt-0.5">Filled trades</p>
                     </div>
                   </div>
                   <div className="overflow-x-auto rounded-lg border border-zinc-800 max-h-72 overflow-y-auto">
-                    <table className="w-full text-xs">
+                    <table className="w-full text-sm">
                       <thead className="sticky top-0 bg-zinc-900 z-10">
                         <tr className="border-b border-zinc-800 bg-zinc-800/80">
                           {["Symbol", "Side", "Qty", "Avg Price", "Product", "Strategy", "Time"].map(h => (
-                            <th key={h} className="text-left text-zinc-500 font-medium px-3 py-2">{h}</th>
+                            <th key={h} className="text-left text-zinc-400 font-semibold uppercase tracking-wider text-[11px] px-3 py-2.5">{h}</th>
                           ))}
                         </tr>
                       </thead>
@@ -1484,32 +1486,32 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                                 String(t.product ?? "CNC"), isBuy ? "SELL" : "BUY"
                               )}
                             >
-                              <td className="px-3 py-2">
-                                <p className="font-mono text-white font-semibold group-hover:text-teal-300 transition-colors">
+                              <td className="px-3 py-3">
+                                <p className="font-mono text-white font-semibold text-sm group-hover:text-teal-300 transition-all tracking-tight">
                                   {symbol || "—"}
-                                  {symbol && <span className="ml-1 text-[9px] text-zinc-700 group-hover:text-teal-600">↗</span>}
+                                  {symbol && <span className="ml-1 text-[11px] text-zinc-600 group-hover:text-teal-500">↗</span>}
                                 </p>
-                                <p className="text-zinc-600 text-[10px]">{t.exchange}</p>
+                                <p className="text-zinc-500 text-xs font-medium uppercase tracking-tight">{t.exchange}</p>
                               </td>
-                              <td className="px-3 py-2">
-                                <Badge className={`text-[10px] font-bold border ${isBuy ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-red-500/10 text-red-400 border-red-500/20"}`}>
+                              <td className="px-3 py-3">
+                                <Badge className={`text-xs font-bold border uppercase ${isBuy ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-red-500/10 text-red-400 border-red-500/20"}`}>
                                   {side || "—"}
                                 </Badge>
                               </td>
-                              <td className="px-3 py-2 text-zinc-300 font-mono">
-                                <span className="text-white">{qty}</span>
+                              <td className="px-3 py-3 text-zinc-200 font-mono text-sm tabular-nums">
+                                <span className="text-white font-bold">{qty}</span>
                                 <span className="text-zinc-600"> / {qty}</span>
                               </td>
-                              <td className="px-3 py-2 text-zinc-300 font-mono">₹{avg.toFixed(2)}</td>
-                              <td className="px-3 py-2 text-zinc-500">{t.product}</td>
-                              <td className="px-3 py-2">
-                                <div className="flex flex-col gap-1">
+                              <td className="px-3 py-3 text-zinc-200 font-mono text-sm tabular-nums">₹{avg.toFixed(2)}</td>
+                              <td className="px-3 py-3 text-zinc-500 text-xs font-semibold uppercase tracking-tight">{t.product}</td>
+                              <td className="px-3 py-3">
+                                <div className="flex flex-col gap-1.5">
                                   {strat ? (
-                                    <span className="text-[10px] px-1.5 py-0.5 rounded border border-purple-500/20 bg-purple-500/10 text-purple-300 w-fit">
+                                    <span className="text-xs px-2 py-0.5 rounded border border-purple-500/20 bg-purple-500/10 text-purple-300 w-fit font-medium">
                                       {strat}
                                     </span>
                                   ) : (
-                                    <span className="text-zinc-700">—</span>
+                                    <span className="text-zinc-700 text-xs">—</span>
                                   )}
                                   {(() => {
                                     const ae = oid ? autoExitByEntryOrderId[oid] : null;
@@ -1521,14 +1523,14 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                                       s === "await_fill" ? "border-amber-500/20 bg-amber-500/10 text-amber-300" :
                                       "border-red-500/20 bg-red-500/10 text-red-300";
                                     return (
-                                      <span className={`text-[10px] px-1.5 py-0.5 rounded border ${cls} w-fit`}>
+                                      <span className={`text-[11px] px-2 py-0.5 rounded border ${cls} w-fit font-medium`}>
                                         Auto-exit: {s}
                                       </span>
                                     );
                                   })()}
                                 </div>
                               </td>
-                              <td className="px-3 py-2 text-zinc-600 text-[10px]">
+                              <td className="px-3 py-3 text-zinc-500 text-[11px] tabular-nums font-medium">
                                 {fmtTime(getTime(t))}
                               </td>
                             </tr>
@@ -1544,18 +1546,18 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
             <TabsContent value="strategies" className="mt-2 space-y-3">
               {/* Header row with Add button */}
               <div className="flex items-center justify-between">
-                <p className="text-xs text-zinc-400 font-semibold flex items-center gap-1.5">
-                  <Zap className="h-3.5 w-3.5 text-purple-400" /> Auto Strategies
+                <p className="text-sm text-zinc-300 font-semibold flex items-center gap-1.5">
+                  <Zap className="h-4 w-4 text-purple-400" /> Auto Strategies
                 </p>
                 <div className="flex items-center gap-1.5">
-                  <button onClick={loadStrategies} className="p-1 text-zinc-600 hover:text-zinc-300 transition-colors" title="Refresh">
-                    <RefreshCw className={`h-3 w-3 ${stratLoading ? "animate-spin" : ""}`} />
+                  <button onClick={loadStrategies} className="p-1 text-zinc-500 hover:text-zinc-300 transition-colors" title="Refresh">
+                    <RefreshCw className={`h-3.5 w-3.5 ${stratLoading ? "animate-spin" : ""}`} />
                   </button>
                   <button
                     onClick={() => setShowCreate(true)}
-                    className="flex items-center gap-1 px-2 py-1 rounded border border-zinc-700 text-[11px] text-zinc-400 hover:text-white hover:border-purple-500/50 transition-colors"
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded border border-zinc-700 text-xs font-bold text-zinc-400 hover:text-white hover:border-purple-500/50 transition-colors"
                   >
-                    <Plus className="h-3 w-3" /> New Strategy
+                    <Plus className="h-3.5 w-3.5" /> New Strategy
                   </button>
                 </div>
               </div>
@@ -1568,13 +1570,13 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
               ) : strategies.length === 0 ? (
                 <div className="text-center py-8">
                   <Zap className="h-8 w-8 text-zinc-800 mx-auto mb-2" />
-                  <p className="text-xs text-zinc-600">No strategies yet</p>
-                  <p className="text-[10px] text-zinc-700 mt-0.5">Create strategies for auto-execution</p>
+                  <p className="text-sm text-zinc-500 font-medium">No strategies yet</p>
+                  <p className="text-xs text-zinc-600 mt-1">Create strategies for auto-execution</p>
                   <button
                     onClick={() => setShowCreate(true)}
-                    className="mt-3 flex items-center gap-1.5 mx-auto px-3 py-1.5 rounded-lg border border-purple-500/30 text-[11px] text-purple-400 hover:bg-purple-500/10 transition-colors"
+                    className="mt-4 flex items-center gap-1.5 mx-auto px-4 py-2 rounded-lg border border-purple-500/30 text-xs font-bold text-purple-400 hover:bg-purple-500/10 transition-colors outline-none focus:ring-2 focus:ring-purple-500/40"
                   >
-                    <Plus className="h-3 w-3" /> Create your first strategy
+                    <Plus className="h-3.5 w-3.5" /> Create your first strategy
                   </button>
                 </div>
               ) : (
@@ -1591,11 +1593,11 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                           {/* Fire Signal */}
                           <button
                             onClick={() => setFireState(s.id, { open: !fs.open })}
-                            className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold border transition-all ${
+                            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold border transition-all ${
                               fs.open ? "bg-teal-500/20 border-teal-500/40 text-teal-300" : "border-zinc-700 text-zinc-500 hover:border-teal-500/40 hover:text-teal-400"
                             }`}
                           >
-                            <Zap className="h-3 w-3" /> Execute
+                            <Zap className="h-3.5 w-3.5" /> Execute
                           </button>
                           {/* Active toggle */}
                           <button
@@ -1619,36 +1621,36 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                         </div>
 
                         {/* Meta badges */}
-                        <div className="flex items-center gap-1.5 flex-wrap px-3 pb-2">
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                            s.is_active ? "bg-purple-500/15 text-purple-300" : "bg-zinc-800 text-zinc-500"
+                        <div className="flex items-center gap-1.5 flex-wrap px-3 pb-2.5">
+                          <span className={`text-xs px-2 py-0.5 rounded font-bold tracking-tight ${
+                            s.is_active ? "bg-purple-500/15 text-purple-300 border border-purple-500/20" : "bg-zinc-800 text-zinc-500 border border-zinc-700/30"
                           }`}>{s.is_active ? "● ACTIVE" : "○ INACTIVE"}</span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">{s.trading_mode}</span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">{s.is_intraday ? "Intraday" : "Positional"}</span>
-                          <span className="text-[10px] text-zinc-700" title="Session window (IST). Fire from UI = executes immediately. Webhook = when conditions met within this window.">{s.start_time}–{s.end_time}</span>
-                          {s.stop_loss_pct && <span className="text-[10px] text-red-500/70">SL {s.stop_loss_pct}%</span>}
-                          {s.take_profit_pct && <span className="text-[10px] text-green-500/70">TP {s.take_profit_pct}%</span>}
+                          <span className="text-xs px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/30 font-medium">{s.trading_mode}</span>
+                          <span className="text-xs px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/30 font-medium">{s.is_intraday ? "Intraday" : "Positional"}</span>
+                          <span className="text-xs text-zinc-500 font-medium tabular-nums ml-1" title="Session window (IST). Fire from UI = executes immediately. Webhook = when conditions met within this window.">{s.start_time}–{s.end_time}</span>
+                          {s.stop_loss_pct && <span className="text-xs font-bold text-red-500/80">SL {s.stop_loss_pct}%</span>}
+                          {s.take_profit_pct && <span className="text-xs font-bold text-green-500/80">TP {s.take_profit_pct}%</span>}
                         </div>
 
                         {/* Fire Signal panel */}
                         {fs.open && (
                           <div className="mx-3 mb-3 rounded-lg border border-teal-500/20 bg-zinc-950 p-3 space-y-3">
-                            <p className="text-[11px] font-semibold text-teal-400 flex items-center gap-1.5">
-                              <Zap className="h-3 w-3" /> Fire Signal — {s.name}
+                            <p className="text-sm font-bold text-teal-400 flex items-center gap-2">
+                              <Zap className="h-4 w-4" /> Fire Signal — {s.name}
                             </p>
-                            <div className="grid grid-cols-2 gap-2">
-                              <div className="space-y-1">
-                                <Label className="text-zinc-600 text-[10px]">Symbol *</Label>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="space-y-1.5">
+                                <Label className="text-zinc-500 text-xs font-semibold">Symbol *</Label>
                                 <SymbolSearchInput
                                   value={fs.symbol}
                                   onChange={(v) => setFireState(s.id, { symbol: v })}
                                   onSelect={(sym, ex) => setFireState(s.id, { symbol: sym, exchange: ex })}
                                 />
                               </div>
-                              <div className="space-y-1">
-                                <Label className="text-zinc-600 text-[10px]">Exchange</Label>
+                              <div className="space-y-1.5">
+                                <Label className="text-zinc-500 text-xs font-semibold">Exchange</Label>
                                 <Select value={fs.exchange} onValueChange={v => setFireState(s.id, { exchange: v })}>
-                                  <SelectTrigger className="bg-zinc-900 border-zinc-700 text-zinc-200 h-8 text-xs">
+                                  <SelectTrigger className="bg-zinc-900 border-zinc-700 text-zinc-200 h-9 text-xs font-mono">
                                     <SelectValue />
                                   </SelectTrigger>
                                   <SelectContent className="bg-zinc-900 border-zinc-700">
@@ -1659,20 +1661,20 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                                 </Select>
                               </div>
                             </div>
-                            <div className="grid grid-cols-2 gap-2">
-                              <div className="space-y-1">
-                                <Label className="text-zinc-600 text-[10px]">Quantity</Label>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="space-y-1.5">
+                                <Label className="text-zinc-500 text-xs font-semibold">Quantity</Label>
                                 <Input
                                   type="number" min={1}
                                   value={fs.quantity}
                                   onChange={e => setFireState(s.id, { quantity: e.target.value })}
-                                  className="bg-zinc-900 border-zinc-700 text-white text-xs h-8"
+                                  className="bg-zinc-900 border-zinc-700 text-white font-mono text-sm h-9"
                                 />
                               </div>
-                              <div className="space-y-1">
-                                <Label className="text-zinc-600 text-[10px]">Product</Label>
+                              <div className="space-y-1.5">
+                                <Label className="text-zinc-500 text-xs font-semibold">Product</Label>
                                 <Select value={fs.product} onValueChange={v => setFireState(s.id, { product: v })}>
-                                  <SelectTrigger className="bg-zinc-900 border-zinc-700 text-zinc-200 h-8 text-xs">
+                                  <SelectTrigger className="bg-zinc-900 border-zinc-700 text-zinc-200 h-9 text-xs font-bold uppercase">
                                     <SelectValue />
                                   </SelectTrigger>
                                   <SelectContent className="bg-zinc-900 border-zinc-700">
@@ -1684,17 +1686,17 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                               </div>
                             </div>
                             {/* Backtest option — available for every order and strategy including custom */}
-                            <div className="rounded border border-amber-900/50 bg-amber-950/20 p-2.5 space-y-2">
-                              <p className="text-[10px] font-medium text-amber-500 flex items-center gap-1">
-                                <BarChart3 className="h-3 w-3" /> Quick backtest (Edge)
+                            <div className="rounded-lg border border-amber-900/50 bg-amber-950/20 p-3 space-y-2.5">
+                              <p className="text-xs font-bold text-amber-500 flex items-center gap-1.5">
+                                <BarChart3 className="h-3.5 w-3.5" /> Quick backtest (Edge)
                               </p>
-                              <p className="text-[9px] text-zinc-600">
-                                VectorBT + SL/TP timing review → <span className="text-teal-500/90">Algo Trading → Backtesting</span>
+                              <p className="text-[11px] text-zinc-500 leading-tight">
+                                VectorBT + SL/TP timing review → <span className="text-teal-500/90 font-medium">Algo Trading → Backtesting</span>
                               </p>
                               <div className="flex flex-wrap items-end gap-2">
                                 <div className="flex-1 min-w-[160px]">
-                                  <p className="text-[9px] text-zinc-600">Strategy model</p>
-                                  <p className="text-[10px] text-zinc-200 font-semibold">
+                                  <p className="text-[10px] text-zinc-500 font-medium">Strategy model</p>
+                                  <p className="text-xs text-zinc-200 font-bold uppercase tracking-tight">
                                     {(() => {
                                       const code = String(s.paper_strategy_type ?? "trend_following");
                                       const label = STRATEGIES.find(x => x.value === code)?.label;
@@ -1705,17 +1707,17 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="h-7 text-[10px] border-amber-700/50 text-amber-400 hover:bg-amber-900/30"
+                                  className="h-8 text-xs font-bold border-amber-700/50 text-amber-400 hover:bg-amber-900/30"
                                   disabled={fs.backtestLoading || !fs.symbol.trim()}
                                   onClick={() => runBacktestForFire(s)}
                                 >
-                                  {fs.backtestLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <BarChart3 className="h-3 w-3" />}
-                                  <span className="ml-1">{fs.backtestLoading ? "Running…" : "Run Backtest"}</span>
+                                  {fs.backtestLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BarChart3 className="h-3.5 w-3.5" />}
+                                  <span className="ml-1.5">{fs.backtestLoading ? "Running…" : "Run Backtest"}</span>
                                 </Button>
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="h-7 text-[10px] border-purple-700/50 text-purple-300 hover:bg-purple-900/30"
+                                  className="h-8 text-xs font-bold border-purple-700/50 text-purple-300 hover:bg-purple-900/30"
                                   disabled={fs.backtestAiLoading || !fs.symbol.trim()}
                                   onClick={async () => {
                                     const sym = fs.symbol.trim().toUpperCase();
@@ -1750,34 +1752,34 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                                     }
                                   }}
                                 >
-                                  {fs.backtestAiLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Brain className="h-3 w-3" />}
-                                  <span className="ml-1">{fs.backtestAiLoading ? "Analysing…" : "AI Analysis"}</span>
+                                  {fs.backtestAiLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Brain className="h-3.5 w-3.5" />}
+                                  <span className="ml-1.5">{fs.backtestAiLoading ? "Analysing…" : "AI Analysis"}</span>
                                 </Button>
                               </div>
                               {fs.backtestResult && (
-                                <div className="text-[10px] space-y-2">
+                                <div className="text-xs space-y-2.5">
                                   {fs.backtestResult.dataSource && (
-                                    <p className="text-zinc-500">
-                                      Data: <span className="text-teal-400/90">{fs.backtestResult.dataSource}</span>
+                                    <p className="text-zinc-500 text-[11px]">
+                                      Data source: <span className="text-teal-400/90 font-medium">{fs.backtestResult.dataSource}</span>
                                     </p>
                                   )}
-                                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
-                                    <span className="text-zinc-500">Trades</span><span className="text-zinc-500">Win</span><span className="text-zinc-500">Win rate</span><span className="text-zinc-500">Return</span>
-                                    <span className="font-mono">{fs.backtestResult.totalTrades}</span>
-                                    <span className="font-mono text-zinc-200">{fs.backtestResult.wins}/{fs.backtestResult.losses}</span>
-                                    <span className="font-mono text-emerald-400">{fs.backtestResult.winRate}%</span>
-                                    <span className={`font-mono ${fs.backtestResult.totalReturn >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fs.backtestResult.totalReturn >= 0 ? "+" : ""}{fs.backtestResult.totalReturn}%</span>
+                                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center">
+                                    <span className="text-zinc-500 uppercase text-[10px] tracking-wider">Trades</span><span className="text-zinc-500 uppercase text-[10px] tracking-wider">Win</span><span className="text-zinc-500 uppercase text-[10px] tracking-wider">Win rate</span><span className="text-zinc-500 uppercase text-[10px] tracking-wider">Return</span>
+                                    <span className="font-mono font-bold text-sm">{fs.backtestResult.totalTrades}</span>
+                                    <span className="font-mono text-zinc-200 text-sm">{fs.backtestResult.wins}/{fs.backtestResult.losses}</span>
+                                    <span className="font-mono text-emerald-400 font-bold text-sm">{fs.backtestResult.winRate}%</span>
+                                    <span className={`font-mono text-sm font-bold ${fs.backtestResult.totalReturn >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fs.backtestResult.totalReturn >= 0 ? "+" : ""}{fs.backtestResult.totalReturn}%</span>
                                   </div>
                                   {typeof fs.backtestResult.profitFactor === "number" && (
-                                    <div className="grid grid-cols-3 gap-2 text-center">
-                                      <span className="text-zinc-500">PF</span><span className="text-zinc-500">Max DD</span><span className="text-zinc-500">Now</span>
-                                      <span className="font-mono">{fs.backtestResult.profitFactor}</span>
-                                      <span className="font-mono">{fs.backtestResult.maxDrawdown ?? "—"}%</span>
-                                      <span className={`font-mono ${fs.backtestResult.strategyAchieved ? "text-emerald-400" : "text-zinc-400"}`}>{fs.backtestResult.strategyAchieved ? "MET" : "NOT MET"}</span>
+                                    <div className="grid grid-cols-3 gap-2 text-center border-t border-zinc-800 pt-2">
+                                      <span className="text-zinc-500 uppercase text-[10px] tracking-wider">PF</span><span className="text-zinc-500 uppercase text-[10px] tracking-wider">Max DD</span><span className="text-zinc-500 uppercase text-[10px] tracking-wider">Now</span>
+                                      <span className="font-mono text-sm">{fs.backtestResult.profitFactor}</span>
+                                      <span className="font-mono text-sm">{fs.backtestResult.maxDrawdown ?? "—"}%</span>
+                                      <span className={`font-mono text-[11px] font-bold ${fs.backtestResult.strategyAchieved ? "text-emerald-400" : "text-zinc-500"}`}>{fs.backtestResult.strategyAchieved ? "MET" : "NOT MET"}</span>
                                     </div>
                                   )}
                                   {fs.backtestResult.achievementReason && (
-                                    <p className="text-[10px] text-zinc-500">{fs.backtestResult.achievementReason}</p>
+                                    <p className="text-[11px] text-zinc-500 italic">{fs.backtestResult.achievementReason}</p>
                                   )}
                                 </div>
                               )}
@@ -1813,7 +1815,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                                 <RefreshCw className="h-3.5 w-3.5" /> Re-execute last ({fs.lastFired.action})
                               </button>
                             )}
-                            <p className="text-[10px] text-zinc-700 text-center">
+                            <p className="text-[11px] text-zinc-600 font-medium text-center italic">
                               Option to backtest every order and strategy (including custom). Fire executes immediately.
                             </p>
                           </div>
@@ -1842,8 +1844,8 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
       }}>
         <DialogContent className="bg-zinc-900 border-zinc-700 text-white max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-white">
-              <Plus className="h-4 w-4 text-purple-400" />
+            <DialogTitle className="flex items-center gap-2 text-white text-lg">
+              <Plus className="h-5 w-5 text-purple-400" />
               New Strategy
             </DialogTitle>
             <DialogDescription className="text-zinc-400 text-sm">
@@ -1851,44 +1853,44 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-2">
+          <div className="space-y-5 py-4">
             {/* Name + Description */}
-            <div className="space-y-2.5">
-              <div className="space-y-1">
-                <Label className="text-zinc-500 text-[11px]">Strategy Name *</Label>
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label className="text-zinc-400 text-xs font-semibold">Strategy Name *</Label>
                 <Input
                   placeholder="e.g. NIFTY Scalper, BTST Momentum"
                   value={form.name}
                   onChange={e => { setAutoNameFromPaper(false); setF("name", e.target.value); }}
-                  className="bg-zinc-950 border-zinc-700 text-white text-xs h-8"
+                  className="bg-zinc-950 border-zinc-700 text-white text-sm h-10 px-3"
                   autoFocus
                 />
                 {useFromPaper && (
-                  <div className="flex items-center justify-between mt-1">
+                  <div className="flex items-center justify-between mt-1.5">
                     <button
                       onClick={() => { setAutoNameFromPaper(true); applyPaperPrefill(paperType || "trend_following", { forceName: true }); }}
-                      className="text-[10px] text-purple-400 hover:text-purple-300"
+                      className="text-[11px] text-purple-400 font-medium hover:text-purple-300 transition-colors"
                       type="button"
                     >
                       Auto-name from paper strategy
                     </button>
-                    <span className="text-[10px] text-zinc-600">{autoNameFromPaper ? "ON" : "OFF"}</span>
+                    <span className="text-[11px] text-zinc-600 font-mono">{autoNameFromPaper ? "ON" : "OFF"}</span>
                   </div>
                 )}
               </div>
-              <div className="space-y-1">
-                <Label className="text-zinc-500 text-[11px]">Description (optional)</Label>
+              <div className="space-y-1.5">
+                <Label className="text-zinc-400 text-xs font-semibold">Description (optional)</Label>
                 <Input
                   placeholder="Short description of the strategy"
                   value={form.description}
                   onChange={e => setF("description", e.target.value)}
-                  className="bg-zinc-950 border-zinc-700 text-white text-xs h-8"
+                  className="bg-zinc-950 border-zinc-700 text-white text-sm h-10 px-3"
                 />
               </div>
             </div>
 
             {/* Start from paper strategy */}
-            <div className="space-y-2 p-3 rounded-lg border border-zinc-800 bg-zinc-950/50">
+            <div className="space-y-2 p-3.5 rounded-xl border border-zinc-800 bg-zinc-950/50">
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => {
@@ -1904,16 +1906,16 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                       setBacktestResult(null);
                     }
                   }}
-                  className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-medium transition-colors ${useFromPaper ? "bg-purple-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"}`}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${useFromPaper ? "bg-purple-600 text-white shadow-lg shadow-purple-900/20" : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"}`}
                 >
-                  <BarChart3 className="h-3 w-3" />
+                  <BarChart3 className="h-3.5 w-3.5" />
                   Start from paper strategy
                 </button>
                 {useFromPaper && (
                   <button
                     type="button"
                     onClick={() => applyPaperPrefill(paperType || "trend_following", { forceName: autoNameFromPaper, forceTimes: true })}
-                    className="ml-auto text-[10px] text-zinc-400 hover:text-zinc-200"
+                    className="ml-auto text-[11px] text-zinc-500 hover:text-zinc-300 font-medium transition-colors"
                     title="Re-apply direction/session/times"
                   >
                     Re-apply defaults
@@ -1921,15 +1923,15 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                 )}
               </div>
               {useFromPaper && (
-                <div className="space-y-1 pt-2 border-t border-zinc-800">
-                  <Label className="text-zinc-500 text-[11px]">Paper strategy type</Label>
+                <div className="space-y-1.5 pt-2.5 border-t border-zinc-800 mt-1">
+                  <Label className="text-zinc-400 text-xs font-semibold">Paper strategy type</Label>
                   <Select value={paperType} onValueChange={(v) => { setPaperType(v); applyPaperPrefill(v, { forceTimes: true }); setBacktestResult(null); }}>
-                    <SelectTrigger className="bg-zinc-950 border-zinc-700 text-zinc-200 h-8 text-xs">
+                    <SelectTrigger className="bg-zinc-950 border-zinc-700 text-zinc-200 h-10 text-sm">
                       <SelectValue placeholder="Pick strategy" />
                     </SelectTrigger>
                     <SelectContent className="bg-zinc-900 border-zinc-700 max-h-64">
                       {STRATEGIES.map((s) => (
-                        <SelectItem key={s.value} value={s.value} className="text-xs text-zinc-200">{s.label}</SelectItem>
+                        <SelectItem key={s.value} value={s.value} className="text-sm text-zinc-200">{s.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -1938,11 +1940,11 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
             </div>
 
             {/* Direction + Session */}
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <Label className="text-zinc-500 text-[11px]">Direction</Label>
-                <Select value={form.trading_mode} onValueChange={v => setF("trading_mode", v)}>
-                  <SelectTrigger className="bg-zinc-950 border-zinc-700 text-zinc-200 h-8 text-xs">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-zinc-400 text-xs font-semibold">Direction</Label>
+                <Select value={form.allowed_direction} onValueChange={v => setF("allowed_direction", v)}>
+                  <SelectTrigger className="bg-zinc-950 border-zinc-700 text-zinc-200 h-10 text-sm font-semibold">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-zinc-900 border-zinc-700">
@@ -1969,67 +1971,67 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
 
             {/* Trading Hours */}
             <div>
-              <Label className="text-zinc-500 text-[11px] block mb-1.5">Trading Hours (IST)</Label>
-              <div className="grid grid-cols-3 gap-2">
+              <Label className="text-zinc-400 text-xs font-semibold block mb-2">Trading Hours (IST)</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {[
                   { label: "Start",    field: "start_time"    as const, val: form.start_time },
                   { label: "End",      field: "end_time"      as const, val: form.end_time },
                   { label: "Squareoff",field: "squareoff_time"as const, val: form.squareoff_time },
                 ].map(({ label, field, val }) => (
-                  <div key={field} className="space-y-1">
-                    <Label className="text-zinc-600 text-[10px]">{label}</Label>
+                  <div key={field} className="space-y-1.5">
+                    <Label className="text-zinc-500 text-[11px] font-medium">{label}</Label>
                     <Input type="time" value={val} onChange={e => { setAutoTimesFromPaper(false); setF(field, e.target.value); }}
-                      className="bg-zinc-950 border-zinc-700 text-white text-xs h-8 px-2" />
+                      className="bg-zinc-950 border-zinc-700 text-white text-sm h-10 px-3 tabular-nums" />
                   </div>
                 ))}
               </div>
               {useFromPaper && (
-                <div className="flex items-center justify-between mt-1">
+                <div className="flex items-center justify-between mt-1.5">
                   <button
                     type="button"
                     onClick={() => { setAutoTimesFromPaper(true); applyPaperPrefill(paperType || "trend_following", { forceTimes: true }); }}
-                    className="text-[10px] text-purple-400 hover:text-purple-300"
+                    className="text-[11px] text-purple-400 hover:text-purple-300 font-medium"
                   >
                     Auto-times from paper strategy
                   </button>
-                  <span className="text-[10px] text-zinc-600">{autoTimesFromPaper ? "ON" : "OFF"}</span>
+                  <span className="text-[11px] text-zinc-600 font-mono">{autoTimesFromPaper ? "ON" : "OFF"}</span>
                 </div>
               )}
             </div>
 
             {/* Risk Management */}
             <div>
-              <Label className="text-zinc-500 text-[11px] block mb-1.5">Risk Management</Label>
-              <div className="grid grid-cols-3 gap-2">
+              <Label className="text-zinc-400 text-xs font-semibold block mb-2">Risk Management</Label>
+              <div className="grid grid-cols-3 gap-3">
                 {[
                   { label: "Risk / Trade %",  field: "risk_per_trade_pct" as const, val: form.risk_per_trade_pct, color: "text-white" },
                   { label: "Stop-Loss %",     field: "stop_loss_pct"      as const, val: form.stop_loss_pct,      color: "text-red-400" },
                   { label: "Take-Profit %",   field: "take_profit_pct"    as const, val: form.take_profit_pct,    color: "text-green-400" },
                 ].map(({ label, field, val, color }) => (
-                  <div key={field} className="space-y-1">
-                    <Label className="text-zinc-600 text-[10px]">{label}</Label>
+                  <div key={field} className="space-y-1.5">
+                    <Label className="text-zinc-500 text-[11px] font-medium">{label}</Label>
                     <div className="relative">
                       <Input type="number" min="0.1" step="0.1" max="100" value={val}
                         onChange={e => setF(field, e.target.value)}
-                        className={`bg-zinc-950 border-zinc-700 text-xs h-8 pr-5 ${color}`} />
-                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500">%</span>
+                        className={`bg-zinc-950 border-zinc-700 text-sm h-10 pr-6 tabular-nums ${color}`} />
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-zinc-500">%</span>
                     </div>
                   </div>
                 ))}
               </div>
-              <p className="text-[10px] text-zinc-700 mt-1.5">Risk/trade: % of capital per signal. SL &amp; TP: % move from entry.</p>
+              <p className="text-[11px] text-zinc-600 mt-2 italic font-medium">Risk/trade: % of capital per signal. SL &amp; TP: % move from entry.</p>
             </div>
 
             {/* Symbols */}
-            <div className="space-y-1">
-              <Label className="text-zinc-500 text-[11px]">Symbols (optional, comma-separated)</Label>
+            <div className="space-y-1.5">
+              <Label className="text-zinc-400 text-xs font-semibold">Symbols (optional, comma-separated)</Label>
               <Input
                 placeholder="RELIANCE, TCS, NIFTY25MARFUT"
                 value={form.symbols_raw}
                 onChange={e => setF("symbols_raw", e.target.value.toUpperCase())}
-                className="bg-zinc-950 border-zinc-700 text-white font-mono text-xs h-8"
+                className="bg-zinc-950 border-zinc-700 text-white font-mono text-sm h-10 px-3 tracking-tight"
               />
-              <p className="text-[10px] text-zinc-700">Leave blank to allow any symbol via webhook payload</p>
+              <p className="text-[11px] text-zinc-600 font-medium">Leave blank to allow any symbol via webhook payload</p>
             </div>
           </div>
 
@@ -2088,11 +2090,11 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                     <div className="ml-auto text-right">
                       {qtd.ltp > 0 && (
                         <>
-                          <p className={`text-lg font-bold font-mono ${ltpDiff >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                          <p className={`text-xl font-bold font-mono ${ltpDiff >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                             ₹{qtd.ltp.toFixed(2)}
                           </p>
                           {ltpDiff !== 0 && (
-                            <p className={`text-[11px] ${ltpDiff >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                            <p className={`text-xs font-semibold ${ltpDiff >= 0 ? "text-emerald-500" : "text-red-500"}`}>
                               {ltpDiff >= 0 ? "▲" : "▼"} ₹{Math.abs(ltpDiff).toFixed(2)} ({Math.abs(ltpDiffPct).toFixed(2)}%)
                             </p>
                           )}
@@ -2120,9 +2122,9 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                         color: qtd.pnl >= 0 ? "text-emerald-400" : "text-red-400",
                       },
                     ].map(({ label, value, color }) => (
-                      <div key={label} className="bg-zinc-900 rounded-lg p-2 border border-zinc-800 text-center">
-                        <p className="text-zinc-600 text-[10px] mb-1">{label}</p>
-                        <p className={`font-bold text-xs font-mono ${color}`}>{value}</p>
+                      <div key={label} className="bg-zinc-900 rounded-xl p-2.5 border border-zinc-800 text-center">
+                        <p className="text-zinc-500 text-xs mb-1 font-medium">{label}</p>
+                        <p className={`font-bold text-sm font-mono tabular-nums ${color}`}>{value}</p>
                       </div>
                     ))}
                   </div>
@@ -2131,15 +2133,15 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                   <TradingViewChart symbol={qtd.symbol} exchange={qtd.exchange} height={220} />
 
                   {/* AI Analysis */}
-                  <div className="rounded-xl border border-purple-500/25 bg-purple-500/5 p-3 space-y-1.5">
-                    <p className="text-[11px] font-semibold text-purple-300 flex items-center gap-1.5">
-                      <Brain className="h-3.5 w-3.5" /> AI Analysis
-                      {qtd.aiLoading && <Loader2 className="h-3 w-3 animate-spin ml-1" />}
+                  <div className="rounded-xl border border-purple-500/25 bg-purple-500/10 p-3.5 space-y-2">
+                    <p className="text-xs font-bold text-purple-300 flex items-center gap-1.5 uppercase tracking-wide">
+                      <Brain className="h-4 w-4" /> AI Analysis
+                      {qtd.aiLoading && <Loader2 className="h-3.5 w-3.5 animate-spin ml-1.5" />}
                     </p>
                     {qtd.aiLoading ? (
-                      <p className="text-[11px] text-zinc-500 animate-pulse">Analysing {qtd.symbol}…</p>
+                      <p className="text-sm text-zinc-500 animate-pulse font-medium italic">Analysing {qtd.symbol}…</p>
                     ) : (
-                      <p className="text-[11px] text-zinc-300 leading-relaxed whitespace-pre-wrap max-h-24 overflow-y-auto">
+                      <p className="text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap max-h-32 overflow-y-auto font-medium">
                         {qtd.aiAnalysis}
                       </p>
                     )}
@@ -2148,23 +2150,23 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
 
                 {/* ── RIGHT: Order Form ─────────────────────────────────────── */}
                 <div className="p-4 space-y-3">
-                  <DialogHeader className="mb-1">
-                    <DialogTitle className="text-base text-white">
-                      Place Order — <span className="font-mono text-teal-300">{qtd.symbol}</span>
+                  <DialogHeader className="mb-1.5">
+                    <DialogTitle className="text-lg font-bold text-white">
+                      Place Order — <span className="font-mono text-teal-400">{qtd.symbol}</span>
                     </DialogTitle>
-                    <DialogDescription className="text-zinc-500 text-xs">
+                    <DialogDescription className="text-zinc-500 text-xs font-medium">
                       {qtd.exchange} · via {(broker || "broker").charAt(0).toUpperCase() + (broker || "broker").slice(1)}
                     </DialogDescription>
                   </DialogHeader>
 
                   {/* BUY / SELL */}
-                  <div className="grid grid-cols-2 gap-1.5 p-1 bg-zinc-900 rounded-lg">
+                  <div className="grid grid-cols-2 gap-2 p-1.5 bg-zinc-950 rounded-xl border border-zinc-800">
                     {(["BUY", "SELL"] as const).map(a => (
                       <button key={a} onClick={() => qtdSet("action", a)}
-                        className={`py-2.5 rounded-md text-sm font-bold transition-all ${
+                        className={`py-3 rounded-lg text-sm font-black tracking-widest transition-all ${
                           qtd.action === a
                             ? a === "BUY" ? "bg-green-600 text-white shadow-lg shadow-green-900/40" : "bg-red-600 text-white shadow-lg shadow-red-900/40"
-                            : "text-zinc-500 hover:text-zinc-300"
+                            : "text-zinc-600 hover:text-zinc-400"
                         }`}>
                         {a === "BUY" ? "▲ BUY" : "▼ SELL"}
                       </button>
@@ -2172,36 +2174,36 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                   </div>
 
                   {/* Product type */}
-                  <div className="space-y-1">
-                    <Label className="text-zinc-500 text-[11px]">Product Type</Label>
-                    <div className="grid grid-cols-3 gap-1.5">
+                  <div className="space-y-1.5">
+                    <Label className="text-zinc-400 text-xs font-semibold">Product Type</Label>
+                    <div className="grid grid-cols-3 gap-2">
                       {[
                         { v: "CNC",  l: "CNC",  sub: "Delivery" },
                         { v: "MIS",  l: "MIS",  sub: "Intraday" },
                         { v: "NRML", l: "NRML", sub: "F&O Carry" },
                       ].map(({ v, l, sub }) => (
                         <button key={v} onClick={() => qtdSet("product", v)}
-                          className={`py-1.5 rounded-md text-center transition-all border text-xs font-bold ${
+                          className={`py-2 rounded-lg text-center transition-all border text-sm font-bold ${
                             qtd.product === v
-                              ? "bg-zinc-700 border-zinc-500 text-white"
+                              ? "bg-zinc-700 border-zinc-500 text-white shadow-inner"
                               : "border-zinc-800 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300"
                           }`}>
                           {l}<br />
-                          <span className="font-normal text-[9px] text-zinc-600">{sub}</span>
+                          <span className="font-normal text-xs text-zinc-600 font-sans">{sub}</span>
                         </button>
                       ))}
                     </div>
                   </div>
 
                   {/* Order type tabs */}
-                  <div className="space-y-1">
-                    <Label className="text-zinc-500 text-[11px]">Order Type</Label>
-                    <div className="grid grid-cols-4 gap-1">
+                  <div className="space-y-1.5">
+                    <Label className="text-zinc-400 text-xs font-semibold">Order Type</Label>
+                    <div className="grid grid-cols-4 gap-1.5">
                       {(["MARKET", "LIMIT", "SL", "SL-M"] as const).map(pt => (
                         <button key={pt} onClick={() => qtdSet("pricetype", pt)}
-                          className={`py-1.5 rounded-md text-[11px] font-bold transition-all border ${
+                          className={`py-2 rounded-md text-xs font-bold transition-all border ${
                             qtd.pricetype === pt
-                              ? "bg-zinc-700 border-zinc-500 text-white"
+                              ? "bg-zinc-700 border-zinc-500 text-white shadow-inner"
                               : "border-zinc-800 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300"
                           }`}>
                           {pt}
@@ -2211,24 +2213,24 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                   </div>
 
                   {/* Qty + filled display */}
-                  <div className="space-y-1">
+                  <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
-                      <Label className="text-zinc-500 text-[11px]">Qty</Label>
+                      <Label className="text-zinc-400 text-xs font-semibold">Qty</Label>
                       {qtd.qty !== 0 && (
-                        <span className="text-[10px] text-zinc-600 font-mono">
-                          Placing: <span className="text-zinc-400">{qtd.qtyInput || "0"} / {Math.abs(qtd.qty)}</span> held
+                        <span className="text-[11px] text-zinc-500 font-mono font-medium">
+                          Placing: <span className="text-zinc-300">{qtd.qtyInput || "0"} / {Math.abs(qtd.qty)}</span> held
                         </span>
                       )}
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2.5">
                       <Input type="number" min={1}
                         value={qtd.qtyInput}
                         onChange={e => qtdSet("qtyInput", e.target.value)}
-                        className="bg-zinc-900 border-zinc-700 text-white h-9 text-sm font-mono" />
+                        className="bg-zinc-900 border-zinc-700 text-white h-10 text-base font-mono tabular-nums px-3" />
                       {qtd.qty > 0 && qtd.action === "SELL" && (
                         <button
                           onClick={() => qtdSet("qtyInput", String(Math.abs(qtd.qty)))}
-                          className="text-[10px] text-teal-400 border border-teal-500/30 px-3 py-1 rounded-lg hover:bg-teal-500/10 transition-colors shrink-0 whitespace-nowrap"
+                          className="text-xs font-bold text-teal-400 border border-teal-500/30 px-4 py-2 rounded-xl hover:bg-teal-500/10 transition-all shrink-0 whitespace-nowrap"
                         >All ({qtd.qty})</button>
                       )}
                     </div>
@@ -2236,60 +2238,64 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
 
                   {/* Limit / SL price fields */}
                   {(needsLimit || needsTrigger) && (
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 gap-3">
                       {needsLimit && (
-                        <div className="space-y-1">
-                          <Label className="text-zinc-500 text-[11px]">Limit Price ₹</Label>
+                        <div className="space-y-1.5">
+                          <Label className="text-zinc-400 text-xs font-semibold">Limit Price ₹</Label>
                           <Input type="number" step="0.05" placeholder={qtd.ltp > 0 ? qtd.ltp.toFixed(2) : "0.00"}
                             value={qtd.price}
                             onChange={e => qtdSet("price", e.target.value)}
-                            className="bg-zinc-900 border-zinc-700 text-white font-mono h-9 text-sm" />
+                            className="bg-zinc-900 border-zinc-700 text-white font-mono h-10 text-base tabular-nums px-3" />
                         </div>
                       )}
                       {needsTrigger && (
-                        <div className="space-y-1">
-                          <Label className="text-zinc-500 text-[11px]">Trigger Price ₹</Label>
+                        <div className="space-y-1.5">
+                          <Label className="text-zinc-400 text-xs font-semibold">Trigger Price ₹</Label>
                           <Input type="number" step="0.05" placeholder="0.00"
                             value={qtd.trigger_price}
                             onChange={e => qtdSet("trigger_price", e.target.value)}
-                            className="bg-zinc-900 border-zinc-700 text-white font-mono h-9 text-sm" />
+                            className="bg-zinc-900 border-zinc-700 text-white font-mono h-10 text-base tabular-nums px-3" />
                         </div>
                       )}
                     </div>
                   )}
 
                   {/* Validity */}
-                  <div className="space-y-1">
-                    <Label className="text-zinc-500 text-[11px]">Validity</Label>
-                    <div className="grid grid-cols-2 gap-1.5">
+                  <div className="space-y-1.5">
+                    <Label className="text-zinc-400 text-xs font-semibold">Validity</Label>
+                    <div className="grid grid-cols-2 gap-2">
                       {[
                         { v: "DAY", l: "Day", sub: "Valid today" },
                         { v: "IOC", l: "IOC", sub: "Immediate or cancel" },
                       ].map(({ v, l, sub }) => (
                         <button key={v} onClick={() => qtdSet("validity", v as "DAY" | "IOC")}
-                          className={`py-1.5 rounded-md text-center transition-all border text-xs font-bold ${
+                          className={`py-2 rounded-lg text-center transition-all border text-sm font-bold ${
                             qtd.validity === v
-                              ? "bg-zinc-700 border-zinc-500 text-white"
+                              ? "bg-zinc-700 border-zinc-500 text-white shadow-inner"
                               : "border-zinc-800 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300"
                           }`}>
                           {l}<br />
-                          <span className="font-normal text-[9px] text-zinc-600">{sub}</span>
+                          <span className="font-normal text-xs text-zinc-600 font-sans">{sub}</span>
                         </button>
                       ))}
                     </div>
                   </div>
 
                   {/* Order summary strip */}
-                  <div className={`rounded-lg p-2.5 text-[11px] font-mono border ${
+                  <div className={`rounded-xl p-3 text-sm font-mono border leading-tight ${
                     isBuy ? "bg-green-500/5 border-green-500/20 text-green-300" : "bg-red-500/5 border-red-500/20 text-red-300"
                   }`}>
-                    <span className="font-bold">{qtd.action}</span>{" "}
-                    <span className="font-bold">{qtd.qtyInput || "?"}</span> ×{" "}
-                    <span className="font-bold">{qtd.symbol}</span>{" "}
-                    · {qtd.exchange} · {qtd.product} · {qtd.pricetype}
-                    {needsLimit && qtd.price && ` @ ₹${qtd.price}`}
-                    {needsTrigger && qtd.trigger_price && ` trigger ₹${qtd.trigger_price}`}
-                    {" "}· {qtd.validity}
+                    <span className="font-bold text-base">{qtd.action}</span>{" "}
+                    <span className="font-bold text-base">{qtd.qtyInput || "?"}</span> ×{" "}
+                    <span className="font-bold text-base">{qtd.symbol}</span> <br />
+                    <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs opacity-80 font-semibold">
+                      <span>{qtd.exchange}</span>
+                      <span>{qtd.product}</span>
+                      <span>{qtd.pricetype}</span>
+                      {needsLimit && qtd.price && <span>@ ₹{qtd.price}</span>}
+                      {needsTrigger && qtd.trigger_price && <span>trigger ₹{qtd.trigger_price}</span>}
+                      <span>{qtd.validity}</span>
+                    </div>
                   </div>
 
                   {/* Confirm button — blocked until AI analysis completes */}
@@ -2309,7 +2315,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                       : <><Send className="h-4 w-4" />{isBuy ? "▲ Confirm BUY" : "▼ Confirm SELL"} {qtd.symbol}</>
                     }
                   </button>
-                  <p className="text-[10px] text-center text-zinc-700">⚠ Real money — executes instantly on broker</p>
+                  <p className="text-[11px] text-center text-zinc-600 font-medium italic">⚠ Real money — executes instantly on broker</p>
                 </div>
               </div>
             );
@@ -2319,43 +2325,43 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
 
       {/* ── Modify Order Dialog ─────────────────────────────────────────────── */}
       <Dialog open={!!modifyOrder} onOpenChange={(o) => !o && setModifyOrder(null)}>
-        <DialogContent className="bg-zinc-900 border-zinc-700 text-white max-w-sm">
+        <DialogContent className="bg-zinc-950 border-zinc-800 text-white max-w-sm">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-white">
-              <Pencil className="h-4 w-4 text-blue-400" />
+            <DialogTitle className="flex items-center gap-2 text-white text-lg font-bold">
+              <Pencil className="h-5 w-5 text-blue-400" />
               Modify Order — {modifyOrder?.tradingsymbol}
             </DialogTitle>
-            <DialogDescription className="text-zinc-400 text-sm">
-              Update price and/or quantity.
+            <DialogDescription className="text-zinc-500 text-xs font-medium">
+              Update price and/or quantity for active order.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-1.5">
-              <Label className="text-zinc-300 text-sm">Price Type</Label>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label className="text-zinc-400 text-xs font-semibold">Price Type</Label>
               <div className="flex gap-2">
                 {["LIMIT", "MARKET", "SL", "SL-M"].map(t => (
                   <button key={t} onClick={() => setModifyType(t)}
-                    className={`text-xs px-3 py-1.5 rounded-md border transition-colors ${modifyType === t ? "bg-teal-500 text-black border-teal-500 font-bold" : "bg-zinc-800 text-zinc-400 border-zinc-700"}`}>
+                    className={`text-xs px-3 py-2 rounded-lg border transition-all font-bold ${modifyType === t ? "bg-blue-600 text-white border-blue-500 shadow-lg shadow-blue-900/20" : "bg-zinc-900 text-zinc-500 border-zinc-800 hover:text-zinc-300"}`}>
                     {t}
                   </button>
                 ))}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-zinc-300 text-sm">Price</Label>
-                <Input type="number" step="0.05" min="0" value={modifyPrice} onChange={e => setModifyPrice(e.target.value)} className="bg-zinc-800 border-zinc-700 text-white" />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-zinc-400 text-xs font-semibold">Price</Label>
+                <Input type="number" step="0.05" min="0" value={modifyPrice} onChange={e => setModifyPrice(e.target.value)} className="bg-zinc-950 border-zinc-700 text-white h-10 text-sm font-mono tabular-nums px-3" />
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-zinc-300 text-sm">Quantity</Label>
-                <Input type="number" min="1" step="1" value={modifyQty} onChange={e => setModifyQty(e.target.value)} className="bg-zinc-800 border-zinc-700 text-white" />
+              <div className="space-y-2">
+                <Label className="text-zinc-400 text-xs font-semibold">Quantity</Label>
+                <Input type="number" min="1" step="1" value={modifyQty} onChange={e => setModifyQty(e.target.value)} className="bg-zinc-950 border-zinc-700 text-white h-10 text-sm font-mono tabular-nums px-3" />
               </div>
             </div>
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setModifyOrder(null)} className="border-zinc-700">Cancel</Button>
-            <Button onClick={handleModifySubmit} disabled={!!actioning || !modifyPrice || !modifyQty} className="bg-blue-600 hover:bg-blue-500 font-bold">
-              {actioning === modifyOrder?.orderid ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Modifying…</> : <><Pencil className="h-3.5 w-3.5 mr-1.5" />Modify Order</>}
+            <Button variant="outline" onClick={() => setModifyOrder(null)} className="border-zinc-700 h-10 text-sm font-bold px-5">Cancel</Button>
+            <Button onClick={handleModifySubmit} disabled={!!actioning || !modifyPrice || !modifyQty} className="bg-blue-600 hover:bg-blue-500 text-sm font-bold h-10 px-5 transition-all shadow-lg shadow-blue-900/40">
+              {actioning === modifyOrder?.orderid ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Modifying…</> : <><Pencil className="h-4 w-4 mr-2" />Modify Order</>}
             </Button>
           </DialogFooter>
         </DialogContent>

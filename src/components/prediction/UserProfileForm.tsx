@@ -109,21 +109,21 @@ export const UserProfileForm = ({
             onValueChange={(value) => updateProfile('riskTolerance', value)}
             className="space-y-3"
           >
-            <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+            <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
               <RadioGroupItem value="low" id="risk-low" />
               <Label htmlFor="risk-low" className="flex-1 cursor-pointer">
                 <div className="font-medium">Low Risk</div>
                 <div className="text-sm text-muted-foreground">Conservative approach, capital preservation priority</div>
               </Label>
             </div>
-            <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+            <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
               <RadioGroupItem value="medium" id="risk-medium" />
               <Label htmlFor="risk-medium" className="flex-1 cursor-pointer">
                 <div className="font-medium">Medium Risk</div>
                 <div className="text-sm text-muted-foreground">Balanced approach, moderate growth expectations</div>
               </Label>
             </div>
-            <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+            <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
               <RadioGroupItem value="high" id="risk-high" />
               <Label htmlFor="risk-high" className="flex-1 cursor-pointer">
                 <div className="font-medium">High Risk</div>
@@ -151,28 +151,28 @@ export const UserProfileForm = ({
             onValueChange={(value) => updateProfile('tradingStyle', value)}
             className="space-y-3"
           >
-            <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+            <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
               <RadioGroupItem value="day_trading" id="style-day" />
               <Label htmlFor="style-day" className="flex-1 cursor-pointer">
                 <div className="font-medium">Day Trading</div>
                 <div className="text-sm text-muted-foreground">Close positions within same day</div>
               </Label>
             </div>
-            <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+            <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
               <RadioGroupItem value="swing_trading" id="style-swing" />
               <Label htmlFor="style-swing" className="flex-1 cursor-pointer">
                 <div className="font-medium">Swing Trading</div>
                 <div className="text-sm text-muted-foreground">Hold for days to weeks, capture short-term trends</div>
               </Label>
             </div>
-            <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+            <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
               <RadioGroupItem value="position_trading" id="style-position" />
               <Label htmlFor="style-position" className="flex-1 cursor-pointer">
                 <div className="font-medium">Position Trading</div>
                 <div className="text-sm text-muted-foreground">Hold for weeks to months, follow major trends</div>
               </Label>
             </div>
-            <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+            <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
               <RadioGroupItem value="long_term" id="style-long" />
               <Label htmlFor="style-long" className="flex-1 cursor-pointer">
                 <div className="font-medium">Long-Term Investing</div>
@@ -200,42 +200,42 @@ export const UserProfileForm = ({
             onValueChange={(value) => updateProfile('tradingStrategy', value)}
             className="space-y-3"
           >
-            <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+            <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
               <RadioGroupItem value="trend_following" id="strategy-trend" />
               <Label htmlFor="strategy-trend" className="flex-1 cursor-pointer">
                 <div className="font-medium">Trend Following</div>
                 <div className="text-sm text-muted-foreground">Trade in the direction of established trends</div>
               </Label>
             </div>
-            <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+            <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
               <RadioGroupItem value="breakout_breakdown" id="strategy-breakout" />
               <Label htmlFor="strategy-breakout" className="flex-1 cursor-pointer">
                 <div className="font-medium">Breakout / Breakdown</div>
                 <div className="text-sm text-muted-foreground">Enter when price breaks key support/resistance</div>
               </Label>
             </div>
-            <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+            <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
               <RadioGroupItem value="mean_reversion" id="strategy-mean" />
               <Label htmlFor="strategy-mean" className="flex-1 cursor-pointer">
                 <div className="font-medium">Mean Reversion</div>
                 <div className="text-sm text-muted-foreground">Buy oversold, sell overbought conditions</div>
               </Label>
             </div>
-            <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+            <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
               <RadioGroupItem value="news_based" id="strategy-news" />
               <Label htmlFor="strategy-news" className="flex-1 cursor-pointer">
                 <div className="font-medium">News-Based</div>
                 <div className="text-sm text-muted-foreground">Trade based on fundamental news and events</div>
               </Label>
             </div>
-            <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+            <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
               <RadioGroupItem value="momentum" id="strategy-momentum" />
               <Label htmlFor="strategy-momentum" className="flex-1 cursor-pointer">
                 <div className="font-medium">Momentum</div>
                 <div className="text-sm text-muted-foreground">Ride strong price movements and momentum</div>
               </Label>
             </div>
-            <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+            <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
               <RadioGroupItem value="range_trading" id="strategy-range" />
               <Label htmlFor="strategy-range" className="flex-1 cursor-pointer">
                 <div className="font-medium">Range Trading</div>
@@ -263,28 +263,28 @@ export const UserProfileForm = ({
             onValueChange={(value) => updateProfile('investmentGoal', value)}
             className="space-y-3"
           >
-            <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+            <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
               <RadioGroupItem value="growth" id="goal-growth" />
               <Label htmlFor="goal-growth" className="flex-1 cursor-pointer">
                 <div className="font-medium">Capital Growth</div>
                 <div className="text-sm text-muted-foreground">Long-term wealth accumulation</div>
               </Label>
             </div>
-            <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+            <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
               <RadioGroupItem value="income" id="goal-income" />
               <Label htmlFor="goal-income" className="flex-1 cursor-pointer">
                 <div className="font-medium">Income Generation</div>
                 <div className="text-sm text-muted-foreground">Regular profits and cash flow</div>
               </Label>
             </div>
-            <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+            <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
               <RadioGroupItem value="speculation" id="goal-speculation" />
               <Label htmlFor="goal-speculation" className="flex-1 cursor-pointer">
                 <div className="font-medium">Speculation</div>
                 <div className="text-sm text-muted-foreground">High-risk, high-reward opportunities</div>
               </Label>
             </div>
-            <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+            <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
               <RadioGroupItem value="hedging" id="goal-hedging" />
               <Label htmlFor="goal-hedging" className="flex-1 cursor-pointer">
                 <div className="font-medium">Hedging</div>
@@ -312,17 +312,17 @@ export const UserProfileForm = ({
             <RadioGroup
               value={profile.marginType || 'cash'}
               onValueChange={(value) => updateProfile('marginType', value)}
-              className="grid grid-cols-3 gap-3 mt-2"
+              className="grid sm:grid-cols-3 gap-3 mt-2"
             >
-              <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+              <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
                 <RadioGroupItem value="cash" id="margin-cash" />
                 <Label htmlFor="margin-cash" className="cursor-pointer">Cash</Label>
               </div>
-              <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+              <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
                 <RadioGroupItem value="margin" id="margin-margin" />
                 <Label htmlFor="margin-margin" className="cursor-pointer">Margin</Label>
               </div>
-              <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+              <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
                 <RadioGroupItem value="options" id="margin-options" />
                 <Label htmlFor="margin-options" className="cursor-pointer">Options</Label>
               </div>
@@ -383,7 +383,7 @@ export const UserProfileForm = ({
             onValueChange={(value) => updateProfile('entryTiming', value)}
             className="space-y-3"
           >
-            <div className={`flex items-center space-x-2 border rounded-lg p-3 ${marketClosed ? 'opacity-50 cursor-not-allowed bg-muted' : 'hover:bg-accent cursor-pointer'}`}>
+            <div className={`flex space-x-2 border rounded-lg p-3 ${marketClosed ? 'opacity-50 cursor-not-allowed bg-muted' : 'hover:bg-accent cursor-pointer'}`}>
               <RadioGroupItem 
                 value="immediate" 
                 id="timing-immediate" 
@@ -402,7 +402,7 @@ export const UserProfileForm = ({
                 </div>
               </Label>
             </div>
-            <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+            <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
               <RadioGroupItem value="wait_confirmation" id="timing-wait" />
               <Label htmlFor="timing-wait" className="flex-1 cursor-pointer">
                 <div className="font-medium flex items-center gap-2">
@@ -442,21 +442,21 @@ export const UserProfileForm = ({
             onValueChange={(value) => updateProfile('volatilityTolerance', value)}
             className="space-y-3"
           >
-            <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+            <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
               <RadioGroupItem value="low" id="vol-low" />
               <Label htmlFor="vol-low" className="flex-1 cursor-pointer">
                 <div className="font-medium">Low Volatility</div>
                 <div className="text-sm text-muted-foreground">Prefer stable assets with minimal price swings</div>
               </Label>
             </div>
-            <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+            <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
               <RadioGroupItem value="medium" id="vol-medium" />
               <Label htmlFor="vol-medium" className="flex-1 cursor-pointer">
                 <div className="font-medium">Medium Volatility</div>
                 <div className="text-sm text-muted-foreground">Comfortable with moderate price fluctuations</div>
               </Label>
             </div>
-            <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+            <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
               <RadioGroupItem value="high" id="vol-high" />
               <Label htmlFor="vol-high" className="flex-1 cursor-pointer">
                 <div className="font-medium">High Volatility</div>
@@ -554,7 +554,7 @@ export const UserProfileForm = ({
               onValueChange={(value) => updateProfile('userHoldingPeriod', value === 'ai_recommendation' ? undefined : value)}
               className="space-y-3"
             >
-              <div className="flex items-center space-x-2 border rounded-lg p-3 bg-primary/5 hover:bg-accent cursor-pointer">
+              <div className="flex space-x-2 border rounded-lg p-3 bg-primary/5 hover:bg-accent cursor-pointer">
                 <RadioGroupItem value="ai_recommendation" id="hold-ai" />
                 <Label htmlFor="hold-ai" className="flex-1 cursor-pointer">
                   <div className="font-medium flex items-center gap-2">
@@ -564,8 +564,8 @@ export const UserProfileForm = ({
                   <div className="text-sm text-muted-foreground">Let AI decide optimal timeframe based on market analysis</div>
                 </Label>
               </div>
-              <div className={`flex items-center space-x-2 border rounded-lg p-3 ${marketClosed ? 'opacity-50 bg-muted' : 'hover:bg-accent'} cursor-pointer`}>
-                <RadioGroupItem value="intraday" id="hold-intraday" />
+              <div className={`flex space-x-2 border rounded-lg p-3 ${marketClosed ? 'opacity-50 bg-muted' : 'hover:bg-accent'} cursor-pointer`}>
+                <RadioGroupItem value="intraday" id="hold-intraday" className="mt-1.5" />
                 <Label htmlFor="hold-intraday" className="flex-1 cursor-pointer">
                   <div className="font-medium flex items-center gap-2">
                     Intraday (Hours)
@@ -579,49 +579,49 @@ export const UserProfileForm = ({
                   </div>
                 </Label>
               </div>
-              <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+              <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
                 <RadioGroupItem value="1-2 days" id="hold-1-2d" />
                 <Label htmlFor="hold-1-2d" className="flex-1 cursor-pointer">
                   <div className="font-medium">1-2 Days</div>
                   <div className="text-sm text-muted-foreground">Short-term swing trade</div>
                 </Label>
               </div>
-              <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+              <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
                 <RadioGroupItem value="3-5 days" id="hold-3-5d" />
                 <Label htmlFor="hold-3-5d" className="flex-1 cursor-pointer">
                   <div className="font-medium">3-5 Days</div>
                   <div className="text-sm text-muted-foreground">Swing trading timeframe</div>
                 </Label>
               </div>
-              <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+              <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
                 <RadioGroupItem value="1 week" id="hold-1w" />
                 <Label htmlFor="hold-1w" className="flex-1 cursor-pointer">
                   <div className="font-medium">1 Week</div>
                   <div className="text-sm text-muted-foreground">Medium-term position</div>
                 </Label>
               </div>
-              <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+              <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
                 <RadioGroupItem value="2-4 weeks" id="hold-2-4w" />
                 <Label htmlFor="hold-2-4w" className="flex-1 cursor-pointer">
                   <div className="font-medium">2-4 Weeks</div>
                   <div className="text-sm text-muted-foreground">Position trading</div>
                 </Label>
               </div>
-              <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+              <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
                 <RadioGroupItem value="1+ months" id="hold-1m" />
                 <Label htmlFor="hold-1m" className="flex-1 cursor-pointer">
                   <div className="font-medium">1+ Months</div>
                   <div className="text-sm text-muted-foreground">Long-term hold</div>
                 </Label>
               </div>
-              <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+              <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
                 <RadioGroupItem value="none" id="hold-none" />
                 <Label htmlFor="hold-none" className="flex-1 cursor-pointer">
                   <div className="font-medium">No Holding Period</div>
                   <div className="text-sm text-muted-foreground">Track indefinitely until target/stop loss hit</div>
                 </Label>
               </div>
-              <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
+              <div className="flex space-x-2 border rounded-lg p-3 hover:bg-accent cursor-pointer">
                 <RadioGroupItem value="custom" id="hold-custom" />
                 <Label htmlFor="hold-custom" className="flex-1 cursor-pointer">
                   <div className="font-medium">Custom Period</div>

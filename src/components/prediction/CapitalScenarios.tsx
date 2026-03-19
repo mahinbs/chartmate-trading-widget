@@ -76,11 +76,11 @@ export function CapitalScenarios({
   return (
     <Card className="glass-panel">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-white">
-          <Users className="h-5 w-5 text-primary" />
+        <CardTitle className="flex gap-2 text-white">
+          <Users className="h-5 w-5 mt-0.5 min-w-5 text-primary" />
           Investment Planning - Capital Scenarios
         </CardTitle>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap gap-3 items-center justify-between">
           <p className="text-sm text-muted-foreground">
             See how the same signal performs across different investment sizes (USD)
           </p>
@@ -118,7 +118,7 @@ export function CapitalScenarios({
                   </Badge>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-3">
 
                   {/* Best Case */}
                   <div className="text-center p-3 bg-green-500/10 rounded border border-green-500/20">

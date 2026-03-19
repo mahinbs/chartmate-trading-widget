@@ -35,7 +35,7 @@ export function Insights({
         </Card>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {/* Key Drivers */}
         <Card>
           <CardHeader className="pb-3">
@@ -86,7 +86,7 @@ export function Insights({
       </div>
 
       {/* Opportunities & Patterns */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {opportunities.length > 0 && (
           <Card>
             <CardHeader className="pb-3">

@@ -49,7 +49,8 @@ import { PRICING_PLANS } from "@/constants/pricing";
 import { createCheckoutSession } from "@/services/stripeService";
 import { getStrategyParams } from "@/constants/strategyParams";
 import { toast } from "sonner";
-import { Loader2, AlertTriangle, BrainCircuit, BarChart3, CheckCircle, ArrowRight, ArrowLeft, LogOut, History, Timer, Home, FlaskConical, RefreshCw, TrendingUp, TrendingDown, PlusCircle, Minus, ExternalLink, Repeat2 } from "lucide-react";
+import { Loader2, AlertTriangle, BrainCircuit, BarChart3, CheckCircle, ArrowRight, ArrowLeft, LogOut, History, Timer, Home, FlaskConical, RefreshCw, TrendingUp, TrendingDown, PlusCircle, Minus, ExternalLink, Repeat2, Menu, X } from "lucide-react";
+import gsap from "gsap";
 import { Container } from "@/components/layout/Container";
 import { formatCurrency } from "@/lib/display-utils";
 import type { ActiveTrade } from "@/services/tradeTrackingService";
@@ -189,6 +190,33 @@ interface PredictionPreset {
 }
 
 const PredictPage = () => {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isMobileMenuOpen && mobileMenuRef.current) {
+      gsap.fromTo(
+        mobileMenuRef.current,
+        { x: -500, y: 0, scale: 0.5, opacity: 1 },
+        { x: 0, y: 0, scale: 1, opacity: 1, duration: 0.2, ease: "sine", transformOrigin: "top left" }
+      );
+    }
+  }, [isMobileMenuOpen]);
+
+  const closeMobileMenu = () => {
+    if (mobileMenuRef.current) {
+      gsap.to(mobileMenuRef.current, {
+        x: -500,
+        scale: 0.5,
+        opacity: 0,
+        duration: 0.2,
+        ease: "sine.in",
+        onComplete: () => setIsMobileMenuOpen(false)
+      });
+    } else {
+      setIsMobileMenuOpen(false);
+    }
+  };
   const [symbol, setSymbol] = useState("");
   const [selectedSymbol, setSelectedSymbol] = useState<SymbolData | null>(null);
   const [investment, setInvestment] = useState("");
@@ -224,6 +252,23 @@ const PredictPage = () => {
   const { signOut, user } = useAuth();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+
+  const navItems = [
+    { label: "Home", icon: Home, path: "/home", mobileLabel: "Home" },
+    { label: "My Analyses", icon: History, path: "/predictions", mobileLabel: "History" },
+    { label: "Intraday Trading", icon: Timer, path: "/intraday", mobileLabel: "Intraday" },
+    { 
+      label: "Sign Out", 
+      icon: LogOut, 
+      mobileLabel: "Sign Out",
+      onClick: async () => {
+        const { error } = await signOut();
+        if (error) {
+          toast.error("Failed to sign out");
+        }
+      }
+    },
+  ];
   const { save: saveTradingIntegration, refresh: refreshTradingIntegration } = useTradingIntegration();
   const { isPremium, isExpiringSoon, daysUntilExpiry, isAutoRenewDisabled, isInGracePeriod } = useSubscription();
   const [showIntegrationModal, setShowIntegrationModal] = useState(false);
@@ -779,7 +824,7 @@ const PredictPage = () => {
       )}
 
       <Dialog open={showPresetDialog} onOpenChange={setShowPresetDialog}>
-        <DialogContent className="">
+        <DialogContent className="mx-auto">
           <DialogHeader>
             <DialogTitle>Use previous analysis details?</DialogTitle>
           </DialogHeader>
@@ -817,51 +862,71 @@ const PredictPage = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Mobile Offcanvas Menu */}
+      {isMobileMenuOpen && (
+        <div
+          ref={mobileMenuRef}
+          className="fixed inset-0 z-[100] bg-background overscroll-none flex flex-col pt-16 px-6"
+        >
+          <Button
+            variant="ghost"
+            size="icon"
+            className="absolute top-4 left-4"
+            onClick={closeMobileMenu}
+          >
+            <X className="h-8 w-8" />
+          </Button>
+          <div className="flex flex-col gap-6 mt-10">
+            {navItems.map((item) => (
+              <Button
+                key={item.label}
+                variant="ghost"
+                size="lg"
+                onClick={() => {
+                  closeMobileMenu();
+                  if (item.path) {
+                    navigate(item.path);
+                  } else {
+                    item.onClick?.();
+                  }
+                }}
+                className="flex justify-start items-center gap-4 text-xl h-14"
+              >
+                <item.icon className="h-6 w-6" />
+                {item.label}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="border-b border-white/5 bg-background/80 backdrop-blur-xl z-50">
         <Container className="py-3 sm:py-4">
-          <div className={`flex ${isMobile ? 'flex-col gap-2' : 'justify-between items-center'} mb-4`}>
-            <Button
-              variant="ghost"
-              size={isMobile ? "sm" : "sm"}
-              onClick={() => navigate('/home')}
-              className={`flex items-center gap-2 hover:bg-white/5 ${isMobile ? 'w-full justify-center' : ''}`}
-            >
-              <Home className="h-4 w-4" />
-              Home
-            </Button>
-            <Button
-              variant="ghost"
-              size={isMobile ? "sm" : "sm"}
-              onClick={() => navigate('/predictions')}
-              className={`flex items-center gap-2 hover:bg-white/5 ${isMobile ? 'w-full justify-center' : ''}`}
-            >
-              <History className="h-4 w-4" />
-              {isMobile ? "History" : "My Analyses"}
-            </Button>
-            <Button
-              variant="ghost"
-              size={isMobile ? "sm" : "sm"}
-              onClick={() => navigate('/intraday')}
-              className={`flex items-center gap-2 hover:bg-white/5 ${isMobile ? 'w-full justify-center' : ''}`}
-            >
-              <Timer className="h-4 w-4" />
-              {isMobile ? "Intraday" : "Intraday Trading"}
-            </Button>
-            <Button
-              variant="ghost"
-              size={isMobile ? "sm" : "sm"}
-              onClick={async () => {
-                const { error } = await signOut();
-                if (error) {
-                  toast.error("Failed to sign out");
-                }
-              }}
-              className={`flex items-center gap-2 hover:bg-white/5 ${isMobile ? 'w-full justify-center' : ''}`}
-            >
-              <LogOut className="h-4 w-4" />
-              Sign Out
-            </Button>
+          <div className={`flex ${isMobile ? 'flex-row items-center gap-2' : 'justify-between items-center'} mb-4`}>
+            {isMobile ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setIsMobileMenuOpen(true)}
+                className="hover:bg-white/5 text-foreground"
+              >
+                <Menu className="h-6 w-6" />
+              </Button>
+            ) : (
+              navItems.map((item) => (
+                <Button
+                  key={item.label}
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => item.path ? navigate(item.path) : item.onClick?.()}
+                  className={`flex items-center gap-2 hover:bg-white/5`}
+                >
+                  <item.icon className="h-4 w-4" />
+                  {item.label}
+                </Button>
+              ))
+            )}
           </div>
 
           <div className="text-center space-y-2">
@@ -912,7 +977,7 @@ const PredictPage = () => {
                       value={symbol}
                       onValueChange={setSymbol}
                       onSelectSymbol={setSelectedSymbol}
-                      placeholder="Search stocks, crypto, forex... (e.g., AAPL, BTC-USD)"
+                      placeholder={isMobile ? "Search symbols..." : "Search stocks, crypto, forex... (e.g., AAPL, BTC-USD)"}
                     />
                   </div>
 
@@ -1061,19 +1126,19 @@ const PredictPage = () => {
                     </div>
                   )}
 
-                  <div className="flex gap-2">
-                    <Button variant="outline" onClick={handlePrevStep} className="flex-shrink-0">
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <Button variant="outline" onClick={handlePrevStep} className="w-full sm:w-auto sm:flex-shrink-0" size="lg">
                       <ArrowLeft className="h-4 w-4 mr-1" /> Back
                     </Button>
-                  <Button
-                    onClick={handleNextStep}
-                    disabled={!investment || parseFloat(investment) <= 0}
-                      className="flex-1"
-                    size="lg"
-                  >
-                    Continue to Trading Profile
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
+                    <Button
+                      onClick={handleNextStep}
+                      disabled={!investment || parseFloat(investment) <= 0}
+                      className="w-full sm:flex-1"
+                      size="lg"
+                    >
+                      Continue to Trading Profile
+                      <ArrowRight className="ml-2 h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
               </StepContainer>
@@ -1106,19 +1171,19 @@ const PredictPage = () => {
                     </p>
                   </div>
 
-                  <div className="flex gap-2">
-                    <Button variant="outline" onClick={handlePrevStep} className="flex-shrink-0">
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <Button variant="outline" onClick={handlePrevStep} className="w-full sm:w-auto sm:flex-shrink-0">
                       <ArrowLeft className="h-4 w-4 mr-1" /> Back
                     </Button>
-                  <Button
-                    onClick={handleNextStep}
-                      className="flex-1"
-                    size="lg"
-                    disabled={!userProfile.riskAcceptance}
-                  >
-                    Continue to Review
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
+                    <Button
+                      onClick={handleNextStep}
+                      className="w-full sm:flex-1"
+                      size="lg"
+                      disabled={!userProfile.riskAcceptance}
+                    >
+                      Continue to Review
+                      <ArrowRight className="ml-2 h-4 w-4" />
+                    </Button>
                   </div>
                   {!userProfile.riskAcceptance && (
                     <p className="text-sm text-center text-yellow-600 mt-2">
@@ -1207,28 +1272,28 @@ const PredictPage = () => {
                     </ul>
                   </div>
 
-                  <div className="flex gap-2">
-                    <Button variant="outline" onClick={handlePrevStep} disabled={loading} className="flex-shrink-0">
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <Button variant="outline" onClick={handlePrevStep} disabled={loading} className="w-full sm:w-auto sm:flex-shrink-0">
                       <ArrowLeft className="h-4 w-4 mr-1" /> Back
                     </Button>
-                  <Button
-                    onClick={handleNextStep}
-                    disabled={loading}
-                      className="flex-1"
-                    size="lg"
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Starting Analysis...
-                      </>
-                    ) : (
-                      <>
-                        Start AI Analysis
-                        <BrainCircuit className="ml-2 h-4 w-4" />
-                      </>
-                    )}
-                  </Button>
+                    <Button
+                      onClick={handleNextStep}
+                      disabled={loading}
+                      className="w-full sm:flex-1"
+                      size="lg"
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Starting Analysis...
+                        </>
+                      ) : (
+                        <>
+                          Start AI Analysis
+                          <BrainCircuit className="ml-2 h-4 w-4" />
+                        </>
+                      )}
+                    </Button>
                   </div>
                 </div>
               </StepContainer>
@@ -1385,8 +1450,8 @@ const PredictPage = () => {
                       )}
 
                       {/* Two main buttons */}
-                      <div className="grid grid-cols-2 gap-2">
-                      <Button
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <Button
                           disabled={checkingOnboarding}
                           onClick={async () => {
                             if (!isPremium) {
@@ -1412,31 +1477,31 @@ const PredictPage = () => {
                             }
                             navigate("/algo-setup");
                           }}
-                          className="py-5 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600"
+                          className="py-5 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 w-full"
                         >
                           {checkingOnboarding ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Timer className="mr-2 h-4 w-4" />}
                           OpenAlgo Dashboard
                         </Button>
-                      <Button
-                        variant="outline"
-                        onClick={async () => {
+                        <Button
+                          variant="outline"
+                          onClick={async () => {
                             setIsPaperTrade(true);
                             setAssignedStrategy(null);
-                          const { tradeTrackingService } = await import("@/services/tradeTrackingService");
-                          const last = await tradeTrackingService.getLastUsedStrategy();
-                          if (last) {
-                            const label = STRATEGIES.find(s => s.value === last.strategyType)?.label ?? last.strategyType;
-                            setLastUsedStrategy({ ...last, label });
-                            setShowPreviousOrNewDialog(true);
-                          } else {
-                            setShowStrategyDialog(true);
-                          }
-                        }}
-                          className="py-5 border-2 border-violet-500/50 text-violet-300 hover:bg-violet-500/10 hover:border-violet-500"
-                      >
+                            const { tradeTrackingService } = await import("@/services/tradeTrackingService");
+                            const last = await tradeTrackingService.getLastUsedStrategy();
+                            if (last) {
+                              const label = STRATEGIES.find(s => s.value === last.strategyType)?.label ?? last.strategyType;
+                              setLastUsedStrategy({ ...last, label });
+                              setShowPreviousOrNewDialog(true);
+                            } else {
+                              setShowStrategyDialog(true);
+                            }
+                          }}
+                          className="py-5 border-2 border-violet-500/50 text-violet-300 hover:bg-violet-500/10 hover:border-violet-500 w-full"
+                        >
                           <FlaskConical className="mr-2 h-4 w-4" />
-                        Paper Trade
-                      </Button>
+                          Paper Trade
+                        </Button>
                       </div>
 
                       <p className="text-[11px] text-center text-muted-foreground/70">

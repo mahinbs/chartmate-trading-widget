@@ -84,15 +84,15 @@ export function SymbolSearch({ value, onValueChange, onSelectSymbol, placeholder
           className="w-full justify-between hover:bg-background focus:bg-background data-[state=open]:bg-background data-[state=open]:ring-2 data-[state=open]:ring-primary/40"
         >
           {selectedSymbol ? (
-            <div className="flex items-center gap-2">
-              <span className="font-medium">{selectedSymbol.symbol}</span>
-              <Badge variant="outline" className={getTypeColor(selectedSymbol.type)}>
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <span className="font-medium shrink-0">{selectedSymbol.symbol}</span>
+              <Badge variant="outline" className={cn("shrink-0 hidden sm:inline-flex", getTypeColor(selectedSymbol.type))}>
                 {selectedSymbol.type}
               </Badge>
-              <span className="text-muted-foreground truncate">{selectedSymbol.description}</span>
+              <span className="text-muted-foreground truncate text-sm">{selectedSymbol.description}</span>
             </div>
           ) : (
-            <span className="text-muted-foreground">{placeholder}</span>
+            <span className="text-muted-foreground truncate text-left flex-1">{placeholder}</span>
           )}
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
@@ -121,7 +121,7 @@ export function SymbolSearch({ value, onValueChange, onSelectSymbol, placeholder
                   <CommandItem
                     key={symbol.full_symbol}
                     value={symbol.full_symbol}
-                    className="px-4 py-3 cursor-pointer hover:!bg-accent/50"
+                    className="px-2 md:px-4 py-3 cursor-pointer hover:!bg-accent/50"
                     onSelect={(currentValue) => {
                       onValueChange(currentValue === value ? "" : currentValue);
                       onSelectSymbol?.(symbol);
@@ -134,22 +134,24 @@ export function SymbolSearch({ value, onValueChange, onSelectSymbol, placeholder
                         value === symbol.full_symbol ? "opacity-100" : "opacity-0"
                       )}
                     />
-                    <div className="flex items-center gap-2 flex-1">
-                      <Avatar className="h-6 w-6">
-                        <AvatarFallback className="text-xs bg-gradient-to-br from-primary to-primary text-white">
-                          {symbol.symbol.charAt(0)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <span className="font-medium">{symbol.symbol}</span>
-                      <Badge variant="outline" className={getTypeColor(symbol.type)}>
-                        {symbol.type}
-                      </Badge>
-                      <span className="text-muted-foreground text-sm truncate">
-                        {symbol.description}
-                      </span>
-                      <span className="text-xs text-muted-foreground ml-auto">
-                        {symbol.exchange}
-                      </span>
+                    <div className="flex flex-col md:flex-row md:items-center gap-1 md:gap-2 flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{symbol.symbol}</span>
+                        <Badge variant="outline" className={cn("uppercase text-[10px] px-1 py-0 h-4 shrink-0", getTypeColor(symbol.type))}>
+                          {symbol.type}
+                        </Badge>
+                        <span className="text-[10px] text-muted-foreground md:hidden ml-auto">
+                          {symbol.exchange}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <span className="text-muted-foreground text-xs md:text-sm truncate">
+                          {symbol.description}
+                        </span>
+                        <span className="text-xs text-muted-foreground hidden md:inline ml-auto">
+                          {symbol.exchange}
+                        </span>
+                      </div>
                     </div>
                   </CommandItem>
                 ))}

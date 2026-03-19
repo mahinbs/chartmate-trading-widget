@@ -65,16 +65,16 @@ export function PostPredictionReport({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Data Caveat for Inconclusive Results */}
       {evaluation?.result === 'inconclusive' && (
-        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4">
-          <div className="flex items-start gap-3">
-            <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 sm:p-4">
+          <div className="flex items-start gap-2 sm:gap-3">
+            <AlertCircle className="h-4 w-4 sm:h-5 sm:w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
             <div>
-              <h4 className="font-semibold text-yellow-800 mb-1">Limited Data Available</h4>
-              <p className="text-sm text-yellow-700">
-                This analysis could not be properly evaluated due to insufficient market data during the specified timeframe. 
+              <h4 className="font-semibold text-yellow-800 mb-1 text-sm">Limited Data Available</h4>
+              <p className="text-xs sm:text-sm text-yellow-700">
+                This analysis could not be properly evaluated due to insufficient market data during the specified timeframe.
                 The analysis may not be reliable for this particular trading period.
               </p>
             </div>
@@ -85,11 +85,11 @@ export function PostPredictionReport({
       {/* Header */}
       {ai?.report && (
         <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-3">
-                <Brain className="h-5 w-5 text-primary" />
-                {ai.report.title}
+          <CardHeader className="py-3 px-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+                <Brain className="h-4 w-4 text-primary flex-shrink-0" />
+                <span className="break-words">{ai.report.title}</span>
               </CardTitle>
               {evaluation && <OutcomeBadge outcome={evaluation.result} size="lg" />}
             </div>
@@ -98,61 +98,61 @@ export function PostPredictionReport({
       )}
 
       {/* Analysis vs Reality */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-6">
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <Target className="h-4 w-4" />
+          <CardHeader className="py-3 px-4">
+            <CardTitle className="flex items-center gap-2 text-xs sm:text-sm">
+              <Target className="h-3.5 w-3.5 flex-shrink-0" />
               What We Analyzed
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 pb-4">
             {ai?.report ? (
-              <p className="text-sm">{ai.report.whatWePredicted}</p>
+              <p className="text-xs sm:text-sm">{ai.report.whatWePredicted}</p>
             ) : evaluation ? (
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   {getDirectionIcon(evaluation.predictedDirection || undefined)}
-                  <span className="text-sm font-medium">
+                  <span className="text-xs sm:text-sm font-medium">
                     {evaluation.predictedDirection || 'neutral'} move
                   </span>
                 </div>
                 {evaluation.predictedMovePercent && (
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-xs sm:text-sm text-muted-foreground">
                     Expected: {formatPercentage(evaluation.predictedMovePercent, 2, true)}
                   </p>
                 )}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">No analysis data</p>
+              <p className="text-xs sm:text-sm text-muted-foreground">No analysis data</p>
             )}
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <BarChart3 className="h-4 w-4" />
+          <CardHeader className="py-3 px-4">
+            <CardTitle className="flex items-center gap-2 text-xs sm:text-sm">
+              <BarChart3 className="h-3.5 w-3.5 flex-shrink-0" />
               What Happened
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 pb-4">
             {ai?.report ? (
-              <p className="text-sm">{ai.report.whatHappened}</p>
+              <p className="text-xs sm:text-sm">{ai.report.whatHappened}</p>
             ) : evaluation ? (
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   {getDirectionIcon(evaluation.actualChangePercent >= 0 ? 'up' : 'down')}
-                  <span className="text-sm font-medium">
+                  <span className="text-xs sm:text-sm font-medium">
                     {formatPercentage(evaluation.actualChangePercent, 2, true)}
                   </span>
                 </div>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-xs sm:text-sm text-muted-foreground">
                   {formatCurrency(evaluation.startPrice, 4)} → {formatCurrency(evaluation.endPrice, 4)}
                 </p>
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">No market data</p>
+              <p className="text-xs sm:text-sm text-muted-foreground">No market data</p>
             )}
           </CardContent>
         </Card>
@@ -161,33 +161,33 @@ export function PostPredictionReport({
       {/* Metrics Grid */}
       {evaluation && (
         <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Market Metrics</CardTitle>
+          <CardHeader className="py-3 px-4">
+            <CardTitle className="text-xs sm:text-sm">Market Metrics</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <CardContent className="px-4 pb-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div>
-                <p className="text-xs text-muted-foreground">Start Price</p>
-                <p className="font-mono text-sm">{formatCurrency(evaluation.startPrice, 4)}</p>
+                <p className="text-[10px] sm:text-xs text-muted-foreground">Start Price</p>
+                <p className="font-mono text-xs sm:text-sm">{formatCurrency(evaluation.startPrice, 4)}</p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">End Price</p>
-                <p className="font-mono text-sm">{formatCurrency(evaluation.endPrice, 4)}</p>
+                <p className="text-[10px] sm:text-xs text-muted-foreground">End Price</p>
+                <p className="font-mono text-xs sm:text-sm">{formatCurrency(evaluation.endPrice, 4)}</p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Actual Move</p>
-                <p className={`font-mono text-sm ${evaluation.actualChangePercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                <p className="text-[10px] sm:text-xs text-muted-foreground">Actual Move</p>
+                <p className={`font-mono text-xs sm:text-sm ${evaluation.actualChangePercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                   {formatPercentage(evaluation.actualChangePercent, 2, true)}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Data Points</p>
-                <p className="font-mono text-sm">{marketData?.candleCount || 0}</p>
+                <p className="text-[10px] sm:text-xs text-muted-foreground">Data Points</p>
+                <p className="font-mono text-xs sm:text-sm">{marketData?.candleCount || 0}</p>
               </div>
             </div>
             {marketData && (
-              <div className="mt-4 pt-4 border-t">
-                <p className="text-xs text-muted-foreground">
+              <div className="mt-3 pt-3 border-t">
+                <p className="text-[10px] sm:text-xs text-muted-foreground">
                   Data: {marketData.source} ({marketData.interval})
                 </p>
               </div>

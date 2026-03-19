@@ -38,12 +38,12 @@ export function SummaryHeader({
   }
 
   return (
-    <div className="flex items-center justify-between p-6 bg-muted/30 rounded-lg border">
-      <div className="flex items-center gap-4">
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 sm:p-4 bg-muted/30 rounded-lg border w-full">
+      <div className="flex items-center gap-3">
         <div>
-          <h2 className="text-2xl font-bold">{symbol}</h2>
-          <div className="flex items-center gap-2 mt-1">
-            <span className="text-lg font-semibold">{formatCurrency(currentPrice, 2)}</span>
+          <h2 className="text-xl sm:text-2xl font-bold">{symbol}</h2>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1">
+            <span className="text-base sm:text-lg font-semibold">{formatCurrency(currentPrice, 2)}</span>
             <div className={`flex items-center gap-1 ${getChangeColor()}`}>
               {getChangeIcon()}
               <span className="text-sm">
@@ -54,7 +54,7 @@ export function SummaryHeader({
         </div>
       </div>
       
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 flex-wrap">
         {recommendation && (
           <Badge className={getRecommendationColor()}>
             {recommendation}
@@ -62,8 +62,8 @@ export function SummaryHeader({
         )}
         {confidence && (
           <div className="text-right">
-            <p className="text-sm text-muted-foreground">Confidence</p>
-            <p className="text-lg font-semibold">{formatPercentage(confidence, 1, false)}</p>
+            <p className="text-xs text-muted-foreground">Confidence</p>
+            <p className="text-base sm:text-lg font-semibold">{formatPercentage(confidence, 1, false)}</p>
           </div>
         )}
       </div>
