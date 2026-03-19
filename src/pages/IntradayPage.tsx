@@ -146,33 +146,34 @@ export default function IntradayPage() {
       {/* Header */}
       <div className="border-b border-white/5 bg-background/80 backdrop-blur-xl sticky top-0 z-50">
         <Container className="py-3 sm:py-4">
-          <div className={`flex ${isMobile ? 'flex-col gap-2' : 'justify-between items-center'} mb-4`}>
+          <div className="flex justify-between items-center mb-3">
             <Button
               variant="outline"
-              size={isMobile ? "sm" : "sm"}
+              size="sm"
               onClick={() => navigate('/home')}
-              className={`flex items-center gap-2 border-white/10 hover:bg-white/5 ${isMobile ? 'w-full justify-center' : ''}`}
+              className="flex items-center gap-2 border-white/10 hover:bg-white/5"
             >
               <ArrowRight className="h-4 w-4 rotate-180" />
-              {isMobile ? "Home" : "Home"}
+              <span>Home</span>
             </Button>
             <Button
               variant="outline"
-              size={isMobile ? "sm" : "sm"}
+              size="sm"
               onClick={() => navigate('/predictions')}
-              className={`flex items-center gap-2 border-white/10 hover:bg-white/5 ${isMobile ? 'w-full justify-center' : ''}`}
+              className="flex items-center gap-2 border-white/10 hover:bg-white/5"
             >
               <BarChart3 className="h-4 w-4" />
-              {isMobile ? "History" : "Analysis History"}
+              <span className="hidden sm:inline">Analysis History</span>
+              <span className="sm:hidden">History</span>
             </Button>
           </div>
-          
-          <div className="text-center space-y-2">
-            <h1 className={`${isMobile ? 'text-2xl' : 'text-3xl md:text-4xl'} font-bold text-gradient`}>
+
+          <div className="text-center space-y-1">
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gradient">
               🚀 Intraday Trading
             </h1>
-            <p className={`text-muted-foreground ${isMobile ? 'text-sm' : ''}`}>
-              AI-powered hourly probability-based analyses for day traders - Real-time intraday analysis
+            <p className="text-muted-foreground text-sm">
+              AI-powered hourly probability-based analyses for day traders
             </p>
             {isLoading && (
               <div className="flex items-center justify-center gap-2 mt-2">
@@ -198,51 +199,54 @@ export default function IntradayPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              <div className="flex gap-3">
-                <div className="flex-1">
+            <div className="space-y-3">
+              {/* Search row: stacks on mobile */}
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="flex-1 min-w-0">
                   <SymbolSearch
                     value={selectedSymbolData?.full_symbol || selectedSymbol}
                     onValueChange={setSelectedSymbol}
                     onSelectSymbol={handleSymbolSelect}
-                    placeholder="Search stocks, crypto, forex... (e.g., AAPL, BTC-USD)"
+                    placeholder="Search stocks, crypto, forex..."
                   />
                 </div>
-                <Button 
-                  onClick={handleSymbolSearch}
-                  disabled={isLoading || !selectedSymbol}
-                  className="min-w-[120px] shadow-[0_0_20px_rgba(20,184,166,0.2)]"
-                >
-                  {isLoading ? (
-                    <RefreshCw className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Play className="h-4 w-4" />
-                  )}
-                  {isLoading ? 'Analyzing...' : 'Analyze'}
-                </Button>
-                
-                {predictionData && (
-                  <Button 
-                    variant="outline"
+                <div className="flex gap-2 sm:shrink-0">
+                  <Button
                     onClick={handleSymbolSearch}
-                    disabled={isLoading}
-                    className="min-w-[120px] border-white/10 hover:bg-white/5"
+                    disabled={isLoading || !selectedSymbol}
+                    className="flex-1 sm:flex-none sm:min-w-[110px] shadow-[0_0_20px_rgba(20,184,166,0.2)]"
                   >
-                    <RefreshCw className="h-4 w-4" />
-                    Refresh
+                    {isLoading ? (
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Play className="h-4 w-4" />
+                    )}
+                    {isLoading ? 'Analyzing...' : 'Analyze'}
                   </Button>
-                )}
+
+                  {predictionData && (
+                    <Button
+                      variant="outline"
+                      onClick={handleSymbolSearch}
+                      disabled={isLoading}
+                      className="flex-1 sm:flex-none sm:min-w-[100px] border-white/10 hover:bg-white/5"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                      Refresh
+                    </Button>
+                  )}
+                </div>
               </div>
-              
+
               {selectedSymbolData && (
                 <div className="p-3 bg-white/5 rounded-lg border border-white/10">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-5 w-5 text-green-500" />
-                    <span className="font-medium text-white">Selected: {selectedSymbolData.symbol}</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
+                    <span className="font-medium text-white text-sm">Selected: {selectedSymbolData.symbol}</span>
                     <Badge variant="outline" className="text-xs border-white/10 text-muted-foreground">
                       {selectedSymbolData.type}
                     </Badge>
-                    <span className="text-sm text-muted-foreground">{selectedSymbolData.description}</span>
+                    <span className="text-xs text-muted-foreground truncate">{selectedSymbolData.description}</span>
                   </div>
                 </div>
               )}
@@ -277,7 +281,7 @@ export default function IntradayPage() {
               </div>
             ) : (
               <div>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="grid sm:grid-cols-2 sm:grid-cols-4 gap-3">
                   <div className="text-center p-4 bg-white/5 rounded-lg border border-white/5">
                     <p className="text-2xl font-bold text-white">${predictionData?.currentPrice?.toFixed(2) || '0.00'}</p>
                     <p className="text-sm text-muted-foreground">Current Price</p>
@@ -351,13 +355,15 @@ export default function IntradayPage() {
         {/* Main Analysis Tabs */}
         {selectedSymbolData && predictionData && (
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="grid w-full grid-cols-5 bg-zinc-900/50 border border-white/5">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="hourly">Hourly</TabsTrigger>
-            <TabsTrigger value="levels">Key Levels</TabsTrigger>
-            <TabsTrigger value="momentum">Momentum</TabsTrigger>
-            <TabsTrigger value="timing">Timing</TabsTrigger>
-          </TabsList>
+          <div className="overflow-x-auto pb-1">
+            <TabsList className="grid min-w-[360px] w-full grid-cols-5 bg-zinc-900/50 border border-white/5">
+              <TabsTrigger value="overview" className="text-xs sm:text-sm">Overview</TabsTrigger>
+              <TabsTrigger value="hourly" className="text-xs sm:text-sm">Hourly</TabsTrigger>
+              <TabsTrigger value="levels" className="text-xs sm:text-sm">Levels</TabsTrigger>
+              <TabsTrigger value="momentum" className="text-xs sm:text-sm">Momentum</TabsTrigger>
+              <TabsTrigger value="timing" className="text-xs sm:text-sm">Timing</TabsTrigger>
+            </TabsList>
+          </div>
 
           {/* Overview Tab */}
           <TabsContent value="overview" className="space-y-4">

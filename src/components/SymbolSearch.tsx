@@ -81,10 +81,10 @@ export function SymbolSearch({ value, onValueChange, onSelectSymbol, placeholder
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className="w-full justify-between hover:bg-background focus:bg-background data-[state=open]:bg-background data-[state=open]:ring-2 data-[state=open]:ring-primary/40"
+          className="w-full justify-between hover:bg-background focus:bg-background data-[state=open]:bg-background data-[state=open]:ring-2 data-[state=open]:ring-primary/40 min-w-0"
         >
           {selectedSymbol ? (
-            <div className="flex items-center gap-2 min-w-0 flex-1">
+            <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
               <span className="font-medium shrink-0">{selectedSymbol.symbol}</span>
               <Badge variant="outline" className={cn("shrink-0 hidden sm:inline-flex", getTypeColor(selectedSymbol.type))}>
                 {selectedSymbol.type}
@@ -92,7 +92,7 @@ export function SymbolSearch({ value, onValueChange, onSelectSymbol, placeholder
               <span className="text-muted-foreground truncate text-sm">{selectedSymbol.description}</span>
             </div>
           ) : (
-            <span className="text-muted-foreground truncate text-left flex-1">{placeholder}</span>
+            <span className="text-muted-foreground truncate text-left flex-1 text-sm min-w-0">{placeholder}</span>
           )}
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
