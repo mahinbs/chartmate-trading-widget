@@ -45,6 +45,14 @@ type SignalRow = {
   rationale: string;
   isLive?: boolean;
   isPredicted?: boolean;
+  marketData?: {
+    rsi14?: number | null;
+    sma20?: number | null;
+    high20?: number | null;
+    low20?: number | null;
+    dataSource?: string;
+    indicatorSource?: string;
+  } | null;
 };
 
 type CustomStrategy = {
@@ -350,8 +358,30 @@ export function StrategyEntrySignalsPanel({
     if (row.entryTime && row.entryTime.length <= 10) return row.entryTime;
     return dt.toLocaleString([], {
       year: "numeric", month: "short", day: "2-digit",
-      hour: "2-digit", minute: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      hour12: false,
     });
+  };
+
+  const formatEntryWithZone = (row: SignalRow) => {
+    const iso = row.entryTime || (row.entryTimestamp ? new Date(row.entryTimestamp).toISOString() : "");
+    if (!iso) return row.entryDate;
+    const dt = new Date(iso);
+    return `${dt.toLocaleString([], {
+      year: "numeric", month: "short", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      hour12: false,
+    })} (${Intl.DateTimeFormat().resolvedOptions().timeZone})`;
+  };
+
+  const formatMarketData = (row: SignalRow) => {
+    const m = row.marketData;
+    if (!m) return "n/a";
+    const rsi = m.rsi14 != null ? `RSI ${m.rsi14}` : "RSI n/a";
+    const sma = m.sma20 != null ? `SMA20 ${m.sma20}` : "SMA20 n/a";
+    const h20 = m.high20 != null ? `H20 ${m.high20}` : "H20 n/a";
+    const l20 = m.low20 != null ? `L20 ${m.low20}` : "L20 n/a";
+    return `${rsi} · ${sma} · ${h20} · ${l20}`;
   };
 
   const applyDynamicStatus = useCallback((row: SignalRow): SignalRow => {
@@ -525,8 +555,10 @@ export function StrategyEntrySignalsPanel({
                   <th className="p-2">Signal type</th>
                   <th className="p-2">Time</th>
                   <th className="p-2 text-right">Price</th>
+                  <th className="p-2">Market data</th>
                   <th className="p-2 text-right">Score</th>
                   <th className="p-2">Verdict</th>
+                  <th className="p-2">Failed reason</th>
                 </tr>
               </thead>
               <tbody>
@@ -534,6 +566,8 @@ export function StrategyEntrySignalsPanel({
                   <tr
                     key={`${row.strategyId}-${row.entryDate}-${row.side}-${i}`}
                     className={`border-b border-white/5 ${
+                      row.verdict === "reject" ? "bg-red-500/10 border-l-2 border-l-red-500/60"
+                      :
                       row.isPredicted ? "bg-amber-500/10 border-l-2 border-l-amber-400"
                       : row.isLive ? "bg-teal-500/10 border-l-2 border-l-teal-400"
                       : row.entryDate === todayKey ? "bg-teal-500/5"
@@ -568,11 +602,15 @@ export function StrategyEntrySignalsPanel({
                         row.priceAtEntry?.toFixed?.(2) ?? row.priceAtEntry
                       )}
                     </td>
+                    <td className="p-2 text-[10px] text-zinc-300 max-w-[240px]">{formatMarketData(row)}</td>
                     <td className="p-2 text-right font-mono text-teal-400">{row.probabilityScore}</td>
                     <td className="p-2">
                       <Badge variant={verdictVariant(row.verdict)} className="text-[10px]">
                         {row.verdict}
                       </Badge>
+                    </td>
+                    <td className="p-2 text-[10px] text-red-300/90 max-w-[320px]">
+                      {row.verdict === "reject" ? row.rationale : "—"}
                     </td>
                   </tr>
                 ))}
@@ -584,8 +622,9 @@ export function StrategyEntrySignalsPanel({
                 <p key={i} className="text-[10px] text-muted-foreground">
                   {row.isPredicted && <span className="text-amber-400 font-bold mr-1">PREDICTED</span>}
                   {row.isLive && !row.isPredicted && <span className="text-teal-400 font-bold mr-1">LIVE</span>}
+                  {row.verdict === "reject" && <span className="text-red-400 font-bold mr-1">FAILED</span>}
                   <span className={sideClass(row.side)}>{row.side === "BUY" ? "↑" : "↓"}</span>{" "}
-                  <span className="text-white/80">{row.strategyLabel}</span> · {formatEntry(row)}: {row.rationale}
+                  <span className="text-white/80">{row.strategyLabel}</span> · {formatEntryWithZone(row)}: {row.rationale}
                 </p>
               ))}
             </div>
@@ -664,75 +703,91 @@ export function StrategyEntrySignalsPanel({
         )}
 
         <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
-          <DialogContent className="max-w-4xl bg-zinc-950 border-zinc-800">
-            <DialogHeader>
-              <DialogTitle className="text-white">Saved scan details</DialogTitle>
-              <DialogDescription>
-                Snapshot captured at scan time. UPCOMING/LIVE labels auto-update as time passes.
-              </DialogDescription>
-            </DialogHeader>
-            {historyDetailLoading ? (
-              <p className="text-sm text-muted-foreground">Loading…</p>
-            ) : !historyDetail ? (
-              <p className="text-sm text-muted-foreground">No detail found.</p>
-            ) : (
-              <div className="space-y-3">
-                <p className="text-xs text-muted-foreground">
-                  {historyDetail.symbol} · {new Date(historyDetail.scan_completed_at).toLocaleString()} · Data {historyDetail.data_source ?? "n/a"} · Indicators {historyDetail.indicator_source ?? "n/a"}
-                </p>
-                <div className="overflow-x-auto rounded-lg border border-white/10">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="text-left text-muted-foreground border-b border-white/10 bg-black/20">
-                        <th className="p-2">Strategy</th>
-                        <th className="p-2">Type</th>
-                        <th className="p-2">Time</th>
-                        <th className="p-2 text-right">Price</th>
-                        <th className="p-2 text-right">Score</th>
-                        <th className="p-2">Verdict</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {pagedHistorySignals.map((row, i) => (
-                        <tr key={`${row.strategyId}-${row.entryDate}-${row.side}-${i}`} className="border-b border-white/5">
-                          <td className="p-2 text-white">
-                            {row.isPredicted && <span className="text-amber-400 mr-1">UPCOMING</span>}
-                            {row.isLive && !row.isPredicted && <span className="text-teal-400 mr-1">LIVE</span>}
-                            {row.strategyLabel}
-                          </td>
-                          <td className={`p-2 ${sideClass(row.side)}`}>{sideLabel(row.side)}</td>
-                          <td className="p-2 font-mono text-muted-foreground text-[10px]">{formatEntry(row)}</td>
-                          <td className="p-2 text-right font-mono">{row.priceAtEntry?.toFixed?.(2) ?? row.priceAtEntry}</td>
-                          <td className="p-2 text-right font-mono text-teal-400">{row.probabilityScore}</td>
-                          <td className="p-2"><Badge variant={verdictVariant(row.verdict)} className="text-[10px]">{row.verdict}</Badge></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="flex items-center justify-end gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 px-2"
-                    onClick={() => setHistorySignalPage((p) => Math.max(1, p - 1))}
-                    disabled={historySignalPage <= 1}
-                  >
-                    <ChevronLeft className="h-3.5 w-3.5" />
-                  </Button>
-                  <span className="text-[11px] text-muted-foreground">Signals page {historySignalPage} / {historySignalTotalPages}</span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 px-2"
-                    onClick={() => setHistorySignalPage((p) => Math.min(historySignalTotalPages, p + 1))}
-                    disabled={historySignalPage >= historySignalTotalPages}
-                  >
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
+          <DialogContent className="w-[98vw] !max-w-[98vw] sm:!max-w-[98vw] h-[92vh] !max-h-[92vh] bg-zinc-950 border-zinc-800 p-0">
+            <div className="h-full flex flex-col">
+              <div className="border-b border-zinc-800 px-5 py-4">
+                <DialogHeader className="space-y-1">
+                  <DialogTitle className="text-white text-lg">Saved scan details</DialogTitle>
+                  <DialogDescription>
+                    Snapshot captured at scan time. UPCOMING/LIVE labels auto-update as time passes.
+                  </DialogDescription>
+                </DialogHeader>
               </div>
-            )}
+
+              <div className="flex-1 min-h-0 px-5 py-4 overflow-hidden">
+                {historyDetailLoading ? (
+                  <p className="text-sm text-muted-foreground">Loading…</p>
+                ) : !historyDetail ? (
+                  <p className="text-sm text-muted-foreground">No detail found.</p>
+                ) : (
+                  <div className="h-full flex flex-col gap-3">
+                    <p className="text-xs text-muted-foreground">
+                      {historyDetail.symbol} · {new Date(historyDetail.scan_completed_at).toLocaleString()} · Data {historyDetail.data_source ?? "n/a"} · Indicators {historyDetail.indicator_source ?? "n/a"}
+                    </p>
+
+                    <div className="flex-1 min-h-0 overflow-auto rounded-lg border border-white/10">
+                      <table className="w-full text-xs table-auto">
+                        <thead className="sticky top-0 z-10">
+                          <tr className="text-left text-muted-foreground border-b border-white/10 bg-black/80 backdrop-blur">
+                            <th className="p-2 min-w-[170px]">Strategy</th>
+                            <th className="p-2 min-w-[110px]">Type</th>
+                            <th className="p-2 min-w-[230px]">Time</th>
+                            <th className="p-2 text-right min-w-[90px]">Price</th>
+                            <th className="p-2 min-w-[230px]">Market data</th>
+                            <th className="p-2 text-right min-w-[80px]">Score</th>
+                            <th className="p-2 min-w-[90px]">Verdict</th>
+                            <th className="p-2 min-w-[300px]">Failed reason</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pagedHistorySignals.map((row, i) => (
+                            <tr
+                              key={`${row.strategyId}-${row.entryDate}-${row.side}-${i}`}
+                              className={`border-b border-white/5 ${row.verdict === "reject" ? "bg-red-500/10" : ""}`}
+                            >
+                              <td className="p-2 text-white">
+                                {row.isPredicted && <span className="text-amber-400 mr-1">UPCOMING</span>}
+                                {row.isLive && !row.isPredicted && <span className="text-teal-400 mr-1">LIVE</span>}
+                                {row.strategyLabel}
+                              </td>
+                              <td className={`p-2 ${sideClass(row.side)}`}>{sideLabel(row.side)}</td>
+                              <td className="p-2 font-mono text-muted-foreground text-[10px]">{formatEntryWithZone(row)}</td>
+                              <td className="p-2 text-right font-mono">{row.priceAtEntry?.toFixed?.(2) ?? row.priceAtEntry}</td>
+                              <td className="p-2 text-[10px] text-zinc-300">{formatMarketData(row)}</td>
+                              <td className="p-2 text-right font-mono text-teal-400">{row.probabilityScore}</td>
+                              <td className="p-2"><Badge variant={verdictVariant(row.verdict)} className="text-[10px]">{row.verdict}</Badge></td>
+                              <td className="p-2 text-[10px] text-red-300/90">{row.verdict === "reject" ? row.rationale : "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-zinc-800 px-5 py-3 flex items-center justify-end gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2"
+                  onClick={() => setHistorySignalPage((p) => Math.max(1, p - 1))}
+                  disabled={historySignalPage <= 1}
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </Button>
+                <span className="text-[11px] text-muted-foreground">Signals page {historySignalPage} / {historySignalTotalPages} (10 per page)</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2"
+                  onClick={() => setHistorySignalPage((p) => Math.min(historySignalTotalPages, p + 1))}
+                  disabled={historySignalPage >= historySignalTotalPages}
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
           </DialogContent>
         </Dialog>
       </CardContent>

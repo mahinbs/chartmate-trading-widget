@@ -257,6 +257,14 @@ type RawSignal = {
   priceAtEntry: number;
   isLive?: boolean;
   isPredicted?: boolean;
+  marketData?: {
+    rsi14: number | null;
+    sma20: number | null;
+    high20: number | null;
+    low20: number | null;
+    dataSource?: string;
+    indicatorSource?: string;
+  };
 };
 
 type AssetType = "crypto" | "forex" | "stock";
@@ -514,6 +522,31 @@ function checkSignal(
   return action === "BUY" && rsiV > 50;
 }
 
+function mkMarketData(
+  i: number,
+  c: number[],
+  h: number[],
+  l: number[],
+  r: number[],
+  sma20: number[],
+  dataSource?: string,
+  indicatorSource?: string,
+): RawSignal["marketData"] {
+  const from = Math.max(0, i - 20);
+  const high20 = i > from ? Math.max(...h.slice(from, i)) : null;
+  const low20 = i > from ? Math.min(...l.slice(from, i)) : null;
+  const rsi14 = Number.isFinite(r[i]) ? Number(r[i].toFixed(2)) : null;
+  const s20 = Number.isFinite(sma20[i]) ? Number(sma20[i].toFixed(2)) : null;
+  return {
+    rsi14,
+    sma20: s20,
+    high20: Number.isFinite(high20 as number) ? Number((high20 as number).toFixed(2)) : null,
+    low20: Number.isFinite(low20 as number) ? Number((low20 as number).toFixed(2)) : null,
+    dataSource,
+    indicatorSource,
+  };
+}
+
 function detectEntries(
   strategy: string,
   c: number[],
@@ -523,6 +556,8 @@ function detectEntries(
   action: "BUY" | "SELL",
   maxSignals: number,
   useRealtimeEntry = false,
+  dataSource = "unknown",
+  indicatorSource = "computed",
 ): RawSignal[] {
   const n = c.length;
   if (n < 25) return [];
@@ -567,6 +602,7 @@ function detectEntries(
         entryTimestamp: timestamps[ei] * 1000,
         side: action,
         priceAtEntry: c[ei],
+        marketData: mkMarketData(ei, c, h, l, r, sma20, dataSource, indicatorSource),
       });
       inTrade = true;
       entryPrice = c[ei];
@@ -588,6 +624,8 @@ function evaluateRecentCandles(
   l: number[],
   timestamps: number[],
   actions: Array<"BUY" | "SELL">,
+  dataSource = "unknown",
+  indicatorSource = "computed",
 ): RawSignal[] {
   const n = c.length;
   if (n < 25) return [];
@@ -621,6 +659,7 @@ function evaluateRecentCandles(
             side: action,
             priceAtEntry: c[i],
             isLive: true,
+            marketData: mkMarketData(i, c, h, l, r, sma20, dataSource, indicatorSource),
           });
         }
       }
@@ -643,6 +682,8 @@ function predictFutureSignals(
   actions: Array<"BUY" | "SELL">,
   maxMinutes: number,
   intervalMinutes: number = 5,
+  dataSource = "projected",
+  indicatorSource = "projected",
 ): RawSignal[] {
   const n = c.length;
   if (n < 25 || maxMinutes <= 0) return [];
@@ -715,6 +756,7 @@ function predictFutureSignals(
             side: action,
             priceAtEntry: Math.round(fC[i] * 100) / 100,
             isPredicted: true,
+            marketData: mkMarketData(i, fC, fH, fL, rsiExt, sma20Ext, dataSource, indicatorSource),
           });
         }
       }
@@ -889,6 +931,7 @@ ${JSON.stringify(raw.map((x) => ({
     priceAtEntry: x.priceAtEntry,
     isPredicted: x.isPredicted ?? false,
     isLive: x.isLive ?? false,
+    marketData: x.marketData ?? null,
   })))}
 
 Return ONLY a JSON array (no markdown), SAME LENGTH AND SAME ORDER as input, each object:
@@ -1076,7 +1119,7 @@ Deno.serve(async (req: Request) => {
       .filter((id) => STRATEGY_LABELS[id] || id === "pairs_trading");
     for (const action of scanActions) {
       for (const id of validIds) {
-        const sigs = detectEntries(id, c, h, l, t, action, maxPerStrategy, realtimeMode);
+        const sigs = detectEntries(id, c, h, l, t, action, maxPerStrategy, realtimeMode, dataSource, realIndicators.source);
         allRaw.push(...sigs);
       }
     }
@@ -1097,7 +1140,7 @@ Deno.serve(async (req: Request) => {
           : ["BUY", "SELL"];
       for (const action of csActions) {
         // detectEntries uses the baseType logic but we override the strategyId & label
-        const sigs = detectEntries(baseType, c, h, l, t, action, maxPerStrategy, realtimeMode);
+        const sigs = detectEntries(baseType, c, h, l, t, action, maxPerStrategy, realtimeMode, dataSource, realIndicators.source);
         for (const sig of sigs) {
           sig.strategyId = csId;
           sig.strategyLabel = cs.name;
@@ -1116,7 +1159,7 @@ Deno.serve(async (req: Request) => {
       allScanIds.push(baseType); // evaluate the base type, then relabel
       customBaseMap[baseType] = customBaseMap[baseType] || csId;
     }
-    const liveSignals = evaluateRecentCandles(allScanIds, c, h, l, t, scanActions);
+    const liveSignals = evaluateRecentCandles(allScanIds, c, h, l, t, scanActions, dataSource, realIndicators.source);
     // Relabel live signals from custom strategy base types
     for (const ls of liveSignals) {
       const csId = customBaseMap[ls.strategyId];
@@ -1140,7 +1183,7 @@ Deno.serve(async (req: Request) => {
     const predictionWindow = getPredictionWindowMinutes(assetType, yahooSymbol);
     let predictedSignals: RawSignal[] = [];
     if (predictionWindow > 0 && realtimeMode) {
-      const builtInPredicted = predictFutureSignals(validIds, c, h, l, t, scanActions, predictionWindow, 5);
+      const builtInPredicted = predictFutureSignals(validIds, c, h, l, t, scanActions, predictionWindow, 5, dataSource, realIndicators.source);
       predictedSignals.push(...builtInPredicted);
 
       // Also predict for custom strategies
@@ -1152,7 +1195,7 @@ Deno.serve(async (req: Request) => {
           cs.tradingMode === "LONG" ? ["BUY"]
             : cs.tradingMode === "SHORT" ? ["SELL"]
             : ["BUY", "SELL"];
-        const csPredicted = predictFutureSignals([baseType], c, h, l, t, csActions, predictionWindow, 5);
+        const csPredicted = predictFutureSignals([baseType], c, h, l, t, csActions, predictionWindow, 5, dataSource, realIndicators.source);
         for (const sig of csPredicted) {
           sig.strategyId = csId;
           sig.strategyLabel = customLabelMap[csId] ?? cs.name;
@@ -1195,6 +1238,7 @@ Deno.serve(async (req: Request) => {
         rationale: ai?.rationale ?? "",
         isLive: rawSig.isLive ?? false,
         isPredicted: rawSig.isPredicted ?? false,
+        marketData: rawSig.marketData ?? null,
       };
     });
 
