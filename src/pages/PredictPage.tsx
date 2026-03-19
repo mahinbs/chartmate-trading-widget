@@ -1896,7 +1896,7 @@ const PredictPage = () => {
 
       {/* ── Buy More Dialog ── */}
       <Dialog open={showBuyMoreDialog} onOpenChange={setShowBuyMoreDialog}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-sm mx-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <PlusCircle className="h-5 w-5 text-green-500" />
@@ -1978,7 +1978,7 @@ const PredictPage = () => {
 
       {/* ── Sell Dialog (partial or full) ── */}
       <Dialog open={showSellDialog} onOpenChange={setShowSellDialog}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-sm mx-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Minus className="h-5 w-5 text-red-500" />

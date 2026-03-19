@@ -23,25 +23,27 @@ export function Stepper({ steps, currentStep, completedSteps, className }: Stepp
 
   React.useEffect(() => {
     if (className?.includes('mobile-stepper') && scrollRef.current) {
-      const activeStepElement = scrollRef.current.querySelector('[data-current="true"]')
-      if (activeStepElement) {
-        activeStepElement.scrollIntoView({
-          behavior: 'smooth',
-          inline: 'center',
-          block: 'nearest'
-        })
+      const container = scrollRef.current;
+      const activeStep = container.querySelector('[data-current="true"]') as HTMLElement | null;
+      if (activeStep) {
+        // Compute offset so the active step is centred inside the stepper strip only
+        // (avoids scrollIntoView which bubbles to page scroll containers)
+        const targetLeft =
+          activeStep.offsetLeft -
+          (container.offsetWidth - activeStep.offsetWidth) / 2;
+        container.scrollTo({ left: Math.max(0, targetLeft), behavior: 'smooth' });
       }
     }
   }, [currentStep, className])
 
   return (
-    <div className={cn("w-full overflow-hidden", className)}>
+    <div className={cn("w-full overflow-x-clip", className)}>
       <div 
         ref={scrollRef}
         className={cn(
           "flex items-start transition-all duration-300",
           className?.includes('mobile-stepper') 
-            ? "overflow-x-auto snap-x snap-mandatory no-scrollbar pb-4 -mx-1 px-1 touch-pan-x" 
+            ? "overflow-x-auto snap-x snap-mandatory no-scrollbar pb-4 -mx-1 px-1 pr-4 touch-pan-x" 
             : "justify-between"
         )}
       >

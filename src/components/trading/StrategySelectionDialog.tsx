@@ -522,7 +522,7 @@ export function StrategySelectionDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* Fixed height dialog — ONE single scroll inside */}
-      <DialogContent className="sm:max-w-2xl max-h-[92vh] flex flex-col p-0 gap-0">
+      <DialogContent className="sm:max-w-2xl mx-auto max-h-[92vh] flex flex-col p-0 gap-0">
 
         {/* ── Fixed header ─────────────────────────────────────────────────── */}
         <DialogHeader className="shrink-0 px-6 pt-6 pb-3 border-b space-y-0">
