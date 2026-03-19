@@ -964,6 +964,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+    const scanStartedAt = new Date().toISOString();
     const symbol = String(body.symbol ?? "").trim();
     const strategies = Array.isArray(body.strategies) ? body.strategies as string[] : [];
     // Always scan BOTH directions so users see all entry (BUY) and exit (SELL) opportunities.
@@ -1206,9 +1207,35 @@ Deno.serve(async (req: Request) => {
       return (b.probabilityScore as number) - (a.probabilityScore as number);
     });
 
+    // Persist per-user scan snapshot for history cards / popup replay.
+    const { data: historyRow, error: historyErr } = await supabase
+      .from("strategy_scan_history")
+      .insert({
+        user_id: user.id,
+        symbol,
+        scan_started_at: scanStartedAt,
+        scan_completed_at: new Date().toISOString(),
+        strategies: validIds,
+        custom_strategy_ids: customStrategies.map((cs) => String(cs.id)),
+        asset_type: assetType,
+        data_source: dataSource,
+        indicator_source: realIndicators.source,
+        interval: usedInterval,
+        signal_count: merged.length,
+        live_count: liveSignals.length,
+        predicted_count: predictedSignals.length,
+        signals: merged,
+      })
+      .select("id")
+      .single();
+    if (historyErr) {
+      console.error("Failed saving strategy scan history:", historyErr.message);
+    }
+
     return new Response(
       JSON.stringify({
         signals: merged,
+        historyId: historyRow?.id ?? null,
         yahooSymbol,
         barCount: c.length,
         interval: usedInterval,

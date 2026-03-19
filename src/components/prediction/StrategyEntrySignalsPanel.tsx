@@ -9,8 +9,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { STRATEGIES } from "@/components/trading/StrategySelectionDialog";
-import { Loader2, Sparkles, Target } from "lucide-react";
+import { Loader2, Sparkles, Target, History, ChevronLeft, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 
 export interface PostAnalysisContext {
   result?: string;
@@ -51,6 +58,34 @@ type CustomStrategy = {
   paper_strategy_type?: string | null;
 };
 
+type HistoryItem = {
+  id: string;
+  symbol: string;
+  scan_started_at: string;
+  scan_completed_at: string;
+  signal_count: number;
+  live_count: number;
+  predicted_count: number;
+  data_source?: string | null;
+  indicator_source?: string | null;
+  asset_type?: string | null;
+  created_at: string;
+};
+
+type HistoryDetail = {
+  id: string;
+  symbol: string;
+  scan_started_at: string;
+  scan_completed_at: string;
+  signal_count: number;
+  live_count: number;
+  predicted_count: number;
+  data_source?: string | null;
+  indicator_source?: string | null;
+  interval?: string | null;
+  signals: SignalRow[];
+};
+
 export function StrategyEntrySignalsPanel({
   symbol,
   postAnalysis,
@@ -66,6 +101,15 @@ export function StrategyEntrySignalsPanel({
   const [scanMeta, setScanMeta] = useState<{ dataSource?: string; indicatorSource?: string; assetType?: string } | null>(null);
   const [customStrategies, setCustomStrategies] = useState<CustomStrategy[]>([]);
   const [selectedCustom, setSelectedCustom] = useState<Set<string>>(new Set());
+  const [nowMs, setNowMs] = useState(Date.now());
+  const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyTotalPages, setHistoryTotalPages] = useState(1);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyDetail, setHistoryDetail] = useState<HistoryDetail | null>(null);
+  const [historySignalPage, setHistorySignalPage] = useState(1);
+  const [historyDetailLoading, setHistoryDetailLoading] = useState(false);
 
   const todayKey = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
@@ -102,6 +146,62 @@ export function StrategyEntrySignalsPanel({
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // Keep "UPCOMING/LIVE" labels fresh as time moves.
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  const fetchHistoryList = useCallback(async (page = 1) => {
+    if (!symbol.trim()) return;
+    setHistoryLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const res = await supabase.functions.invoke("strategy-scan-history", {
+        body: { action: "list", symbol: symbol.trim(), page, pageSize: 10 },
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (res.error) throw new Error(res.error.message);
+      const payload = res.data as { items?: HistoryItem[]; totalPages?: number; page?: number };
+      setHistoryItems(Array.isArray(payload?.items) ? payload.items : []);
+      setHistoryTotalPages(Math.max(1, Number(payload?.totalPages) || 1));
+      setHistoryPage(Math.max(1, Number(payload?.page) || page));
+    } catch {
+      setHistoryItems([]);
+      setHistoryTotalPages(1);
+      setHistoryPage(1);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [symbol]);
+
+  const openHistoryDetail = useCallback(async (id: string) => {
+    setHistoryDetailLoading(true);
+    setHistoryOpen(true);
+    setHistorySignalPage(1);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const res = await supabase.functions.invoke("strategy-scan-history", {
+        body: { action: "detail", id },
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (res.error) throw new Error(res.error.message);
+      const payload = res.data as { item?: HistoryDetail };
+      setHistoryDetail(payload?.item ?? null);
+    } catch {
+      setHistoryDetail(null);
+      toast({ title: "Could not load history details", variant: "destructive" });
+    } finally {
+      setHistoryDetailLoading(false);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    fetchHistoryList(1);
+  }, [fetchHistoryList]);
 
   const marketNote = useMemo(() => {
     if (!marketStatus) return "Scans intraday candles (with daily fallback) for both entry & exit points.";
@@ -215,6 +315,7 @@ export function StrategyEntrySignalsPanel({
           description: parts.join(" · "),
         });
       }
+      fetchHistoryList(1);
     } catch (e: unknown) {
       toast({
         title: "Scan failed",
@@ -224,7 +325,7 @@ export function StrategyEntrySignalsPanel({
     } finally {
       setLoading(false);
     }
-  }, [symbol, selected, selectedCustom, customStrategies, postAnalysis, requirePostAnalysis, toast, todayKey]);
+  }, [symbol, selected, selectedCustom, customStrategies, postAnalysis, requirePostAnalysis, toast, todayKey, fetchHistoryList]);
 
   const verdictVariant = (v: string) => {
     if (v === "confirm") return "default" as const;
@@ -253,23 +354,49 @@ export function StrategyEntrySignalsPanel({
     });
   };
 
-  const visibleSignals = useMemo(() => signals, [signals]);
+  const applyDynamicStatus = useCallback((row: SignalRow): SignalRow => {
+    const ts = row.entryTimestamp
+      ? Number(row.entryTimestamp)
+      : row.entryTime
+      ? new Date(row.entryTime).getTime()
+      : NaN;
+    if (!Number.isFinite(ts)) return row;
+    const fifteenMin = 15 * 60 * 1000;
+    const isFuture = ts > nowMs;
+    return {
+      ...row,
+      isPredicted: row.isPredicted ? isFuture : false,
+      isLive: row.isLive ? !isFuture && nowMs - ts <= fifteenMin : false,
+    };
+  }, [nowMs]);
+
+  const visibleSignals = useMemo(() => signals.map(applyDynamicStatus), [signals, applyDynamicStatus]);
 
   const counts = useMemo(() => {
-    const predicted = signals.filter((s) => s.isPredicted);
-    const live = signals.filter((s) => s.isLive);
-    const todays = signals.filter((s) => s.entryDate === todayKey && !s.isPredicted);
-    const history = signals.filter((s) => !s.isLive && !s.isPredicted && s.entryDate !== todayKey);
+    const predicted = visibleSignals.filter((s) => s.isPredicted);
+    const live = visibleSignals.filter((s) => s.isLive);
+    const todays = visibleSignals.filter((s) => s.entryDate === todayKey && !s.isPredicted);
+    const history = visibleSignals.filter((s) => !s.isLive && !s.isPredicted && s.entryDate !== todayKey);
     return {
-      total: signals.length,
+      total: visibleSignals.length,
       predicted: predicted.length,
       today: todays.length,
       live: live.length,
       history: history.length,
-      buyTotal: signals.filter((s) => s.side === "BUY").length,
-      sellTotal: signals.filter((s) => s.side === "SELL").length,
+      buyTotal: visibleSignals.filter((s) => s.side === "BUY").length,
+      sellTotal: visibleSignals.filter((s) => s.side === "SELL").length,
     };
-  }, [signals, todayKey]);
+  }, [visibleSignals, todayKey]);
+
+  const historySignals = useMemo(
+    () => (historyDetail?.signals ?? []).map(applyDynamicStatus),
+    [historyDetail, applyDynamicStatus],
+  );
+  const historySignalTotalPages = Math.max(1, Math.ceil(historySignals.length / 10));
+  const pagedHistorySignals = useMemo(() => {
+    const start = (historySignalPage - 1) * 10;
+    return historySignals.slice(start, start + 10);
+  }, [historySignals, historySignalPage]);
 
   return (
     <Card className="border-white/10 bg-black/20">
@@ -465,6 +592,66 @@ export function StrategyEntrySignalsPanel({
           </div>
         )}
 
+        {/* Saved scan history (per user, per symbol) */}
+        <div className="rounded-lg border border-white/10 p-3 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-white/90 flex items-center gap-1.5">
+              <History className="h-3.5 w-3.5 text-teal-400" />
+              Saved scan history
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-[11px]"
+              onClick={() => fetchHistoryList(historyPage)}
+              disabled={historyLoading}
+            >
+              Refresh
+            </Button>
+          </div>
+          {historyLoading ? (
+            <p className="text-[11px] text-muted-foreground">Loading history…</p>
+          ) : historyItems.length === 0 ? (
+            <p className="text-[11px] text-muted-foreground">No saved scans yet for this symbol.</p>
+          ) : (
+            <div className="space-y-2">
+              {historyItems.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => openHistoryDetail(item.id)}
+                  className="w-full text-left rounded-md border border-white/10 hover:border-teal-400/40 bg-black/20 p-2 transition-colors"
+                >
+                  <p className="text-xs text-white/90 font-mono">{item.symbol}</p>
+                  <p className="text-[10px] text-muted-foreground">
+                    {new Date(item.scan_completed_at).toLocaleString()} · {item.signal_count} signals · live {item.live_count} · upcoming {item.predicted_count}
+                  </p>
+                </button>
+              ))}
+              <div className="flex items-center justify-end gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2"
+                  onClick={() => fetchHistoryList(Math.max(1, historyPage - 1))}
+                  disabled={historyPage <= 1 || historyLoading}
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </Button>
+                <span className="text-[11px] text-muted-foreground">Page {historyPage} / {historyTotalPages}</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2"
+                  onClick={() => fetchHistoryList(Math.min(historyTotalPages, historyPage + 1))}
+                  disabled={historyPage >= historyTotalPages || historyLoading}
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Info when no predicted upcoming signals */}
         {signals.length > 0 && counts.predicted === 0 && (
           <div className="rounded-lg border border-zinc-700/50 bg-zinc-900/30 p-3 text-xs">
@@ -475,6 +662,79 @@ export function StrategyEntrySignalsPanel({
             </p>
           </div>
         )}
+
+        <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+          <DialogContent className="max-w-4xl bg-zinc-950 border-zinc-800">
+            <DialogHeader>
+              <DialogTitle className="text-white">Saved scan details</DialogTitle>
+              <DialogDescription>
+                Snapshot captured at scan time. UPCOMING/LIVE labels auto-update as time passes.
+              </DialogDescription>
+            </DialogHeader>
+            {historyDetailLoading ? (
+              <p className="text-sm text-muted-foreground">Loading…</p>
+            ) : !historyDetail ? (
+              <p className="text-sm text-muted-foreground">No detail found.</p>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  {historyDetail.symbol} · {new Date(historyDetail.scan_completed_at).toLocaleString()} · Data {historyDetail.data_source ?? "n/a"} · Indicators {historyDetail.indicator_source ?? "n/a"}
+                </p>
+                <div className="overflow-x-auto rounded-lg border border-white/10">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-left text-muted-foreground border-b border-white/10 bg-black/20">
+                        <th className="p-2">Strategy</th>
+                        <th className="p-2">Type</th>
+                        <th className="p-2">Time</th>
+                        <th className="p-2 text-right">Price</th>
+                        <th className="p-2 text-right">Score</th>
+                        <th className="p-2">Verdict</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pagedHistorySignals.map((row, i) => (
+                        <tr key={`${row.strategyId}-${row.entryDate}-${row.side}-${i}`} className="border-b border-white/5">
+                          <td className="p-2 text-white">
+                            {row.isPredicted && <span className="text-amber-400 mr-1">UPCOMING</span>}
+                            {row.isLive && !row.isPredicted && <span className="text-teal-400 mr-1">LIVE</span>}
+                            {row.strategyLabel}
+                          </td>
+                          <td className={`p-2 ${sideClass(row.side)}`}>{sideLabel(row.side)}</td>
+                          <td className="p-2 font-mono text-muted-foreground text-[10px]">{formatEntry(row)}</td>
+                          <td className="p-2 text-right font-mono">{row.priceAtEntry?.toFixed?.(2) ?? row.priceAtEntry}</td>
+                          <td className="p-2 text-right font-mono text-teal-400">{row.probabilityScore}</td>
+                          <td className="p-2"><Badge variant={verdictVariant(row.verdict)} className="text-[10px]">{row.verdict}</Badge></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex items-center justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2"
+                    onClick={() => setHistorySignalPage((p) => Math.max(1, p - 1))}
+                    disabled={historySignalPage <= 1}
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  </Button>
+                  <span className="text-[11px] text-muted-foreground">Signals page {historySignalPage} / {historySignalTotalPages}</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2"
+                    onClick={() => setHistorySignalPage((p) => Math.min(historySignalTotalPages, p + 1))}
+                    disabled={historySignalPage >= historySignalTotalPages}
+                  >
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );
