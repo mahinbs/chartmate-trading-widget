@@ -1,17 +1,13 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { ChevronDown, BarChart2, ArrowLeft } from 'lucide-react';
+import { BarChart2, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import {
-  simulateNextTick,
-  generateInitialState,
-  TICK_SYMBOLS,
-  formatVolume,
-  ChartSimState
-} from '../utils/tickSimulator';
+import { supabase } from '@/integrations/supabase/client';
+import { SymbolSearch, type SymbolData } from '@/components/SymbolSearch';
+import { TICK_SYMBOLS, formatVolume, ChartSimState } from '../utils/tickSimulator';
 
 // Ask side (right) - green spectrum
 const ASK_STRONG = '#00C853';   // bright green
-const ASK_MILD   = '#B9F6CA';   // pale mint green
+const ASK_MILD   = '#2E7D32';   // deeper green for better contrast
 
 // Bid side (left) - red spectrum  
 const BID_STRONG = '#FF1744';   // bright red
@@ -40,6 +36,7 @@ const getAskColor = (bid: number, ask: number, isHighVolume: boolean) => {
 const getTextColor = (bgColor: string) => {
   if (bgColor === '#000000') return '#000000'; // invisible on empty
   if (bgColor === '#1e1e2e') return '#888888'; // dim text on neutral
+  if (bgColor === ASK_MILD || bgColor === ASK_STRONG) return '#0b0b0b'; // dark text on green
   return '#ffffff'; // white on colored
 };
 
@@ -55,28 +52,337 @@ const refreshRateMap: Record<string, number> = {
   '1M':  120000,
 };
 
+const timeframeToMs: Record<string, number> = {
+  '1m': 60_000,
+  '5m': 5 * 60_000,
+  '30m': 30 * 60_000,
+  '1h': 60 * 60_000,
+  '1d': 24 * 60 * 60_000,
+  '1w': 7 * 24 * 60 * 60_000,
+  '1M': 30 * 24 * 60 * 60_000,
+};
+
+type LevelRow = { price: number; bid: number; ask: number };
+type Snapshot = {
+  source: string;
+  symbol: string;
+  timestamp: number;
+  price: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  levels: LevelRow[];
+};
+
+const EMPTY_STATS = {
+  O: 0, H: 0, L: 0, C: 0, V: 0, OI: 165.0,
+  buyVol: 0, sellVol: 0, buyTrades: 0, sellTrades: 0, imbBlock: 0,
+};
+
+function inferAssetType(symbol: string): 'crypto' | 'forex' | 'indian' | 'us' {
+  if (symbol.includes('/')) return 'crypto';
+  if (symbol.includes('-USD') || symbol.includes('-USDT')) return 'crypto';
+  if (symbol.endsWith('=X')) return 'forex';
+  if (symbol.endsWith('.NS') || symbol.endsWith('.BO')) return 'indian';
+  return 'us';
+}
+
+function normalizeSymbol(symbol: string): string {
+  if (symbol.includes('/')) return symbol.replace('/', '-');
+  return symbol;
+}
+
+function mapToBinancePair(symbol: string): string {
+  const s = normalizeSymbol(symbol).toUpperCase();
+  if (s === 'BTC-USD' || s === 'BTC/ USD' || s === 'BTC/USD') return 'btcusdt';
+  if (s === 'ETH-USD' || s === 'ETH/USD') return 'ethusdt';
+  if (s.endsWith('-USD')) return `${s.replace('-USD', '').toLowerCase()}usdt`;
+  if (s.endsWith('-USDT')) return `${s.replace('-USDT', '').toLowerCase()}usdt`;
+  return 'btcusdt';
+}
+
+function getIncrementForPrice(price: number, asset: string): number {
+  if (asset === 'forex') return 0.0005;
+  if (price >= 50000) return 20;
+  if (price >= 5000) return 5;
+  if (price >= 500) return 1;
+  if (price >= 100) return 0.5;
+  if (price >= 10) return 0.05;
+  return 0.01;
+}
+
+function buildPriceLevels(center: number, increment: number, rows = 25): number[] {
+  const middle = Math.floor(rows / 2);
+  const levels: number[] = [];
+  for (let i = 0; i < rows; i++) {
+    const offset = middle - i;
+    levels.push(Number((center + offset * increment).toFixed(6)));
+  }
+  return levels;
+}
+
+function timeLabelFromTs(tsMs: number, timeframe: string, tz: string): string {
+  const dt = new Date(tsMs);
+  if (timeframe === '1d' || timeframe === '1w' || timeframe === '1M') {
+    return dt.toLocaleDateString([], { day: '2-digit', month: '2-digit', timeZone: tz });
+  }
+  return dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz });
+}
+
+function snapshotToColumn(snapshot: Snapshot, priceLevels: number[], timeframe: string, tz: string) {
+  const prices: Record<number, { bid: number; ask: number; isHighVolume: boolean }> = {};
+  const inc = priceLevels.length > 1 ? Math.abs(priceLevels[0] - priceLevels[1]) : 1;
+  for (const p of priceLevels) prices[p] = { bid: 0, ask: 0, isHighVolume: false };
+  let maxVol = 0;
+  for (const lv of snapshot.levels) maxVol = Math.max(maxVol, lv.bid + lv.ask);
+  for (const lv of snapshot.levels) {
+    const nearest = priceLevels.reduce((best, p) => (Math.abs(p - lv.price) < Math.abs(best - lv.price) ? p : best), priceLevels[0]);
+    if (Math.abs(nearest - lv.price) <= inc * 0.75) {
+      const sum = lv.bid + lv.ask;
+      prices[nearest] = {
+        bid: Math.round(lv.bid),
+        ask: Math.round(lv.ask),
+        isHighVolume: maxVol > 0 && sum >= maxVol * 0.85,
+      };
+    }
+  }
+  return {
+    timeLabel: timeLabelFromTs(snapshot.timestamp, timeframe, tz),
+    prices,
+  };
+}
+
+function buildOrderBookFromLevels(levels: number[], currentPrice: number, snapshotLevels: LevelRow[]) {
+  const nearestMap = new Map<number, LevelRow>();
+  for (const p of levels) {
+    const nearest = snapshotLevels.reduce((best, lv) => (
+      Math.abs(lv.price - p) < Math.abs(best.price - p) ? lv : best
+    ), snapshotLevels[0] ?? { price: p, bid: 0, ask: 0 });
+    nearestMap.set(p, nearest);
+  }
+  return levels.map((p) => {
+    const row = nearestMap.get(p) ?? { bid: 0, ask: 0 };
+    return {
+      price: p,
+      bidOrders: p < currentPrice ? Math.max(1, Math.round((row.bid || 0) / 2000)) : 0,
+      bidVol: p < currentPrice ? Math.round(row.bid || 0) : 0,
+      askVol: p > currentPrice ? Math.round(row.ask || 0) : 0,
+      askOrders: p > currentPrice ? Math.max(1, Math.round((row.ask || 0) / 2000)) : 0,
+    };
+  });
+}
+
 const TickChart: React.FC = () => {
   const navigate = useNavigate();
   const [symbol, setSymbol] = useState(TICK_SYMBOLS[0]);
+  const [symbolSearchValue, setSymbolSearchValue] = useState(TICK_SYMBOLS[0]);
   const [timeframe, setTimeframe] = useState('5m');
   const [chartState, setChartState] = useState<ChartSimState | null>(null);
+  const [userTimezone, setUserTimezone] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const [dataSource, setDataSource] = useState<string>('Live');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const lastBucketRef = useRef<number | null>(null);
 
   useEffect(() => {
-    setChartState(generateInitialState(symbol, timeframe));
-  }, [symbol, timeframe]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("https://ipapi.co/json/");
+        const data = await res.json();
+        if (!cancelled && data?.timezone) setUserTimezone(String(data.timezone));
+      } catch {
+        // fallback already set from browser timezone
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const upsertFromSnapshot = (snapshot: Snapshot) => {
+    setChartState((prev) => {
+      const asset = inferAssetType(symbol);
+      const increment = getIncrementForPrice(snapshot.price, asset);
+      const tfMs = timeframeToMs[timeframe] ?? 300_000;
+      const bucketTs = Math.floor(snapshot.timestamp / tfMs) * tfMs;
+      const levels = prev?.priceLevels?.length
+        ? (() => {
+            const min = Math.min(...prev.priceLevels);
+            const max = Math.max(...prev.priceLevels);
+            if (snapshot.price < min || snapshot.price > max) return buildPriceLevels(snapshot.price, increment, 25);
+            return prev.priceLevels;
+          })()
+        : buildPriceLevels(snapshot.price, increment, 25);
+
+      const nextColumn = snapshotToColumn({ ...snapshot, timestamp: bucketTs }, levels, timeframe, userTimezone);
+      const prevCols = prev?.columns ?? [];
+      const sameBucket = lastBucketRef.current === bucketTs && prevCols.length > 0;
+      const nextColumns = sameBucket
+        ? [...prevCols.slice(0, -1), nextColumn]
+        : [...prevCols, nextColumn].slice(-18);
+      lastBucketRef.current = bucketTs;
+      const orderBook = buildOrderBookFromLevels(levels, snapshot.price, snapshot.levels);
+
+      const prevStats = prev?.stats;
+      const buyVol = snapshot.levels.reduce((s, r) => s + r.ask, 0) / 1_000_000;
+      const sellVol = snapshot.levels.reduce((s, r) => s + r.bid, 0) / 1_000_000;
+      const buyTrades = Math.max(1, Math.round(buyVol * 120));
+      const sellTrades = Math.max(1, Math.round(sellVol * 120));
+      const imb = Math.max(1, Math.round((Math.abs(buyVol - sellVol) * 100)));
+
+      return {
+        symbol,
+        timeframe,
+        currentPrice: snapshot.price,
+        priceLevels: levels,
+        columns: nextColumns,
+        orderBook,
+        stats: {
+          O: snapshot.open,
+          H: snapshot.high,
+          L: snapshot.low,
+          C: snapshot.close,
+          V: snapshot.volume / 1_000_000,
+          OI: prevStats?.OI ?? 165.0,
+          buyVol,
+          sellVol,
+          buyTrades: prevStats ? prevStats.buyTrades + buyTrades : buyTrades,
+          sellTrades: prevStats ? prevStats.sellTrades + sellTrades : sellTrades,
+          imbBlock: imb,
+        },
+      };
+    });
+  };
+
+  const fetchMarketSnapshot = async (): Promise<Snapshot | null> => {
+    const asset = inferAssetType(symbol);
+    if (asset === 'crypto') return null; // crypto handled by websocket
+    const { data, error } = await supabase.functions.invoke('tick-market-data', {
+      body: { symbol, timeframe, timezone: userTimezone },
+    });
+    if (error || !data) return null;
+    setDataSource(String((data as any)?.source ?? 'Live'));
+    return data as Snapshot;
+  };
+
+  const fetchMarketHistory = async (): Promise<Snapshot[]> => {
+    const { data, error } = await supabase.functions.invoke('tick-market-data', {
+      body: { mode: 'history', symbol, timeframe, timezone: userTimezone, count: 18 },
+    });
+    if (error || !data) return [];
+    setDataSource(String((data as any)?.source ?? 'Live'));
+    return Array.isArray((data as any)?.snapshots) ? (data as any).snapshots as Snapshot[] : [];
+  };
 
   useEffect(() => {
-    if (!chartState) return;
+    let cancelled = false;
+    if (wsRef.current) {
+      wsRef.current.close(1000);
+      wsRef.current = null;
+    }
+    setChartState(null);
+    lastBucketRef.current = null;
 
+    const asset = inferAssetType(symbol);
+    (async () => {
+      const history = await fetchMarketHistory();
+      if (cancelled || !history.length) return;
+      const last = history[history.length - 1];
+      const inc = getIncrementForPrice(last.price, asset);
+      const levels = buildPriceLevels(last.price, inc, 25);
+      const cols = history.map((snap) => snapshotToColumn(snap, levels, timeframe, userTimezone));
+      const orderBook = buildOrderBookFromLevels(levels, last.price, last.levels);
+      const buyVol = last.levels.reduce((s, r) => s + r.ask, 0) / 1_000_000;
+      const sellVol = last.levels.reduce((s, r) => s + r.bid, 0) / 1_000_000;
+      setChartState({
+        symbol,
+        timeframe,
+        currentPrice: last.price,
+        priceLevels: levels,
+        columns: cols.slice(-18),
+        orderBook,
+        stats: {
+          ...EMPTY_STATS,
+          O: last.open,
+          H: last.high,
+          L: last.low,
+          C: last.close,
+          V: last.volume / 1_000_000,
+          buyVol,
+          sellVol,
+          buyTrades: Math.max(1, Math.round(buyVol * 120)),
+          sellTrades: Math.max(1, Math.round(sellVol * 120)),
+          imbBlock: Math.max(1, Math.round(Math.abs(buyVol - sellVol) * 100)),
+        },
+      });
+    })();
+
+    if (asset === 'crypto') {
+      const pair = mapToBinancePair(symbol);
+      setDataSource('Binance WS');
+      const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${pair}@depth20@1000ms`);
+      wsRef.current = ws;
+      ws.onmessage = (ev) => {
+        if (cancelled) return;
+        try {
+          const d = JSON.parse(ev.data);
+          const bids = (d?.bids ?? []).map((x: [string, string]) => ({ price: Number(x[0]), bid: Number(x[1]) * Number(x[0]), ask: 0 }));
+          const asks = (d?.asks ?? []).map((x: [string, string]) => ({ price: Number(x[0]), bid: 0, ask: Number(x[1]) * Number(x[0]) }));
+          const levelsMap = new Map<number, LevelRow>();
+          const topBid = bids[0]?.price ?? 0;
+          const topAsk = asks[0]?.price ?? 0;
+          const px = topBid && topAsk ? (topBid + topAsk) / 2 : (topBid || topAsk || 0);
+          const inc = getIncrementForPrice(px, 'crypto');
+          [...bids, ...asks].forEach((r) => {
+            const bucket = Number((Math.round(r.price / inc) * inc).toFixed(6));
+            const old = levelsMap.get(bucket) ?? { price: bucket, bid: 0, ask: 0 };
+            levelsMap.set(bucket, { price: bucket, bid: old.bid + r.bid, ask: old.ask + r.ask });
+          });
+          const levels = Array.from(levelsMap.values()).sort((a, b) => b.price - a.price).slice(0, 25);
+          const ts = Number(d?.E) || Date.now();
+          const snapshot: Snapshot = {
+            source: 'Binance WS',
+            symbol,
+            timestamp: ts,
+            price: px,
+            open: px,
+            high: px,
+            low: px,
+            close: px,
+            volume: levels.reduce((s, r) => s + r.bid + r.ask, 0),
+            levels,
+          };
+          upsertFromSnapshot(snapshot);
+        } catch {
+          // ignore parse errors
+        }
+      };
+      return () => {
+        cancelled = true;
+        ws.close(1000);
+      };
+    }
+
+    const pull = async () => {
+      const snap = await fetchMarketSnapshot();
+      if (!cancelled && snap) upsertFromSnapshot(snap);
+    };
+    pull();
     const rate = refreshRateMap[timeframe] ?? 3000;
+    const intervalId = setInterval(pull, rate);
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [symbol, timeframe, userTimezone]);
 
-    const intervalId = setInterval(() => {
-      setChartState(prev => prev ? simulateNextTick(prev) : null);
-    }, rate);
-
-    return () => clearInterval(intervalId);
-  }, [chartState?.symbol, timeframe]);
+  const handleSymbolSelect = (s: SymbolData) => {
+    const fs = (s.full_symbol || s.symbol || '').toUpperCase().trim();
+    if (!fs) return;
+    setSymbol(fs);
+    setSymbolSearchValue(fs);
+  };
 
   // Auto-scroll to latest column
   useEffect(() => {
@@ -155,18 +461,15 @@ const TickChart: React.FC = () => {
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <div className="relative group shrink-0">
-            <select 
-              className="appearance-none bg-[#1e1e1e] border border-gray-700 rounded px-3 py-1 pr-8 text-white focus:outline-none cursor-pointer hover:bg-[#252525] transition-colors"
-              value={symbol}
-              onChange={(e) => setSymbol(e.target.value)}
-            >
-              {TICK_SYMBOLS.map(sym => (
-                <option key={sym} value={sym}>{sym}</option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-2 top-1.5 w-4 h-4 text-gray-400 pointer-events-none" />
+          <div className="w-[300px] max-w-[75vw]">
+            <SymbolSearch
+              value={symbolSearchValue}
+              onValueChange={setSymbolSearchValue}
+              onSelectSymbol={handleSymbolSelect}
+              placeholder="Search stock / crypto / forex"
+            />
           </div>
+          {/* removed static dropdown; symbol picker is search-first */}
           
           <div className="flex items-center space-x-1">
             {TIMEFRAMES.map(tf => (
@@ -204,6 +507,8 @@ const TickChart: React.FC = () => {
           <span>Sell Vol: <span className="text-red-500">{stats.sellVol.toFixed(2)}M</span></span>
           <span>Buy Trades: <span className="text-white">{stats.buyTrades}</span></span>
           <span>Sell Trades: <span className="text-white">{stats.sellTrades}</span></span>
+          <span>Source: <span className="text-cyan-300">{dataSource}</span></span>
+          <span>TZ: <span className="text-cyan-300">{userTimezone}</span></span>
         </div>
       </div>
 

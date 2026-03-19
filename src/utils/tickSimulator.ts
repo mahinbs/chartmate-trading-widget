@@ -1,4 +1,15 @@
-export const TICK_SYMBOLS = ["BTC/USD", "ETH/USD", "AAPL", "TSLA", "NVDA", "SPY"];
+export const TICK_SYMBOLS = [
+  "BTC-USD",
+  "ETH-USD",
+  "AAPL",
+  "TSLA",
+  "NVDA",
+  "SPY",
+  "EURUSD=X",
+  "GBPUSD=X",
+  "RELIANCE.NS",
+  "TCS.NS",
+];
 
 export interface SymbolConfig {
   basePrice: number;
@@ -7,12 +18,16 @@ export interface SymbolConfig {
 }
 
 export const SYMBOL_CONFIGS: Record<string, SymbolConfig> = {
-  "BTC/USD": { basePrice: 96000, increment: 20, rows: 25 },
-  "ETH/USD": { basePrice: 3000, increment: 1, rows: 25 },
+  "BTC-USD": { basePrice: 96000, increment: 20, rows: 25 },
+  "ETH-USD": { basePrice: 3000, increment: 1, rows: 25 },
   "AAPL": { basePrice: 180, increment: 0.5, rows: 25 },
   "TSLA": { basePrice: 200, increment: 0.5, rows: 25 },
   "NVDA": { basePrice: 800, increment: 2, rows: 25 },
-  "SPY": { basePrice: 510, increment: 1, rows: 25 }
+  "SPY": { basePrice: 510, increment: 1, rows: 25 },
+  "EURUSD=X": { basePrice: 1.085, increment: 0.0005, rows: 25 },
+  "GBPUSD=X": { basePrice: 1.265, increment: 0.0005, rows: 25 },
+  "RELIANCE.NS": { basePrice: 2950, increment: 2, rows: 25 },
+  "TCS.NS": { basePrice: 4100, increment: 2, rows: 25 },
 };
 
 export interface TickCellData {
