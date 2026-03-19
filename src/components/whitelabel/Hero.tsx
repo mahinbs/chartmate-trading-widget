@@ -153,16 +153,10 @@ const Hero = () => {
                     <div className="grid grid-cols-1 sm:flex gap-6 justify-center items-center mb-16">
                         <Link
                             to="/contact-us"
-                            className="bg-cyan-500 text-black hover:bg-primary text-lg px-10 py-7 rounded-full font-bold shadow-[0_0_40px_rgba(6,182,212,0.3)] hover:shadow-[0_0_60px_rgba(6,182,212,0.5)] transition-all duration-300 hover:-translate-y-1 flex items-center"
+                            className="bg-cyan-500 text-black hover:bg-primary text-lg px-10 py-7 rounded-full font-bold shadow-[0_0_40px_rgba(6,182,212,0.3)] hover:shadow-[0_0_60px_rgba(6,182,212,0.5)] transition-all duration-300 hover:-translate-y-1 flex items-center justify-center"
                         >
                             Acquire Your License
                         </Link>
-                        <a
-                            href="#features"
-                            className="border border-white/15 text-white hover:text-white hover:bg-white/10 bg-white/5 backdrop-blur-sm text-lg px-10 py-7 rounded-full font-bold transition-all duration-300 flex justify-center items-center"
-                        >
-                            Explore Features
-                        </a>
                     </div>
                 </ScrollReveal>
 

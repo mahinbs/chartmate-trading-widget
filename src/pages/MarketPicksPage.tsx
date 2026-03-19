@@ -112,7 +112,7 @@ function PredictionCard({
       <div className={`h-1 rounded-t-lg ${action === "BUY" ? "bg-green-500" : action === "SELL" ? "bg-red-500" : "bg-yellow-500"}`} />
 
       <CardHeader className="pb-3">
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start flex-col-reverse justify-between gap-3">
           <div>
             <CardTitle className="text-xl font-bold">{row.display_name || row.symbol}</CardTitle>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
