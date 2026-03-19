@@ -2,13 +2,41 @@ import { Badge } from "@/components/ui/badge"
 import { CheckCircle, XCircle, Clock, AlertCircle } from "lucide-react"
 
 interface OutcomeBadgeProps {
-  outcome?: 'accurate' | 'partial' | 'failed' | 'pending' | 'inconclusive'
-  size?: 'sm' | 'md' | 'lg'
+  /** `pending` kept for backwards compatibility — same as in_progress */
+  outcome?:
+    | "accurate"
+    | "partial"
+    | "failed"
+    | "pending"
+    | "inconclusive"
+    | "completed"
+    | "in_progress"
+    | "analyzing"
+  size?: "sm" | "md" | "lg"
 }
 
-export function OutcomeBadge({ outcome = 'pending', size = 'md' }: OutcomeBadgeProps) {
+export function OutcomeBadge({ outcome = "in_progress", size = "md" }: OutcomeBadgeProps) {
   const getOutcomeConfig = () => {
     switch (outcome) {
+      case "completed":
+        return {
+          icon: CheckCircle,
+          text: "Completed",
+          className: "bg-slate-500/15 text-slate-200 border-slate-500/35",
+        }
+      case "analyzing":
+        return {
+          icon: Clock,
+          text: "Scoring…",
+          className: "bg-teal-500/15 text-teal-200 border-teal-500/35",
+        }
+      case "in_progress":
+      case "pending":
+        return {
+          icon: Clock,
+          text: "In Progress",
+          className: "bg-primary/10 text-blue-700 border-primary/30",
+        }
       case 'accurate':
         return {
           icon: CheckCircle,

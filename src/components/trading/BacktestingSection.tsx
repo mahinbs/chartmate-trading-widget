@@ -17,7 +17,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { BarChart3, Brain, ChevronLeft, ChevronRight, Loader2, LineChart, Search } from "lucide-react";
 import { toast } from "sonner";
 
-const EXCHANGES = ["NSE", "BSE", "NFO", "MCX", "CDS"];
+const EXCHANGES = ["NSE", "BSE", "GLOBAL", "NFO", "MCX", "CDS"];
 
 type SymbolResult = {
   symbol: string;
@@ -47,9 +47,9 @@ function SymbolSearchInput({
     try {
       const res = await supabase.functions.invoke("search-symbols", { body: { q } });
       const data: SymbolResult[] = (res.data as any[]) ?? [];
-      const indian = data.filter(d => d.full_symbol?.endsWith(".NS") || d.full_symbol?.endsWith(".BO"));
-      setResults(indian.slice(0, 10));
-      setOpen(indian.length > 0);
+      const list = data.slice(0, 10);
+      setResults(list);
+      setOpen(list.length > 0);
     } catch {
       setResults([]);
       setOpen(false);
@@ -66,8 +66,13 @@ function SymbolSearchInput({
   };
 
   const handleSelect = (item: SymbolResult) => {
-    const ex = item.full_symbol?.endsWith(".BO") ? "BSE" : "NSE";
-    onSelect(item.symbol, ex);
+    const full = (item.full_symbol ?? item.symbol ?? "").toUpperCase();
+    const ex =
+      full.endsWith(".BO") ? "BSE"
+      : full.endsWith(".NS") ? "NSE"
+      : "GLOBAL";
+    // Use full_symbol (Yahoo ticker) so global markets work (AAPL, BTC-USD, EURUSD=X, ^NSEI, etc.)
+    onSelect(full || item.symbol, ex);
     setOpen(false);
     setResults([]);
   };

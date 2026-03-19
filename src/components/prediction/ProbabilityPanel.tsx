@@ -600,8 +600,11 @@ export function ProbabilityPanel({
           </CardHeader>
           <CardContent className="space-y-3">
             {priceTargets.length > 0 ? (
-              priceTargets.map(({ price, probability, tag }) => (
-                <div key={price} className="flex items-center justify-between text-sm">
+              priceTargets.map(({ price, probability, tag }, idx) => (
+                <div
+                  key={`${tag}-${price}-${idx}`}
+                  className="flex items-center justify-between text-sm"
+                >
                   <div className="flex items-center gap-2">
                     <Badge
                       variant="outline"
@@ -655,8 +658,11 @@ export function ProbabilityPanel({
           </CardHeader>
           <CardContent className="space-y-3">
             {timeline.length > 0 ? (
-              timeline.map(({ horizon, upPct: u, direction }) => (
-                <div key={horizon} className="flex items-center gap-3">
+              timeline.map(({ horizon, upPct: u, direction }, idx) => (
+                <div
+                  key={`${horizon}-${idx}-${direction}`}
+                  className="flex items-center gap-3"
+                >
                   <span className="text-xs font-mono text-zinc-400 w-14 flex-shrink-0">
                     {horizon}
                   </span>

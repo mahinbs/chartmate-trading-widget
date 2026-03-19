@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ArrowLeft, Clock, ChevronDown, Plus, History } from "lucide-react";
+import { ArrowLeft, Clock, ChevronDown, Plus, History, Maximize2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { PredictionTimeline } from "@/components/PredictionTimeline";
@@ -18,6 +18,14 @@ import { PostPredictionReport } from "@/components/prediction/PostPredictionRepo
 import { formatCurrency, formatPercentage } from "@/lib/display-utils";
 import { Container } from "@/components/layout/Container";
 import { getEffectiveStart, getEffectiveTarget } from "@/lib/market-hours";
+import {
+  readPredictionAnalysisCache,
+  writePredictionAnalysisCache,
+  removePredictionAnalysisFromCache,
+  type CachedAnalysisData,
+} from "@/lib/prediction-analysis-cache";
+import { invokeAnalyzePostPrediction, type PredictionRow } from "@/lib/invoke-analyze-post-prediction";
+import { persistPostOutcomeAnalysis } from "@/lib/prediction-persistence";
 
 interface Prediction {
   id: string;
@@ -35,41 +43,7 @@ interface Prediction {
   raw_response: any;
 }
 
-interface AnalysisData {
-  symbol: string;
-  summary?: string;
-  dataSource?: string;
-  marketData?: { candleCount: number; source: string; interval: string };
-  from?: string;
-  to?: string;
-  ai?: { 
-    summary?: string; 
-    report?: {
-      title: string;
-      whatWePredicted: string;
-      whatHappened: string;
-      verdictExplanation: string;
-      failureExcuse?: string | null;
-      successExplanation?: string | null;
-      keyFactors: string[];
-      nextSteps: string[];
-      confidenceNote: string;
-    };
-    rawText?: string;
-  };
-  evaluation?: {
-    result: 'accurate' | 'partial' | 'failed' | 'inconclusive';
-    startPrice: number;
-    endPrice: number;
-    actualChangePercent: number;
-    predictedDirection?: 'up' | 'down' | 'neutral' | 'sideways' | null;
-    predictedMovePercent?: number | null;
-    hitTargetMin?: boolean;
-    hitTargetMax?: boolean;
-    endTimeUsed?: string;
-    reasoning?: string;
-  };
-}
+type AnalysisData = CachedAnalysisData;
 
 export default function PredictionsPage() {
   const [predictions, setPredictions] = useState<Prediction[]>([]);
@@ -136,12 +110,13 @@ export default function PredictionsPage() {
     // Auto-analyze predictions that have expired
     const interval = setInterval(() => {
       predictions.forEach(async (prediction) => {
-        if (!analysisStates[prediction.id]?.data && !analysisStates[prediction.id]?.loading) {
+        const st = analysisStates[prediction.id];
+        if (!st?.data && !st?.loading && !st?.error) {
           const marketStatus = marketStatuses[prediction.symbol];
           const expectedTime = calculateExpectedTime(prediction.created_at, prediction.timeframe, marketStatus);
           const now = new Date();
           if (now >= expectedTime) {
-            await analyzePostPrediction(prediction, expectedTime);
+            await analyzePostPrediction(prediction as PredictionRow, expectedTime);
           }
         }
       });
@@ -150,40 +125,17 @@ export default function PredictionsPage() {
     return () => clearInterval(interval);
   }, [predictions, analysisStates, marketStatuses]);
 
-  // Cache management
-  const CACHE_KEY = 'prediction-analysis-cache';
-  
   const loadCachedAnalysis = () => {
-    try {
-      const cached = localStorage.getItem(CACHE_KEY);
-      if (cached) {
-        const parsedCache = JSON.parse(cached);
-        setAnalysisStates(parsedCache);
-      }
-    } catch (error) {
-      console.error('Failed to load cached analysis:', error);
-    }
+    const parsed = readPredictionAnalysisCache();
+    if (Object.keys(parsed).length) setAnalysisStates(parsed);
   };
 
   const saveCachedAnalysis = (states: Record<string, { loading: boolean; data: AnalysisData | null; error: string | null }>) => {
-    try {
-      localStorage.setItem(CACHE_KEY, JSON.stringify(states));
-    } catch (error) {
-      console.error('Failed to save cached analysis:', error);
-    }
+    writePredictionAnalysisCache(states);
   };
 
   const removeCachedAnalysis = (predictionId: string) => {
-    try {
-      const cached = localStorage.getItem(CACHE_KEY);
-      if (cached) {
-        const parsedCache = JSON.parse(cached);
-        delete parsedCache[predictionId];
-        localStorage.setItem(CACHE_KEY, JSON.stringify(parsedCache));
-      }
-    } catch (error) {
-      console.error('Failed to remove cached analysis:', error);
-    }
+    removePredictionAnalysisFromCache(predictionId);
   };
 
   useEffect(() => {
@@ -289,144 +241,77 @@ export default function PredictionsPage() {
     return Math.min(Math.max((elapsed / totalDuration) * 100, 0), 100);
   };
 
-  const analyzePostPrediction = async (prediction: Prediction, toOverride?: Date) => {
+  const analyzePostPrediction = async (prediction: PredictionRow, toOverride?: Date) => {
     const predictionId = prediction.id;
-    
-    // Check if analysis already exists in cache
+
     if (analysisStates[predictionId]?.data) {
-      console.log(`Analysis already cached for ${prediction.symbol}`);
       return;
     }
-    
-    setAnalysisStates(prev => ({
+
+    setAnalysisStates((prev) => ({
       ...prev,
-      [predictionId]: { loading: true, data: null, error: null }
+      [predictionId]: { loading: true, data: null, error: null },
     }));
 
     try {
       const marketStatus = marketStatuses[prediction.symbol];
-      const effectiveStart = getEffectiveStart(new Date(prediction.created_at), marketStatus);
-      const effectiveEnd = toOverride || getEffectiveTarget(prediction.timeframe, effectiveStart);
+      const adapted: AnalysisData = await invokeAnalyzePostPrediction(prediction, marketStatus, toOverride);
 
-      const requestBody = {
-        symbol: prediction.symbol,
-        from: effectiveStart.toISOString(),
-        to: effectiveEnd.toISOString(),
-        expected: prediction.expected_move_direction ? {
-          direction: prediction.expected_move_direction,
-          movePercent: prediction.expected_move_percent || 0,
-          priceTargetMin: prediction.price_target_min || null,
-          priceTargetMax: prediction.price_target_max || null,
-        } : null,
-        marketMeta: prediction.raw_response?.marketMeta || null
-      };
+      setAnalysisStates((prev) => {
+        const newStates = {
+          ...prev,
+          [predictionId]: { loading: false, data: adapted, error: null },
+        };
+        saveCachedAnalysis(newStates);
+        void persistPostOutcomeAnalysis(predictionId, adapted);
+        return newStates;
+      });
+    } catch (error: unknown) {
+      let errorMessage = "Analysis failed";
+      if (error instanceof Error) errorMessage = error.message;
+      else if (typeof error === "string") errorMessage = error;
 
-      console.log('🔍 Analyzing prediction:', requestBody);
-      
-      const { data, error } = await supabase.functions.invoke('analyze-post-prediction', {
-        body: requestBody
+      setAnalysisStates((prev) => {
+        const newStates = {
+          ...prev,
+          [predictionId]: { loading: false, data: null, error: errorMessage },
+        };
+        saveCachedAnalysis(newStates);
+        return newStates;
       });
 
-      if (error) {
-        console.error('Edge function error:', error);
-        throw new Error(error.message || 'Edge function failed');
-      }
-
-      if (!data) {
-        throw new Error('No data returned from analysis');
-      }
-
-      console.log('✅ Analysis result:', data);
-
-      // Handle "no_data" responses gracefully
-      if (data.status === 'no_data') {
-        const adapted: AnalysisData = {
-          symbol: prediction.symbol,
-          summary: data.summary,
-          dataSource: data.dataSource,
-          evaluation: {
-            result: 'inconclusive',
-            startPrice: 0,
-            endPrice: 0,
-            actualChangePercent: 0,
-            reasoning: 'No market data available for this timeframe'
-          }
-        };
-
-        const newStates = {
-          ...analysisStates,
-          [predictionId]: { loading: false, data: adapted, error: null }
-        };
-        
-        setAnalysisStates(newStates);
-        saveCachedAnalysis(newStates);
-        return;
-      }
-
-      // Store the full response including evaluation
-      const adapted: AnalysisData = {
-        symbol: prediction.symbol,
-        summary: data.summary,
-        dataSource: data.dataSource,
-        marketData: data.marketData,
-        from: data.from || prediction.created_at,
-        to: data.to || new Date().toISOString(),
-        ai: data.ai || { summary: data.summary },
-        evaluation: data.evaluation
-      };
-
-      const newStates = {
-        ...analysisStates,
-        [predictionId]: { loading: false, data: adapted, error: null }
-      };
-      
-      setAnalysisStates(newStates);
-      saveCachedAnalysis(newStates);
-
-    } catch (error: any) {
-      console.error('❌ Analysis error:', error);
-      
-      // Better error message extraction
-      let errorMessage = 'Analysis failed';
-      if (error.message) {
-        errorMessage = error.message;
-      } else if (error.error) {
-        errorMessage = error.error;
-      } else if (typeof error === 'string') {
-        errorMessage = error;
-      }
-      
-      const newStates = {
-        ...analysisStates,
-        [predictionId]: { loading: false, data: null, error: errorMessage }
-      };
-      
-      setAnalysisStates(newStates);
-      saveCachedAnalysis(newStates);
-      
-      // Only show error toast for actual errors, not data availability issues
-      if (!errorMessage?.includes('No market data') && !errorMessage?.includes('no_data')) {
+      if (
+        !errorMessage.includes("No market data") &&
+        !errorMessage.includes("no_data")
+      ) {
         toast({
-          title: "Analysis Failed",
-          description: errorMessage + ". This can happen if: 1) Market data is not available yet, 2) The timeframe is too short, or 3) The market was closed during the analysis period. Try again later or check the console for details.",
+          title: "Analysis failed",
+          description:
+            errorMessage +
+            " Tap “Analyze outcome” to retry, or open full analysis from the card.",
           variant: "destructive",
         });
       }
     }
   };
 
-  const getOutcome = (prediction: Prediction): 'accurate' | 'partial' | 'failed' | 'pending' | 'inconclusive' => {
+  const getOutcome = (
+    prediction: Prediction,
+    isExpired: boolean,
+    isAnalyzing: boolean,
+  ):
+    | "accurate"
+    | "partial"
+    | "failed"
+    | "inconclusive"
+    | "completed"
+    | "in_progress"
+    | "analyzing" => {
     const evaluation = analysisStates[prediction.id]?.data?.evaluation;
-    if (evaluation) {
-      return evaluation.result as any;
-    }
-    
-    const marketStatus = marketStatuses[prediction.symbol];
-    const expectedTime = calculateExpectedTime(prediction.created_at, prediction.timeframe, marketStatus);
-    const now = new Date();
-    const isExpired = now >= expectedTime;
-    
-    return isExpired ? 'pending' : 'pending';
+    if (evaluation) return evaluation.result;
+    if (!isExpired) return "in_progress";
+    if (isAnalyzing) return "analyzing";
+    return "completed";
   };
 
   if (loading) {
@@ -501,15 +386,18 @@ export default function PredictionsPage() {
               const timeRemaining = expectedTime.getTime() - Date.now();
               const elapsedPercent = getElapsedPercent(startTime, expectedTime, new Date());
               const isExpired = timeRemaining < 0;
-              const outcome = getOutcome(prediction);
               const isAnalyzing = analysisStates[prediction.id]?.loading;
-
+              const outcome = getOutcome(prediction, isExpired, isAnalyzing);
               return (
-                <Card key={prediction.id} className="glass-panel overflow-hidden flex flex-col">
+                <Card
+                  key={prediction.id}
+                  className="glass-panel overflow-hidden flex flex-col transition-colors hover:border-white/15"
+                  onClick={() => navigate(`/predict?saved=${prediction.id}`)}
+                >
                   {/* Header with Summary */}
                   <CardHeader className="pb-3 px-3 sm:px-6">
-                    <div className="flex flex-col items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0 w-full">
+                    <div className="flex flex-col md:flex-row md:items-start justify-between gap-2 flex-wrap">
+                      <div className="flex-1 min-w-0 w-full md:w-auto">
                         <SummaryHeader
                           symbol={prediction.symbol}
                           currentPrice={prediction.current_price || 0}
@@ -519,11 +407,26 @@ export default function PredictionsPage() {
                           confidence={prediction.confidence || undefined}
                         />
                       </div>
-                      <div className="flex justify-end flex-wrap w-full items-center gap-1.5 flex-shrink-0">
+                      <div
+                        className="flex justify-start md:justify-end flex-wrap w-full md:w-auto items-center gap-2 mt-2 md:mt-0 flex-shrink-0"
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      >
                         <OutcomeBadge outcome={outcome} />
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="bg-white/10 hover:bg-white/15 text-xs gap-1 shrink-0"
+                          onClick={() => navigate(`/predict?saved=${prediction.id}`)}
+                        >
+                          <Maximize2 className="h-3.5 w-3.5 shrink-0" />
+                          <span className="hidden sm:inline">See full analysis</span>
+                          <span className="sm:hidden">Full</span>
+                        </Button>
                         <ActionBar
                           onDelete={() => deletePrediction(prediction.id)}
-                          onAnalyze={() => analyzePostPrediction(prediction)}
+                          onAnalyze={() => analyzePostPrediction(prediction as PredictionRow)}
                           isAnalyzing={isAnalyzing}
                           showAnalyze={isExpired && !analysisStates[prediction.id]?.data?.evaluation}
                         />
@@ -547,7 +450,7 @@ export default function PredictionsPage() {
                     </div>
                   </CardHeader>
 
-                  <CardContent className="space-y-4 px-3 sm:px-6">
+                  <CardContent className="space-y-4 px-3 sm:px-6" onClick={(e) => e.stopPropagation()}>
                     {/* Investment Details */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 sm:p-4 bg-black/20 rounded-lg border border-white/5">
                       <div>
@@ -643,7 +546,7 @@ export default function PredictionsPage() {
                             <ChevronDown className="h-4 w-4 text-muted-foreground" />
                           </Button>
                         </CollapsibleTrigger>
-                        <CollapsibleContent className="mt-3">
+                        <CollapsibleContent className="mt-3 space-y-4">
                           <PostPredictionReport
                             symbol={prediction.symbol}
                             timeframe={prediction.timeframe}
@@ -652,6 +555,17 @@ export default function PredictionsPage() {
                             ai={analysisStates[prediction.id]?.data?.ai}
                             dataSource={analysisStates[prediction.id]?.data?.dataSource}
                           />
+                          <p className="text-xs text-muted-foreground">
+                            Strategy entry scan & full AI dashboard: open{" "}
+                            <button
+                              type="button"
+                              className="text-teal-400 underline"
+                              onClick={() => navigate(`/predict?saved=${prediction.id}`)}
+                            >
+                              See full analysis
+                            </button>
+                            .
+                          </p>
                         </CollapsibleContent>
                       </Collapsible>
                     )}

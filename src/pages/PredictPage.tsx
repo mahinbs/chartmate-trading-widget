@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +32,7 @@ import { ProbabilityPanel } from "@/components/prediction/ProbabilityPanel";
 import { LeverageSimulator } from "@/components/prediction/LeverageSimulator";
 import { RegulatoryDisclaimer } from "@/components/prediction/RegulatoryDisclaimer";
 import { AIReasoningDisplay } from "@/components/prediction/AIReasoningDisplay";
+// StrategyEntrySignalsPanel moved to Trading Dashboard
 import { CapitalScenarios } from "@/components/prediction/CapitalScenarios";
 import { MarketConditionsDashboard } from "@/components/market/MarketConditionsDashboard";
 import { supabase } from "@/integrations/supabase/client";
@@ -54,6 +55,12 @@ import gsap from "gsap";
 import { Container } from "@/components/layout/Container";
 import { formatCurrency } from "@/lib/display-utils";
 import type { ActiveTrade } from "@/services/tradeTrackingService";
+import {
+  predictionRowToResult,
+  loadPredictionForUser,
+  type PostOutcomeRow,
+} from "@/lib/prediction-persistence";
+import { readPredictionAnalysisCache } from "@/lib/prediction-analysis-cache";
 
 interface GeminiForecast {
   symbol: string;
@@ -192,6 +199,8 @@ interface PredictionPreset {
 const PredictPage = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
+  const [searchParams] = useSearchParams();
+  const savedPredictionId = searchParams.get("saved");
 
   useEffect(() => {
     if (isMobileMenuOpen && mobileMenuRef.current) {
@@ -243,6 +252,8 @@ const PredictPage = () => {
   const [marketClosed, setMarketClosed] = useState(false);
   const [predictedAt, setPredictedAt] = useState<Date | null>(null);
   const [marketTimeZone, setMarketTimeZone] = useState<string | null>(null);
+  /** Post-window outcome + optional DB merge for entry-signal AI context */
+  const [loadedPostOutcome, setLoadedPostOutcome] = useState<PostOutcomeRow | null>(null);
   const [latestPreset, setLatestPreset] = useState<PredictionPreset | null>(null);
   const [showPresetDialog, setShowPresetDialog] = useState(false);
   const [presetChecked, setPresetChecked] = useState(false);
@@ -251,6 +262,81 @@ const PredictPage = () => {
 
   const { signOut, user } = useAuth();
   const navigate = useNavigate();
+
+  // Open a previously saved analysis (same Results UI as live run)
+  useEffect(() => {
+    if (!savedPredictionId || !user?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const row = await loadPredictionForUser(savedPredictionId, user.id);
+        if (cancelled || !row) throw new Error("not found");
+        const parsed = predictionRowToResult(row as Parameters<typeof predictionRowToResult>[0]);
+        if (!parsed?.geminiForecast) throw new Error("incomplete");
+
+        setResult(parsed as PredictionResult);
+        setSymbol((row as any).symbol || "");
+        setInvestment(
+          (row as any).investment != null ? String((row as any).investment) : "10000",
+        );
+        setTimeframe((row as any).timeframe || "1h");
+        const raw = (row as any).raw_response;
+        if (raw?.savedUserProfile && typeof raw.savedUserProfile === "object") {
+          setUserProfile((prev) => ({ ...prev, ...raw.savedUserProfile }));
+        }
+        if (raw?.savedDisplayCurrency === "USD" || raw?.savedDisplayCurrency === "INR") {
+          setDisplayCurrency(raw.savedDisplayCurrency);
+        } else if ((parsed as PredictionResult).isCrypto) {
+          setDisplayCurrency("USD");
+        }
+        setPredictedAt(new Date((row as any).created_at));
+        setLoadedPostOutcome(() => {
+          const po = (row as any).post_outcome_analysis as PostOutcomeRow | null | undefined;
+          if (po?.evaluation) return po;
+          const cache = readPredictionAnalysisCache()[savedPredictionId];
+          if (cache?.data?.evaluation) {
+            return {
+              evaluation: cache.data.evaluation,
+              ai: cache.data.ai,
+              marketData: cache.data.marketData,
+              dataSource: cache.data.dataSource,
+            };
+          }
+          return po ?? null;
+        });
+        setCurrentStep("results");
+        setCompletedSteps([
+          "choose-asset",
+          "set-investment",
+          "trading-profile",
+          "review",
+          "analysis",
+          "results",
+        ]);
+        setPlacedTrade(null);
+
+        const sym = (row as any).symbol as string;
+        const { data: ms } = await supabase.functions.invoke("get-market-status", {
+          body: { symbol: sym },
+        });
+        if (!cancelled && ms) {
+          setMarketStatus(ms);
+          setMarketTimeZone(ms.exchangeTimezoneName ?? null);
+          setMarketClosed(
+            ms.marketState === "CLOSED" || ms.marketState === "PRE" || ms.marketState === "POST",
+          );
+        }
+      } catch {
+        if (!cancelled) {
+          toast.error("Could not load saved analysis");
+          navigate("/predictions", { replace: true });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [savedPredictionId, user?.id, navigate]);
   const isMobile = useIsMobile();
 
   const navItems = [
@@ -671,8 +757,10 @@ const PredictPage = () => {
           opportunities: predictionData.opportunities || null,
           raw_response: {
             ...predictionData,
-            geminiForecast: predictionData.geminiForecast
-          }
+            geminiForecast: predictionData.geminiForecast,
+            savedUserProfile: userProfile,
+            savedDisplayCurrency: displayCurrency,
+          },
         });
 
       if (error) {
@@ -769,6 +857,7 @@ const PredictPage = () => {
       }
 
       setResult(data);
+      setLoadedPostOutcome(null);
       setAnalysisReady(true);
       setPredictedAt(new Date()); // Capture stable timestamp
 
@@ -1328,8 +1417,13 @@ const PredictPage = () => {
                     volumeData={result.volumeData}
                     analysedAt={predictedAt}
                     onRefresh={() => {
+                      if (savedPredictionId) {
+                        toast.info("Start a new analysis from Predict to refresh this dashboard.");
+                        navigate("/predict");
+                        return;
+                      }
                       setCurrentStep("review");
-                      setCompletedSteps(prev => prev.filter(s => s !== "analysis" && s !== "results"));
+                      setCompletedSteps((prev) => prev.filter((s) => s !== "analysis" && s !== "results"));
                     }}
                   />
                 )}
@@ -1347,6 +1441,8 @@ const PredictPage = () => {
                     marketContext={result.geminiForecast.market_context}
                   />
                 )}
+
+                {/* Entry/exit scanner moved to Trading Dashboard → Scanner tab */}
 
                 {/* Decision Screen - Primary Call to Action */}
                 {result.geminiForecast && (

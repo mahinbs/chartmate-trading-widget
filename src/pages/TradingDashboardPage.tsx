@@ -12,7 +12,8 @@ import {
   ArrowLeft, Send, Loader2, Info, Zap, Copy, RefreshCw,
   TrendingUp, TrendingDown, Search, ChevronDown, Plus,
   Trash2, ToggleLeft, ToggleRight, Webhook, BookOpen,
-  AlertTriangle, CheckCircle2, ExternalLink, Clock, ChevronRight, LineChart, ScrollText,
+  AlertTriangle, CheckCircle2, ExternalLink, Clock, ChevronRight, LineChart, ScrollText, Target,
+  ShieldCheck,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +26,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -33,6 +35,7 @@ import BrokerPortfolioCard from "@/components/trading/BrokerPortfolioCard";
 import PlaceOrderPanel from "@/components/trading/PlaceOrderPanel";
 import BacktestingSection from "@/components/trading/BacktestingSection";
 import StatementSection from "@/components/trading/StatementSection";
+import { StrategyEntrySignalsPanel } from "@/components/prediction/StrategyEntrySignalsPanel";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const EXCHANGES = [
@@ -288,6 +291,7 @@ function StrategiesPanel({ broker }: { broker: string }) {
   const [creating, setCreating] = useState(false);
   const [toggleLoading, setToggleLoading] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [entryExitOpen, setEntryExitOpen] = useState<Record<string, boolean>>({});
   // Per-strategy fire-signal state
   const [firePanel, setFirePanel] = useState<Record<string, {
   open: boolean;
@@ -296,6 +300,7 @@ function StrategiesPanel({ broker }: { broker: string }) {
     quantity: string;
     product: string;
     firing: boolean;
+    aiOverride: boolean;
   }>>({});
   const brokerLabel = broker.charAt(0).toUpperCase() + broker.slice(1);
 
@@ -303,7 +308,7 @@ function StrategiesPanel({ broker }: { broker: string }) {
     setForm(f => ({ ...f, [k]: v }));
 
   const getFireState = (id: string) => firePanel[id] ?? {
-    open: false, symbol: "", exchange: "NSE", quantity: "1", product: "MIS", firing: false,
+    open: false, symbol: "", exchange: "NSE", quantity: "1", product: "MIS", firing: false, aiOverride: false,
   };
 
   const setFireState = (id: string, patch: Partial<typeof firePanel[string]>) =>
@@ -328,12 +333,21 @@ function StrategiesPanel({ broker }: { broker: string }) {
           action,
           quantity:    qty,
           product:     fs.product,
+          ai_override: fs.aiOverride ?? false,
         },
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
       const result = res.data as any;
       if (res.error || result?.error) {
-        toast.error(result?.error ?? "Signal failed");
+        const aiRejection = result?.ai_override;
+        if (aiRejection?.decision === "REJECT") {
+          toast.error(
+            `AI Override REJECTED: ${aiRejection.reason}\n\nRisks: ${(aiRejection.risks ?? []).join(", ")}\nSuggested: ${aiRejection.suggestedAction ?? "Wait."}`,
+            { duration: 15000 },
+          );
+        } else {
+          toast.error(result?.error ?? "Signal failed");
+        }
     } else {
         const oid = result?.orderid ?? result?.broker_order_id ?? "placed";
         toast.success(
@@ -816,6 +830,21 @@ function StrategiesPanel({ broker }: { broker: string }) {
                   </div>
                 </div>
 
+                      {/* AI Override toggle */}
+                      <div className="flex items-center justify-between gap-2 px-1 py-1.5 rounded-lg border border-zinc-700 bg-zinc-900/50">
+                        <div className="space-y-0.5">
+                          <p className="text-[10px] text-zinc-300 font-medium flex items-center gap-1">
+                            <ShieldCheck className="h-3 w-3 text-amber-400" />
+                            AI Override
+                          </p>
+                          <p className="text-[9px] text-zinc-500 pl-4">AI will validate & accept/reject trade before execution</p>
+                        </div>
+                        <Switch
+                          checked={fs.aiOverride ?? false}
+                          onCheckedChange={(v) => setFireState(s.id, { aiOverride: v })}
+                        />
+                      </div>
+
                       {/* BUY / SELL fire buttons */}
                       <div className="grid grid-cols-2 gap-2">
                         <button
@@ -841,10 +870,35 @@ function StrategiesPanel({ broker }: { broker: string }) {
                 </div>
 
                       <p className="text-[10px] text-zinc-700 text-center">
-                        MARKET order · executes instantly on {brokerLabel}
+                        {fs.aiOverride ? "AI validates → then MARKET order on " : "MARKET order · executes instantly on "}{brokerLabel}
                       </p>
                     </div>
                   )}
+
+                  {/* Entry / Exit Points viewer */}
+                  <div className="mx-3 mb-2">
+                    <button
+                      onClick={() => setEntryExitOpen(p => ({ ...p, [s.id]: !p[s.id] }))}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border text-[11px] font-medium transition-all ${
+                        entryExitOpen[s.id]
+                          ? "bg-teal-500/10 border-teal-500/30 text-teal-300"
+                          : "border-zinc-800 bg-zinc-900/50 text-zinc-500 hover:border-teal-500/30 hover:text-teal-400"
+                      }`}
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <Target className="h-3 w-3" />
+                        Entry & Exit Points
+                      </span>
+                      <ChevronRight className={`h-3 w-3 transition-transform ${entryExitOpen[s.id] ? "rotate-90" : ""}`} />
+                    </button>
+                    {entryExitOpen[s.id] && (
+                      <div className="mt-2">
+                        <StrategyEntrySignalsPanel
+                          symbol={(s.symbols?.[0] ?? "").includes(".") ? s.symbols![0] : `${s.symbols?.[0] ?? "RELIANCE"}.NS`}
+                        />
+                      </div>
+                    )}
+                  </div>
 
                   {/* Webhook URL (for external integrations) */}
                   {s.webhook_url && (
@@ -915,10 +969,68 @@ function StrategiesPanel({ broker }: { broker: string }) {
 }
 
 // ── LiveDashboard ──────────────────────────────────────────────────────────────
+type ScannerSearchResult = {
+  symbol: string;
+  description: string;
+  full_symbol: string;
+  exchange: string;
+  type: string;
+};
+
+const SCANNER_QUICK_PICKS = [
+  { symbol: "RELIANCE.NS", label: "Reliance" },
+  { symbol: "TCS.NS",      label: "TCS" },
+  { symbol: "HDFCBANK.NS", label: "HDFC Bank" },
+  { symbol: "INFY.NS",     label: "Infosys" },
+  { symbol: "AAPL",        label: "Apple" },
+  { symbol: "BTC-USD",     label: "Bitcoin" },
+];
+
 function LiveDashboard({ broker }: { broker: string }) {
   const [portfolioKey, setPortfolioKey] = useState(0);
   const market = useMarketStatus();
   const brokerLabel = broker.charAt(0).toUpperCase() + broker.slice(1);
+  const [scannerSymbol, setScannerSymbol] = useState("");
+  const [scannerInput, setScannerInput] = useState("");
+  const [scannerResults, setScannerResults] = useState<ScannerSearchResult[]>([]);
+  const [scannerSearching, setScannerSearching] = useState(false);
+  const [scannerDropdownOpen, setScannerDropdownOpen] = useState(false);
+  const scannerDebounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const scannerContainerRef = useRef<HTMLDivElement>(null);
+
+  const scannerSearch = useCallback(async (q: string) => {
+    if (q.length < 2) { setScannerResults([]); setScannerDropdownOpen(false); return; }
+    setScannerSearching(true);
+    try {
+      const res = await supabase.functions.invoke("search-symbols", { body: { q } });
+      const data: ScannerSearchResult[] = (res.data as any[]) ?? [];
+      setScannerResults(data.slice(0, 10));
+      if (data.length > 0) setScannerDropdownOpen(true);
+    } catch { /* silent */ } finally { setScannerSearching(false); }
+  }, []);
+
+  const handleScannerInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = e.target.value.toUpperCase();
+    setScannerInput(v);
+    clearTimeout(scannerDebounceRef.current);
+    scannerDebounceRef.current = setTimeout(() => scannerSearch(v), 300);
+  };
+
+  const handleScannerSelect = (sym: string) => {
+    setScannerSymbol(sym);
+    setScannerInput(sym);
+    setScannerDropdownOpen(false);
+    setScannerResults([]);
+  };
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (scannerContainerRef.current && !scannerContainerRef.current.contains(e.target as Node))
+        setScannerDropdownOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   return (
     <div className="min-h-screen bg-black text-zinc-100">
@@ -939,21 +1051,21 @@ function LiveDashboard({ broker }: { broker: string }) {
             <span className={`hidden sm:flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border ${market.bg} ${market.color}`}>
               <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${market.dot} ${market.session === "open" ? "animate-pulse" : ""}`} />
               {market.label}
-                  </span>
+            </span>
             {/* Broker chip */}
             <span className="flex items-center gap-1.5 text-xs text-teal-400 bg-teal-500/10 border border-teal-500/20 px-3 py-1.5 rounded-full">
               <span className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse" />
               {brokerLabel} Connected
                   </span>
-                </div>
-              </div>
+          </div>
+        </div>
       </header>
 
       <main className="container mx-auto px-4 py-5">
         {/* Broker Sync bar — full width */}
         <div className="mb-5">
           <BrokerSyncSection broker={broker} />
-                </div>
+          </div>
 
         {/* Two-column grid */}
         <div className="grid grid-cols-1 lg:grid-cols-1 gap-5 items-start">
@@ -961,10 +1073,14 @@ function LiveDashboard({ broker }: { broker: string }) {
           {/* ── Left: Portfolio ── */}
           <div className="min-w-0">
             <Tabs defaultValue="portfolio" className="w-full">
-              <TabsList className="grid w-full grid-cols-3 bg-zinc-900 border border-zinc-800 h-auto gap-1 p-1 mb-3">
+              <TabsList className="grid w-full grid-cols-4 bg-zinc-900 border border-zinc-800 h-auto gap-1 p-1 mb-3">
                 <TabsTrigger value="portfolio" className="data-[state=active]:bg-teal-500/20 data-[state=active]:text-teal-300 text-xs sm:text-sm">
                   <BookOpen className="h-3.5 w-3.5 mr-1.5 shrink-0" />
                   Portfolio
+                </TabsTrigger>
+                <TabsTrigger value="scanner" className="data-[state=active]:bg-teal-500/20 data-[state=active]:text-teal-300 text-xs sm:text-sm">
+                  <Target className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+                  Scanner
                 </TabsTrigger>
                 <TabsTrigger value="backtest" className="data-[state=active]:bg-teal-500/20 data-[state=active]:text-teal-300 text-xs sm:text-sm">
                   <LineChart className="h-3.5 w-3.5 mr-1.5 shrink-0" />
@@ -980,6 +1096,92 @@ function LiveDashboard({ broker }: { broker: string }) {
                 <BrokerPortfolioCard key={portfolioKey} broker={broker} />
               </TabsContent>
 
+              <TabsContent value="scanner" className="pt-0 space-y-4">
+                {/* Symbol search with autocomplete */}
+                <Card className="border-zinc-800 bg-zinc-900/50">
+                  <CardContent className="p-4 space-y-3">
+                    <Label className="text-xs text-zinc-400">Search stock / symbol</Label>
+                    <div ref={scannerContainerRef} className="relative">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-500 pointer-events-none" />
+                        <Input
+                          placeholder="Search… RELIANCE, TCS, AAPL, BTC"
+                          value={scannerInput}
+                          onChange={handleScannerInputChange}
+                          onFocus={() => scannerResults.length > 0 && setScannerDropdownOpen(true)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              handleScannerSelect(scannerInput.trim());
+                              e.currentTarget.blur();
+                            }
+                          }}
+                          className="pl-9 pr-9 bg-black/40 border-zinc-700 text-white font-mono uppercase placeholder:text-zinc-600"
+                        />
+                        {scannerSearching && (
+                          <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-zinc-500" />
+                        )}
+                      </div>
+
+                      {/* Autocomplete dropdown */}
+                      {scannerDropdownOpen && scannerResults.length > 0 && (
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl z-50 overflow-hidden max-h-64 overflow-y-auto">
+                          {scannerResults.map((item, i) => (
+                            <button
+                              key={i}
+                              className="w-full flex items-center justify-between px-3 py-2 hover:bg-zinc-800 text-left transition-colors border-b border-zinc-800 last:border-0"
+                              onMouseDown={() => handleScannerSelect(item.full_symbol || item.symbol)}
+                            >
+                              <div className="min-w-0">
+                                <span className="font-mono text-white text-sm font-semibold">{item.symbol}</span>
+                                <p className="text-[11px] text-zinc-500 truncate">{item.description}</p>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                                <span className="text-[10px] text-teal-400 bg-teal-500/10 border border-teal-500/20 px-1.5 py-0.5 rounded">
+                                  {item.exchange}
+                                </span>
+                                <span className="text-[10px] text-zinc-500">{item.type}</span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Quick picks */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {SCANNER_QUICK_PICKS.map((qp) => (
+                        <button
+                          key={qp.symbol}
+                          onClick={() => handleScannerSelect(qp.symbol)}
+                          className={`text-[10px] px-2.5 py-1 rounded-full border transition-colors ${
+                            scannerSymbol === qp.symbol
+                              ? "bg-teal-500/20 border-teal-500/40 text-teal-300"
+                              : "bg-zinc-800/50 border-zinc-700 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+                          }`}
+                        >
+                          {qp.label}
+                        </button>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Scanner results */}
+                {scannerSymbol.trim() ? (
+                  <StrategyEntrySignalsPanel symbol={scannerSymbol.trim()} />
+                ) : (
+                  <Card className="border-zinc-800 bg-zinc-900/30">
+                    <CardContent className="p-8 text-center">
+                      <Target className="h-8 w-8 text-zinc-600 mx-auto mb-3" />
+                      <p className="text-sm text-zinc-400">Search a stock above to scan entry & exit points</p>
+                      <p className="text-xs text-zinc-600 mt-1">
+                        Select strategies, run the scan, and see AI-scored BUY/SELL signals with LIVE recommendations
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
+              </TabsContent>
+
               <TabsContent value="backtest" className="pt-0">
                 <BacktestingSection />
               </TabsContent>
@@ -988,7 +1190,7 @@ function LiveDashboard({ broker }: { broker: string }) {
                 <StatementSection />
               </TabsContent>
             </Tabs>
-          </div>
+                </div>
               </div>
       </main>
     </div>

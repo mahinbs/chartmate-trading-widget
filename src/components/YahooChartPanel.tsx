@@ -58,6 +58,15 @@ function fmt(n: number | null | undefined, dec = 2): string {
   return n.toFixed(dec);
 }
 
+function toFiniteNumber(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string") {
+    const n = Number(v.replace("%", "").trim());
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
 // Candles from the edge function are either:
 //   • number  → Unix seconds for intraday intervals (preserve exact minute/hour)
 //   • string  → "YYYY-MM-DD" for daily/weekly/monthly intervals
@@ -170,6 +179,7 @@ export default function YahooChartPanel({
   const lastCandleRef  = useRef<CandlestickData | null>(null);
   const wsRef          = useRef<WebSocket | null>(null);
   const wsReconRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const roRef          = useRef<ResizeObserver | null>(null);
 
   const [activeRange, setActiveRange] = useState(RANGES[0]); // 1D default
   const [chartType, setChartType]     = useState<ChartType>("candlestick");
@@ -188,8 +198,12 @@ export default function YahooChartPanel({
   /* ── build / rebuild Lightweight Chart ─────────────────────────────── */
   const buildChart = useCallback(() => {
     if (!containerRef.current) return;
+    if (roRef.current) {
+      roRef.current.disconnect();
+      roRef.current = null;
+    }
     if (chartRef.current) {
-      chartRef.current.remove();
+      try { chartRef.current.remove(); } catch { /* already disposed */ }
       chartRef.current   = null;
       priceSerRef.current  = null;
       volumeSerRef.current = null;
@@ -268,18 +282,22 @@ export default function YahooChartPanel({
       });
     });
 
-    const ro = new ResizeObserver(() => {
-      if (containerRef.current)
-        chart.applyOptions({ width: containerRef.current.clientWidth, height: containerRef.current.clientHeight });
-    });
-    ro.observe(containerRef.current);
-    chart.applyOptions({ width: containerRef.current.clientWidth, height: containerRef.current.clientHeight });
-
     chartRef.current     = chart;
     priceSerRef.current  = priceSer as any;
     volumeSerRef.current = volSer;
 
-    return () => ro.disconnect();
+    const ro = new ResizeObserver(() => {
+      if (containerRef.current && chartRef.current === chart) {
+        try {
+          chart.applyOptions({ width: containerRef.current.clientWidth, height: containerRef.current.clientHeight });
+        } catch { /* chart disposed between ticks */ }
+      }
+    });
+    ro.observe(containerRef.current);
+    roRef.current = ro;
+    try {
+      chart.applyOptions({ width: containerRef.current.clientWidth, height: containerRef.current.clientHeight });
+    } catch { /* chart disposed */ }
   }, [chartType]);
 
   /* ── push candle batch into the chart ──────────────────────────────── */
@@ -365,12 +383,15 @@ export default function YahooChartPanel({
         for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
         const msg = decodeYFProto(bytes);
 
-        if (msg.price && msg.price > 0) {
-          const p = msg.price;
+        const pNum = toFiniteNumber(msg.price);
+        if (pNum != null && pNum > 0) {
+          const p = pNum;
           setLivePrice(p);
           onLivePrice?.(p);
-          if (msg.change)       setLiveChange(msg.change);
-          if (msg.changePercent) setLivePct(msg.changePercent);
+          const ch = toFiniteNumber(msg.change);
+          const pct = toFiniteNumber(msg.changePercent);
+          if (ch != null) setLiveChange(ch);
+          if (pct != null) setLivePct(pct);
 
           // Live-update last candle's close (and high/low) in chart
           if (priceSerRef.current && lastCandleRef.current) {
@@ -435,17 +456,18 @@ export default function YahooChartPanel({
   /* ── cleanup on unmount ─────────────────────────────────────────────── */
   useEffect(() => {
     return () => {
-      if (chartRef.current)   { chartRef.current.remove(); chartRef.current = null; }
+      if (roRef.current)      { roRef.current.disconnect(); roRef.current = null; }
+      if (chartRef.current)   { try { chartRef.current.remove(); } catch { /* disposed */ } chartRef.current = null; }
       if (wsRef.current)      { wsRef.current.close(1000); wsRef.current = null; }
       if (wsReconRef.current) clearTimeout(wsReconRef.current);
     };
   }, []);
 
   /* ─── Derived display values ─────────────────────────────────────────── */
-  const displayPrice = livePrice ?? meta?.regularMarketPrice ?? null;
-  const prevClose    = meta?.previousClose ?? lastCandles[0]?.close ?? null;
-  const displayChange = liveChange ?? (displayPrice != null && prevClose != null ? displayPrice - prevClose : null);
-  const displayPct   = livePct ?? (displayChange != null && prevClose ? (displayChange / prevClose) * 100 : null);
+  const displayPrice = toFiniteNumber(livePrice) ?? toFiniteNumber(meta?.regularMarketPrice) ?? null;
+  const prevClose    = toFiniteNumber(meta?.previousClose) ?? toFiniteNumber(lastCandles[0]?.close) ?? null;
+  const displayChange = toFiniteNumber(liveChange) ?? (displayPrice != null && prevClose != null ? displayPrice - prevClose : null);
+  const displayPct   = toFiniteNumber(livePct) ?? (displayChange != null && prevClose ? (displayChange / prevClose) * 100 : null);
   const isUp         = (displayPct ?? 0) >= 0;
   const currency     = meta?.currency ?? "";
 
@@ -481,10 +503,10 @@ export default function YahooChartPanel({
               {fmt(displayPrice)}
             </span>
           )}
-          {displayPct != null && (
+          {typeof displayPct === "number" && Number.isFinite(displayPct) && typeof displayChange === "number" && Number.isFinite(displayChange) && (
             <span className={`text-xs font-semibold flex items-center gap-0.5 tabular-nums ${isUp ? "text-emerald-400" : "text-red-400"}`}>
               {isUp ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-              {isUp ? "+" : ""}{displayChange!.toFixed(2)} ({isUp ? "+" : ""}{displayPct.toFixed(2)}%)
+              {isUp ? "+" : ""}{displayChange.toFixed(2)} ({isUp ? "+" : ""}{displayPct.toFixed(2)}%)
             </span>
           )}
           {/* Live indicator */}

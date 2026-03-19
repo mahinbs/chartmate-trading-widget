@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -671,6 +672,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
 
   const getFireState = (id: string) => firePanel[id] ?? {
     open: false, symbol: "", exchange: "NSE", quantity: "1", product: "MIS", firing: false,
+    aiOverride: false,
     backtestPaperType: "trend_following",
     backtestResult: null as any,
     backtestLoading: false,
@@ -783,18 +785,30 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
       } catch { /* non-blocking */ }
 
       const res = await supabase.functions.invoke("fire-strategy-signal", {
-        body: { strategy_id: strategy.id, symbol: sym, exchange: fs.exchange, action, quantity: parseInt(fs.quantity) || 1, product: fs.product },
+        body: {
+          strategy_id: strategy.id,
+          symbol: sym,
+          exchange: fs.exchange,
+          action,
+          quantity: parseInt(fs.quantity) || 1,
+          product: fs.product,
+          ai_override: fs.aiOverride ?? false,
+        },
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
       const result = res.data as any;
       if (res.error || result?.error) {
-        const msg =
-          result?.error ??
-          result?.message ??
-          res.error?.message ??
-          "Signal failed";
-        console.error("fireSignal failed:", { error: res.error, data: result });
-        toast.error(msg);
+        const aiRejection = result?.ai_override;
+        if (aiRejection?.decision === "REJECT") {
+          toast.error(
+            `AI Override REJECTED this trade\n${aiRejection.reason}\n\nRisks: ${(aiRejection.risks ?? []).join(", ")}\nSuggested: ${aiRejection.suggestedAction ?? "Wait."}`,
+            { duration: 15000, id: `ai-reject-${strategy.id}` },
+          );
+        } else {
+          const msg = result?.error ?? result?.message ?? res.error?.message ?? "Signal failed";
+          console.error("fireSignal failed:", { error: res.error, data: result });
+          toast.error(msg);
+        }
       }
       else {
         const oid = result?.orderid ?? result?.broker_order_id ?? "placed";
@@ -1783,6 +1797,17 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                                   )}
                                 </div>
                               )}
+                            </div>
+                            {/* AI Override toggle */}
+                            <div className="flex items-center justify-between gap-2 px-1 py-1.5 rounded-lg border border-zinc-700 bg-zinc-900/50">
+                              <div className="space-y-0.5">
+                                <p className="text-[10px] text-zinc-300 font-medium">AI Override</p>
+                                <p className="text-[9px] text-zinc-500">AI will accept or reject the trade with reasons before execution</p>
+                              </div>
+                              <Switch
+                                checked={fs.aiOverride ?? false}
+                                onCheckedChange={(v) => setFireState(s.id, { aiOverride: v })}
+                              />
                             </div>
                             <div className="grid grid-cols-2 gap-2">
                               <button

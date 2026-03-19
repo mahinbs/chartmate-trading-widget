@@ -572,9 +572,6 @@ export default function AlgoTradingDashboard() {
           <TabsContent value="backtest" className="pt-2 space-y-3">
             <Alert className="bg-zinc-800/80 border-zinc-700">
               <BarChart3 className="h-4 w-4 text-teal-400" />
-              <AlertDescription className="text-zinc-400 text-xs">
-                VectorBT runs on your OpenAlgo server (E2E). Data: broker history (if available) → Historify → Yahoo — real daily bars, not mock data.
-              </AlertDescription>
             </Alert>
             <BacktestingSection />
           </TabsContent>

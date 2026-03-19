@@ -5,9 +5,19 @@ import { corsHeaders } from '../_shared/cors.ts';
 
 // Yahoo Finance symbol normalization (duplicated from predict-movement)
 function normalizeToYahooSymbol(raw: string): { yahooSymbol: string; assetType: 'stock' | 'forex' | 'crypto' | 'index' | 'commodity' } {
-  // Strip exchange prefixes
-  const cleanSymbol = raw.replace(/^(NASDAQ|NYSE|BINANCE|OANDA|SP|DJ|COMEX|NYMEX):/, '');
-  
+  // Strip exchange prefixes (incl. NSE/BSE for Indian listings)
+  const cleanSymbol = raw.replace(/^(NASDAQ|NYSE|BINANCE|OANDA|SP|DJ|COMEX|NYMEX|NSE|BSE):/i, '').trim();
+  const upperSym = cleanSymbol.toUpperCase();
+
+  if (upperSym.endsWith('.NS') || upperSym.endsWith('.BO')) {
+    return { yahooSymbol: upperSym, assetType: 'stock' };
+  }
+
+  // Already Yahoo crypto style e.g. BTC-USD
+  if (/^[A-Z0-9]+-USD$/i.test(cleanSymbol)) {
+    return { yahooSymbol: upperSym, assetType: 'crypto' };
+  }
+
   // Stocks mapping
   if (/^[A-Z]{1,5}$/.test(cleanSymbol)) {
     // Indian stocks get .NS suffix
@@ -173,22 +183,23 @@ Provide a comprehensive analysis in this EXACT JSON format:
 Keep it professional, concise, and educational. Focus on learning from the outcome.`;
 
   try {
-    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=' + geminiApiKey, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.2,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 3000,
-          thinkingConfig: {
-            thinkingLevel: "high", // Deep thinking for post-analysis
-          }
-        },
-      }),
-    });
+    // Use a stable model; gemini-3-pro + thinkingConfig often 400s on standard API keys
+    const response = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + geminiApiKey,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.2,
+            topK: 40,
+            topP: 0.95,
+            maxOutputTokens: 3000,
+          },
+        }),
+      },
+    );
 
     if (!response.ok) {
       throw new Error(`Gemini API error: ${response.status}`);
@@ -196,10 +207,6 @@ Keep it professional, concise, and educational. Focus on learning from the outco
 
     const data = await response.json();
     
-    // Log thinking token usage
-    if (data.usageMetadata?.thoughtsTokenCount) {
-      console.log(`🧠 Gemini 3 Pro Deep Thinking: ${data.usageMetadata.thoughtsTokenCount} thinking tokens, ${data.usageMetadata.candidatesTokenCount} output tokens`);
-    }
     
     const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     
@@ -387,6 +394,11 @@ serve(async (req) => {
       let reasoning = '';
       let accuracyScore = 0;
       let confidenceAdjustment = 0;
+      // Must exist for evaluation object when branch skips `else` (avoids ReferenceError → 500)
+      let directionScore = 0;
+      let magnitudeScore = 0;
+      let timingScore = 0;
+      let riskScore = 0;
       
       // If insufficient data, mark as inconclusive
       if (isInsufficientData) {
@@ -397,7 +409,7 @@ serve(async (req) => {
         // Enhanced accuracy calculation with multiple factors
         
         // Factor 1: Direction accuracy (40% weight)
-        let directionScore = 0;
+        directionScore = 0;
         if (expected.direction === 'up' && actualChangePercent > 0) {
           directionScore = 1;
         } else if (expected.direction === 'down' && actualChangePercent < 0) {
@@ -409,7 +421,7 @@ serve(async (req) => {
         }
         
         // Factor 2: Magnitude accuracy (30% weight)
-        let magnitudeScore = 0;
+        magnitudeScore = 0;
         if (expected.movePercent > 0) {
           const actualMagnitude = Math.abs(actualChangePercent);
           const expectedMagnitude = expected.movePercent;
@@ -420,10 +432,10 @@ serve(async (req) => {
         }
         
         // Factor 3: Timing accuracy (20% weight)
-        let timingScore = 1; // Default to full score, can be enhanced with intraday analysis
+        timingScore = 1; // Default to full score, can be enhanced with intraday analysis
         
         // Factor 4: Risk-adjusted performance (10% weight)
-        let riskScore = 1;
+        riskScore = 1;
         const maxDrawdown = Math.abs(Math.min(...candles.map((c: any) => c.low)) - startPrice) / startPrice;
         if (maxDrawdown > expected.movePercent * 2) {
           riskScore = 0.5; // High drawdown penalty
