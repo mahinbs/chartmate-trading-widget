@@ -83,6 +83,24 @@ const SYMBOL_MAP: Record<string, string> = {
 // ── Intent detection ──────────────────────────────────────────────────────────
 type Intent = "price" | "sentiment" | "analysis" | "impact" | "platform" | "general";
 
+function isSmallTalk(msg: string): boolean {
+  const lower = msg.toLowerCase().trim();
+  return /^(hi|hello|hey|yo|sup|good morning|good afternoon|good evening|how are you|who are you|what are you|what can you do|help)$/.test(lower);
+}
+
+function isJailbreakAttempt(msg: string): boolean {
+  const lower = msg.toLowerCase();
+  return /\b(ignore (all|previous|prior) instructions|system prompt|developer prompt|jailbreak|roleplay as|pretend to be|bypass|disable safety|reveal prompt)\b/.test(lower);
+}
+
+function isFinanceOrPlatformQuery(msg: string): boolean {
+  const lower = msg.toLowerCase();
+  if (isSmallTalk(lower)) return true;
+  if (Object.keys(SYMBOL_MAP).some((k) => lower.includes(k))) return true;
+  if (/\b([A-Z]{1,5}(?:-USD)?)\b/.test(msg)) return true;
+  return /\b(stock|share|market|price|trading|trade|invest|investment|buy|sell|hold|sentiment|news|economy|inflation|fed|rbi|crypto|bitcoin|ethereum|nifty|sensex|forex|commodity|gold|oil|portfolio|risk|analysis|chartmate|platform|backtest|paper trade|strategy)\b/.test(lower);
+}
+
 function detectIntent(msg: string): Intent {
   const lower = msg.toLowerCase();
   if (/\b(price|trading at|current price|what.?s.*worth|how much is|quote|rate|worth now|value)\b/.test(lower))
@@ -238,6 +256,17 @@ function sanitizeAnswerText(raw: string): string {
     .trim();
 }
 
+const RISK_LINE = "⚠️ This is market analysis based on news and sentiment, not financial advice. Always manage your risk.";
+
+function enforceRiskLine(answer: string, intent: Intent, msg: string): string {
+  const isRecommendation = intent === "analysis" || /\b(should i buy|should i sell|buy or sell|recommend|hold)\b/i.test(msg);
+  if (!isRecommendation) return answer;
+  const withoutOldRisk = answer
+    .replace(/\n?\s*⚠️[^.\n]*financial advice[^.\n]*(\.)?/gi, "")
+    .trim();
+  return `${withoutOldRisk}\n\n${RISK_LINE}`;
+}
+
 function buildPriceBlock(eod: Record<string, unknown> | null, altQuote: Record<string, unknown> | null, sym: string): string {
   const data = eod ?? altQuote;
   if (!data) return `(Live price for ${sym} unavailable — using training knowledge for estimates)`;
@@ -379,6 +408,27 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "Missing message" }), { status: 400, headers: JSON_HEADERS });
     }
 
+    if (isJailbreakAttempt(message)) {
+      return new Response(JSON.stringify({
+        answer: "I can only help with financial market analysis and the ChartMate platform. Ask me about stock prices, market sentiment, or buy/sell/hold analysis.",
+        suggestContact: false,
+      }), { status: 200, headers: JSON_HEADERS });
+    }
+
+    if (isSmallTalk(message)) {
+      return new Response(JSON.stringify({
+        answer: "Hey! I'm doing great. I'm your financial market assistant and I can help with live prices, market news, sentiment, and buy/sell/hold analysis. Ask me any stock, crypto, or market question.",
+        suggestContact: false,
+      }), { status: 200, headers: JSON_HEADERS });
+    }
+
+    if (mode !== "platform" && !isFinanceOrPlatformQuery(message)) {
+      return new Response(JSON.stringify({
+        answer: "I'm a financial market assistant, so I can only help with stocks, crypto, market news, trading, and the ChartMate platform. Try asking me about a stock price or market analysis.",
+        suggestContact: false,
+      }), { status: 200, headers: JSON_HEADERS });
+    }
+
     // "platform" mode forces platform-only intent (for non-logged-in support chatbot)
     const intent: Intent = mode === "platform" ? "platform" : detectIntent(message);
     const symbol = mode === "platform" ? null : extractSymbol(message);
@@ -470,10 +520,11 @@ serve(async (req) => {
     }
 
     const geminiData = await geminiRes.json();
-    const answer = sanitizeAnswerText(
+    let answer = sanitizeAnswerText(
       geminiData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim()
       || "I couldn't generate a response. Please try again."
     );
+    answer = enforceRiskLine(answer, intent, message);
 
     const lowerMsg = message.toLowerCase();
     const suggestContact = intent === "platform" &&

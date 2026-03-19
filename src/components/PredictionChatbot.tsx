@@ -76,7 +76,7 @@ function MarkdownText({ text }: { text: string }) {
           );
         }
         if (trimmed.startsWith("⚠️"))
-          return <p key={i} className="text-xs text-amber-500 dark:text-amber-400 italic mt-1">{renderInline(trimmed)}</p>;
+          return <p key={i} className="text-xs text-red-500 dark:text-red-400 font-medium mt-2 pt-2 border-t border-red-500/20">{renderInline(trimmed)}</p>;
         return <p key={i}>{renderInline(trimmed)}</p>;
       })}
     </div>
