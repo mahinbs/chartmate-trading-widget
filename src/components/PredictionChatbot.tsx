@@ -1,50 +1,15 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import {
-  X, Send, ChevronDown, Bot, User, MessageSquare, BrainCircuit,
-  Activity, TrendingUp, TrendingDown, Minus, ExternalLink, Loader2
+  X, Send, ChevronDown, Bot, User, MessageSquare,
+  Newspaper, Loader2, ExternalLink, Plus, History, Trash2,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { SymbolSearch, SymbolData } from "@/components/SymbolSearch";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
 
-// ─── FAQ Knowledge Base ────────────────────────────────────────────────────
-const FAQS = [
-  {
-    keywords: ["what is", "about", "platform", "chartmate", "this app", "this tool", "what does", "overview", "intro"],
-    answer: `**ChartMate** is an AI-powered trading intelligence platform that helps you make smarter trading decisions.\n\n• 🤖 **AI Predictions** — Analyses live price, RSI, MACD, news & macro to generate BUY/SELL/HOLD signals with probability scores.\n• 📊 **Strategy Selection** — Ranks 11 real trading strategies for current market conditions.\n• 🧪 **Backtesting** — Tests strategies on 100+ days of historical OHLCV data before any order.\n• 🧾 **Paper Trading** — Simulate trades risk-free with virtual money.\n• 📅 **Daily Analysis** — Expert market predictions published daily.\n• 📈 **Trade Tracking** — Monitor live P&L, stop-loss, and target tracking.`,
-  },
-  {
-    keywords: ["ai", "prediction", "predict", "how does ai", "gemini", "signal", "buy sell hold", "forecast", "how does it work"],
-    answer: `The AI prediction pipeline runs in **7 steps** every time you analyse a stock or crypto:\n\n1. **Fetch Market Data** — Live price, volume, and change.\n2. **Historical Analysis** — Full-year OHLCV candles, fundamentals & earnings data.\n3. **Technical Indicators** — RSI, MACD, Bollinger Bands, SMA, ATR, regime detection.\n4. **News & Sentiment** — Market news, macro events, sector correlation.\n5. **AI Processing** — Multi-horizon forecasts (15m to 1W) with positioning guidance.\n6. **Risk Assessment** — Risk grade, stop-loss, take-profit targets.\n7. **Full Report** — Expected ROI scenarios (Best/Likely/Worst), key support/resistance levels.\n\nThe result is a **BUY/SELL/HOLD signal** with a confidence probability score (0–100%).`,
-  },
-  {
-    keywords: ["strategy", "backtesting", "backtest", "paper trade", "paper trading"],
-    answer: `ChartMate supports **11 professional trading strategies** including:\n\n• Trend Following, Swing Trading, Scalping, Mean Reversion, Breakout\n• Momentum, Value Investing, Dollar-Cost Averaging, and more.\n\nEach strategy is **backtested against 100+ days** of real OHLCV data before a live order is placed, giving you data-backed confidence in every trade.`,
-  },
-  {
-    keywords: ["subscription", "plan", "price", "cost", "premium", "free"],
-    answer: `ChartMate offers different subscription tiers:\n\n• **Free Plan** — Basic features, limited predictions.\n• **Premium Plan** — Unlimited AI predictions, full strategy suite, portfolio tracking, live P&L.\n\nPremium subscribers also get access to advanced backtesting, leverage simulation, and priority support.`,
-  },
-  {
-    keywords: ["rsi", "macd", "bollinger", "technical", "indicator", "analysis", "support", "resistance"],
-    answer: `ChartMate uses a comprehensive suite of **technical indicators**:\n\n• **RSI** (Relative Strength Index) — Measures momentum; <30 is oversold, >70 is overbought.\n• **MACD** — Trend-following momentum indicator.\n• **Bollinger Bands** — Volatility bands, signals breakouts and squeezes.\n• **SMA/EMA** — Moving averages to identify trend direction.\n• **ATR** — Average True Range for volatility and stop-loss sizing.\n• **Support/Resistance** — Dynamic levels from historical price action.`,
-  },
-  {
-    keywords: ["stop loss", "take profit", "risk management", "position size"],
-    answer: `ChartMate automatically calculates **risk management parameters**:\n\n• **Stop Loss** — Based on your risk tolerance (2-3% conservative to 10%+ aggressive).\n• **Take Profit** — Based on risk-reward ratio (typically 2:1 or better).\n• **Position Size** — Calculated from your investment amount and entry price.\n\nFor leveraged trades, the platform dramatically increases risk warnings and tightens recommended stops.`,
-  },
-  {
-    keywords: ["crypto", "bitcoin", "ethereum", "stock", "nse", "bse", "nasdaq", "nyse"],
-    answer: `ChartMate supports **multiple asset classes and exchanges**:\n\n• **Indian Stocks** — NSE & BSE listed equities.\n• **US Stocks** — NYSE, NASDAQ listed stocks.\n• **Crypto** — Bitcoin (BTC), Ethereum (ETH), and major altcoins.\n• **Forex** — Major currency pairs.\n\nThe AI adapts its analysis model based on the asset type and exchange for more accurate region-specific predictions.`,
-  },
-];
-
-// ─── Types ──────────────────────────────────────────────────────────────────
+// ── Types ────────────────────────────────────────────────────────────────────
 interface Message {
   id: string;
   role: "bot" | "user";
@@ -52,27 +17,10 @@ interface Message {
   component?: React.ReactNode;
 }
 
-type ChatStep =
-  | "greeting"
-  | "symbol"
-  | "amount"
-  | "risk_tolerance"
-  | "trading_style"
-  | "investment_goal"
-  | "stop_loss"
-  | "holding_period"
-  | "analyzing"
-  | "results"
-  | "general";
-
-interface PredState {
-  symbol: SymbolData | null;
-  amount: number | null;
-  riskTolerance: "low" | "medium" | "high" | null;
-  tradingStyle: string | null;
-  investmentGoal: string | null;
-  stopLoss: number | null;
-  holdingPeriod: string | null;
+interface Conversation {
+  id: string;
+  title: string;
+  updated_at: string;
 }
 
 interface PredictionChatbotProps {
@@ -80,27 +28,110 @@ interface PredictionChatbotProps {
   setOpen: (open: boolean) => void;
 }
 
-// ─── Helper ──────────────────────────────────────────────────────────────────
 const uid = (prefix: string) =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-const formatCurr = (n: number) =>
-  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(n);
+// Supabase generated types in this repo don't include these new tables yet.
+// Use `as any` to avoid type-inference explosions until types are regenerated.
+const convTable = () => supabase.from("chatbot_conversations" as any);
+const msgTable = () => supabase.from("chatbot_messages" as any);
 
-// ─── Component ───────────────────────────────────────────────────────────────
+// ── Markdown renderer ────────────────────────────────────────────────────────
+function MarkdownText({ text }: { text: string }) {
+  const cleaned = text
+    .replace(/\r/g, "")
+    .replace(/^\s*\*\s+/gm, "• ")
+    .replace(/\n\s*\*\s+/g, "\n• ")
+    .replace(/([.!?])\s*•\s+/g, "$1\n• ")
+    .replace(/[—–]/g, " ")
+    .replace(/\s*--\s*/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  const lines = cleaned.split("\n");
+
+  function renderInline(line: string) {
+    const parts = line.split(/(\*\*[^*]+\*\*|\*[^*\n]+\*)/g);
+    return parts.map((p, i) => {
+      if (p.startsWith("**") && p.endsWith("**") && p.length > 4)
+        return <strong key={i} className="font-semibold">{p.slice(2, -2)}</strong>;
+      if (p.startsWith("*") && p.endsWith("*") && p.length > 2)
+        return <em key={i} className="italic">{p.slice(1, -1)}</em>;
+      return <span key={i}>{p}</span>;
+    });
+  }
+
+  return (
+    <div className="space-y-1 text-sm leading-relaxed">
+      {lines.map((line, i) => {
+        const trimmed = line.trim();
+        if (!trimmed) return <div key={i} className="h-1" />;
+        if (trimmed.startsWith("•") || trimmed.startsWith("- ")) {
+          const rest = trimmed.replace(/^[•\-]\s*/, "");
+          return (
+            <div key={i} className="flex gap-1.5">
+              <span className="shrink-0 mt-0.5 text-primary">•</span>
+              <span>{renderInline(rest)}</span>
+            </div>
+          );
+        }
+        if (trimmed.startsWith("⚠️"))
+          return <p key={i} className="text-xs text-red-500 dark:text-red-400 font-medium mt-2 pt-2 border-t border-red-500/20">{renderInline(trimmed)}</p>;
+        return <p key={i}>{renderInline(trimmed)}</p>;
+      })}
+    </div>
+  );
+}
+
+// ── Quick action chips ──────────────────────────────────────────────────────
+const QUICK_ACTIONS = [
+  { label: "📈 Apple price",    msg: "What is the current price of Apple stock?" },
+  { label: "₿ Bitcoin price",   msg: "What is Bitcoin's current price?" },
+  { label: "🛢️ Oil & markets",  msg: "How is crude oil impacting the markets right now?" },
+  { label: "📰 Market news",    msg: "What's the latest market news and sentiment?" },
+  { label: "🤔 Buy Tesla?",     msg: "Should I buy Tesla right now? Give me analysis based on news and current trends." },
+  { label: "🟡 NIFTY analysis", msg: "Analyse NIFTY 50, should I buy or sell based on current sentiment?" },
+  { label: "📊 Reliance news",  msg: "What's the latest news and sentiment on Reliance?" },
+  { label: "🪙 ETH analysis",   msg: "Should I buy Ethereum right now? What does news sentiment say?" },
+];
+
+function isAnalysisQuery(msg: string): boolean {
+  return /\b(should i buy|should i sell|buy or sell|good time to|right time to|worth buying|worth investing|analysis|analyse|analyze|recommend|hold or|invest in)\b/i.test(msg);
+}
+
+const WELCOME_TEXT = `Hey! 👋 I'm your **ChartMate AI Assistant** powered by real-time market data, news and sentiment analysis.
+
+Ask me anything:
+• **Live prices** "What's Tesla trading at?"
+• **News & sentiment** "What's happening with Reliance?"
+• **Buy/Sell/Hold advice** "Should I buy Bitcoin now?"
+• **Market impact** "How is crude oil affecting markets?"
+
+I'll give you a real answer based on current news, sentiment, and market trends. For an in-depth technical analysis with backtesting, use our **Detailed Analysis** page.`;
+
+// ── Helpers: DB persistence ─────────────────────────────────────────────────
+async function getUserId(): Promise<string | null> {
+  const { data } = await supabase.auth.getUser();
+  return data?.user?.id ?? null;
+}
+
+function titleFromMessage(text: string): string {
+  const clean = text.replace(/[*#_`]/g, "").trim();
+  return clean.length > 40 ? clean.slice(0, 40) + "…" : clean;
+}
+
+// ── Component ────────────────────────────────────────────────────────────────
 export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
-  const [typing, setTyping] = useState(false);
-  const [step, setStep] = useState<ChatStep>("general");
-  const [predState, setPredState] = useState<PredState>({
-    symbol: null, amount: null, riskTolerance: null,
-    tradingStyle: null, investmentGoal: null, stopLoss: null, holdingPeriod: null,
-  });
-  const [result, setResult] = useState<any>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const navigate = useNavigate();
+  const [messages, setMessages]         = useState<Message[]>([]);
+  const [input, setInput]               = useState("");
+  const [typing, setTyping]             = useState(false);
+  const [convId, setConvId]             = useState<string | null>(null);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [showHistory, setShowHistory]   = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const bottomRef  = useRef<HTMLDivElement>(null);
+  const inputRef   = useRef<HTMLInputElement>(null);
+  const navigate   = useNavigate();
 
   const scrollToBottom = useCallback(() => {
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
@@ -108,439 +139,200 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
 
   useEffect(() => { scrollToBottom(); }, [messages, typing, scrollToBottom]);
 
-  // Reset on open
+  // ── Load conversation list on open ────────────────────────────────────────
   useEffect(() => {
     if (!open) return;
-    setMessages([]);
-    setPredState({ symbol: null, amount: null, riskTolerance: null, tradingStyle: null, investmentGoal: null, stopLoss: null, holdingPeriod: null });
-    setResult(null);
-    setStep("general");
-    setTyping(false);
-    setInput("");
-
-    const t = setTimeout(() => {
-      addBotMsg(
-        "Hi! 👋 I'm your ChartMate AI Assistant. I can help with **stock & crypto predictions**, explain platform features, or answer any trading question.",
-        <div className="flex flex-wrap gap-2 mt-3">
-          <Button variant="outline" size="sm"
-            className="bg-primary/10 border-primary/20 hover:bg-primary/20 text-xs"
-            onClick={() => startPrediction()}>
-            <BrainCircuit className="h-3 w-3 mr-1.5" /> Start AI Prediction
-          </Button>
-          <Button variant="outline" size="sm"
-            className="bg-purple-500/10 border-purple-500/20 hover:bg-purple-500/20 text-xs"
-            onClick={() => sendUserMsg("What is ChartMate?")}>
-            <Activity className="h-3 w-3 mr-1.5" /> About Platform
-          </Button>
-        </div>
-      );
-    }, 300);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    loadConversations();
   }, [open]);
 
-  // ─── Message helpers ──────────────────────────────────────────────────────
+  const loadConversations = async () => {
+    const userId = await getUserId();
+    if (!userId) return;
+    const { data } = await convTable()
+      .select("id, title, updated_at")
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false })
+      .limit(20);
+    if (data) setConversations(data as unknown as Conversation[]);
+  };
+
+  // ── Start new chat ────────────────────────────────────────────────────────
+  const startNewChat = useCallback(() => {
+    setConvId(null);
+    setMessages([]);
+    setShowHistory(false);
+    setTyping(false);
+    setInput("");
+    const t = setTimeout(() => {
+      setMessages([{
+        id: uid("welcome"),
+        role: "bot",
+        text: WELCOME_TEXT,
+        component: (
+          <div className="flex flex-wrap gap-2 mt-3">
+            <Button variant="outline" size="sm"
+              className="bg-primary/10 border-primary/20 hover:bg-primary/20 text-xs gap-1.5"
+              onClick={() => { setOpen(false); navigate("/predict"); }}>
+              <ExternalLink className="h-3 w-3" /> Open Detailed Analysis
+            </Button>
+            <Button variant="outline" size="sm"
+              className="bg-purple-500/10 border-purple-500/20 hover:bg-purple-500/20 text-xs gap-1.5"
+              onClick={() => sendMessage("What's the latest market news and sentiment?")}>
+              <Newspaper className="h-3 w-3" /> Market News
+            </Button>
+          </div>
+        ),
+      }]);
+      setTimeout(() => inputRef.current?.focus(), 200);
+    }, 200);
+    return () => clearTimeout(t);
+  }, [navigate, setOpen]);
+
+  // Auto-start new chat on first open if no history panel
+  useEffect(() => {
+    if (open && !showHistory && messages.length === 0 && !convId) {
+      startNewChat();
+    }
+  }, [open]);
+
+  // ── Load existing conversation ────────────────────────────────────────────
+  const loadConversation = async (id: string) => {
+    setLoadingHistory(true);
+    setShowHistory(false);
+    setConvId(id);
+    const { data } = await msgTable()
+      .select("id, role, text, created_at")
+      .eq("conversation_id", id)
+      .order("created_at", { ascending: true });
+    if (data && data.length > 0) {
+      setMessages((data as any[]).map(m => ({ id: String(m.id), role: m.role as "bot" | "user", text: String(m.text) })));
+    } else {
+      startNewChat();
+    }
+    setLoadingHistory(false);
+  };
+
+  // ── Delete conversation ───────────────────────────────────────────────────
+  const deleteConversation = async (id: string) => {
+    await convTable().delete().eq("id", id);
+    setConversations(prev => prev.filter(c => c.id !== id));
+    if (convId === id) startNewChat();
+  };
+
+  // ── Persist message to DB ─────────────────────────────────────────────────
+  const persistMessage = async (conversationId: string, role: "bot" | "user", text: string) => {
+    await msgTable().insert({ conversation_id: conversationId, role, text });
+  };
+
+  const ensureConversation = async (firstMsg: string): Promise<string> => {
+    if (convId) {
+      await convTable().update({ updated_at: new Date().toISOString() }).eq("id", convId);
+      return convId;
+    }
+    const userId = await getUserId();
+    if (!userId) return "";
+    const { data } = await convTable()
+      .insert({ user_id: userId, title: titleFromMessage(firstMsg) })
+      .select("id")
+      .single();
+    const newId = (data as any)?.id ?? "";
+    setConvId(newId);
+    loadConversations();
+    return newId;
+  };
+
+  // ── Message helpers ────────────────────────────────────────────────────────
   const addBotMsg = (text: string, component?: React.ReactNode) => {
     setMessages(prev => [...prev, { id: uid("bot"), role: "bot", text, component }]);
   };
-
   const addUserMsg = (text: string) => {
     setMessages(prev => [...prev, { id: uid("usr"), role: "user", text }]);
   };
 
-  // ─── Prediction start ─────────────────────────────────────────────────────
-  const startPrediction = () => {
-    addUserMsg("I want an AI Prediction");
-    addBotMsg("Great! I'll guide you through a quick analysis. **Which stock or crypto** would you like to analyze?");
-    setStep("symbol");
-  };
-
-  // ─── Symbol selected ──────────────────────────────────────────────────────
-  const handleSymbolSelect = (sym: SymbolData) => {
-    setPredState(prev => ({ ...prev, symbol: sym }));
-    addUserMsg(`Selected: ${sym.symbol}${sym.exchange ? ` (${sym.exchange})` : ""}`);
-    addBotMsg(`Nice! **How much are you planning to invest in ${sym.symbol}?** (Enter amount in INR/USD)`);
-    setStep("amount");
-  };
-
-  // ─── Step handlers ────────────────────────────────────────────────────────
-  const handleAmount = (text: string) => {
-    const amt = parseFloat(text.replace(/[^0-9.]/g, ""));
-    if (isNaN(amt) || amt <= 0) {
-      addBotMsg("Please enter a valid positive number for the investment amount.");
-      return;
-    }
-    setPredState(prev => ({ ...prev, amount: amt }));
-    addUserMsg(formatCurr(amt));
-    addBotMsg("What is your **risk tolerance** for this trade?", (
-      <div className="flex flex-wrap gap-2 mt-2">
-        {(["low", "medium", "high"] as const).map(r => (
-          <Button key={r} variant="outline" size="sm"
-            className="text-xs" onClick={() => handleRisk(r)}>
-            {r.charAt(0).toUpperCase() + r.slice(1)}
-          </Button>
-        ))}
-      </div>
-    ));
-    setStep("risk_tolerance");
-  };
-
-  const handleRisk = (r: "low" | "medium" | "high") => {
-    setPredState(prev => ({ ...prev, riskTolerance: r }));
-    addUserMsg(r.charAt(0).toUpperCase() + r.slice(1));
-    addBotMsg("What is your preferred **trading style**?", (
-      <div className="flex flex-wrap gap-2 mt-2">
-        {["Scalping", "Day Trading", "Swing Trading", "Position Trading", "Long Term"].map(s => (
-          <Button key={s} variant="outline" size="sm"
-            className="text-xs" onClick={() => handleStyle(s)}>
-            {s}
-          </Button>
-        ))}
-      </div>
-    ));
-    setStep("trading_style");
-  };
-
-  const handleStyle = (s: string) => {
-    setPredState(prev => ({ ...prev, tradingStyle: s }));
-    addUserMsg(s);
-    addBotMsg("What is your main **investment goal**?", (
-      <div className="flex flex-wrap gap-2 mt-2">
-        {["Wealth Creation", "Passive Income", "Capital Protection", "Speculation"].map(g => (
-          <Button key={g} variant="outline" size="sm"
-            className="text-xs" onClick={() => handleGoal(g)}>
-            {g}
-          </Button>
-        ))}
-      </div>
-    ));
-    setStep("investment_goal");
-  };
-
-  const handleGoal = (g: string) => {
-    setPredState(prev => ({ ...prev, investmentGoal: g }));
-    addUserMsg(g);
-    addBotMsg("What is your preferred **stop-loss level**?", (
-      <div className="flex flex-wrap gap-2 mt-2">
-        {[["Conservative (2-3%)", 2.5], ["Moderate (5%)", 5], ["Aggressive (10%+)", 10]].map(([label, val]) => (
-          <Button key={label as string} variant="outline" size="sm"
-            className="text-xs" onClick={() => handleStopLoss(label as string, val as number)}>
-            {label as string}
-          </Button>
-        ))}
-      </div>
-    ));
-    setStep("stop_loss");
-  };
-
-  const handleStopLoss = (label: string, val: number) => {
-    setPredState(prev => ({ ...prev, stopLoss: val }));
-    addUserMsg(label);
-    addBotMsg("How long do you plan to **hold this position**?", (
-      <div className="flex flex-wrap gap-2 mt-2">
-        {["1 Day", "1 Week", "1 Month", "3 Months", "1 Year+"].map(h => (
-          <Button key={h} variant="outline" size="sm"
-            className="text-xs" onClick={() => handleHold(h)}>
-            {h}
-          </Button>
-        ))}
-      </div>
-    ));
-    setStep("holding_period");
-  };
-
-  const handleHold = (h: string) => {
-    const finalState = { ...predState, holdingPeriod: h };
-    setPredState(finalState);
-    addUserMsg(h);
-    addBotMsg(`🔍 Running full AI analysis for **${predState.symbol?.symbol}**... This takes about 15–30 seconds.`);
-    runPrediction(finalState);
-  };
-
-  // ─── CORE prediction call — mirrors PredictPage exactly ──────────────────
-  const runPrediction = async (state: PredState) => {
-    setStep("analyzing");
+  // ── Send message ──────────────────────────────────────────────────────────
+  const sendMessage = useCallback(async (text: string) => {
+    if (!text.trim()) return;
+    const trimmed = text.trim();
+    addUserMsg(trimmed);
+    setInput("");
     setTyping(true);
-    setResult(null);
 
-    // Map chatbot labels → Edge Function enums (same as PredictPage userProfile)
-    const styleMap: Record<string, string> = {
-      "Scalping": "scalping",
-      "Day Trading": "day_trading",
-      "Swing Trading": "swing_trading",
-      "Position Trading": "position_trading",
-      "Long Term": "long_term",
-    };
-    const goalMap: Record<string, string> = {
-      "Wealth Creation": "growth",
-      "Passive Income": "income",
-      "Capital Protection": "hedging",
-      "Speculation": "speculation",
-    };
+    const cId = await ensureConversation(trimmed);
+    if (cId) persistMessage(cId, "user", trimmed);
 
-    // ✅ PredictPage strips exchange prefix: symbol.split(':')[1] || symbol
-    const rawSymbol = state.symbol?.symbol || "";
-    const cleanedSymbol = rawSymbol.includes(":") ? rawSymbol.split(":")[1] : rawSymbol;
-
-    // Timeframe: 1h default (matches PredictPage default)
-    const timeframe = "1h";
-    const primaryHorizon = 60;
-
-    // Payload mirrors PredictPage's handlePredict() exactly
-    const payload = {
-      symbol: cleanedSymbol,
-      investment: state.amount ?? 1000,
-      timeframe,
-      horizons: [primaryHorizon, 240, 1440, 10080],
-      // user profile — spread like PredictPage does ...userProfile
-      riskTolerance: state.riskTolerance ?? "medium",
-      tradingStyle: styleMap[state.tradingStyle ?? ""] ?? "swing_trading",
-      investmentGoal: goalMap[state.investmentGoal ?? ""] ?? "growth",
-      stopLossPercentage: state.stopLoss ?? 5,
-      targetProfitPercentage: 15,
-      userHoldingPeriod: state.holdingPeriod?.toLowerCase() ?? "1 week",
-      marginType: "cash",
-      leverage: 1,
-    };
-
-    console.log("🚀 Chatbot → predict-movement payload:", payload);
+    const historyPayload = messages.slice(-10).map(m => ({ role: m.role, text: m.text }));
+    const minDelay = new Promise<void>(r => setTimeout(r, 500));
+    const wasAnalysis = isAnalysisQuery(trimmed);
 
     try {
-      const { data, error } = await supabase.functions.invoke("predict-movement", { body: payload });
+      const [, res] = await Promise.all([
+        minDelay,
+        supabase.functions.invoke("chatbot-answer", {
+          body: { message: trimmed, history: historyPayload },
+        }),
+      ]);
+      const { data, error } = res;
+      if (!error && data?.answer) {
+        const answer = data.answer;
+        if (cId) persistMessage(cId, "bot", answer);
 
-      if (error) {
-        console.error("❌ Edge Function error:", error);
-        throw new Error(error.message || "Edge Function returned an error");
-      }
-      if (!data) throw new Error("No data returned from Edge Function");
-
-      console.log("✅ Chatbot prediction success:", data);
-      setResult(data);
-      setStep("results");
-      addBotMsg("✅ Analysis complete! Here's what the AI found:");
-    } catch (err: any) {
-      console.error("🧨 Chatbot prediction failed:", err);
-      const msg = err.message ?? "Unknown error";
-      addBotMsg(`❌ Analysis failed: ${msg}\n\nTry asking me to run the prediction again, or visit the full **/predict** page.`);
-      setStep("general");
-      toast.error(`Prediction failed: ${msg}`);
-    } finally {
-      setTyping(false);
-    }
-  };
-
-  // ─── General Q&A ─────────────────────────────────────────────────────────
-  const sendUserMsg = async (text: string) => {
-    addUserMsg(text);
-    const lower = text.toLowerCase();
-
-    // Keyword routing to prediction
-    if (
-      lower.includes("predict") || lower.includes("analyze") ||
-      lower.includes("analysis") || lower.includes("forecast") ||
-      lower.includes("buy") || lower.includes("sell") || lower.includes("signal")
-    ) {
-      addBotMsg("I can help with that! **Which stock or crypto** should we analyze?");
-      setStep("symbol");
-      return;
-    }
-
-    // Local FAQ match
-    const faq = FAQS.find(f => f.keywords.some(k => lower.includes(k)));
-    if (faq) {
-      addBotMsg(faq.answer);
-      return;
-    }
-
-    // AI-powered fallback
-    setTyping(true);
-    try {
-      const { data } = await supabase.functions.invoke("chatbot-answer", {
-        body: { message: text, history: messages.slice(-6).map(m => ({ role: m.role, text: m.text })) },
-      });
-      if (data?.answer) {
-        addBotMsg(data.answer);
+        if (wasAnalysis) {
+          addBotMsg(answer, (
+            <Button variant="outline" size="sm"
+              className="bg-primary/10 border-primary/20 hover:bg-primary/20 text-xs gap-1.5 mt-1"
+              onClick={() => { setOpen(false); navigate("/predict"); }}>
+              <ExternalLink className="h-3 w-3" /> Run Full Detailed Analysis
+            </Button>
+          ));
+        } else {
+          addBotMsg(answer);
+        }
       } else {
-        addBotMsg("I can help with platform questions, trading concepts, and AI predictions. Try asking 'How do predictions work?' or tap **Start AI Prediction**.");
+        addBotMsg("I'm having trouble fetching market data right now. Please try again in a moment.");
       }
     } catch {
-      addBotMsg("I can help with platform questions and trading analysis. Ask me anything or tap **Start AI Prediction** to begin!");
+      addBotMsg("Something went wrong connecting to the market data service. Please try again.");
     } finally {
       setTyping(false);
     }
+  }, [messages, navigate, setOpen, convId]);
+
+  const handleSend = () => {
+    if (input.trim()) sendMessage(input);
   };
 
-  const handleSendMessage = async (text: string) => {
-    if (!text.trim()) return;
-    setInput("");
-
-    if (step === "symbol") return; // handled by SymbolSearch component
-    if (step === "amount") { handleAmount(text); return; }
-
-    // ignore text input during multi-choice steps
-    if (["risk_tolerance", "trading_style", "investment_goal", "stop_loss", "holding_period", "analyzing"].includes(step)) return;
-
-    await sendUserMsg(text);
+  // ── Time ago helper ───────────────────────────────────────────────────────
+  const timeAgo = (dateStr: string) => {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    return `${days}d ago`;
   };
 
-  // ─── Result card ─────────────────────────────────────────────────────────
-  const renderResult = () => {
-    if (!result) return null;
-    const signal = result.geminiForecast?.action_signal?.action || result.recommendation?.toUpperCase() || "N/A";
-    const confidence = result.geminiForecast?.action_signal?.confidence ?? result.confidence ?? 0;
-    const forecast0 = result.geminiForecast?.forecasts?.[0];
-    const direction = forecast0?.direction ?? "sideways";
-    const riskGrade = result.geminiForecast?.risk_grade || "N/A";
-    const roi = result.geminiForecast?.expected_roi;
-    const bias = result.geminiForecast?.positioning_guidance?.notes;
-    const currentPrice = result.currentPrice;
-
-    // ── ROI fallback: estimate from confidence + volatility when Gemini returns null ──
-    const rawExpectedBp = forecast0?.expected_return_bp;
-    const volatilityPercent = currentPrice
-      ? Math.abs(result.stockData?.highPrice - result.stockData?.lowPrice) / currentPrice * 100
-      : 2;
-    const safeVol = Math.max(volatilityPercent || 2, 0.5);
-    const safeConf = Math.max(confidence || 50, 10);
-
-    const roiBest: number | null = (roi?.best_case != null) ? roi.best_case
-      : rawExpectedBp != null ? parseFloat(((rawExpectedBp / 100) * (1 + safeConf / 100 * 0.5)).toFixed(2))
-        : parseFloat((safeVol * (safeConf / 100) * 1.5).toFixed(2));
-
-    const roiLikely: number | null = (roi?.likely_case != null) ? roi.likely_case
-      : rawExpectedBp != null ? parseFloat((rawExpectedBp / 100).toFixed(2))
-        : parseFloat((safeVol * (safeConf / 100) * 0.8).toFixed(2));
-
-    const roiWorst: number | null = (roi?.worst_case != null) ? roi.worst_case
-      : parseFloat((-safeVol * (1 - safeConf / 100) * 1.5).toFixed(2));
-
-    const fmt = (v: number | null, prefix = "+") => {
-      if (v == null) return "—";
-      const sign = v < 0 ? "" : prefix;
-      return `${sign}${v.toFixed(2)}%`;
-    };
-
-    const signalColor =
-      signal === "BUY" ? "text-green-400" :
-        signal === "SELL" ? "text-red-400" : "text-yellow-400";
-
-    const DirectionIcon = direction === "up" ? TrendingUp : direction === "down" ? TrendingDown : Minus;
-    const directionColor = direction === "up" ? "text-green-400" : direction === "down" ? "text-red-400" : "text-yellow-400";
-
-    return (
-      <div className="pl-11 pr-2 space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-500">
-        {/* Header card */}
-        <div className="bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20 rounded-2xl p-4 space-y-3">
-          {/* Symbol + price */}
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs text-muted-foreground uppercase tracking-wider">Asset</p>
-              <p className="font-bold text-sm">{result.symbol}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-xs text-muted-foreground uppercase tracking-wider">Price</p>
-              <p className="font-bold text-sm">{currentPrice ? `₹${currentPrice.toLocaleString("en-IN")}` : "N/A"}</p>
-            </div>
-          </div>
-
-          {/* Signal + Confidence */}
-          <div className="flex items-center justify-between pt-2 border-t border-white/5">
-            <div>
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">AI Signal</p>
-              <p className={cn("text-2xl font-black tracking-tight", signalColor)}>{signal}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Confidence</p>
-              <p className="text-2xl font-black text-primary">{confidence}%</p>
-            </div>
-          </div>
-
-          {/* Direction + Risk Grade */}
-          <div className="grid grid-cols-2 gap-3 pt-2 border-t border-white/5">
-            <div>
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Direction</p>
-              <div className={cn("flex items-center gap-1 font-semibold text-sm", directionColor)}>
-                <DirectionIcon className="h-4 w-4" />
-                {direction.charAt(0).toUpperCase() + direction.slice(1)}
-              </div>
-            </div>
-            <div className="text-right">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Risk Grade</p>
-              <p className={cn("font-bold text-sm",
-                riskGrade === "LOW" ? "text-green-400" :
-                  riskGrade === "MEDIUM" ? "text-yellow-400" :
-                    riskGrade === "HIGH" ? "text-orange-400" : "text-red-400"
-              )}>{riskGrade}</p>
-            </div>
-          </div>
-
-          {/* Expected ROI */}
-          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/5">
-            <div>
-              <p className="text-[9px] text-muted-foreground uppercase">Best Case</p>
-              <p className={cn("text-xs font-semibold", roiBest != null && roiBest >= 0 ? "text-green-400" : "text-red-400")}>
-                {fmt(roiBest)}
-              </p>
-            </div>
-            <div className="text-center">
-              <p className="text-[9px] text-muted-foreground uppercase">Likely</p>
-              <p className={cn("text-xs font-semibold", roiLikely != null && roiLikely >= 0 ? "text-primary" : "text-red-400")}>
-                {fmt(roiLikely)}
-              </p>
-            </div>
-            <div className="text-right">
-              <p className="text-[9px] text-muted-foreground uppercase">Worst Case</p>
-              <p className="text-xs font-semibold text-red-400">{fmt(roiWorst)}</p>
-            </div>
-          </div>
-
-          {/* AI Rationale snippet */}
-          {bias && (
-            <p className="text-[10px] text-muted-foreground italic leading-relaxed border-t border-white/5 pt-2">
-              "{bias.length > 120 ? bias.substring(0, 120) + "…" : bias}"
-            </p>
-          )}
-
-          <Button
-            className="w-full h-8 text-xs bg-primary hover:bg-primary/90 mt-1 gap-1.5"
-            onClick={() => { setOpen(false); navigate("/predict"); }}>
-            <ExternalLink className="h-3 w-3" /> View Full Detailed Analysis
-          </Button>
-        </div>
-      </div>
-    );
-  };
-
-  // ─── Render ───────────────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <>
-      {/* Floating Trigger */}
+      {/* Floating trigger */}
       <div className="fixed bottom-5 right-5 z-50 flex flex-col items-end gap-2">
         {!open && (
           <div className="absolute -top-12 right-0 bg-background/80 backdrop-blur-md border border-primary/20 px-3 py-1.5 rounded-xl shadow-xl shadow-primary/10 animate-bounce">
-            <p className="text-[10px] font-medium whitespace-nowrap text-primary">Ask ChartMate AI ✨</p>
+            <p className="text-[10px] font-medium whitespace-nowrap text-primary">Ask about stocks, prices & markets</p>
             <div className="absolute -bottom-1 right-5 w-2 h-2 bg-background/80 border-r border-b border-primary/20 rotate-45" />
           </div>
         )}
-
-        {/* Outer animated rings — only visible when closed */}
         <div className="relative">
           {!open && (
             <>
-              {/* Slow rotating orbit ring */}
-              <span className="absolute inset-0 rounded-full border border-primary/30 animate-[spin_4s_linear_infinite]"
-                style={{ margin: "-6px" }} />
-              {/* Fast pulse ring */}
-              <span className="absolute inset-0 rounded-full border border-primary/20 animate-ping"
-                style={{ margin: "-4px", animationDuration: "2s" }} />
-              {/* Glow halo */}
-              <span className="absolute inset-0 rounded-full bg-primary/10 blur-lg animate-pulse"
-                style={{ margin: "-8px" }} />
+              <span className="absolute inset-0 rounded-full border border-primary/30 animate-[spin_4s_linear_infinite]" style={{ margin: "-6px" }} />
+              <span className="absolute inset-0 rounded-full border border-primary/20 animate-ping" style={{ margin: "-4px", animationDuration: "2s" }} />
+              <span className="absolute inset-0 rounded-full bg-primary/10 blur-lg animate-pulse" style={{ margin: "-8px" }} />
             </>
           )}
-
-          <button
-            onClick={() => setOpen(!open)}
+          <button onClick={() => setOpen(!open)}
             className={cn(
               "h-14 w-14 rounded-full flex items-center justify-center relative overflow-hidden transition-all duration-500",
               "bg-gradient-to-br from-teal-400 via-primary to-teal-600",
@@ -548,15 +340,9 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
               "hover:shadow-[0_0_32px_rgba(20,184,166,0.7),0_0_64px_rgba(20,184,166,0.3)]",
               "hover:scale-110 active:scale-95",
               open && "rotate-[135deg] shadow-[0_0_16px_rgba(20,184,166,0.3)]"
-            )}
-          >
-            {/* Inner shimmer sweep */}
-            {!open && (
-              <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -skew-x-12 animate-[shimmer_2.5s_ease-in-out_infinite]" />
-            )}
-            {/* Radial depth layer */}
+            )}>
+            {!open && <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -skew-x-12 animate-[shimmer_2.5s_ease-in-out_infinite]" />}
             <span className="absolute inset-0 rounded-full bg-gradient-to-t from-black/20 to-white/10" />
-
             {open
               ? <X className="h-6 w-6 text-white relative z-10 transition-transform duration-300" />
               : <MessageSquare className="h-6 w-6 text-white relative z-10 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]" />
@@ -565,14 +351,14 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
         </div>
       </div>
 
-      {/* Chat Window */}
+      {/* Chat window */}
       <div className={cn(
         "fixed bottom-24 right-5 z-50 w-[420px] max-w-[calc(100vw-2rem)] bg-background/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex flex-col transition-all duration-500 origin-bottom-right",
         open ? "scale-100 opacity-100 translate-y-0" : "scale-90 opacity-0 translate-y-10 pointer-events-none"
       )} style={{ height: "620px", maxHeight: "calc(100vh - 10rem)" }}>
 
         {/* Header */}
-        <div className="p-4 border-b bg-primary/5 flex items-center justify-between rounded-t-2xl shrink-0">
+        <div className="p-3 px-4 border-b bg-primary/5 flex items-center justify-between rounded-t-2xl shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-primary/20 rounded-lg shadow-inner">
               <Bot className="h-5 w-5 text-primary" />
@@ -581,95 +367,130 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
               <p className="font-bold text-sm tracking-tight">ChartMate Assistant</p>
               <div className="flex items-center gap-1.5">
                 <span className="h-1.5 w-1.5 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
-                <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Online & Ready</p>
+                <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Live prices · News · Analysis</p>
               </div>
             </div>
           </div>
-          <Button variant="ghost" size="icon" onClick={() => setOpen(false)} className="hover:bg-white/5 rounded-full">
-            <ChevronDown className="h-5 w-5" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" onClick={() => { startNewChat(); }}
+              className="hover:bg-white/5 rounded-full h-8 w-8" title="New chat">
+              <Plus className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => { setShowHistory(v => !v); loadConversations(); }}
+              className="hover:bg-white/5 rounded-full h-8 w-8" title="Chat history">
+              <History className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => setOpen(false)}
+              className="hover:bg-white/5 rounded-full h-8 w-8">
+              <ChevronDown className="h-5 w-5" />
+            </Button>
+          </div>
         </div>
 
-        {/* Messages */}
-        <ScrollArea className="flex-1 p-4">
-          <div className="space-y-5">
-            {messages.map((msg) => (
-              <div key={msg.id} className={cn("flex gap-3", msg.role === "user" ? "flex-row-reverse" : "flex-row")}>
-                <div className={cn(
-                  "h-8 w-8 rounded-full flex items-center justify-center shrink-0 shadow-sm",
-                  msg.role === "bot" ? "bg-primary/10 border border-primary/20" : "bg-muted border border-white/5"
-                )}>
-                  {msg.role === "bot" ? <Bot className="h-4 w-4 text-primary" /> : <User className="h-4 w-4" />}
-                </div>
-                <div className="flex flex-col gap-2 max-w-[85%]">
-                  <div className={cn(
-                    "rounded-2xl px-4 py-3 text-sm shadow-md",
-                    msg.role === "bot"
-                      ? "bg-muted/40 backdrop-blur-sm rounded-tl-sm border border-white/5"
-                      : "bg-primary text-primary-foreground rounded-tr-sm shadow-primary/20"
-                  )}>
-                    <div className="whitespace-pre-wrap leading-relaxed">{msg.text}</div>
+        {/* History panel */}
+        {showHistory && (
+          <div className="border-b bg-muted/20 max-h-[260px] overflow-y-auto shrink-0">
+            <div className="px-4 py-2 flex items-center justify-between">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Past Conversations</p>
+              <button onClick={() => setShowHistory(false)} className="text-xs text-muted-foreground hover:text-foreground">Close</button>
+            </div>
+            {conversations.length === 0 ? (
+              <p className="text-xs text-muted-foreground px-4 pb-3">No past conversations yet. Start chatting!</p>
+            ) : (
+              <div className="space-y-0.5 pb-2">
+                {conversations.map(conv => (
+                  <div key={conv.id}
+                    className={cn(
+                      "flex items-center gap-2 px-4 py-2 hover:bg-primary/5 cursor-pointer transition-colors group",
+                      convId === conv.id && "bg-primary/10"
+                    )}>
+                    <button className="flex-1 text-left min-w-0" onClick={() => loadConversation(conv.id)}>
+                      <p className="text-xs font-medium truncate">{conv.title}</p>
+                      <p className="text-[10px] text-muted-foreground">{timeAgo(conv.updated_at)}</p>
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id); }}
+                      className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all shrink-0"
+                      title="Delete conversation"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </div>
-                  {msg.component && (
-                    <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">{msg.component}</div>
-                  )}
-                </div>
-              </div>
-            ))}
-
-            {/* Symbol Search */}
-            {step === "symbol" && !predState.symbol && (
-              <div className="pl-11 pr-2 animate-in fade-in zoom-in-95 duration-500">
-                <div className="bg-muted/30 p-3 rounded-xl border border-white/5 space-y-2">
-                  <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider">Select Target Asset</p>
-                  <SymbolSearch
-                    value=""
-                    onValueChange={() => { }}
-                    onSelectSymbol={handleSymbolSelect}
-                    placeholder="Search stock or crypto..."
-                  />
-                </div>
+                ))}
               </div>
             )}
-
-            {/* Analyzing loader */}
-            {step === "analyzing" && (
-              <div className="pl-11 pr-2 animate-in fade-in slide-in-from-bottom-2">
-                <div className="bg-primary/5 border border-primary/20 rounded-2xl p-5 flex flex-col items-center gap-4 text-center">
-                  <div className="relative">
-                    <div className="h-12 w-12 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
-                    <BrainCircuit className="h-5 w-5 text-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-pulse" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-primary">AI is Analyzing…</p>
-                    <p className="text-[10px] text-muted-foreground mt-1">Fetching market data, news & running multi-horizon forecast</p>
-                  </div>
-                  <div className="w-full bg-muted/50 h-1.5 rounded-full overflow-hidden">
-                    <div className="bg-primary h-full animate-[progress_2s_ease-in-out_infinite]" style={{ animation: "progress 2s ease-in-out infinite" }} />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Results */}
-            {step === "results" && result && renderResult()}
-
-            {/* Typing indicator */}
-            {typing && step !== "analyzing" && (
-              <div className="flex gap-3">
-                <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
-                  <Bot className="h-4 w-4 text-primary" />
-                </div>
-                <div className="bg-muted/50 rounded-2xl rounded-tl-sm px-4 py-2.5 flex items-center gap-1">
-                  <span className="h-1.5 w-1.5 bg-muted-foreground rounded-full animate-bounce" />
-                  <span className="h-1.5 w-1.5 bg-muted-foreground rounded-full animate-bounce [animation-delay:0.2s]" />
-                  <span className="h-1.5 w-1.5 bg-muted-foreground rounded-full animate-bounce [animation-delay:0.4s]" />
-                </div>
-              </div>
-            )}
-            <div ref={bottomRef} />
           </div>
-        </ScrollArea>
+        )}
+
+        {/* Loading history state */}
+        {loadingHistory && (
+          <div className="flex-1 flex items-center justify-center">
+            <Loader2 className="h-6 w-6 text-primary animate-spin" />
+          </div>
+        )}
+
+        {/* Messages */}
+        {!loadingHistory && !showHistory && (
+          <ScrollArea className="flex-1 p-4">
+            <div className="space-y-5">
+              {messages.map(msg => (
+                <div key={msg.id} className={cn("flex gap-3", msg.role === "user" ? "flex-row-reverse" : "flex-row")}>
+                  <div className={cn(
+                    "h-8 w-8 rounded-full flex items-center justify-center shrink-0 shadow-sm",
+                    msg.role === "bot" ? "bg-primary/10 border border-primary/20" : "bg-muted border border-white/5"
+                  )}>
+                    {msg.role === "bot" ? <Bot className="h-4 w-4 text-primary" /> : <User className="h-4 w-4" />}
+                  </div>
+                  <div className="flex flex-col gap-2 max-w-[85%]">
+                    <div className={cn(
+                      "rounded-2xl px-4 py-3 text-sm shadow-md",
+                      msg.role === "bot"
+                        ? "bg-muted/40 backdrop-blur-sm rounded-tl-sm border border-white/5"
+                        : "bg-primary text-primary-foreground rounded-tr-sm shadow-primary/20"
+                    )}>
+                      {msg.role === "bot"
+                        ? <MarkdownText text={msg.text} />
+                        : <div className="whitespace-pre-wrap leading-relaxed">{msg.text}</div>
+                      }
+                    </div>
+                    {msg.component && (
+                      <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">{msg.component}</div>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              {typing && (
+                <div className="flex gap-3">
+                  <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+                    <Bot className="h-4 w-4 text-primary" />
+                  </div>
+                  <div className="bg-muted/50 rounded-2xl rounded-tl-sm px-4 py-2.5 flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 bg-muted-foreground rounded-full animate-bounce" />
+                    <span className="h-1.5 w-1.5 bg-muted-foreground rounded-full animate-bounce [animation-delay:0.2s]" />
+                    <span className="h-1.5 w-1.5 bg-muted-foreground rounded-full animate-bounce [animation-delay:0.4s]" />
+                  </div>
+                </div>
+              )}
+              <div ref={bottomRef} />
+            </div>
+          </ScrollArea>
+        )}
+
+        {/* Quick actions at start only */}
+        {!showHistory && messages.length <= 2 && !typing && (
+          <div className="px-4 pb-2 shrink-0 border-t pt-2">
+            <p className="text-[10px] text-muted-foreground mb-1.5 font-semibold uppercase tracking-wider">Try asking:</p>
+            <div className="flex flex-wrap gap-1.5">
+              {QUICK_ACTIONS.map(qa => (
+                <button key={qa.label} onClick={() => sendMessage(qa.msg)}
+                  className="text-[11px] rounded-full border border-primary/30 bg-primary/5 hover:bg-primary/15 text-primary font-medium px-2.5 py-1 transition-colors">
+                  {qa.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Input bar */}
         <div className="p-4 border-t shrink-0">
@@ -678,23 +499,17 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
               ref={inputRef}
               value={input}
               onChange={e => setInput(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && handleSendMessage(input)}
-              placeholder={
-                step === "symbol" ? "Search above or type a symbol..." :
-                  step === "amount" ? "Enter investment amount..." :
-                    step === "analyzing" ? "Analyzing, please wait..." :
-                      "Ask anything about trading or ChartMate..."
-              }
-              disabled={["risk_tolerance", "trading_style", "investment_goal", "stop_loss", "holding_period", "analyzing"].includes(step)}
+              onKeyDown={e => { if (e.key === "Enter") handleSend(); }}
+              placeholder="Ask about any stock, price, news, market…"
               className="flex-1 bg-muted/30 border border-white/10 rounded-xl px-4 py-2 text-sm outline-none focus:ring-1 focus:ring-primary/50 disabled:opacity-40"
             />
-            <Button
-              size="icon"
-              onClick={() => handleSendMessage(input)}
-              disabled={!input.trim() || typing || ["analyzing", "risk_tolerance", "trading_style", "investment_goal", "stop_loss", "holding_period"].includes(step)}>
+            <Button size="icon" onClick={handleSend} disabled={!input.trim() || typing}>
               {typing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>
           </div>
+          <p className="text-center text-[9px] text-muted-foreground mt-1.5">
+            Live market data · Not financial advice
+          </p>
         </div>
       </div>
     </>
