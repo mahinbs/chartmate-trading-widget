@@ -21,9 +21,16 @@ interface SymbolSearchProps {
   onValueChange: (value: string) => void;
   onSelectSymbol?: (symbol: SymbolData) => void;
   placeholder?: string;
+  allowedTypes?: string[];
 }
 
-export function SymbolSearch({ value, onValueChange, onSelectSymbol, placeholder = "Search symbols..." }: SymbolSearchProps) {
+export function SymbolSearch({
+  value,
+  onValueChange,
+  onSelectSymbol,
+  placeholder = "Search symbols...",
+  allowedTypes,
+}: SymbolSearchProps) {
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [symbols, setSymbols] = useState<SymbolData[]>([]);
@@ -72,7 +79,10 @@ export function SymbolSearch({ value, onValueChange, onSelectSymbol, placeholder
     }
   };
 
-  const selectedSymbol = symbols.find(s => s.full_symbol === value);
+  const visibleSymbols = symbols.filter((s) =>
+    !allowedTypes || allowedTypes.length === 0 || allowedTypes.includes(String(s.type || "").toLowerCase())
+  );
+  const selectedSymbol = symbols.find(s => s.full_symbol === value) || visibleSymbols.find(s => s.full_symbol === value);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -115,9 +125,9 @@ export function SymbolSearch({ value, onValueChange, onSelectSymbol, placeholder
                 "No symbols found."
               )}
             </CommandEmpty>
-            {symbols.length > 0 && (
+            {visibleSymbols.length > 0 && (
               <CommandGroup>
-                {symbols.map((symbol) => (
+                {visibleSymbols.map((symbol) => (
                   <CommandItem
                     key={symbol.full_symbol}
                     value={symbol.full_symbol}

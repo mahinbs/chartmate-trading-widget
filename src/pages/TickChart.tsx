@@ -62,7 +62,9 @@ const timeframeToMs: Record<string, number> = {
   '1M': 30 * 24 * 60 * 60_000,
 };
 
+
 type LevelRow = { price: number; bid: number; ask: number };
+type AssetClass = 'crypto' | 'forex' | 'stocks';
 type Snapshot = {
   source: string;
   symbol: string;
@@ -103,6 +105,80 @@ function mapToBinancePair(symbol: string): string {
   return 'btcusdt';
 }
 
+function decodeYfProto(bytes: Uint8Array): { price?: number; ts?: number } {
+  const out: Record<number, unknown> = {};
+  let pos = 0;
+  while (pos < bytes.length) {
+    const tagByte = bytes[pos++];
+    const field = tagByte >> 3;
+    const wire = tagByte & 0x7;
+    if (wire === 0) {
+      let val = 0, shift = 0;
+      while (pos < bytes.length) {
+        const b = bytes[pos++];
+        val |= (b & 0x7f) << shift;
+        if (!(b & 0x80)) break;
+        shift += 7;
+      }
+      out[field] = (val >>> 1) ^ -(val & 1);
+    } else if (wire === 2) {
+      let len = 0, shift = 0;
+      while (pos < bytes.length) {
+        const b = bytes[pos++];
+        len |= (b & 0x7f) << shift;
+        if (!(b & 0x80)) break;
+        shift += 7;
+      }
+      pos += len;
+    } else if (wire === 5) {
+      const dv = new DataView(bytes.buffer, bytes.byteOffset + pos, 4);
+      out[field] = dv.getFloat32(0, true);
+      pos += 4;
+    } else if (wire === 1) {
+      pos += 8;
+    } else {
+      break;
+    }
+  }
+  return {
+    price: typeof out[2] === 'number' ? Number(out[2]) : undefined,
+    ts: typeof out[3] === 'number' ? Number(out[3]) : undefined,
+  };
+}
+
+function parseYahooWsTick(raw: unknown): { price: number; ts: number } | null {
+  try {
+    if (typeof raw !== 'string') return null;
+    const decoded = atob(raw);
+    const bytes = new Uint8Array(decoded.length);
+    for (let i = 0; i < decoded.length; i++) bytes[i] = decoded.charCodeAt(i);
+    const msg = decodeYfProto(bytes);
+    const p = Number(msg.price);
+    if (!Number.isFinite(p) || p <= 0) return null;
+    const ts = Number(msg.ts);
+    const tsMs = Number.isFinite(ts) ? (ts < 1e11 ? ts * 1000 : ts) : Date.now();
+    return { price: p, ts: tsMs };
+  } catch {
+    return null;
+  }
+}
+
+function buildSideLevelsFromMid(mid: number, asset: 'stock' | 'forex' | 'crypto'): LevelRow[] {
+  const inc = getIncrementForPrice(mid, asset);
+  const out: LevelRow[] = [];
+  const base = Math.max(12000, mid * 1200);
+  for (let i = -12; i <= 12; i++) {
+    const price = Number((mid + i * inc).toFixed(6));
+    const dist = Math.abs(i) + 1;
+    const w = 1 / dist;
+    const bid = i <= 0 ? base * w : base * w * 0.08;
+    const ask = i >= 0 ? base * w : base * w * 0.08;
+    out.push({ price, bid, ask });
+  }
+  return out.sort((a, b) => b.price - a.price);
+}
+
+
 function getIncrementForPrice(price: number, asset: string): number {
   if (asset === 'forex') return 0.0005;
   if (price >= 50000) return 20;
@@ -111,6 +187,16 @@ function getIncrementForPrice(price: number, asset: string): number {
   if (price >= 100) return 0.5;
   if (price >= 10) return 0.05;
   return 0.01;
+}
+
+function getPriceDecimals(asset: AssetClass, price: number): number {
+  if (asset === 'forex') return 5;
+  if (asset === 'crypto') {
+    if (price >= 1000) return 2;
+    if (price >= 1) return 4;
+    return 6;
+  }
+  return price >= 100 ? 2 : 4;
 }
 
 function buildPriceLevels(center: number, increment: number, rows = 25): number[] {
@@ -154,6 +240,15 @@ function snapshotToColumn(snapshot: Snapshot, priceLevels: number[], timeframe: 
   };
 }
 
+function emptyColumn(priceLevels: number[], tsMs: number, timeframe: string, tz: string) {
+  const prices: Record<number, { bid: number; ask: number; isHighVolume: boolean }> = {};
+  for (const p of priceLevels) prices[p] = { bid: 0, ask: 0, isHighVolume: false };
+  return {
+    timeLabel: timeLabelFromTs(tsMs, timeframe, tz),
+    prices,
+  };
+}
+
 function buildOrderBookFromLevels(levels: number[], currentPrice: number, snapshotLevels: LevelRow[]) {
   const nearestMap = new Map<number, LevelRow>();
   for (const p of levels) {
@@ -176,8 +271,10 @@ function buildOrderBookFromLevels(levels: number[], currentPrice: number, snapsh
 
 const TickChart: React.FC = () => {
   const navigate = useNavigate();
-  const [symbol, setSymbol] = useState(TICK_SYMBOLS[0]);
-  const [symbolSearchValue, setSymbolSearchValue] = useState(TICK_SYMBOLS[0]);
+  const [assetClass, setAssetClass] = useState<AssetClass>('crypto');
+  const [symbol, setSymbol] = useState('BTC-USD');
+  const [symbolSearchValue, setSymbolSearchValue] = useState('BTC-USD');
+  const [selectedLabel, setSelectedLabel] = useState('Bitcoin');
   const [timeframe, setTimeframe] = useState('5m');
   const [chartState, setChartState] = useState<ChartSimState | null>(null);
   const [userTimezone, setUserTimezone] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone);
@@ -185,6 +282,30 @@ const TickChart: React.FC = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const lastBucketRef = useRef<number | null>(null);
+
+  const allowedTypes = useMemo(() => {
+    if (assetClass === 'crypto') return ['crypto'];
+    if (assetClass === 'forex') return ['forex'];
+    return ['stock'];
+  }, [assetClass]);
+
+  useEffect(() => {
+    if (assetClass === 'crypto') {
+      setSymbol('BTC-USD');
+      setSymbolSearchValue('BTC-USD');
+      setSelectedLabel('Bitcoin');
+      return;
+    }
+    if (assetClass === 'forex') {
+      setSymbol('EURUSD=X');
+      setSymbolSearchValue('EURUSD=X');
+      setSelectedLabel('EUR/USD');
+      return;
+    }
+    setSymbol('AAPL');
+    setSymbolSearchValue('AAPL');
+    setSelectedLabel('Apple Inc.');
+  }, [assetClass]);
 
   useEffect(() => {
     let cancelled = false;
@@ -218,9 +339,20 @@ const TickChart: React.FC = () => {
       const nextColumn = snapshotToColumn({ ...snapshot, timestamp: bucketTs }, levels, timeframe, userTimezone);
       const prevCols = prev?.columns ?? [];
       const sameBucket = lastBucketRef.current === bucketTs && prevCols.length > 0;
-      const nextColumns = sameBucket
+      let nextColumns = sameBucket
         ? [...prevCols.slice(0, -1), nextColumn]
         : [...prevCols, nextColumn].slice(-18);
+
+      // If history failed and we started with a single live bucket, prefill
+      // empty older buckets so chart still spans full width and updates at end.
+      if (nextColumns.length < 18) {
+        const missing = 18 - nextColumns.length;
+        const fills = Array.from({ length: missing }, (_, i) => {
+          const ts = bucketTs - (missing - i) * tfMs;
+          return emptyColumn(levels, ts, timeframe, userTimezone);
+        });
+        nextColumns = [...fills, ...nextColumns].slice(-18);
+      }
       lastBucketRef.current = bucketTs;
       const orderBook = buildOrderBookFromLevels(levels, snapshot.price, snapshot.levels);
 
@@ -277,6 +409,7 @@ const TickChart: React.FC = () => {
 
   useEffect(() => {
     let cancelled = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     if (wsRef.current) {
       wsRef.current.close(1000);
       wsRef.current = null;
@@ -360,6 +493,52 @@ const TickChart: React.FC = () => {
       };
       return () => {
         cancelled = true;
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        ws.close(1000);
+      };
+    }
+
+    if (asset === 'us' || asset === 'indian') {
+      setDataSource('Yahoo WS');
+      const ws = new WebSocket('wss://streamer.finance.yahoo.com');
+      wsRef.current = ws;
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ subscribe: [symbol] }));
+      };
+      ws.onmessage = (ev) => {
+        if (cancelled) return;
+        const tick = parseYahooWsTick(ev.data);
+        if (!tick) return;
+        const levels = buildSideLevelsFromMid(tick.price, 'stock');
+        const snapshot: Snapshot = {
+          source: 'Yahoo WS',
+          symbol,
+          timestamp: tick.ts,
+          price: tick.price,
+          open: tick.price,
+          high: tick.price,
+          low: tick.price,
+          close: tick.price,
+          volume: levels.reduce((s, r) => s + r.bid + r.ask, 0),
+          levels,
+        };
+        upsertFromSnapshot(snapshot);
+      };
+      ws.onclose = () => {
+        if (cancelled) return;
+        setDataSource('Yahoo WS (reconnecting)');
+        reconnectTimer = setTimeout(() => {
+          if (cancelled) return;
+          const retry = new WebSocket('wss://streamer.finance.yahoo.com');
+          wsRef.current = retry;
+          retry.onopen = () => retry.send(JSON.stringify({ subscribe: [symbol] }));
+          retry.onmessage = ws.onmessage;
+          retry.onclose = ws.onclose;
+        }, 1000);
+      };
+      return () => {
+        cancelled = true;
+        if (reconnectTimer) clearTimeout(reconnectTimer);
         ws.close(1000);
       };
     }
@@ -373,15 +552,19 @@ const TickChart: React.FC = () => {
     const intervalId = setInterval(pull, rate);
     return () => {
       cancelled = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       clearInterval(intervalId);
     };
-  }, [symbol, timeframe, userTimezone]);
+  }, [symbol, timeframe, userTimezone, assetClass]);
 
   const handleSymbolSelect = (s: SymbolData) => {
+    const type = String(s.type || '').toLowerCase();
+    if (!allowedTypes.includes(type)) return;
     const fs = (s.full_symbol || s.symbol || '').toUpperCase().trim();
     if (!fs) return;
     setSymbol(fs);
     setSymbolSearchValue(fs);
+    setSelectedLabel((s.description || s.symbol || fs).trim());
   };
 
   // Auto-scroll to latest column
@@ -395,7 +578,7 @@ const TickChart: React.FC = () => {
     if (!chartState) return null;
     const { columns, priceLevels } = chartState;
     return columns.map((col, cIdx) => (
-      <div key={`col-${cIdx}`} className="flex flex-col border-r border-gray-800/50 flex-1 min-w-[70px]">
+      <div key={`col-${cIdx}`} className="flex flex-col border-r border-gray-800/50 w-[70px] shrink-0">
         {priceLevels.map((price, pIdx) => {
           const cellData = col.prices[price];
           if (!cellData || (cellData.bid === 0 && cellData.ask === 0)) {
@@ -448,6 +631,8 @@ const TickChart: React.FC = () => {
   if (!chartState) return <div className="min-h-screen bg-[#0a0a0a] text-white p-4 flex items-center justify-center">Loading Tick Engine...</div>;
 
   const { priceLevels, columns, orderBook, currentPrice, stats } = chartState;
+  const priceDecimals = getPriceDecimals(assetClass, currentPrice);
+  const activeRowThreshold = Math.max(getIncrementForPrice(currentPrice, assetClass), 0.00001) / 2;
 
   return (
     <div className="flex flex-col h-screen w-full bg-[#0a0a0a] text-gray-200 overflow-hidden font-mono select-none">
@@ -466,10 +651,30 @@ const TickChart: React.FC = () => {
               value={symbolSearchValue}
               onValueChange={setSymbolSearchValue}
               onSelectSymbol={handleSymbolSelect}
-              placeholder="Search stock / crypto / forex"
+              placeholder={assetClass === 'crypto' ? 'Search crypto' : assetClass === 'forex' ? 'Search forex' : 'Search stocks'}
+              allowedTypes={allowedTypes}
             />
           </div>
-          {/* removed static dropdown; symbol picker is search-first */}
+          <div className="min-w-[200px] max-w-[340px] px-2.5 py-1 rounded bg-[#1a1a1a] border border-gray-700 text-[11px] text-gray-300 truncate">
+            <span className="text-gray-500 mr-1.5">Now Showing:</span>
+            <span className="text-white font-semibold">{selectedLabel}</span>
+            <span className="text-cyan-300 ml-1">({symbol})</span>
+          </div>
+          <div className="flex items-center gap-1">
+            {(['crypto', 'forex', 'stocks'] as AssetClass[]).map((cls) => (
+              <button
+                key={cls}
+                onClick={() => setAssetClass(cls)}
+                className={`px-2.5 py-1 text-[11px] rounded transition-colors ${
+                  assetClass === cls
+                    ? 'bg-cyan-600 text-white font-semibold'
+                    : 'bg-[#1e1e1e] text-gray-400 hover:bg-[#2a2a2a] hover:text-white'
+                }`}
+              >
+                {cls === 'stocks' ? 'Stocks' : cls === 'forex' ? 'Forex' : 'Crypto'}
+              </button>
+            ))}
+          </div>
           
           <div className="flex items-center space-x-1">
             {TIMEFRAMES.map(tf => (
@@ -488,10 +693,10 @@ const TickChart: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-gray-400">
-            <span>O: <span className="text-white">{stats.O.toFixed(1)}</span></span>
-            <span>H: <span className="text-white">{stats.H.toFixed(1)}</span></span>
-            <span>L: <span className="text-white">{stats.L.toFixed(1)}</span></span>
-            <span>C: <span className="text-white">{stats.C.toFixed(1)}</span></span>
+            <span>O: <span className="text-white">{stats.O.toFixed(priceDecimals)}</span></span>
+            <span>H: <span className="text-white">{stats.H.toFixed(priceDecimals)}</span></span>
+            <span>L: <span className="text-white">{stats.L.toFixed(priceDecimals)}</span></span>
+            <span>C: <span className="text-white">{stats.C.toFixed(priceDecimals)}</span></span>
             <span>V: <span className="text-white">{stats.V.toFixed(2)}M</span></span>
             <span>OI: <span className="text-white">{stats.OI.toFixed(1)}</span></span>
           </div>
@@ -518,7 +723,7 @@ const TickChart: React.FC = () => {
         {/* Horizontal Scrollable Area */}
         <div 
           ref={scrollRef}
-          className="flex overflow-x-auto overflow-y-hidden flex-1 pb-4 scroll-smooth w-full"
+          className="flex justify-end overflow-x-auto overflow-y-hidden flex-1 pb-4 scroll-smooth w-full"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
           {renderedGrid}
@@ -528,7 +733,7 @@ const TickChart: React.FC = () => {
         <div className="flex flex-col w-[80px] bg-[#111] border-l border-gray-800 shrink-0 shadow-[-10px_0_20px_rgba(0,0,0,0.5)] z-10">
           <div className="flex-1 flex flex-col pb-4">
             {orderBook.map((row, i) => {
-              const isActive = Math.abs(row.price - currentPrice) < 0.1; 
+              const isActive = Math.abs(row.price - currentPrice) < activeRowThreshold;
               
               // In the reference image, the right Y-axis is just a single thin column
               // showing the price, often highlighted. The order book depth is actually 
@@ -545,7 +750,10 @@ const TickChart: React.FC = () => {
 
                   <div className={`flex-1 flex items-center justify-center text-[11px] font-medium
                     ${isActive ? 'text-white' : 'text-gray-400'}`}>
-                    {row.price % 1 === 0 ? row.price.toLocaleString() : row.price.toFixed(1).toLocaleString()}
+                    {row.price.toLocaleString(undefined, {
+                      minimumFractionDigits: priceDecimals,
+                      maximumFractionDigits: priceDecimals,
+                    })}
                   </div>
                 </div>
               );

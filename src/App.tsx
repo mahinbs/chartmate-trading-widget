@@ -65,9 +65,9 @@ function LoggedInChatbot() {
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
 
-  // Hide only on auth/registration screens; show everywhere else for logged-in users.
+  // Hide on auth/registration and tick chart screens.
   if (!user) return null;
-  if (pathname === "/auth" || pathname === "/register" || pathname.startsWith("/auth/")) return null;
+  if (pathname === "/auth" || pathname === "/register" || pathname.startsWith("/auth/") || pathname === "/tick-chart") return null;
 
   return <PredictionChatbot open={open} setOpen={setOpen} />;
 }
