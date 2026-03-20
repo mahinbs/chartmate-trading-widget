@@ -83,8 +83,8 @@ export default function HomePage() {
     { to: "/home", label: "Dashboard", icon: LayoutDashboard },
     { to: "/predict", label: "New Analysis", icon: LineChart },
     { to: "/predictions", label: "Past Analyses", icon: Activity, iconOpacity: "opacity-50" },
-    { to: "/active-trades?tab=completed", label: "Performance", icon: BarChart3 },
-    { to: "/active-trades", label: "Order List", icon: List },
+    { to: "/active-trades?tab=completed", label: "Paper Trade Performance", icon: BarChart3 },
+    // { to: "/active-trades", label: "Order List", icon: List },
     { to: "/news", label: "News Feed", icon: Newspaper },
     { to: "/tick-chart", label: "Live Tick Chart", icon: BarChart2 },
   ];
@@ -460,7 +460,7 @@ export default function HomePage() {
                      <div className="relative z-[2] flex items-center gap-5">
                         <div className="p-3 bg-muted border border-border/50 rounded-xl shrink-0 group-hover:bg-muted/80 transition-colors shadow-sm"><BarChart3 className="h-5 w-5 text-foreground/80 group-hover:text-primary transition-colors" /></div>
                         <div>
-                           <p className="font-bold text-foreground text-[17px] tracking-tight">Performance</p>
+                           <p className="font-bold text-foreground text-[17px] tracking-tight">Paper Trade Performance</p>
                            <p className="text-[13px] font-medium text-muted-foreground/80 mt-1">Analyze your trading performance, win rates, and P&L stats.</p>
                         </div>
                      </div>

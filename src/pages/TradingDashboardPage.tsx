@@ -1038,7 +1038,7 @@ function LiveDashboard({ broker }: { broker: string }) {
       <header className="sticky top-0 z-50 border-b border-zinc-800 bg-black/90 backdrop-blur-xl">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <a href="/algo-setup" className="text-zinc-500 hover:text-zinc-300 transition-colors">
+            <a href="/home" className="text-zinc-500 hover:text-zinc-300 transition-colors">
               <ArrowLeft className="h-4 w-4" />
             </a>
           <div>

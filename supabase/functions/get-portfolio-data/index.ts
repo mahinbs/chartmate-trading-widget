@@ -32,6 +32,31 @@ async function oaPost(endpoint: string, apiKey: string): Promise<unknown> {
   return await res.json();
 }
 
+function pickList(payload: any, kind: "positions" | "holdings" | "orders" | "tradebook" | "open_positions"): any[] {
+  if (!payload || typeof payload !== "object") return [];
+  const keysByKind: Record<string, string[]> = {
+    positions: ["data", "positions", "positionbook", "result"],
+    holdings: ["data", "holdings", "result"],
+    orders: ["data", "orders", "orderbook", "result"],
+    tradebook: ["data", "trades", "tradebook", "result"],
+    open_positions: ["data", "open_positions", "openposition", "result"],
+  };
+  for (const k of keysByKind[kind] ?? []) {
+    if (Array.isArray(payload?.[k])) return payload[k];
+  }
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.response?.data)) return payload.response.data;
+  return [];
+}
+
+function pickFunds(payload: any): any {
+  if (!payload) return null;
+  if (payload?.funds && typeof payload.funds === "object") return payload.funds;
+  if (payload?.data && !Array.isArray(payload.data) && typeof payload.data === "object") return payload.data;
+  if (!Array.isArray(payload) && typeof payload === "object") return payload;
+  return null;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
 
@@ -88,18 +113,17 @@ Deno.serve(async (req: Request) => {
       oaPost("/api/v1/openposition",  apiKey),  // net open qty per symbol in real-time
     ]);
 
-    const extract = (r: PromiseSettledResult<unknown>) =>
-      r.status === "fulfilled" ? (r.value as any)?.data ?? r.value : null;
+    const fulfilled = (r: PromiseSettledResult<unknown>) => (r.status === "fulfilled" ? r.value : null);
 
     const extractError = (r: PromiseSettledResult<unknown>) =>
       r.status === "rejected" ? r.reason?.message ?? "Error" : null;
 
-    const funds      = extract(fundsResult);
-    const positions  = extract(positionsResult);
-    const holdings   = extract(holdingsResult);
-    const orders     = extract(ordersResult);
-    const tradebook  = extract(tradeBookResult);
-    const openPos    = extract(openPosResult);
+    const funds      = pickFunds(fulfilled(fundsResult));
+    const positions  = pickList(fulfilled(positionsResult), "positions");
+    const holdings   = pickList(fulfilled(holdingsResult), "holdings");
+    const orders     = pickList(fulfilled(ordersResult), "orders");
+    const tradebook  = pickList(fulfilled(tradeBookResult), "tradebook");
+    const openPos    = pickList(fulfilled(openPosResult), "open_positions");
 
     return new Response(
       JSON.stringify({

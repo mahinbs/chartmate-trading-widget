@@ -94,6 +94,7 @@ export default function StatementSection() {
       const { data, error } = await supabase
         .from("openalgo_order_history" as any)
         .select("*")
+        .eq("user_id", session.user.id)
         .order("order_timestamp", { ascending: false })
         .limit(historyLimit);
 

@@ -41,6 +41,70 @@ interface OpenAlgoOrder {
   [key: string]:    unknown;
 }
 
+function asArray(v: unknown): any[] {
+  return Array.isArray(v) ? v : [];
+}
+
+function pickOrderRows(payload: any): OpenAlgoOrder[] {
+  if (!payload || typeof payload !== "object") return [];
+  const candidates = [
+    payload?.data,
+    payload?.orders,
+    payload?.orderbook,
+    payload?.result,
+    payload?.response?.data,
+    payload?.response?.orders,
+    payload?.response?.orderbook,
+  ];
+  for (const c of candidates) {
+    if (Array.isArray(c)) return c as OpenAlgoOrder[];
+  }
+  if (Array.isArray(payload)) return payload as OpenAlgoOrder[];
+  return [];
+}
+
+function pickTradeRows(payload: any): OpenAlgoOrder[] {
+  if (!payload || typeof payload !== "object") return [];
+  const candidates = [
+    payload?.data,
+    payload?.trades,
+    payload?.tradebook,
+    payload?.result,
+    payload?.response?.data,
+    payload?.response?.trades,
+    payload?.response?.tradebook,
+  ];
+  for (const c of candidates) {
+    if (Array.isArray(c)) return c as OpenAlgoOrder[];
+  }
+  if (Array.isArray(payload)) return payload as OpenAlgoOrder[];
+  return [];
+}
+
+function normTimestamp(raw: unknown): string | null {
+  if (raw == null) return null;
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    const ms = raw > 1e12 ? raw : raw * 1000;
+    return new Date(ms).toISOString();
+  }
+  const s = String(raw).trim();
+  if (!s) return null;
+  const iso = Date.parse(s);
+  if (!Number.isNaN(iso)) return new Date(iso).toISOString();
+  // Handle dd-mm-yyyy hh:mm:ss
+  const m = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (m) {
+    const dd = Number(m[1]);
+    const mm = Number(m[2]) - 1;
+    const yyyy = Number(m[3].length === 2 ? `20${m[3]}` : m[3]);
+    const hh = Number(m[4] ?? 0);
+    const mi = Number(m[5] ?? 0);
+    const ss = Number(m[6] ?? 0);
+    return new Date(Date.UTC(yyyy, mm, dd, hh, mi, ss)).toISOString();
+  }
+  return null;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
 
@@ -83,52 +147,78 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Fetch orderbook from OpenAlgo
-    const orderRes = await fetch(`${OPENALGO_URL}/api/v1/orderbook`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ apikey: apiKey }),
-    });
+    // Fetch both orderbook and tradebook from OpenAlgo.
+    const [orderRes, tradeRes] = await Promise.all([
+      fetch(`${OPENALGO_URL}/api/v1/orderbook`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apikey: apiKey }),
+      }),
+      fetch(`${OPENALGO_URL}/api/v1/tradebook`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apikey: apiKey }),
+      }),
+    ]);
 
-    if (!orderRes.ok) {
-      const errText = await orderRes.text();
-      console.error("OpenAlgo orderbook fetch failed:", errText);
-      return new Response(
-        JSON.stringify({ error: "Failed to fetch orders from broker", detail: errText }),
-        { status: 502, headers },
-      );
-    }
+    const orderData = orderRes.ok ? await orderRes.json().catch(() => ({})) : {};
+    const tradeData = tradeRes.ok ? await tradeRes.json().catch(() => ({})) : {};
+    const orders = pickOrderRows(orderData);
+    const trades = pickTradeRows(tradeData);
 
-    const orderData = await orderRes.json() as { status: string; data?: OpenAlgoOrder[] };
-
-    if (orderData.status !== "success" || !Array.isArray(orderData.data)) {
+    if (!orders.length && !trades.length) {
       return new Response(
         JSON.stringify({ orders: [], synced_count: 0, message: "No orders found or broker returned empty" }),
         { status: 200, headers },
       );
     }
 
-    const orders = orderData.data;
-
     // Upsert into Supabase
-    const rows = orders.map((o: OpenAlgoOrder) => ({
+    const orderRows = orders.map((o: OpenAlgoOrder) => ({
       user_id:          user.id,
-      broker_order_id:  o.orderid ?? null,
-      symbol:           o.tradingsymbol ?? null,
-      exchange:         o.exchange ?? null,
-      action:           o.transactiontype ?? null,
-      quantity:         o.quantity ?? null,
-      price:            o.price ?? null,
-      order_type:       o.ordertype ?? null,
-      product_type:     o.producttype ?? null,
+      broker_order_id:  (o.orderid ?? o.order_id ?? o.orderId ?? null) as string | null,
+      symbol:           (o.tradingsymbol ?? o.symbol ?? null) as string | null,
+      exchange:         (o.exchange ?? null) as string | null,
+      action:           (o.transactiontype ?? o.action ?? o.side ?? null) as string | null,
+      quantity:         Number((o.quantity ?? (o as any).qty ?? 0)) || null,
+      price:            Number((o.price ?? 0)) || null,
+      order_type:       (o.ordertype ?? (o as any).order_type ?? null) as string | null,
+      product_type:     (o.producttype ?? (o as any).product ?? null) as string | null,
       status:           (o.status ?? "").toLowerCase(),
-      filled_quantity:  o.filledshares ?? null,
-      average_price:    o.averageprice ?? null,
-      strategy_name:    o.strategy ?? null,
-      rejection_reason: o.rejectreason ?? null,
-      order_timestamp:  o.updatetime ?? o.ordertime ?? null,
+      filled_quantity:  Number((o.filledshares ?? (o as any).filledquantity ?? (o as any).filled_quantity ?? 0)) || null,
+      average_price:    Number((o.averageprice ?? (o as any).average_price ?? 0)) || null,
+      strategy_name:    (o.strategy ?? (o as any).strategy_name ?? null) as string | null,
+      rejection_reason: (o.rejectreason ?? (o as any).rejection_reason ?? null) as string | null,
+      order_timestamp:  normTimestamp(o.updatetime ?? o.ordertime ?? (o as any).timestamp),
       synced_at:        new Date().toISOString(),
     })).filter((r) => r.broker_order_id);
+
+    const tradeRows = trades.map((t: OpenAlgoOrder) => {
+      const orderId = (t.orderid ?? (t as any).order_id ?? (t as any).orderId ?? "").toString().trim();
+      const fillId = ((t as any).fillid ?? (t as any).fill_id ?? "").toString().trim();
+      const ts = normTimestamp((t as any).tradetime ?? (t as any).timestamp ?? (t as any).ordertime);
+      const synthetic = fillId ? `TRADE-${fillId}` : (orderId && ts ? `TRADE-${orderId}-${ts}` : null);
+      return {
+        user_id:          user.id,
+        broker_order_id:  orderId || synthetic,
+        symbol:           ((t.tradingsymbol ?? (t as any).symbol ?? null) as string | null),
+        exchange:         ((t.exchange ?? null) as string | null),
+        action:           ((t.transactiontype ?? (t as any).action ?? (t as any).side ?? null) as string | null),
+        quantity:         Number((t.quantity ?? (t as any).tradedquantity ?? (t as any).qty ?? 0)) || null,
+        price:            Number(((t as any).price ?? 0)) || null,
+        order_type:       ((t.ordertype ?? (t as any).order_type ?? "MARKET") as string),
+        product_type:     ((t.producttype ?? (t as any).product ?? null) as string | null),
+        status:           "complete",
+        filled_quantity:  Number(((t as any).filledshares ?? (t as any).filledquantity ?? (t as any).tradedquantity ?? t.quantity ?? 0)) || null,
+        average_price:    Number(((t as any).averageprice ?? (t as any).average_price ?? 0)) || null,
+        strategy_name:    ((t.strategy ?? (t as any).strategy_name ?? null) as string | null),
+        rejection_reason: null,
+        order_timestamp:  ts,
+        synced_at:        new Date().toISOString(),
+      };
+    }).filter((r) => r.broker_order_id);
+
+    const rows = [...orderRows, ...tradeRows];
 
     let syncedCount = 0;
     if (rows.length > 0) {
@@ -156,6 +246,7 @@ Deno.serve(async (req: Request) => {
         orders:        allOrders ?? [],
         synced_count:  syncedCount,
         fetched_from_broker: orders.length,
+        fetched_trades_from_broker: trades.length,
       }),
       { status: 200, headers },
     );

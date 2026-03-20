@@ -238,6 +238,7 @@ interface PortfolioData {
   token_expired: boolean;
   funds: Record<string, unknown> | null;
   positions: PositionRow[];
+  open_positions?: PositionRow[];
   holdings: HoldingRow[];
   orders: OrderRow[];
   tradebook: TradeRow[];
@@ -936,7 +937,8 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
 
   useEffect(() => {
     if (!data) return;
-    const hasInstruments = data.positions.length + data.holdings.length > 0;
+    const brokerPositions = data.positions.length ? data.positions : (data.open_positions ?? []);
+    const hasInstruments = brokerPositions.length + data.holdings.length > 0;
     if (!hasInstruments) return;
     refreshQuotes(data, true);
     const id = setInterval(() => refreshQuotes(data, true), 15_000);
@@ -1011,8 +1013,9 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
   const collateral  = funds.collateral ?? funds.collateral_liquid ?? 0;
   const m2m         = funds.m2munrealized ?? funds.m2m_unrealised ?? funds.mtm ?? 0;
 
-  const openPositions  = data.positions.filter(p => getQty(p) !== 0);
-  const positionsPnl   = data.positions.reduce((s, p) => s + Number((p as any).pnl ?? 0), 0);
+  const brokerPositions = (data.positions?.length ? data.positions : (data.open_positions ?? []));
+  const openPositions  = brokerPositions.filter(p => getQty(p) !== 0);
+  const positionsPnl   = brokerPositions.reduce((s, p) => s + Number((p as any).pnl ?? 0), 0);
   const holdingsPnl    = data.holdings.reduce((s, h) => s + Number(h.pnl ?? 0), 0);
   const totalPnl       = positionsPnl + holdingsPnl;
   const openOrders     = data.orders.filter(o => CANCELLABLE.includes(getOrderStatus(o).toLowerCase()));
@@ -1063,7 +1066,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                   Cancel All ({openOrders.length})
                 </Button>
               )}
-              {data.positions.length + data.holdings.length > 0 && (
+              {brokerPositions.length + data.holdings.length > 0 && (
                 <Button variant="ghost" size="sm" onClick={() => refreshQuotes(data)} disabled={quotesLoading}
                   className="h-7 px-2 text-[11px] text-amber-400 hover:text-amber-300 border border-zinc-700 hover:border-amber-500/40">
                   {quotesLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3 mr-1" />}
@@ -1186,7 +1189,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
           <Tabs defaultValue="positions" className="w-full">
             <TabsList className="bg-zinc-800 border border-zinc-700 h-auto w-full grid grid-cols-2 sm:grid-cols-5 p-1 gap-1.5">
               {[
-                { value: "positions",  label: "Positions", icon: <ArrowUpRight className="h-3 w-3 mr-0.5" />, count: data.positions.length },
+                { value: "positions",  label: "Positions", icon: <ArrowUpRight className="h-3 w-3 mr-0.5" />, count: brokerPositions.length },
                 { value: "holdings",   label: "Holdings",  icon: <Briefcase className="h-3 w-3 mr-0.5" />,    count: data.holdings.length },
                 { value: "orders",     label: "Orders",    icon: <ClipboardList className="h-3 w-3 mr-0.5" />, count: data.orders.length },
                 { value: "tradebook",  label: "Trades",    icon: <BookOpen className="h-3 w-3 mr-0.5" />,      count: data.tradebook.length },
@@ -1201,7 +1204,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
 
             {/* ── Positions ─────────────────────────────────────────── */}
             <TabsContent value="positions" className="mt-2">
-              {data.positions.length === 0 ? (
+              {brokerPositions.length === 0 ? (
                 <div className="text-center py-10">
                   <ArrowUpRight className="h-8 w-8 text-zinc-700 mx-auto mb-2" />
                   <p className="text-zinc-500 text-sm">No positions today</p>
@@ -1218,7 +1221,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                       </tr>
                     </thead>
                     <tbody>
-                      {data.positions.filter(p => getQty(p) !== 0).map((p, i) => {
+                      {brokerPositions.filter(p => getQty(p) !== 0).map((p, i) => {
                         const symbol  = getSymbol(p);
                         const qty     = getQty(p);
                         const avg     = getAvgPrice(p);
