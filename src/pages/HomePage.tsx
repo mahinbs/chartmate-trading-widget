@@ -49,6 +49,14 @@ interface WatchlistItem {
   position: number;
 }
 
+interface NavLinkItem {
+  to: string;
+  label: string;
+  icon: any;
+  iconOpacity?: string;
+  iconColor?: string;
+}
+
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -71,7 +79,7 @@ export default function HomePage() {
   const isAlgoProvisioned = isPremium && (algoStatus === "provisioned" || algoStatus === "active");
   const algoEntryPath = !isPremium ? "/#pricing" : (isAlgoProvisioned ? "/trading-dashboard" : "/algo-setup");
 
-  const navLinks = [
+  const navLinks: NavLinkItem[] = [
     { to: "/home", label: "Dashboard", icon: LayoutDashboard },
     { to: "/predict", label: "New Analysis", icon: LineChart },
     { to: "/predictions", label: "Past Analyses", icon: Activity, iconOpacity: "opacity-50" },
@@ -561,8 +569,8 @@ export default function HomePage() {
          </div>
       </main>
 
-      {/* 📰 RIGHT PANEL (Market News - 280px) */}
-      <aside className="w-[320px] shrink-0 border-l border-sidebar-border bg-sidebar h-full hidden 2xl:flex flex-col p-6 z-20">
+      {/* 📰 RIGHT PANEL (Market News) */}
+      <aside className="w-[300px] shrink-0 border-l border-sidebar-border bg-sidebar h-full hidden xl:flex flex-col p-5 z-20">
          <div className="flex items-center gap-2 mb-8">
             <h3 className="font-bold text-foreground text-sm tracking-widest uppercase opacity-90">Market News</h3>
             <span className="w-2 h-2 rounded-full bg-trading-green animate-pulse shadow-[0_0_8px] shadow-trading-green relative top-[0.5px]"></span>
