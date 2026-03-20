@@ -101,6 +101,23 @@ function isFinanceOrPlatformQuery(msg: string): boolean {
   return /\b(stock|share|market|price|trading|trade|invest|investment|buy|sell|hold|sentiment|news|economy|inflation|fed|rbi|crypto|bitcoin|ethereum|nifty|sensex|forex|commodity|gold|oil|portfolio|risk|analysis|chartmate|platform|backtest|paper trade|strategy)\b/.test(lower);
 }
 
+function isFollowUpQuery(msg: string): boolean {
+  const lower = msg.toLowerCase().trim();
+  // Broadly treat natural, short continuation prompts as contextual follow-ups.
+  if (lower.length <= 120 && /^(why|how|what|when|where|which|and|so|then|now|ok|okay)\b/.test(lower)) return true;
+  return /\b(what is it now|what about now|and now|can you explain that|why is that|why it|why did it|why has it|why suddenly|what changed|what happened|and for now|what about this one|same for this|is it still)\b/i.test(lower);
+}
+
+function isAbusiveQuery(msg: string): boolean {
+  const lower = msg.toLowerCase();
+  return /\b(fuck you|idiot|stupid|moron|dumb|chutiya|madarchod|bhenchod|gandu|harami|slut|bitch|asshole)\b/.test(lower);
+}
+
+function isClearlyOutOfScope(msg: string): boolean {
+  const lower = msg.toLowerCase();
+  return /\b(recipe|cooking|movie|cinema|song|music|cricket|football|match score|weather|joke|meme|relationship|dating|travel|hotel|restaurant|coding interview|leetcode|java|python tutorial|homework|exam)\b/.test(lower);
+}
+
 function detectIntent(msg: string): Intent {
   const lower = msg.toLowerCase();
   if (/\b(price|trading at|current price|what.?s.*worth|how much is|quote|rate|worth now|value)\b/.test(lower))
@@ -144,8 +161,25 @@ function inferSymbolFromHistory(history: Array<{ role?: string; text?: string }>
     if (!text) continue;
     const sym = extractSymbol(text);
     if (sym) return sym;
+    // Handle lowercase / mixed-case tickers in history such as "btc-usd".
+    const m = text.match(/\b([a-z]{1,5}(?:-usd)?)\b/i);
+    if (m) {
+      const t = m[1].toUpperCase();
+      if (t.endsWith("-USD")) return `${t}.CC`;
+      if (!/^(WHY|WHAT|WHEN|WHERE|WHICH|HOW|THIS|THAT|WITH|FROM|ABOUT|MARKET|PRICE|NEWS|TODAY|NOW)$/.test(t)) {
+        return `${t}.US`;
+      }
+    }
   }
   return null;
+}
+
+function hasFinanceContextInHistory(history: Array<{ role?: string; text?: string }>): boolean {
+  const recent = history.slice(-15);
+  return recent.some((h) => {
+    const t = String(h?.text ?? "");
+    return !!extractSymbol(t) || isFinanceOrPlatformQuery(t);
+  });
 }
 
 // ── EODHD real-time price ─────────────────────────────────────────────────────
@@ -493,7 +527,20 @@ serve(async (req) => {
       }), { status: 200, headers: JSON_HEADERS });
     }
 
-    if (mode !== "platform" && !isFinanceOrPlatformQuery(message)) {
+    const hasContext = mode !== "platform" && hasFinanceContextInHistory(history);
+    const followUpContext = mode !== "platform" && isFollowUpQuery(message) && hasContext;
+    const shouldBlockOutOfScope = mode !== "platform"
+      && !isFinanceOrPlatformQuery(message)
+      && (!hasContext || isClearlyOutOfScope(message));
+
+    if (mode !== "platform" && isAbusiveQuery(message)) {
+      return new Response(JSON.stringify({
+        answer: "I can help with market questions, but I can't respond to abusive messages. Ask me about a stock, crypto, forex, or market move and I'll help.",
+        suggestContact: false,
+      }), { status: 200, headers: JSON_HEADERS });
+    }
+
+    if (shouldBlockOutOfScope) {
       return new Response(JSON.stringify({
         answer: "I'm a financial market assistant, so I can only help with stocks, crypto, market news, trading, and the TradingSmart platform. Try asking me about a stock price or market analysis.",
         suggestContact: false,
@@ -501,7 +548,16 @@ serve(async (req) => {
     }
 
     // "platform" mode forces platform-only intent (for non-logged-in support chatbot)
-    const intent: Intent = mode === "platform" ? "platform" : detectIntent(message);
+    const detectedIntent = detectIntent(message);
+    const followUpPriceHint = /\b(now|current|latest|price)\b/i.test(message);
+    const followUpMoveHint = /\b(why|how|reason|raised|rise|up|jump|surge|fall|down|drop|dump|move|changed|spike)\b/i.test(message);
+    const intent: Intent = mode === "platform"
+      ? "platform"
+      : (
+          (followUpContext || hasContext) && detectedIntent === "general"
+            ? (followUpPriceHint ? "price" : (followUpMoveHint ? "impact" : "analysis"))
+            : (followUpContext && detectedIntent === "general" && followUpPriceHint ? "price" : detectedIntent)
+        );
     const explicitSymbol = mode === "platform" ? null : extractSymbol(message);
     const symbol = mode === "platform" ? null : (explicitSymbol ?? inferSymbolFromHistory(history));
 
@@ -527,7 +583,7 @@ serve(async (req) => {
       const fh   = fhR.status   === "fulfilled" ? fhR.value    : null;
       const av   = avR.status   === "fulfilled" ? avR.value    : null;
       const yq   = yR.status    === "fulfilled" ? yR.value     : null;
-      altQuote   = eodPrice ? null : (yq ?? fh ?? av ?? null);
+      altQuote   = yq ?? fh ?? av ?? null;
       if (isCommoditySymbol(symbol) && yq) {
         eodPrice = null;
         altQuote = yq;
@@ -563,7 +619,7 @@ serve(async (req) => {
     const trendBlock = buildHistoryBlock(historyArr);
 
     const historyText = history.length
-      ? history.slice(-16).map(h => `${h.role === "user" ? "User" : "Assistant"}: ${String(h.text ?? "").replace(/\n/g, " ")}`).join("\n")
+      ? history.slice(-15).map(h => `${h.role === "user" ? "User" : "Assistant"}: ${String(h.text ?? "").replace(/\n/g, " ")}`).join("\n")
       : "No previous messages.";
 
     // ── Gemini inference ───────────────────────────────────────────────────
