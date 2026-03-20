@@ -194,11 +194,16 @@ export default function AlgoOnboardingPage() {
       // Check if already submitted
       const { data: existing } = await (supabase as any)
         .from("algo_onboarding")
-        .select("id,status")
+        .select("id,status,broker")
         .eq("user_id", session.user.id)
         .maybeSingle();
 
       if (existing) {
+        // If already provisioned/active, this page should not be shown.
+        if (existing.status === "provisioned" || existing.status === "active") {
+          navigate("/trading-dashboard", { replace: true });
+          return;
+        }
         setAlreadySubmitted(true);
         setExistingStatus(existing.status ?? null);
         setExistingBroker(existing.broker ?? null);

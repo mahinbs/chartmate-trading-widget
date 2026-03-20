@@ -3,6 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { useState } from "react";
 import HomePage from "./pages/HomePage";
 import PredictPage from "./pages/PredictPage";
 import PredictionsPage from "./pages/PredictionsPage";
@@ -51,10 +52,25 @@ import StrategiesPage from "./pages/StrategiesPage";
 import NewsPage from "./pages/NewsPage";
 import NewsDetailPage from "./pages/NewsDetailPage";
 import TickChart from "./pages/TickChart";
+import { PredictionChatbot } from "./components/PredictionChatbot";
+import { useAuth } from "./hooks/useAuth";
+import { useLocation } from "react-router-dom";
 
 // OpenAlgo ping temporarily disabled in mock-order mode to avoid CORS noise
 
 const queryClient = new QueryClient();
+
+function LoggedInChatbot() {
+  const { user } = useAuth();
+  const { pathname } = useLocation();
+  const [open, setOpen] = useState(false);
+
+  // Hide only on auth/registration screens; show everywhere else for logged-in users.
+  if (!user) return null;
+  if (pathname === "/auth" || pathname === "/register" || pathname.startsWith("/auth/")) return null;
+
+  return <PredictionChatbot open={open} setOpen={setOpen} />;
+}
 
 const App = () => (
   <HelmetProvider>
@@ -65,6 +81,7 @@ const App = () => (
         <BrowserRouter>
           <div className="min-h-screen bg-background text-foreground">
             <PlatformChatbot />
+            <LoggedInChatbot />
             <Routes>
               <Route path="/rsb-fintech-founder" element={<LandingPage />} />
               <Route path="/dsn-fintech-founder" element={<LandingPage />} />

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import {
-  X, Send, ChevronDown, Bot, User, MessageSquare,
+  X, Send, ChevronDown, Bot, User,
   Newspaper, Loader2, ExternalLink, Plus, History, Trash2,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -35,6 +35,33 @@ const uid = (prefix: string) =>
 // Use `as any` to avoid type-inference explosions until types are regenerated.
 const convTable = () => supabase.from("chatbot_conversations" as any);
 const msgTable = () => supabase.from("chatbot_messages" as any);
+
+// Premium chatbot logo for logged-in assistant
+function AssistantLogo({ size = 22, className }: { size?: number; className?: string }) {
+  const uid = `assistant-logo-${size}`;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 32 32"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+    >
+      <defs>
+        <linearGradient id={`${uid}-bg`} x1="4" y1="4" x2="28" y2="28" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity="0.95" />
+          <stop offset="100%" stopColor="#14b8a6" stopOpacity="0.95" />
+        </linearGradient>
+      </defs>
+      <rect x="4" y="4" width="24" height="24" rx="8" fill={`url(#${uid}-bg)`} />
+      <path d="M10 13.5c0-2.5 1.9-4.5 4.3-4.5h3.4c2.4 0 4.3 2 4.3 4.5v4.2c0 2.4-1.9 4.3-4.3 4.3h-1.6l-2.8 2v-2h-1c-2.4 0-4.3-1.9-4.3-4.3v-4.2z" fill="white" fillOpacity="0.95" />
+      <circle cx="14" cy="16" r="1.2" fill="hsl(var(--primary))" />
+      <circle cx="18" cy="16" r="1.2" fill="hsl(var(--primary))" />
+      <path d="M24.7 8.2l.5 1 .9.1-.7.7.2.9-.9-.4-.9.4.2-.9-.7-.7.9-.1.5-1z" fill="white" />
+    </svg>
+  );
+}
 
 // ── Markdown renderer ────────────────────────────────────────────────────────
 function MarkdownText({ text }: { text: string }) {
@@ -345,7 +372,7 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
             <span className="absolute inset-0 rounded-full bg-gradient-to-t from-black/20 to-white/10" />
             {open
               ? <X className="h-6 w-6 text-white relative z-10 transition-transform duration-300" />
-              : <MessageSquare className="h-6 w-6 text-white relative z-10 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]" />
+              : <AssistantLogo size={24} className="relative z-10 drop-shadow-[0_0_6px_rgba(255,255,255,0.45)]" />
             }
           </button>
         </div>
@@ -360,8 +387,8 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
         {/* Header */}
         <div className="p-3 px-4 border-b bg-primary/5 flex items-center justify-between rounded-t-2xl shrink-0">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-primary/20 rounded-lg shadow-inner">
-              <Bot className="h-5 w-5 text-primary" />
+            <div className="p-2 bg-primary/15 rounded-lg shadow-inner ring-1 ring-primary/20">
+              <AssistantLogo size={20} />
             </div>
             <div>
               <p className="font-bold text-sm tracking-tight">ChartMate Assistant</p>
