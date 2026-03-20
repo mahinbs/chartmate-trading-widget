@@ -1220,15 +1220,22 @@ export default function TradingDashboardPage() {
       const isPaid = sub?.status === "active" || sub?.status === "trialing";
       if (!isPaid) { setStatus({ provisioned: false, broker: null, loading: false }); return; }
 
+      const { data: onboarding } = await (supabase as any)
+        .from("algo_onboarding")
+        .select("status")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      const isProvisioned = onboarding?.status === "provisioned" || onboarding?.status === "active";
+
       const { data: integration } = await (supabase as any)
         .from("user_trading_integration")
-        .select("is_active, broker, openalgo_api_key")
+        .select("is_active, broker")
         .eq("user_id", user.id)
         .eq("is_active", true)
         .maybeSingle();
 
       setStatus({
-        provisioned: !!integration?.openalgo_api_key,
+        provisioned: !!isProvisioned,
         broker: integration?.broker ?? null,
         loading: false,
       });

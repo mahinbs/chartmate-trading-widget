@@ -4,6 +4,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDistanceToNow } from "date-fns";
+import { SymbolSearch, SymbolData } from "@/components/SymbolSearch";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from "@/components/ui/dialog";
 
 interface NewsArticle {
   id: string;
@@ -28,10 +32,9 @@ import { useTradingIntegration } from "@/hooks/useTradingIntegration";
 import { TradingIntegrationModal } from "@/components/trading/TradingIntegrationModal";
 import { useSubscription } from "@/hooks/useSubscription";
 import logo from '../assets/logo.png'
-// import { PredictionChatbot } from "@/components/PredictionChatbot";
 import YahooChartPanel from "@/components/YahooChartPanel";
 
-const PREFERRED_STOCKS = [
+const DEFAULT_STOCKS = [
   { symbol: "BTC-USD", name: "Bitcoin" },
   { symbol: "AAPL", name: "Apple Inc." },
   { symbol: "EURUSD=X", name: "EUR/USD" },
@@ -39,34 +42,61 @@ const PREFERRED_STOCKS = [
   { symbol: "NVDA", name: "NVIDIA Corp." }
 ];
 
+interface WatchlistItem {
+  id: string;
+  symbol: string;
+  display_name: string;
+  position: number;
+}
+
+interface NavLinkItem {
+  to: string;
+  label: string;
+  icon: any;
+  iconOpacity?: string;
+  iconColor?: string;
+}
+
 
 export default function HomePage() {
   const navigate = useNavigate();
   const { signOut, user } = useAuth();
   const { isAdmin } = useAdmin();
-  const { hasIntegration, save, refresh } = useTradingIntegration();
+  const { save, refresh } = useTradingIntegration();
   const { isPremium } = useSubscription();
   const [showBrokerModal, setShowBrokerModal] = useState(false);
-  const [showChatbot, setShowChatbot] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
-  const [activeStock, setActiveStock] = useState(PREFERRED_STOCKS[0]);
+  const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
+  const [activeStock, setActiveStock] = useState<{ symbol: string; name: string } | null>(null);
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [symbolPickerValue, setSymbolPickerValue] = useState("");
+  const [selectedSymbol, setSelectedSymbol] = useState<SymbolData | null>(null);
   const [news, setNews] = useState<NewsArticle[]>([]);
   const [newsLoading, setNewsLoading] = useState(true);
-  const canAccessOpenAlgoDashboard = isPremium && hasIntegration;
+  const [algoStatus, setAlgoStatus] = useState<string | null>(null);
+  const isAlgoProvisioned = isPremium && (algoStatus === "provisioned" || algoStatus === "active");
+  const algoEntryPath = !isPremium ? "/#pricing" : (isAlgoProvisioned ? "/trading-dashboard" : "/algo-setup");
 
-  const navLinks = [
+  const navLinks: NavLinkItem[] = [
     { to: "/home", label: "Dashboard", icon: LayoutDashboard },
     { to: "/predict", label: "New Analysis", icon: LineChart },
-    { to: canAccessOpenAlgoDashboard ? '/trading-dashboard' : '/algo-setup', label: "Live Trading", icon: Activity },
     { to: "/predictions", label: "Past Analyses", icon: Activity, iconOpacity: "opacity-50" },
     { to: "/active-trades?tab=completed", label: "Performance", icon: BarChart3 },
     { to: "/active-trades", label: "Order List", icon: List },
     { to: "/news", label: "News Feed", icon: Newspaper },
     { to: "/tick-chart", label: "Live Tick Chart", icon: BarChart2 },
-    { to: "/algo-setup", label: "Algo Trade", icon: Bot, iconColor: "text-primary opacity-80" },
   ];
+  if (isPremium) {
+    if (isAlgoProvisioned) {
+      navLinks.push({ to: "/trading-dashboard", label: "Live Trading", icon: Activity });
+    } else {
+      navLinks.push({ to: "/algo-setup", label: "Algo Trade", icon: Bot, iconColor: "text-primary opacity-80" });
+    }
+  } else {
+    navLinks.push({ to: "/#pricing", label: "Algo Trade", icon: Bot, iconColor: "text-primary opacity-80" });
+  }
 
   if (isAdmin) {
     navLinks.push({ to: "/admin", label: "Admin Panel", icon: ShieldCheck, iconColor: "text-destructive opacity-80" });
@@ -93,6 +123,55 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
+    const loadWatchlist = async () => {
+      if (!user?.id) return;
+      const { data } = await supabase
+        .from("watchlists")
+        .select("id,symbol,display_name,position")
+        .eq("user_id", user.id)
+        .order("position", { ascending: true });
+
+      let rows = (data as WatchlistItem[] | null) ?? [];
+      if (rows.length === 0) {
+        const seed = DEFAULT_STOCKS.map((s, i) => ({
+          user_id: user.id,
+          symbol: s.symbol,
+          display_name: s.name,
+          position: i,
+        }));
+        const { data: inserted } = await supabase
+          .from("watchlists")
+          .insert(seed)
+          .select("id,symbol,display_name,position")
+          .order("position", { ascending: true });
+        rows = (inserted as WatchlistItem[] | null) ?? [];
+      }
+
+      setWatchlist(rows);
+      if (rows.length > 0) {
+        setActiveStock({ symbol: rows[0].symbol, name: rows[0].display_name });
+      }
+    };
+    loadWatchlist();
+  }, [user?.id]);
+
+  useEffect(() => {
+    const fetchAlgoStatus = async () => {
+      if (!user?.id || !isPremium) {
+        setAlgoStatus(null);
+        return;
+      }
+      const { data } = await (supabase as any)
+        .from("algo_onboarding")
+        .select("status")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      setAlgoStatus(data?.status ?? null);
+    };
+    fetchAlgoStatus();
+  }, [user?.id, isPremium]);
+
+  useEffect(() => {
     if (isMobileMenuOpen && mobileMenuRef.current) {
       gsap.fromTo(
         mobileMenuRef.current,
@@ -114,6 +193,53 @@ export default function HomePage() {
     } else {
       setIsMobileMenuOpen(false);
     }
+  };
+
+  const addStock = async () => {
+    if (!user?.id) return;
+    if (watchlist.length >= 5) return;
+    const symbol = (selectedSymbol?.full_symbol || selectedSymbol?.symbol || "").trim().toUpperCase();
+    if (!symbol) return;
+    if (watchlist.some(w => w.symbol.toUpperCase() === symbol)) {
+      setSymbolPickerValue("");
+      setSelectedSymbol(null);
+      setAddDialogOpen(false);
+      return;
+    }
+    const display = (selectedSymbol?.description?.trim() || selectedSymbol?.symbol || symbol).slice(0, 60);
+    const { data } = await supabase
+      .from("watchlists")
+      .insert({
+        user_id: user.id,
+        symbol,
+        display_name: display,
+        position: watchlist.length,
+      })
+      .select("id,symbol,display_name,position")
+      .single();
+    if (data) {
+      const next = [...watchlist, data as WatchlistItem];
+      setWatchlist(next);
+      setActiveStock({ symbol: symbol, name: display });
+    }
+    setSymbolPickerValue("");
+    setSelectedSymbol(null);
+    setAddDialogOpen(false);
+  };
+
+  const removeStock = async (item: WatchlistItem) => {
+    if (watchlist.length <= 1) return;
+    await supabase.from("watchlists").delete().eq("id", item.id);
+    const next = watchlist.filter(w => w.id !== item.id);
+    setWatchlist(next);
+    if (activeStock?.symbol === item.symbol) {
+      const first = next[0];
+      if (first) setActiveStock({ symbol: first.symbol, name: first.display_name });
+    }
+    // normalize positions
+    next.forEach((w, i) => {
+      if (w.position !== i) supabase.from("watchlists").update({ position: i }).eq("id", w.id);
+    });
   };
 
   return (
@@ -207,31 +333,91 @@ export default function HomePage() {
          {/* Scrollable Layout */}
          <div className="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-8 pb-12 pt-4 space-y-7 no-scrollbar relative">
             
-            {/* PREFERRED STOCK CHARTS (Switchable) */}
+            {/* USER WATCHLIST (customizable) */}
             <div className="space-y-4">
                <div className="flex items-center gap-2 flex-wrap pb-1">
-                  {PREFERRED_STOCKS.map((stock) => (
-                    <button
-                      key={stock.symbol}
-                      onClick={() => setActiveStock(stock)}
-                      className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all border ${
-                        activeStock.symbol === stock.symbol 
-                        ? "bg-primary text-primary-foreground border-primary shadow-[0_0_15px] shadow-primary/20" 
+                  {watchlist.map((stock) => (
+                    <div key={stock.id} className={`group flex items-center rounded-xl border ${
+                      activeStock?.symbol === stock.symbol
+                        ? "bg-primary text-primary-foreground border-primary shadow-[0_0_15px] shadow-primary/20"
                         : "glass-button-premium text-muted-foreground border-white/10 hover:border-primary/30 hover:text-foreground"
-                      }`}
-                    >
-                      {stock.name} ({stock.symbol.split('-')[0]})
-                    </button>
+                    }`}>
+                      <button
+                        onClick={() => setActiveStock({ symbol: stock.symbol, name: stock.display_name })}
+                        className="px-3 py-2 text-xs font-bold whitespace-nowrap"
+                      >
+                        {stock.display_name} ({stock.symbol.split("-")[0]})
+                      </button>
+                      <button
+                        onClick={() => removeStock(stock)}
+                        className="px-2 py-2 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Remove from watchlist"
+                      >
+                        ✕
+                      </button>
+                    </div>
                   ))}
+
+                  {watchlist.length < 5 && (
+                    <button
+                      onClick={() => {
+                        setSymbolPickerValue("");
+                        setSelectedSymbol(null);
+                        setAddDialogOpen(true);
+                      }}
+                      className="h-9 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90"
+                    >
+                      Add
+                    </button>
+                  )}
                </div>
                
                <div className="h-[400px] sm:h-[450px]">
-                 <YahooChartPanel
-                   symbol={activeStock.symbol}
-                   displayName={activeStock.name}
-                 />
+                 {activeStock && (
+                   <YahooChartPanel
+                     symbol={activeStock.symbol}
+                     displayName={activeStock.name}
+                   />
+                 )}
                </div>
             </div>
+
+            {/* Add Stock Popup */}
+            <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+              <DialogContent className="max-w-xl">
+                <DialogHeader>
+                  <DialogTitle>Add symbol to your watchlist</DialogTitle>
+                  <DialogDescription>
+                    Search legal symbols across stocks, crypto, forex, commodities, and indices. Max 5 symbols.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-3">
+                  <SymbolSearch
+                    value={symbolPickerValue}
+                    onValueChange={setSymbolPickerValue}
+                    onSelectSymbol={(s) => setSelectedSymbol(s)}
+                    placeholder="Search symbol (TSLA, BTC-USD, EURUSD, RELIANCE...)"
+                  />
+                  {selectedSymbol && (
+                    <div className="text-xs text-muted-foreground rounded-lg border border-border p-2.5">
+                      <span className="font-semibold text-foreground">{selectedSymbol.symbol}</span>
+                      {" · "}
+                      {selectedSymbol.description}
+                      {" · "}
+                      {selectedSymbol.exchange.toUpperCase()}
+                      {" · "}
+                      {selectedSymbol.type.toUpperCase()}
+                    </div>
+                  )}
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={() => setAddDialogOpen(false)}>Cancel</Button>
+                    <Button onClick={addStock} disabled={!selectedSymbol || watchlist.length >= 5}>
+                      Add to Watchlist
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
 
             {/* UPSELL (If free user) */}
             {!isPremium && (
@@ -325,8 +511,8 @@ export default function HomePage() {
                         </p>
                      </div>
                   </div>
-                  <Link to="/algo-setup" className="shrink-0 w-full md:w-auto flex justify-center bg-primary text-primary-foreground px-8 h-[52px] items-center rounded-xl font-semibold hover:bg-primary/90 transition-all shadow-[0_4px_16px_-4px_var(--primary)] group-hover:shadow-[0_8px_24px_-6px_var(--primary)] text-base glass-button-premium border-white/20">
-                     Get Started &rarr;
+                  <Link to={algoEntryPath} className="shrink-0 w-full md:w-auto flex justify-center bg-primary text-primary-foreground px-8 h-[52px] items-center rounded-xl font-semibold hover:bg-primary/90 transition-all shadow-[0_4px_16px_-4px_var(--primary)] group-hover:shadow-[0_8px_24px_-6px_var(--primary)] text-base glass-button-premium border-white/20">
+                     {!isPremium ? "Upgrade to Unlock →" : (isAlgoProvisioned ? "Open Live Dashboard →" : "Complete Algo Setup →")}
                   </Link>
                </div>
             </div>
@@ -383,8 +569,8 @@ export default function HomePage() {
          </div>
       </main>
 
-      {/* 📰 RIGHT PANEL (Market News - 280px) */}
-      <aside className="w-[320px] shrink-0 border-l border-sidebar-border bg-sidebar h-full hidden 2xl:flex flex-col p-6 z-20">
+      {/* 📰 RIGHT PANEL (Market News) */}
+      <aside className="w-[300px] shrink-0 border-l border-sidebar-border bg-sidebar h-full hidden xl:flex flex-col p-5 z-20">
          <div className="flex items-center gap-2 mb-8">
             <h3 className="font-bold text-foreground text-sm tracking-widest uppercase opacity-90">Market News</h3>
             <span className="w-2 h-2 rounded-full bg-trading-green animate-pulse shadow-[0_0_8px] shadow-trading-green relative top-[0.5px]"></span>
@@ -513,10 +699,6 @@ export default function HomePage() {
         onSaved={() => refresh()}
         save={async (params) => save(params)}
       />
-      {/* <PredictionChatbot 
-        open={showChatbot} 
-        setOpen={setShowChatbot} 
-      /> */}
     </div>
   );
 }
