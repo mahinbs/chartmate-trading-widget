@@ -152,6 +152,50 @@ function decodeYFProto(bytes: Uint8Array): {
   };
 }
 
+function decodeYahooMessage(rawData: unknown): { price?: number; changePercent?: number; change?: number; time?: number } | null {
+  try {
+    if (typeof rawData !== "string") return null;
+    // Most frames are base64 protobuf
+    const raw = atob(rawData);
+    const bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+    return decodeYFProto(bytes);
+  } catch {
+    // Some environments can deliver JSON payloads
+    try {
+      if (typeof rawData !== "string") return null;
+      const parsed = JSON.parse(rawData);
+      const q = Array.isArray(parsed) ? parsed[0] : parsed;
+      return {
+        price: toFiniteNumber(q?.price) ?? undefined,
+        changePercent: toFiniteNumber(q?.changePercent) ?? undefined,
+        change: toFiniteNumber(q?.change) ?? undefined,
+        time: toFiniteNumber(q?.time ?? q?.timestamp ?? q?.ts) ?? undefined,
+      };
+    } catch {
+      return null;
+    }
+  }
+}
+
+function intervalToSeconds(interval: string): number {
+  const v = interval.toLowerCase();
+  if (v === "1m") return 60;
+  if (v === "2m") return 120;
+  if (v === "5m") return 300;
+  if (v === "15m") return 900;
+  if (v === "30m") return 1800;
+  if (v === "60m" || v === "1h") return 3600;
+  if (v === "1d") return 86400;
+  if (v === "1wk") return 604800;
+  return 2592000;
+}
+
+function isIntradayInterval(interval: string): boolean {
+  const v = interval.toLowerCase();
+  return v === "1m" || v === "2m" || v === "5m" || v === "15m" || v === "30m" || v === "60m" || v === "1h";
+}
+
 /* ─── Chart colours ────────────────────────────────────────────────────── */
 const CHART_BG      = "#0a0a0f";
 const GRID_COLOR    = "rgba(255,255,255,0.04)";
@@ -377,11 +421,8 @@ export default function YahooChartPanel({
 
     ws.onmessage = (event) => {
       try {
-        // Frame is a base64-encoded protobuf message
-        const raw = atob(event.data);
-        const bytes = new Uint8Array(raw.length);
-        for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-        const msg = decodeYFProto(bytes);
+        const msg = decodeYahooMessage(event.data);
+        if (!msg) return;
 
         const pNum = toFiniteNumber(msg.price);
         if (pNum != null && pNum > 0) {
@@ -393,18 +434,46 @@ export default function YahooChartPanel({
           if (ch != null) setLiveChange(ch);
           if (pct != null) setLivePct(pct);
 
-          // Live-update last candle's close (and high/low) in chart
+          // Live-update stream candle and roll to a new bar on bucket change.
           if (priceSerRef.current && lastCandleRef.current) {
             const prev = lastCandleRef.current;
-            const updated: CandlestickData = {
-              time:  prev.time,
-              open:  prev.open,
-              high:  Math.max(prev.high as number, p),
-              low:   Math.min(prev.low  as number, p),
-              close: p,
-            };
-            try { (priceSerRef.current as any).update(updated); } catch { /* ignore */ }
-            lastCandleRef.current = updated;
+            const tickSec = Math.floor(toFiniteNumber(msg.time) ?? Date.now() / 1000);
+            const secPerBar = intervalToSeconds(activeRange.interval);
+            const bucket = Math.floor(tickSec / secPerBar) * secPerBar;
+
+            if (chartType === "candlestick" && typeof prev.time === "number" && isIntradayInterval(activeRange.interval)) {
+              if (bucket > prev.time) {
+                const newCandle: CandlestickData = {
+                  time: bucket as unknown as Time,
+                  open: prev.close,
+                  high: p,
+                  low: p,
+                  close: p,
+                };
+                try { (priceSerRef.current as any).update(newCandle); } catch { /* ignore */ }
+                lastCandleRef.current = newCandle;
+              } else {
+                const updated: CandlestickData = {
+                  time: prev.time,
+                  open: prev.open,
+                  high: Math.max(prev.high as number, p),
+                  low: Math.min(prev.low as number, p),
+                  close: p,
+                };
+                try { (priceSerRef.current as any).update(updated); } catch { /* ignore */ }
+                lastCandleRef.current = updated;
+              }
+            } else {
+              const updated: CandlestickData = {
+                time: prev.time,
+                open: prev.open,
+                high: Math.max(prev.high as number, p),
+                low: Math.min(prev.low as number, p),
+                close: p,
+              };
+              try { (priceSerRef.current as any).update(updated); } catch { /* ignore */ }
+              lastCandleRef.current = updated;
+            }
           }
         }
       } catch { /* ignore malformed frame */ }
@@ -416,14 +485,14 @@ export default function YahooChartPanel({
 
     ws.onclose = (e) => {
       setWsStatus("off");
-      // Auto-reconnect after 3s unless we deliberately closed it
+      // Auto-reconnect quickly unless we deliberately closed it
       if (e.code !== 1000) {
-        wsReconRef.current = setTimeout(() => connectWS(sym), 3_000);
+        wsReconRef.current = setTimeout(() => connectWS(sym), 1_000);
       }
     };
 
     wsRef.current = ws;
-  }, [onLivePrice]);
+  }, [onLivePrice, activeRange.interval, chartType]);
 
   /* ── re-build chart when chart type changes ─────────────────────────── */
   useEffect(() => {
@@ -446,12 +515,7 @@ export default function YahooChartPanel({
     };
   }, [symbol, activeRange]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* ── refresh OHLCV candles every 60s (just to keep chart fresh) ─────── */
-  useEffect(() => {
-    if (!symbol) return;
-    const t = setInterval(() => fetchData(symbol, activeRange, true), 60_000);
-    return () => clearInterval(t);
-  }, [symbol, activeRange, fetchData]);
+  // No periodic polling here. Price movement is stream-driven by Yahoo WebSocket.
 
   /* ── cleanup on unmount ─────────────────────────────────────────────── */
   useEffect(() => {

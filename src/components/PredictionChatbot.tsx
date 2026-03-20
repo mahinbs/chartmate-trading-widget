@@ -288,7 +288,7 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
     if (cId) persistMessage(cId, "user", trimmed);
 
     const historyPayload = [...messages, { role: "user" as const, text: trimmed }]
-      .slice(-16)
+      .slice(-15)
       .map(m => ({ role: m.role, text: m.text }));
     const minDelay = new Promise<void>(r => setTimeout(r, 500));
     const wasAnalysis = isAnalysisQuery(trimmed);
