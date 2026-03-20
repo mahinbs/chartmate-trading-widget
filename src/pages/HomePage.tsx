@@ -138,14 +138,14 @@ export default function HomePage() {
                    
                    if (isActive) {
                      return (
-                       <Link key={link.to} to={link.to} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-sidebar-primary/10 text-primary border-l-[3px] border-primary text-sm font-semibold transition-colors shadow-[inset_0_1px_0_0_rgba(255,255,255,0.02)]">
+                       <Link key={link.label} to={link.to} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-sidebar-primary/10 text-primary border-l-[3px] border-primary text-sm font-semibold transition-colors shadow-[inset_0_1px_0_0_rgba(255,255,255,0.02)]">
                           <Icon className="h-4 w-4" /> {link.label}
                        </Link>
                      );
                    }
 
                    return (
-                     <Link key={link.to} to={link.to} className="flex items-center gap-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:text-foreground hover:bg-sidebar-primary/5 transition-all text-sm font-medium border-l-[3px] border-transparent ml-[1px]">
+                     <Link key={link.label} to={link.to} className="flex items-center gap-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:text-foreground hover:bg-sidebar-primary/5 transition-all text-sm font-medium border-l-[3px] border-transparent ml-[1px]">
                         <Icon className={`h-4 w-4 ${link.iconColor || ''} ${link.iconOpacity || ''}`} /> {link.label}
                      </Link>
                    );
@@ -470,7 +470,7 @@ export default function HomePage() {
                          
                          return (
                            <Link 
-                             key={link.to} 
+                             key={link.label} 
                              to={link.to} 
                              onClick={closeMobileMenu}
                              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-sm font-medium ${
