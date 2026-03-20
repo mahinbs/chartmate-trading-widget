@@ -47,7 +47,7 @@ const FAQS: FAQ[] = [
   {
     keywords: ["what is", "about", "platform", "chartmate", "this app", "this tool", "what does", "explain platform", "tell me about", "overview", "intro"],
     question: "What is this platform?",
-    answer: `**ChartMate** is an AI-powered trading intelligence platform that helps you make smarter trading decisions.
+    answer: `**TradingSmart** is an AI-powered trading intelligence platform that helps you make smarter trading decisions.
 
 Here's what it does:
 • **AI Predictions** — our AI engine analyses live price, RSI, MACD, news & global macro to predict BUY / SELL / HOLD signals with probability scores.
@@ -161,7 +161,7 @@ A higher score doesn't guarantee profit — always manage risk with stop-losses.
   {
     keywords: ["get started", "how to start", "new user", "sign up", "login", "begin"],
     question: "How do I get started?",
-    answer: `Getting started with ChartMate is simple!
+    answer: `Getting started with TradingSmart is simple!
 
 **Step 1:** Sign up or log in at **/auth**
 **Step 2:** Go to the **Home page** — your dashboard overview
@@ -178,7 +178,7 @@ Start with Paper Trades to learn the platform before using real money!`,
   {
     keywords: ["real", "actual", "live", "genuine", "is it real", "accurate", "reliable", "trust"],
     question: "Is the platform real?",
-    answer: `Yes — **ChartMate is as real as it gets**.
+    answer: `Yes — **TradingSmart is as real as it gets**.
 
 • **Live market data** — Real-time price, volume, and change from connected data feeds.
 • **Real AI** — A production-grade large language model runs the full analysis. No fake or placeholder logic.
@@ -202,7 +202,7 @@ Reach out for:
 ];
 
 const QUICK_REPLIES = [
-  { label: "What is ChartMate?", keywords: ["what is this platform"] },
+  { label: "What is TradingSmart?", keywords: ["what is this platform"] },
   { label: "Is it real?", keywords: ["is it real"] },
   { label: "How AI works", keywords: ["ai", "prediction"] },
   { label: "Strategies", keywords: ["strategy"] },
@@ -249,7 +249,7 @@ function cleanAnswerText(raw: string): string {
     .replace(/([.!?])\s*•\s+/g, "$1\n• ")
     .replace(/[—–]/g, " ")
     .replace(/\s*--\s*/g, " ")
-    .replace(/\s{2,}/g, " ")
+    .replace(/[ \t]{2,}/g, " ")
     .trim();
 }
 
@@ -318,7 +318,7 @@ export function PlatformChatbot() {
   const WELCOME: Message = {
     id: "welcome",
     role: "bot",
-    text: `Hi there! 👋 I'm **Tradingsmart Bot** — your support assistant. I can help with anything about the platform: AI predictions, strategies, paper trading, daily analysis, backtesting, and more. Ask me in your own words and I'll answer properly!`,
+    text: `Hi there! 👋 I'm **TradingSmart Bot** — your support assistant. I can help with anything about the platform: AI predictions, strategies, paper trading, daily analysis, backtesting, and more. Ask me in your own words and I'll answer properly!`,
   };
 
   useEffect(() => {
@@ -371,7 +371,7 @@ export function PlatformChatbot() {
       addBotReply((isContactTopic ? "" : pickIntro()) + faq.answer, !!isContactTopic);
     } else {
       addBotReply(
-        `I only answer questions about the ChartMate platform. For anything else, please reach out — we'll help you properly.\n\n**Call or WhatsApp:** ${PHONE_NUMBER}`,
+        `I only answer questions about the TradingSmart platform. For anything else, please reach out — we'll help you properly.\n\n**Call or WhatsApp:** ${PHONE_NUMBER}`,
         true
       );
     }
@@ -413,7 +413,7 @@ export function PlatformChatbot() {
             <ChatbotLogo size={22} />
           </div>
           <div className="flex-1">
-            <p className="font-semibold text-sm">Tradingsmart Bot</p>
+            <p className="font-semibold text-sm">TradingSmart Bot</p>
             <div className="flex items-center gap-1.5">
               <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
               <p className="text-xs text-muted-foreground">Your trading support assistant</p>
@@ -440,7 +440,7 @@ export function PlatformChatbot() {
                 {msg.role === "bot" ? <MarkdownText text={msg.text} /> : <p className="text-sm">{msg.text}</p>}
                 {msg.isContact && (
                   <div className="mt-3 flex flex-col gap-1.5">
-                    <a href={`https://wa.me/${WHATSAPP_NUMBER}?text=Hi%2C%20I%20need%20help%20with%20ChartMate`}
+                    <a href={`https://wa.me/${WHATSAPP_NUMBER}?text=Hi%2C%20I%20need%20help%20with%20TradingSmart`}
                       target="_blank" rel="noopener noreferrer"
                       className="flex items-center justify-center gap-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-semibold py-2 px-3 transition-colors">
                       <MessageSquare className="h-3.5 w-3.5" /> Chat on WhatsApp

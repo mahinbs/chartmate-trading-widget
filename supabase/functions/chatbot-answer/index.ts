@@ -1,7 +1,7 @@
 /**
  * chatbot-answer — Market Intelligence Chatbot
  * Real-time prices via EODHD · News & sentiment via MarketAux · Analysis via Gemini
- * Also handles platform (ChartMate) support questions.
+ * Also handles platform (TradingSmart) support questions.
  */
 
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
@@ -138,6 +138,16 @@ function extractSymbol(msg: string): string | null {
   return null;
 }
 
+function inferSymbolFromHistory(history: Array<{ role?: string; text?: string }>): string | null {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const text = String(history[i]?.text ?? "");
+    if (!text) continue;
+    const sym = extractSymbol(text);
+    if (sym) return sym;
+  }
+  return null;
+}
+
 // ── EODHD real-time price ─────────────────────────────────────────────────────
 async function fetchEODHDPrice(symbol: string): Promise<Record<string, unknown> | null> {
   try {
@@ -252,7 +262,7 @@ function sanitizeAnswerText(raw: string): string {
     .replace(/\r/g, "")
     .replace(/[—–]/g, " ")
     .replace(/\s*--\s*/g, " ")
-    .replace(/\s{2,}/g, " ")
+    .replace(/[ \t]{2,}/g, " ")
     .trim();
 }
 
@@ -267,18 +277,78 @@ function enforceRiskLine(answer: string, intent: Intent, msg: string): string {
   return `${withoutOldRisk}\n\n${RISK_LINE}`;
 }
 
+function toYahooSymbol(symbol: string): string | null {
+  const map: Record<string, string> = {
+    "CL.US": "CL=F",
+    "BZ.US": "BZ=F",
+    "GC.US": "GC=F",
+    "SI.US": "SI=F",
+    "HG.US": "HG=F",
+    "NG.US": "NG=F",
+    "BTC-USD.CC": "BTC-USD",
+    "ETH-USD.CC": "ETH-USD",
+    "SOL-USD.CC": "SOL-USD",
+    "XRP-USD.CC": "XRP-USD",
+    "DOGE-USD.CC": "DOGE-USD",
+    "BNB-USD.CC": "BNB-USD",
+    "ADA-USD.CC": "ADA-USD",
+    "EURUSD.FOREX": "EURUSD=X",
+    "GBPUSD.FOREX": "GBPUSD=X",
+    "USDINR.FOREX": "USDINR=X",
+    "NSEI.INDX": "^NSEI",
+    "BSESN.INDX": "^BSESN",
+    "GSPC.INDX": "^GSPC",
+    "DJI.INDX": "^DJI",
+    "IXIC.INDX": "^IXIC",
+  };
+  if (map[symbol]) return map[symbol];
+  if (symbol.endsWith(".US")) return symbol.replace(".US", "");
+  return null;
+}
+
+function isCommoditySymbol(symbol: string): boolean {
+  return ["CL.US", "BZ.US", "GC.US", "SI.US", "HG.US", "NG.US"].includes(symbol);
+}
+
+async function fetchYahooQuote(symbol: string): Promise<Record<string, unknown> | null> {
+  const ySymbol = toYahooSymbol(symbol);
+  if (!ySymbol) return null;
+  try {
+    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(ySymbol)}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const q = data?.quoteResponse?.result?.[0];
+    if (!q || q.regularMarketPrice == null) return null;
+    return {
+      price: q.regularMarketPrice,
+      change: q.regularMarketChange,
+      changePct: q.regularMarketChangePercent,
+      open: q.regularMarketOpen,
+      high: q.regularMarketDayHigh,
+      low: q.regularMarketDayLow,
+      prevClose: q.regularMarketPreviousClose,
+      volume: q.regularMarketVolume,
+      source: "yahoo",
+    };
+  } catch {
+    return null;
+  }
+}
+
 function buildPriceBlock(eod: Record<string, unknown> | null, altQuote: Record<string, unknown> | null, sym: string): string {
   const data = eod ?? altQuote;
   if (!data) return `(Live price for ${sym} unavailable — using training knowledge for estimates)`;
-  const price = eod ? eod.close : (altQuote as Record<string, unknown>)?.price;
-  const chg   = eod ? eod.change : (altQuote as Record<string, unknown>)?.change;
-  const chgP  = eod ? eod.change_p : (altQuote as Record<string, unknown>)?.changePct;
-  const open  = eod?.open;
-  const high  = eod?.high;
-  const low   = eod?.low;
-  const vol   = eod?.volume;
+  const price = (data as Record<string, unknown>)?.close ?? (data as Record<string, unknown>)?.price;
+  const chg   = (data as Record<string, unknown>)?.change;
+  const chgP  = (data as Record<string, unknown>)?.change_p ?? (data as Record<string, unknown>)?.changePct;
+  const open  = (data as Record<string, unknown>)?.open;
+  const high  = (data as Record<string, unknown>)?.high;
+  const low   = (data as Record<string, unknown>)?.low;
+  const vol   = (data as Record<string, unknown>)?.volume;
+  const source = eod ? "EODHD" : ((altQuote as Record<string, unknown>)?.source === "yahoo" ? "Yahoo Finance" : "fallback");
 
-  let block = `LIVE PRICE — ${sym.replace(".US","").replace(".BSE","").replace(".CC","").replace("-USD","")}:
+  let block = `LIVE PRICE — ${sym.replace(".US","").replace(".BSE","").replace(".CC","").replace("-USD","")} (source: ${source}):
 • Price: $${fmt(price)}
 • Change: ${chg != null ? (Number(chg) >= 0 ? "+" : "") + fmt(chg) : "N/A"} (${chgP != null ? fmt(chgP) + "%" : "N/A"})`;
   if (open) block += `\n• Open: $${fmt(open)}`;
@@ -316,7 +386,7 @@ function buildHistoryBlock(history: unknown[]): string {
 
 // ── Platform knowledge base ───────────────────────────────────────────────────
 const PLATFORM_KNOWLEDGE = `
-ChartMate / Tradingsmart is an AI-powered trading intelligence platform.
+TradingSmart is an AI-powered trading intelligence platform.
 • AI Predictions: analyses live price, RSI, MACD, news & global macro → BUY/SELL/HOLD with probability score.
 • 11 Strategies ranked for current market: Trend Following, Swing, Scalping, Mean Reversion, Breakout, Momentum, Range, News-based, Options Buying, Options Selling, Pairs Trading.
 • Backtesting: validates strategy on 100+ days real OHLCV; shows win rate, drawdown, profit factor.
@@ -348,12 +418,12 @@ function buildPrompt(opts: {
 
     impact: `User is asking how a macro factor (oil price, Fed rates, inflation, etc.) is affecting the market. Walk them through the cause-effect chain clearly: e.g., rising oil → higher transport & input costs → margin pressure on companies → selling pressure on equities → but energy stocks benefit. Use the news data to make it real and current.`,
 
-    platform: `User is asking about the ChartMate / Tradingsmart platform. Answer using the PLATFORM KNOWLEDGE provided. Be helpful and concise.`,
+    platform: `User is asking about the TradingSmart platform. Answer using the PLATFORM KNOWLEDGE provided. Be helpful and concise.`,
 
     general: `User has a general finance/trading question. Answer intelligently using the available data and your knowledge. Be conversational and genuinely useful.`,
   };
 
-  return `You are a sharp, friendly market intelligence assistant for the Tradingsmart / ChartMate platform. You speak like a knowledgeable trader friend — not a corporate chatbot. You're direct, insightful, and human. You use real data (prices, news sentiment) to back up what you say.
+  return `You are a sharp, friendly market intelligence assistant for the TradingSmart platform. You speak like a knowledgeable trader friend, not a corporate chatbot. You're direct, insightful, and human. You use real data (prices, news sentiment) to back up what you say.
 
 YOUR TASK: ${intentGuidance[intent]}
 
@@ -371,7 +441,7 @@ USER'S MESSAGE:
 "${message.replace(/"/g, '\\"')}"
 
 SCOPE RULE (CRITICAL):
-You ONLY answer questions about finance, markets, stocks, crypto, commodities, forex, economics, trading strategies, and the ChartMate platform. If the user asks about anything unrelated (e.g. cooking, movies, sports, coding, relationships, weather, general knowledge), politely decline: "I'm a financial market assistant, so I can only help with stocks, crypto, market news, trading, and our ChartMate platform. Try asking me about a stock price or market analysis!"
+You ONLY answer questions about finance, markets, stocks, crypto, commodities, forex, economics, trading strategies, and the TradingSmart platform. If the user asks about anything unrelated (e.g. cooking, movies, sports, coding, relationships, weather, general knowledge), politely decline: "I'm a financial market assistant, so I can only help with stocks, crypto, market news, trading, and our TradingSmart platform. Try asking me about a stock price or market analysis!"
 
 HOW TO RESPOND:
 1. Sound human like a smart friend, not a bot. Use "I think", "honestly", "looks like", "the thing is" naturally.
@@ -384,9 +454,10 @@ HOW TO RESPOND:
 8. Never use double dashes (--) or em dashes. Never leave stray asterisks. Use **bold** for emphasis.
 9. Understand typos and rephrasings naturally.
 10. If live data was unavailable, be upfront ("I don't have live data right now, but based on recent trends...") and still give your best take.
-11. ALWAYS end analysis/recommendation responses with: "⚠️ This is market analysis based on news and sentiment, not financial advice. Always manage your risk."
-12. For BUY/SELL/HOLD analysis, after your recommendation add: "For a full in-depth technical analysis with backtesting, indicators and strategy matching, use our **Detailed Analysis** page."
-13. For contact/support requests: mention ${PHONE}.`;
+11. Use conversation context for follow-up questions. If user says "why?", "what about now?", "and for tomorrow?", infer they mean the last discussed asset/topic unless they specify a new one.
+12. ALWAYS end analysis/recommendation responses with: "⚠️ This is market analysis based on news and sentiment, not financial advice. Always manage your risk."
+13. For BUY/SELL/HOLD analysis, after your recommendation add: "For a full in-depth technical analysis with backtesting, indicators and strategy matching, use our **Detailed Analysis** page."
+14. For contact/support requests: mention ${PHONE}.`;
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -410,7 +481,7 @@ serve(async (req) => {
 
     if (isJailbreakAttempt(message)) {
       return new Response(JSON.stringify({
-        answer: "I can only help with financial market analysis and the ChartMate platform. Ask me about stock prices, market sentiment, or buy/sell/hold analysis.",
+        answer: "I can only help with financial market analysis and the TradingSmart platform. Ask me about stock prices, market sentiment, or buy/sell/hold analysis.",
         suggestContact: false,
       }), { status: 200, headers: JSON_HEADERS });
     }
@@ -424,14 +495,15 @@ serve(async (req) => {
 
     if (mode !== "platform" && !isFinanceOrPlatformQuery(message)) {
       return new Response(JSON.stringify({
-        answer: "I'm a financial market assistant, so I can only help with stocks, crypto, market news, trading, and the ChartMate platform. Try asking me about a stock price or market analysis.",
+        answer: "I'm a financial market assistant, so I can only help with stocks, crypto, market news, trading, and the TradingSmart platform. Try asking me about a stock price or market analysis.",
         suggestContact: false,
       }), { status: 200, headers: JSON_HEADERS });
     }
 
     // "platform" mode forces platform-only intent (for non-logged-in support chatbot)
     const intent: Intent = mode === "platform" ? "platform" : detectIntent(message);
-    const symbol = mode === "platform" ? null : extractSymbol(message);
+    const explicitSymbol = mode === "platform" ? null : extractSymbol(message);
+    const symbol = mode === "platform" ? null : (explicitSymbol ?? inferSymbolFromHistory(history));
 
     // ── Parallel data fetch ────────────────────────────────────────────────
     let eodPrice:   Record<string, unknown> | null = null;
@@ -440,12 +512,13 @@ serve(async (req) => {
     let historyArr: unknown[] = [];
 
     if (intent !== "platform" && symbol) {
-      const [eodR, newsR, histR, fhR, avR] = await Promise.allSettled([
+      const [eodR, newsR, histR, fhR, avR, yR] = await Promise.allSettled([
         fetchEODHDPrice(symbol),
         fetchMarketAuxNews(symbol),
         fetchEODHDHistory(symbol),
         fetchFinnHubQuote(symbol),
         fetchAlphaVantageQuote(symbol),
+        fetchYahooQuote(symbol),
       ]);
 
       eodPrice   = eodR.status   === "fulfilled" ? eodR.value   : null;
@@ -453,7 +526,12 @@ serve(async (req) => {
       historyArr = histR.status  === "fulfilled" ? histR.value  : [];
       const fh   = fhR.status   === "fulfilled" ? fhR.value    : null;
       const av   = avR.status   === "fulfilled" ? avR.value    : null;
-      altQuote   = eodPrice ? null : (fh ?? av ?? null);
+      const yq   = yR.status    === "fulfilled" ? yR.value     : null;
+      altQuote   = eodPrice ? null : (yq ?? fh ?? av ?? null);
+      if (isCommoditySymbol(symbol) && yq) {
+        eodPrice = null;
+        altQuote = yq;
+      }
 
       // Twelve Data as last fallback
       if (!eodPrice && !altQuote && TWELVE_DATA_KEY) {
@@ -485,7 +563,7 @@ serve(async (req) => {
     const trendBlock = buildHistoryBlock(historyArr);
 
     const historyText = history.length
-      ? history.slice(-8).map(h => `${h.role === "user" ? "User" : "Assistant"}: ${String(h.text ?? "").replace(/\n/g, " ")}`).join("\n")
+      ? history.slice(-16).map(h => `${h.role === "user" ? "User" : "Assistant"}: ${String(h.text ?? "").replace(/\n/g, " ")}`).join("\n")
       : "No previous messages.";
 
     // ── Gemini inference ───────────────────────────────────────────────────

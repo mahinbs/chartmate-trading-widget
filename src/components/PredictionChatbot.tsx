@@ -72,7 +72,7 @@ function MarkdownText({ text }: { text: string }) {
     .replace(/([.!?])\s*•\s+/g, "$1\n• ")
     .replace(/[—–]/g, " ")
     .replace(/\s*--\s*/g, " ")
-    .replace(/\s{2,}/g, " ")
+    .replace(/[ \t]{2,}/g, " ")
     .trim();
 
   const lines = cleaned.split("\n");
@@ -103,7 +103,7 @@ function MarkdownText({ text }: { text: string }) {
           );
         }
         if (trimmed.startsWith("⚠️"))
-          return <p key={i} className="text-xs text-red-500 dark:text-red-400 font-medium mt-2 pt-2 border-t border-red-500/20">{renderInline(trimmed)}</p>;
+          return <p key={i} className="text-xs text-red-500 dark:text-red-400 font-semibold mt-3 pt-2 border-t border-red-500/25">{renderInline(trimmed)}</p>;
         return <p key={i}>{renderInline(trimmed)}</p>;
       })}
     </div>
@@ -126,7 +126,7 @@ function isAnalysisQuery(msg: string): boolean {
   return /\b(should i buy|should i sell|buy or sell|good time to|right time to|worth buying|worth investing|analysis|analyse|analyze|recommend|hold or|invest in)\b/i.test(msg);
 }
 
-const WELCOME_TEXT = `Hey! 👋 I'm your **ChartMate AI Assistant** powered by real-time market data, news and sentiment analysis.
+const WELCOME_TEXT = `Hey! 👋 I'm your **TradingSmart Bot** powered by real-time market data, news and sentiment analysis.
 
 Ask me anything:
 • **Live prices** "What's Tesla trading at?"
@@ -287,7 +287,9 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
     const cId = await ensureConversation(trimmed);
     if (cId) persistMessage(cId, "user", trimmed);
 
-    const historyPayload = messages.slice(-10).map(m => ({ role: m.role, text: m.text }));
+    const historyPayload = [...messages, { role: "user" as const, text: trimmed }]
+      .slice(-16)
+      .map(m => ({ role: m.role, text: m.text }));
     const minDelay = new Promise<void>(r => setTimeout(r, 500));
     const wasAnalysis = isAnalysisQuery(trimmed);
 
@@ -391,7 +393,7 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
               <AssistantLogo size={20} />
             </div>
             <div>
-              <p className="font-bold text-sm tracking-tight">ChartMate Assistant</p>
+              <p className="font-bold text-sm tracking-tight">TradingSmart Bot</p>
               <div className="flex items-center gap-1.5">
                 <span className="h-1.5 w-1.5 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
                 <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Live prices · News · Analysis</p>
