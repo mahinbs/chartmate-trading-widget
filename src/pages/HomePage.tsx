@@ -85,8 +85,8 @@ export default function HomePage() {
     { to: "/predictions", label: "Past Analyses", icon: Activity, iconOpacity: "opacity-50" },
     { to: "/active-trades?tab=completed", label: "Paper Trade Performance", icon: BarChart3 },
     // { to: "/active-trades", label: "Order List", icon: List },
-    { to: "/news", label: "News Feed", icon: Newspaper },
     { to: "/tick-chart", label: "Live Tick Chart", icon: BarChart2 },
+    { to: "/news", label: "News Feed", icon: Newspaper },
   ];
   if (isPremium) {
     if (isAlgoProvisioned) {

@@ -341,18 +341,8 @@ const TickChart: React.FC = () => {
       const sameBucket = lastBucketRef.current === bucketTs && prevCols.length > 0;
       let nextColumns = sameBucket
         ? [...prevCols.slice(0, -1), nextColumn]
-        : [...prevCols, nextColumn].slice(-18);
+        : [...prevCols, nextColumn].slice(-32); // Increased from 18 to 32
 
-      // If history failed and we started with a single live bucket, prefill
-      // empty older buckets so chart still spans full width and updates at end.
-      if (nextColumns.length < 18) {
-        const missing = 18 - nextColumns.length;
-        const fills = Array.from({ length: missing }, (_, i) => {
-          const ts = bucketTs - (missing - i) * tfMs;
-          return emptyColumn(levels, ts, timeframe, userTimezone);
-        });
-        nextColumns = [...fills, ...nextColumns].slice(-18);
-      }
       lastBucketRef.current = bucketTs;
       const orderBook = buildOrderBookFromLevels(levels, snapshot.price, snapshot.levels);
 
@@ -400,7 +390,7 @@ const TickChart: React.FC = () => {
 
   const fetchMarketHistory = async (): Promise<Snapshot[]> => {
     const { data, error } = await supabase.functions.invoke('tick-market-data', {
-      body: { mode: 'history', symbol, timeframe, timezone: userTimezone, count: 18 },
+      body: { mode: 'history', symbol, timeframe, timezone: userTimezone, count: 32 },
     });
     if (error || !data) return [];
     setDataSource(String((data as any)?.source ?? 'Live'));
@@ -433,7 +423,7 @@ const TickChart: React.FC = () => {
         timeframe,
         currentPrice: last.price,
         priceLevels: levels,
-        columns: cols.slice(-18),
+        columns: cols.slice(-32),
         orderBook,
         stats: {
           ...EMPTY_STATS,
@@ -723,7 +713,7 @@ const TickChart: React.FC = () => {
         {/* Horizontal Scrollable Area */}
         <div 
           ref={scrollRef}
-          className="flex justify-end overflow-x-auto overflow-y-hidden flex-1 pb-4 scroll-smooth w-full"
+          className="flex justify-start overflow-x-auto overflow-y-hidden flex-1 pb-4 scroll-smooth w-full"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
           {renderedGrid}
