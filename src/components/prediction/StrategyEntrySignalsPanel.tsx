@@ -82,6 +82,13 @@ type CustomStrategy = {
   stop_loss_pct: number;
   take_profit_pct: number;
   paper_strategy_type?: string | null;
+  entry_conditions?: Record<string, unknown> | null;
+  exit_conditions?: Record<string, unknown> | null;
+  position_config?: Record<string, unknown> | null;
+  risk_config?: Record<string, unknown> | null;
+  chart_config?: Record<string, unknown> | null;
+  execution_days?: number[] | null;
+  market_type?: string | null;
 };
 
 type ExistingScheduleRow = {
@@ -480,6 +487,13 @@ export function StrategyEntrySignalsPanel({
           stopLossPct: cs.stop_loss_pct,
           takeProfitPct: cs.take_profit_pct,
           isIntraday: cs.is_intraday,
+          entryConditions: cs.entry_conditions ?? null,
+          exitConditions: cs.exit_conditions ?? null,
+          positionConfig: cs.position_config ?? null,
+          riskConfig: cs.risk_config ?? null,
+          chartConfig: cs.chart_config ?? null,
+          executionDays: Array.isArray(cs.execution_days) ? cs.execution_days : [],
+          marketType: cs.market_type ?? "stocks",
         }));
 
       const { data, error } = await supabase.functions.invoke("strategy-entry-signals", {

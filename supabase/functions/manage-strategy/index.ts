@@ -77,6 +77,25 @@ Deno.serve(async (req: Request) => {
       const tpPct        = Number(body.take_profit_pct     ?? 4.0);
       const symbols      = (body.symbols as unknown[])    ?? [];
       const paperStrategyType = ((body.paper_strategy_type as string) ?? "").trim() || null;
+      const marketType = ((body.market_type as string) ?? "stocks").trim().toLowerCase();
+      const entryConditions = (body.entry_conditions && typeof body.entry_conditions === "object")
+        ? body.entry_conditions
+        : {};
+      const exitConditions = (body.exit_conditions && typeof body.exit_conditions === "object")
+        ? body.exit_conditions
+        : {};
+      const positionConfig = (body.position_config && typeof body.position_config === "object")
+        ? body.position_config
+        : {};
+      const riskConfig = (body.risk_config && typeof body.risk_config === "object")
+        ? body.risk_config
+        : {};
+      const chartConfig = (body.chart_config && typeof body.chart_config === "object")
+        ? body.chart_config
+        : {};
+      const executionDays = Array.isArray(body.execution_days)
+        ? (body.execution_days as unknown[]).map((v) => Number(v)).filter((v) => Number.isFinite(v) && v >= 0 && v <= 6)
+        : [];
 
       if (!name) {
         return new Response(JSON.stringify({ error: "name is required" }), { status: 400, headers });
@@ -91,6 +110,7 @@ Deno.serve(async (req: Request) => {
         .maybeSingle();
 
       const openalgoUsername = (integration as any)?.openalgo_username ?? "";
+      const hasActiveBroker = Boolean(openalgoUsername);
 
       // Create strategy in OpenAlgo (if configured)
       let openalgoStrategyId: number | null = null;
@@ -143,6 +163,14 @@ Deno.serve(async (req: Request) => {
           take_profit_pct:      tpPct,
           symbols,
           paper_strategy_type:  paperStrategyType,
+          is_active: hasActiveBroker,
+          market_type: marketType,
+          entry_conditions: entryConditions,
+          exit_conditions: exitConditions,
+          position_config: positionConfig,
+          risk_config: riskConfig,
+          chart_config: chartConfig,
+          execution_days: executionDays,
           openalgo_strategy_id: openalgoStrategyId,
           openalgo_webhook_id:  openalgoWebhookId,
         })
@@ -178,6 +206,18 @@ Deno.serve(async (req: Request) => {
       if (body.stop_loss_pct  !== undefined) updates.stop_loss_pct   = Number(body.stop_loss_pct);
       if (body.take_profit_pct !== undefined) updates.take_profit_pct = Number(body.take_profit_pct);
       if (body.symbols        !== undefined) updates.symbols          = body.symbols;
+      if (body.paper_strategy_type !== undefined) updates.paper_strategy_type = ((body.paper_strategy_type as string) ?? "").trim() || null;
+      if (body.market_type    !== undefined) updates.market_type      = String(body.market_type).trim().toLowerCase();
+      if (body.entry_conditions !== undefined && body.entry_conditions && typeof body.entry_conditions === "object") updates.entry_conditions = body.entry_conditions;
+      if (body.exit_conditions !== undefined && body.exit_conditions && typeof body.exit_conditions === "object") updates.exit_conditions = body.exit_conditions;
+      if (body.position_config !== undefined && body.position_config && typeof body.position_config === "object") updates.position_config = body.position_config;
+      if (body.risk_config !== undefined && body.risk_config && typeof body.risk_config === "object") updates.risk_config = body.risk_config;
+      if (body.chart_config !== undefined && body.chart_config && typeof body.chart_config === "object") updates.chart_config = body.chart_config;
+      if (body.execution_days !== undefined && Array.isArray(body.execution_days)) {
+        updates.execution_days = (body.execution_days as unknown[])
+          .map((v) => Number(v))
+          .filter((v) => Number.isFinite(v) && v >= 0 && v <= 6);
+      }
 
       const { data: updated, error: updateErr } = await supabase
         .from("user_strategies")
@@ -242,6 +282,23 @@ Deno.serve(async (req: Request) => {
         .eq("id", strategyId)
         .eq("user_id", user.id)
         .maybeSingle();
+
+      const enabling = !(current as any)?.is_active;
+      if (enabling) {
+        const { data: integration } = await supabase
+          .from("user_trading_integration")
+          .select("openalgo_username")
+          .eq("user_id", user.id)
+          .eq("is_active", true)
+          .maybeSingle();
+        const openalgoUsername = (integration as any)?.openalgo_username ?? "";
+        if (!openalgoUsername) {
+          return new Response(
+            JSON.stringify({ error: "Connect broker first to deploy/activate this strategy." }),
+            { status: 400, headers },
+          );
+        }
+      }
 
       const { data: toggled, error: toggleErr } = await supabase
         .from("user_strategies")

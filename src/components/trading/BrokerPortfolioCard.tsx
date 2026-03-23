@@ -33,6 +33,7 @@ import { toast } from "sonner";
 import PlaceOrderPanel from "@/components/trading/PlaceOrderPanel";
 import { STRATEGIES } from "@/components/trading/StrategySelectionDialog";
 import { getStrategyParams } from "@/constants/strategyParams";
+import AlgoStrategyBuilder from "@/components/trading/AlgoStrategyBuilder";
 
 // ── SymbolSearchInput (same UX as PlaceOrderPanel) ────────────────────────────
 type SymbolResult = { symbol: string; description: string; full_symbol: string; exchange: string; type: string };
@@ -475,6 +476,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
   const [toggleLoading, setToggleLoading] = useState<string | null>(null);
   const [firePanel, setFirePanel]         = useState<Record<string, {
     open: boolean; symbol: string; exchange: string; quantity: string; product: string; firing: boolean;
+    aiOverride?: boolean;
     backtestPaperType?: string;     backtestResult?: {
       totalTrades: number; wins: number; losses: number; winRate: number; totalReturn: number;
       maxDrawdown?: number; profitFactor?: number; backtestPeriod?: string; strategyAchieved?: boolean; achievementReason?: string;
@@ -701,10 +703,15 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
     setToggleLoading(id);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      await supabase.functions.invoke("manage-strategy", {
+      const res = await supabase.functions.invoke("manage-strategy", {
         body: { action: "toggle", strategy_id: id },
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
+      const err = (res.data as any)?.error;
+      if (res.error || err) {
+        toast.error(String(err ?? res.error?.message ?? "Could not change deployment status"));
+        return;
+      }
       await loadStrategies();
     } finally { setToggleLoading(null); }
   };
@@ -755,6 +762,10 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
   };
 
   const fireSignal = async (strategy: Strategy, action: "BUY" | "SELL") => {
+    if (!strategy.is_active) {
+      toast.error("Activate strategy first to deploy/execute trades.");
+      return;
+    }
     const fs  = getFireState(strategy.id);
     const sym = fs.symbol.trim().toUpperCase() || (strategy.symbols?.[0] ?? "");
     if (!sym) { toast.error("Enter a symbol to fire this signal"); return; }
@@ -1610,9 +1621,11 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                           {/* Fire Signal */}
                           <button
                             onClick={() => setFireState(s.id, { open: !fs.open })}
+                            disabled={!s.is_active}
                             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold border transition-all ${
                               fs.open ? "bg-teal-500/20 border-teal-500/40 text-teal-300" : "border-zinc-700 text-zinc-500 hover:border-teal-500/40 hover:text-teal-400"
-                            }`}
+                            } disabled:opacity-50 disabled:cursor-not-allowed`}
+                            title={s.is_active ? "Execute" : "Activate strategy first"}
                           >
                             <Zap className="h-3.5 w-3.5" /> Execute
                           </button>
@@ -1860,225 +1873,20 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
         </CardContent>
       </Card>
 
-      {/* ── Create Strategy Dialog ──────────────────────────────────────────── */}
-      <Dialog open={showCreate} onOpenChange={(o) => {
-        if (!o) {
-          setShowCreate(false);
-          setForm(EMPTY_STRATEGY);
-          setUseFromPaper(false);
-          setPaperType("");
-          setBacktestResult(null);
-        }
-      }}>
-        <DialogContent className="bg-zinc-900 border-zinc-700 text-white max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-white text-lg">
-              <Plus className="h-5 w-5 text-purple-400" />
-              New Strategy
-            </DialogTitle>
-            <DialogDescription className="text-zinc-400 text-sm">
-              Define your strategy parameters. Webhook is stored in backend for real-time execution.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-5 py-4">
-            {/* Name + Description */}
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label className="text-zinc-400 text-xs font-semibold">Strategy Name *</Label>
-                <Input
-                  placeholder="e.g. NIFTY Scalper, BTST Momentum"
-                  value={form.name}
-                  onChange={e => { setAutoNameFromPaper(false); setF("name", e.target.value); }}
-                  className="bg-zinc-950 border-zinc-700 text-white text-sm h-10 px-3"
-                  autoFocus
-                />
-                {useFromPaper && (
-                  <div className="flex items-center justify-between mt-1.5">
-                    <button
-                      onClick={() => { setAutoNameFromPaper(true); applyPaperPrefill(paperType || "trend_following", { forceName: true }); }}
-                      className="text-[11px] text-purple-400 font-medium hover:text-purple-300 transition-colors"
-                      type="button"
-                    >
-                      Auto-name from paper strategy
-                    </button>
-                    <span className="text-[11px] text-zinc-600 font-mono">{autoNameFromPaper ? "ON" : "OFF"}</span>
-                  </div>
-                )}
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-zinc-400 text-xs font-semibold">Description (optional)</Label>
-                <Input
-                  placeholder="Short description of the strategy"
-                  value={form.description}
-                  onChange={e => setF("description", e.target.value)}
-                  className="bg-zinc-950 border-zinc-700 text-white text-sm h-10 px-3"
-                />
-              </div>
-            </div>
-
-            {/* Start from paper strategy */}
-            <div className="space-y-2 p-3.5 rounded-xl border border-zinc-800 bg-zinc-950/50">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    const next = !useFromPaper;
-                    setUseFromPaper(next);
-                    if (next) {
-                      const pt = paperType || "trend_following";
-                      if (!paperType) setPaperType(pt);
-                      setAutoNameFromPaper(true);
-                      setAutoTimesFromPaper(true);
-                      applyPaperPrefill(pt, { forceName: true, forceTimes: true });
-                    } else {
-                      setBacktestResult(null);
-                    }
-                  }}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${useFromPaper ? "bg-purple-600 text-white shadow-lg shadow-purple-900/20" : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"}`}
-                >
-                  <BarChart3 className="h-3.5 w-3.5" />
-                  Start from paper strategy
-                </button>
-                {useFromPaper && (
-                  <button
-                    type="button"
-                    onClick={() => applyPaperPrefill(paperType || "trend_following", { forceName: autoNameFromPaper, forceTimes: true })}
-                    className="ml-auto text-[11px] text-zinc-500 hover:text-zinc-300 font-medium transition-colors"
-                    title="Re-apply direction/session/times"
-                  >
-                    Re-apply defaults
-                  </button>
-                )}
-              </div>
-              {useFromPaper && (
-                <div className="space-y-1.5 pt-2.5 border-t border-zinc-800 mt-1">
-                  <Label className="text-zinc-400 text-xs font-semibold">Paper strategy type</Label>
-                  <Select value={paperType} onValueChange={(v) => { setPaperType(v); applyPaperPrefill(v, { forceTimes: true }); setBacktestResult(null); }}>
-                    <SelectTrigger className="bg-zinc-950 border-zinc-700 text-zinc-200 h-10 text-sm">
-                      <SelectValue placeholder="Pick strategy" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-zinc-900 border-zinc-700 max-h-64">
-                      {STRATEGIES.map((s) => (
-                        <SelectItem key={s.value} value={s.value} className="text-sm text-zinc-200">{s.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-            </div>
-
-            {/* Direction + Session */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label className="text-zinc-400 text-xs font-semibold">Direction</Label>
-                <Select value={form.allowed_direction} onValueChange={v => setF("allowed_direction", v)}>
-                  <SelectTrigger className="bg-zinc-950 border-zinc-700 text-zinc-200 h-10 text-sm font-semibold">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-zinc-900 border-zinc-700">
-                    <SelectItem value="LONG"  className="text-xs text-zinc-200">LONG only</SelectItem>
-                    <SelectItem value="SHORT" className="text-xs text-zinc-200">SHORT only</SelectItem>
-                    <SelectItem value="BOTH"  className="text-xs text-zinc-200">LONG &amp; SHORT</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-zinc-500 text-[11px]">Session Type</Label>
-                <div className="grid grid-cols-2 gap-1 p-0.5 bg-zinc-950 border border-zinc-700 rounded-md h-8">
-                  <button
-                    onClick={() => setF("is_intraday", true)}
-                    className={`rounded text-[11px] font-medium transition-colors ${form.is_intraday ? "bg-purple-600 text-white" : "text-zinc-500 hover:text-zinc-300"}`}
-                  >Intraday</button>
-                  <button
-                    onClick={() => setF("is_intraday", false)}
-                    className={`rounded text-[11px] font-medium transition-colors ${!form.is_intraday ? "bg-purple-600 text-white" : "text-zinc-500 hover:text-zinc-300"}`}
-                  >Positional</button>
-                </div>
-              </div>
-            </div>
-
-            {/* Trading Hours */}
-            <div>
-              <Label className="text-zinc-400 text-xs font-semibold block mb-2">Trading Hours (IST)</Label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {[
-                  { label: "Start",    field: "start_time"    as const, val: form.start_time },
-                  { label: "End",      field: "end_time"      as const, val: form.end_time },
-                  { label: "Squareoff",field: "squareoff_time"as const, val: form.squareoff_time },
-                ].map(({ label, field, val }) => (
-                  <div key={field} className="space-y-1.5">
-                    <Label className="text-zinc-500 text-[11px] font-medium">{label}</Label>
-                    <Input type="time" value={val} onChange={e => { setAutoTimesFromPaper(false); setF(field, e.target.value); }}
-                      className="bg-zinc-950 border-zinc-700 text-white text-sm h-10 px-3 tabular-nums" />
-                  </div>
-                ))}
-              </div>
-              {useFromPaper && (
-                <div className="flex items-center justify-between mt-1.5">
-                  <button
-                    type="button"
-                    onClick={() => { setAutoTimesFromPaper(true); applyPaperPrefill(paperType || "trend_following", { forceTimes: true }); }}
-                    className="text-[11px] text-purple-400 hover:text-purple-300 font-medium"
-                  >
-                    Auto-times from paper strategy
-                  </button>
-                  <span className="text-[11px] text-zinc-600 font-mono">{autoTimesFromPaper ? "ON" : "OFF"}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Risk Management */}
-            <div>
-              <Label className="text-zinc-400 text-xs font-semibold block mb-2">Risk Management</Label>
-              <div className="grid grid-cols-3 gap-3">
-                {[
-                  { label: "Risk / Trade %",  field: "risk_per_trade_pct" as const, val: form.risk_per_trade_pct, color: "text-white" },
-                  { label: "Stop-Loss %",     field: "stop_loss_pct"      as const, val: form.stop_loss_pct,      color: "text-red-400" },
-                  { label: "Take-Profit %",   field: "take_profit_pct"    as const, val: form.take_profit_pct,    color: "text-green-400" },
-                ].map(({ label, field, val, color }) => (
-                  <div key={field} className="space-y-1.5">
-                    <Label className="text-zinc-500 text-[11px] font-medium">{label}</Label>
-                    <div className="relative">
-                      <Input type="number" min="0.1" step="0.1" max="100" value={val}
-                        onChange={e => setF(field, e.target.value)}
-                        className={`bg-zinc-950 border-zinc-700 text-sm h-10 pr-6 tabular-nums ${color}`} />
-                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-zinc-500">%</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <p className="text-[11px] text-zinc-600 mt-2 italic font-medium">Risk/trade: % of capital per signal. SL &amp; TP: % move from entry.</p>
-            </div>
-
-            {/* Symbols */}
-            <div className="space-y-1.5">
-              <Label className="text-zinc-400 text-xs font-semibold">Symbols (optional, comma-separated)</Label>
-              <Input
-                placeholder="RELIANCE, TCS, NIFTY25MARFUT"
-                value={form.symbols_raw}
-                onChange={e => setF("symbols_raw", e.target.value.toUpperCase())}
-                className="bg-zinc-950 border-zinc-700 text-white font-mono text-sm h-10 px-3 tracking-tight"
-              />
-              <p className="text-[11px] text-zinc-600 font-medium">Leave blank to allow any symbol via webhook payload</p>
-            </div>
-          </div>
-
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => { setShowCreate(false); setForm(EMPTY_STRATEGY); }} className="border-zinc-700">
-              Cancel
-            </Button>
-            <Button
-              onClick={createStrategy}
-              disabled={creating || !form.name.trim()}
-              className="bg-purple-600 hover:bg-purple-500 font-bold"
-            >
-              {creating
-                ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Creating…</>
-                : <><Zap className="h-3.5 w-3.5 mr-1.5" />Create Strategy</>}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AlgoStrategyBuilder
+        open={showCreate}
+        onOpenChange={(o) => {
+          setShowCreate(o);
+          if (!o) {
+            setForm(EMPTY_STRATEGY);
+            setUseFromPaper(false);
+            setPaperType("");
+            setBacktestResult(null);
+          }
+        }}
+        existing={null}
+        onSaved={() => { void load(true); }}
+      />
 
       {/* ── Place Order Dialog (full-screen, chart left + form right) ─────── */}
       <Dialog open={showOrderModal} onOpenChange={setShowOrderModal}>
