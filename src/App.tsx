@@ -53,6 +53,8 @@ import NewsPage from "./pages/NewsPage";
 import NewsDetailPage from "./pages/NewsDetailPage";
 import TickChart from "./pages/TickChart";
 import { PredictionChatbot } from "./components/PredictionChatbot";
+import { EntryDigestToastBridge } from "./components/EntryDigestToastBridge";
+import { EntryPointNotificationsBell } from "./components/EntryPointNotificationsBell";
 import { useAuth } from "./hooks/useAuth";
 import { useLocation } from "react-router-dom";
 
@@ -82,6 +84,8 @@ const App = () => (
           <div className="min-h-screen bg-background text-foreground">
             <PlatformChatbot />
             <LoggedInChatbot />
+            <EntryDigestToastBridge />
+            <EntryPointNotificationsBell />
             <Routes>
               <Route path="/rsb-fintech-founder" element={<LandingPage />} />
               <Route path="/dsn-fintech-founder" element={<LandingPage />} />

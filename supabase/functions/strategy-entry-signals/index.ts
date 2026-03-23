@@ -962,14 +962,14 @@ Scoring guide — USE THE REAL INDICATORS above:
   if (!res.ok) {
     const errText = await res.text();
     console.error(`Gemini ${res.status} (${GEMINI_MODEL}):`, errText);
-    throw new Error(`Gemini ${res.status}`);
+    return mergeAiScoresIntoRaw(raw, null);
   }
   let data: GeminiLikeResponse = {};
   try {
     data = await res.json() as GeminiLikeResponse;
   } catch (e) {
     console.error("Gemini JSON decode failed:", e);
-    throw new Error("Gemini response decode failed");
+    return mergeAiScoresIntoRaw(raw, null);
   }
   const text = geminiAllText(data);
   const finish = (data as { candidates?: Array<{ finishReason?: string }> })?.candidates?.[0]?.finishReason;
@@ -980,7 +980,7 @@ Scoring guide — USE THE REAL INDICATORS above:
   const parsed = parseJsonArrayFromModelText(text);
   if (!parsed) {
     console.error("Gemini JSON parse failed; text head:", text.slice(0, 1500));
-    throw new Error("Gemini response parse failed");
+    return mergeAiScoresIntoRaw(raw, null);
   }
   return mergeAiScoresIntoRaw(raw, parsed);
 }
@@ -992,18 +992,32 @@ Deno.serve(async (req: Request) => {
   const headers = { "Content-Type": "application/json", ...corsHeaders, "Access-Control-Allow-Methods": "POST, OPTIONS" };
 
   try {
-    const authHeader = req.headers.get("Authorization") ?? "";
-    if (!authHeader.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers });
-    }
-
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
-    const { data: { user }, error: authErr } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
-    if (authErr || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers });
+
+    const digestSecret = Deno.env.get("ENTRY_DIGEST_SECRET") ?? "";
+    const digestUserId = (req.headers.get("x-digest-user-id") ?? "").trim();
+
+    let user: { id: string; email?: string | null };
+
+    if (digestSecret && req.headers.get("x-digest-secret") === digestSecret && digestUserId) {
+      const { data: adminData, error: adminErr } = await supabase.auth.admin.getUserById(digestUserId);
+      if (adminErr || !adminData?.user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers });
+      }
+      user = adminData.user;
+    } else {
+      const authHeader = req.headers.get("Authorization") ?? "";
+      if (!authHeader.startsWith("Bearer ")) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers });
+      }
+      const { data: { user: u }, error: authErr } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
+      if (authErr || !u) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers });
+      }
+      user = u;
     }
 
     const body = await req.json().catch(() => ({})) as Record<string, unknown>;

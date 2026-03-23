@@ -7,7 +7,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import {
   ArrowLeft, Send, Loader2, Info, Zap, Copy, RefreshCw,
   TrendingUp, TrendingDown, Search, ChevronDown, Plus,
@@ -36,6 +36,7 @@ import PlaceOrderPanel from "@/components/trading/PlaceOrderPanel";
 import BacktestingSection from "@/components/trading/BacktestingSection";
 import StatementSection from "@/components/trading/StatementSection";
 import { StrategyEntrySignalsPanel } from "@/components/prediction/StrategyEntrySignalsPanel";
+import { EntryPointNotificationsHeaderButton } from "@/components/EntryPointNotificationsBell";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const EXCHANGES = [
@@ -367,13 +368,21 @@ function StrategiesPanel({ broker }: { broker: string }) {
     setLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        toast.error("Could not load strategies: sign in session not ready.");
+        return;
+      }
       const res = await supabase.functions.invoke("manage-strategy", {
         body: { action: "list" },
-        headers: { Authorization: `Bearer ${session?.access_token}` },
+        headers: { Authorization: `Bearer ${session.access_token}` },
       });
-      setStrategies((res.data as any)?.strategies ?? []);
-    } catch {
-      // silent
+      if (res.error) throw new Error(res.error.message);
+      const list = (res.data as any)?.strategies;
+      if (Array.isArray(list)) {
+        setStrategies(list);
+      }
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to load strategies");
     } finally {
       setLoading(false);
     }
@@ -987,9 +996,11 @@ const SCANNER_QUICK_PICKS = [
 ];
 
 function LiveDashboard({ broker }: { broker: string }) {
+  const location = useLocation();
   const [portfolioKey, setPortfolioKey] = useState(0);
   const market = useMarketStatus();
   const brokerLabel = broker.charAt(0).toUpperCase() + broker.slice(1);
+  const [activeTab, setActiveTab] = useState<"portfolio" | "scanner" | "backtest" | "statement">("portfolio");
   const [scannerSymbol, setScannerSymbol] = useState("");
   const [scannerInput, setScannerInput] = useState("");
   const [scannerResults, setScannerResults] = useState<ScannerSearchResult[]>([]);
@@ -1032,6 +1043,22 @@ function LiveDashboard({ broker }: { broker: string }) {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  const historyIdFromQuery = new URLSearchParams(location.search).get("historyId");
+
+  useEffect(() => {
+    const qp = new URLSearchParams(location.search);
+    const tab = qp.get("tab");
+    if (tab === "portfolio" || tab === "scanner" || tab === "backtest" || tab === "statement") {
+      setActiveTab(tab);
+    }
+    const sym = qp.get("symbol");
+    if (sym && sym.trim()) {
+      const s = sym.trim().toUpperCase();
+      setScannerSymbol(s);
+      setScannerInput(s);
+    }
+  }, [location.search]);
+
   return (
     <div className="min-h-screen bg-black text-zinc-100">
       {/* ── Header ── */}
@@ -1056,7 +1083,8 @@ function LiveDashboard({ broker }: { broker: string }) {
             <span className="flex items-center gap-1.5 text-xs text-teal-400 bg-teal-500/10 border border-teal-500/20 px-3 py-1.5 rounded-full">
               <span className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse" />
               {brokerLabel} Connected
-                  </span>
+            </span>
+            <EntryPointNotificationsHeaderButton />
           </div>
         </div>
       </header>
@@ -1072,7 +1100,7 @@ function LiveDashboard({ broker }: { broker: string }) {
 
           {/* ── Left: Portfolio ── */}
           <div className="min-w-0">
-            <Tabs defaultValue="portfolio" className="w-full">
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "portfolio" | "scanner" | "backtest" | "statement")} className="w-full">
               <TabsList className="grid w-full grid-cols-4 bg-zinc-900 border border-zinc-800 h-auto gap-1 p-1 mb-3">
                 <TabsTrigger value="portfolio" className="data-[state=active]:bg-teal-500/20 data-[state=active]:text-teal-300 text-xs sm:text-sm">
                   <BookOpen className="h-3.5 w-3.5 mr-1.5 shrink-0" />
@@ -1168,7 +1196,7 @@ function LiveDashboard({ broker }: { broker: string }) {
 
                 {/* Scanner results */}
                 {scannerSymbol.trim() ? (
-                  <StrategyEntrySignalsPanel symbol={scannerSymbol.trim()} />
+                  <StrategyEntrySignalsPanel symbol={scannerSymbol.trim()} initialHistoryId={historyIdFromQuery} />
                 ) : (
                   <Card className="border-zinc-800 bg-zinc-900/30">
                     <CardContent className="p-8 text-center">
