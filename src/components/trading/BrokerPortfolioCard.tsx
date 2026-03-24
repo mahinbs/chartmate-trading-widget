@@ -1885,7 +1885,10 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
           }
         }}
         existing={null}
-        onSaved={() => { void load(true); }}
+        onSaved={() => {
+          void load(true);
+          void loadStrategies();
+        }}
       />
 
       {/* ── Place Order Dialog (full-screen, chart left + form right) ─────── */}

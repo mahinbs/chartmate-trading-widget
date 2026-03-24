@@ -10,8 +10,8 @@
  *  Step 7  Risk          — max risk/trade, max daily loss, max positions
  */
 
-import { useEffect, useMemo, useState } from "react";
-import { ChevronRight, Loader2, Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronRight, Loader2, Plus, Search, Trash2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import type {
@@ -324,6 +325,255 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   return <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest pt-2 pb-1 border-b border-zinc-800 mb-3">{children}</p>;
 }
 
+type SymbolSearchRow = {
+  symbol: string;
+  description: string;
+  full_symbol: string;
+  exchange: string;
+  type: string;
+};
+
+function parseSymbolList(csv: string): string[] {
+  return csv.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean);
+}
+
+function mergeSymbolList(csv: string, token: string): string {
+  const set = new Set(parseSymbolList(csv));
+  set.add(token.toUpperCase().trim());
+  return Array.from(set).join(", ");
+}
+
+/** Map Yahoo-style tickers to broker quote params (Zerodha / OpenAlgo) */
+function brokerQuotePair(token: string, preferredExchange: string): { symbol: string; exchange: string } {
+  const t = token.trim().toUpperCase();
+  if (t.endsWith(".NS")) return { symbol: t.replace(/\.NS$/i, ""), exchange: "NSE" };
+  if (t.endsWith(".BO")) return { symbol: t.replace(/\.BO$/i, ""), exchange: "BSE" };
+  if (["NFO", "BFO", "MCX", "CDS", "NCDEX"].includes(preferredExchange)) {
+    return { symbol: t, exchange: preferredExchange };
+  }
+  return { symbol: t, exchange: preferredExchange === "BSE" ? "BSE" : "NSE" };
+}
+
+function InstrumentSymbolPicker({
+  symbolCsv,
+  onSymbolCsvChange,
+  preferredExchange,
+  onExchangeSync,
+}: {
+  symbolCsv: string;
+  onSymbolCsvChange: (v: string) => void;
+  preferredExchange: string;
+  onExchangeSync: (ex: string) => void;
+}) {
+  const [brokerConnected, setBrokerConnected] = useState<boolean | null>(null);
+  const [draft, setDraft] = useState("");
+  const [results, setResults] = useState<SymbolSearchRow[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
+        if (!cancelled) setBrokerConnected(false);
+        return;
+      }
+      const { data } = await supabase
+        .from("user_trading_integration")
+        .select("is_active, openalgo_username")
+        .eq("user_id", session.user.id)
+        .eq("is_active", true)
+        .maybeSingle();
+      if (!cancelled) setBrokerConnected(Boolean((data as { openalgo_username?: string | null })?.openalgo_username));
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const search = useCallback(async (q: string) => {
+    if (q.length < 2) {
+      setResults([]);
+      setOpen(false);
+      return;
+    }
+    setSearching(true);
+    try {
+      const res = await supabase.functions.invoke("search-symbols", { body: { q } });
+      const data: SymbolSearchRow[] = Array.isArray(res.data) ? (res.data as SymbolSearchRow[]) : [];
+      setResults(data.slice(0, 14));
+      setOpen(data.length > 0);
+    } catch {
+      setResults([]);
+      setOpen(false);
+    } finally {
+      setSearching(false);
+    }
+  }, []);
+
+  const addToken = (row: SymbolSearchRow) => {
+    const token = (row.full_symbol || row.symbol || "").trim();
+    if (!token) return;
+    onSymbolCsvChange(mergeSymbolList(symbolCsv, token));
+    if (row.full_symbol?.endsWith(".BO")) onExchangeSync("BSE");
+    else if (row.full_symbol?.endsWith(".NS")) onExchangeSync("NSE");
+    else if (row.exchange && /^[A-Z]{2,6}$/.test(String(row.exchange).toUpperCase())) {
+      onExchangeSync(String(row.exchange).toUpperCase());
+    }
+    setDraft("");
+    setOpen(false);
+    setResults([]);
+  };
+
+  const verifyWithBroker = async () => {
+    const list = parseSymbolList(symbolCsv);
+    if (list.length === 0) {
+      toast.error("Add at least one symbol to verify");
+      return;
+    }
+    if (!brokerConnected) {
+      toast.error("Connect your broker first — then you can verify tradingsymbols match your account.");
+      return;
+    }
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      toast.error("Sign in required");
+      return;
+    }
+    setVerifying(true);
+    try {
+      const symbols = list.map((t) => brokerQuotePair(t, preferredExchange));
+      const res = await supabase.functions.invoke("broker-data", {
+        body: { action: "multiquotes", symbols },
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const payload = res.data as { success?: boolean; error?: string } | null;
+      const errMsg = payload?.error ?? (res.error as { message?: string } | null)?.message;
+      if (res.error || !payload?.success || errMsg) {
+        toast.error(String(errMsg ?? res.error?.message ?? "Broker could not quote these symbols — check tradingsymbol and exchange (NSE / NFO / MCX)."));
+        return;
+      }
+      toast.success("Broker returned quotes — symbols are reachable on this connection.");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Broker verification failed");
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const list = parseSymbolList(symbolCsv);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        {brokerConnected === null ? (
+          <Badge variant="outline" className="text-zinc-500 border-zinc-700">Checking broker…</Badge>
+        ) : brokerConnected ? (
+          <Badge className="bg-emerald-600/20 text-emerald-200 border border-emerald-500/35">Broker connected — verify symbols before deploy</Badge>
+        ) : (
+          <Badge variant="outline" className="text-amber-200/95 border-amber-500/40 bg-amber-500/10">
+            Connect broker for live order routing — search uses the same market symbol index as the rest of the app
+          </Badge>
+        )}
+      </div>
+
+      <div ref={containerRef} className="relative">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500 pointer-events-none" />
+          <Input
+            placeholder="Search: RELIANCE, NIFTY 50, BANKNIFTY, BTC-USD…"
+            value={draft}
+            onChange={(e) => {
+              const v = e.target.value;
+              setDraft(v);
+              if (debounceRef.current) clearTimeout(debounceRef.current);
+              debounceRef.current = setTimeout(() => search(v.trim()), 280);
+            }}
+            onFocus={() => results.length > 0 && setOpen(true)}
+            className="h-10 bg-zinc-900 border-zinc-700 text-sm pl-9 pr-9"
+          />
+          {searching && <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-zinc-500" />}
+        </div>
+        {open && results.length > 0 && (
+          <div className="absolute top-full left-0 right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl z-50 max-h-72 overflow-y-auto">
+            {results.map((item, i) => (
+              <button
+                key={`${item.full_symbol}-${i}`}
+                type="button"
+                className="w-full flex items-start justify-between gap-2 px-3 py-2 hover:bg-zinc-800 text-left border-b border-zinc-800 last:border-0"
+                onMouseDown={() => addToken(item)}
+              >
+                <div className="min-w-0">
+                  <span className="font-mono text-white text-sm font-semibold">{item.symbol}</span>
+                  <p className="text-[11px] text-zinc-500 line-clamp-2">{item.description}</p>
+                </div>
+                <span className="text-[10px] text-teal-400 shrink-0 uppercase">{item.type || "—"}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {list.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          {list.map((s) => (
+            <span
+              key={s}
+              className="inline-flex items-center gap-1 rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs font-mono text-zinc-200"
+            >
+              {s}
+              <button
+                type="button"
+                className="text-zinc-500 hover:text-red-400 px-0.5"
+                onClick={() => onSymbolCsvChange(list.filter((x) => x !== s).join(", "))}
+                aria-label={`Remove ${s}`}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          {brokerConnected && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs border-emerald-700/50 text-emerald-200"
+              disabled={verifying}
+              onClick={() => void verifyWithBroker()}
+            >
+              {verifying ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+              Verify with broker
+            </Button>
+          )}
+        </div>
+      )}
+
+      <div className="space-y-1.5">
+        <Label className="text-sm font-semibold text-zinc-300">Or paste / edit (comma-separated)</Label>
+        <Textarea
+          value={symbolCsv}
+          onChange={(e) => onSymbolCsvChange(e.target.value.toUpperCase())}
+          placeholder="Leave empty to pick symbol when you deploy. Or: RELIANCE.NS, TCS.NS, ^NSEI, BTC-USD"
+          className="min-h-[80px] bg-zinc-900 border-zinc-700 text-sm font-mono resize-y"
+        />
+        <p className="text-[11px] text-zinc-500 leading-relaxed">
+          Same symbol search as orders &amp; charts (Yahoo-backed). For Indian F&amp;O, type the exact <strong>tradingsymbol</strong> your broker uses (e.g. NIFTY25JANFUT) or verify after connecting. Exchange on the Foundation step should match (NSE / NFO / MCX).
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function ChoiceGroup<T extends string>({
   value, onChange, options, size = "md",
 }: {
@@ -554,7 +804,7 @@ export default function AlgoStrategyBuilder({ open, onOpenChange, existing, onSa
         risk_per_trade_pct: form.maxRiskPerTradePct,
         stop_loss_pct: form.stopLossPct,
         take_profit_pct: form.takeProfitPct,
-        symbols: form.symbol.split(",").map(s => s.trim().toUpperCase()).filter(Boolean),
+        symbols: [...new Set(form.symbol.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean))],
         paper_strategy_type: paperType,
         market_type: form.instrumentType,
         entry_conditions: entryConditions,
@@ -742,11 +992,21 @@ export default function AlgoStrategyBuilder({ open, onOpenChange, existing, onSa
             {/* ── Step 1: Instruments ─────────────────────────────────────── */}
             {step === 1 && (
               <>
-                <SectionTitle>Symbol Selection</SectionTitle>
-                <Field label="Symbols (comma-separated for multiple)" hint={symbolCount > 0 ? `${symbolCount} symbol(s) configured` : "Leave blank to allow any symbol via webhook"}>
-                  <Input value={form.symbol} onChange={e => set("symbol", e.target.value.toUpperCase())}
-                    placeholder="RELIANCE, TCS, BANKNIFTY, BTC-USD"
-                    className="h-10 bg-zinc-900 border-zinc-700 font-mono text-sm" />
+                <SectionTitle>Symbol selection</SectionTitle>
+                <Field
+                  label="Instruments"
+                  hint={
+                    symbolCount > 0
+                      ? `${symbolCount} symbol(s) — search picks validated market tickers; connect broker to verify against your account before deploy.`
+                      : "Optional — leave empty to choose symbol when you deploy / execute (same as typical algo platforms)."
+                  }
+                >
+                  <InstrumentSymbolPicker
+                    symbolCsv={form.symbol}
+                    onSymbolCsvChange={(v) => set("symbol", v)}
+                    preferredExchange={form.exchange}
+                    onExchangeSync={(ex) => set("exchange", ex)}
+                  />
                 </Field>
 
                 <SectionTitle>Position Sizing</SectionTitle>
