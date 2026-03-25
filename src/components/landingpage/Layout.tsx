@@ -1,6 +1,8 @@
 import React from "react";
-import Navbar from "./Navbar";
-import Footer from "./Footer";
+// import Navbar from "./Navbar";
+// import Footer from "./Footer";
+import AiPredictionHeader from "./mainlandingpage/AiPredictionHeader";
+import AiPredictionFooter from "./mainlandingpage/AiPredictionFooter";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -9,9 +11,9 @@ interface LayoutProps {
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   return (
     <div className="flex flex-col min-h-screen">
-      <Navbar />
+      <AiPredictionHeader />
       <main className="flex-grow">{children}</main>
-      <Footer/>
+      <AiPredictionFooter />
     </div>
   );
 };

@@ -52,6 +52,7 @@ import StrategiesPage from "./pages/StrategiesPage";
 import NewsPage from "./pages/NewsPage";
 import NewsDetailPage from "./pages/NewsDetailPage";
 import TickChart from "./pages/TickChart";
+import PricingPage from "./pages/PricingPage";
 import { PredictionChatbot } from "./components/PredictionChatbot";
 import { useAuth } from "./hooks/useAuth";
 import { useLocation } from "react-router-dom";
@@ -60,16 +61,80 @@ import { useLocation } from "react-router-dom";
 
 const queryClient = new QueryClient();
 
-function LoggedInChatbot() {
+/** Public marketing site — platform / product enquiry chatbot (guests only). */
+function isPublicMarketingPath(pathname: string): boolean {
+  if (pathname.startsWith("/admin")) return false;
+  const exact = new Set([
+    "/",
+    "/pricing",
+    "/rsb-fintech-founder",
+    "/dsn-fintech-founder",
+    "/contact-us",
+    "/white-label",
+    "/terms",
+    "/risk-disclaimer",
+    "/privacy-policy",
+    "/ai-probability-engine",
+    "/affiliate-partner",
+    "/dashboard",
+    "/market-picks",
+  ]);
+  if (exact.has(pathname)) return true;
+  if (pathname === "/blogs" || pathname.startsWith("/blogs/")) return true;
+  if (/^\/wl\/[^/]+$/.test(pathname)) return true;
+  return false;
+}
+
+/** Logged-in trading app — stock / market assistant chatbot. */
+function isLoggedInAppPath(pathname: string): boolean {
+  if (pathname === "/tick-chart") return false;
+  if (pathname === "/auth" || pathname === "/register") return false;
+  if (pathname.startsWith("/auth/") && pathname !== "/auth/change-password") return false;
+  if (pathname.startsWith("/admin")) return false;
+
+  if (pathname === "/auth/change-password") return true;
+  if (pathname.startsWith("/predictions")) return true;
+  if (pathname.startsWith("/trade/")) return true;
+  if (pathname.startsWith("/wl-checkout/")) return true;
+  if (/^\/wl\/[^/]+\/dashboard/.test(pathname)) return true;
+
+  const exactApp = new Set([
+    "/home",
+    "/predict",
+    "/intraday",
+    "/active-trades",
+    "/news",
+    "/strategies",
+    "/trading-dashboard",
+    "/broker-callback",
+    "/affiliate/dashboard",
+    "/algo-setup",
+    "/market-picks",
+  ]);
+  if (exactApp.has(pathname)) return true;
+  if (pathname.startsWith("/news/")) return true;
+
+  return false;
+}
+
+function AppChatbots() {
   const { user } = useAuth();
   const { pathname } = useLocation();
-  const [open, setOpen] = useState(false);
+  const [predictionOpen, setPredictionOpen] = useState(false);
 
-  // Hide on auth/registration and tick chart screens.
-  if (!user) return null;
-  if (pathname === "/auth" || pathname === "/register" || pathname.startsWith("/auth/") || pathname === "/tick-chart") return null;
+  const showPredictionChatbot = !!user && isLoggedInAppPath(pathname);
+  /** Marketing pages: platform bot unless the logged-in app assistant already owns this URL (e.g. /market-picks). */
+  const showPlatformChatbot =
+    isPublicMarketingPath(pathname) && !showPredictionChatbot;
 
-  return <PredictionChatbot open={open} setOpen={setOpen} />;
+  return (
+    <>
+      {showPlatformChatbot ? <PlatformChatbot /> : null}
+      {showPredictionChatbot ? (
+        <PredictionChatbot open={predictionOpen} setOpen={setPredictionOpen} />
+      ) : null}
+    </>
+  );
 }
 
 const App = () => (
@@ -80,8 +145,6 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <div className="min-h-screen bg-background text-foreground">
-            <PlatformChatbot />
-            <LoggedInChatbot />
             <Routes>
               <Route path="/rsb-fintech-founder" element={<LandingPage />} />
               <Route path="/dsn-fintech-founder" element={<LandingPage />} />
@@ -90,6 +153,7 @@ const App = () => (
               <Route path="/risk-disclaimer" element={<RiskDisclaimer />} />
               <Route path="/privacy-policy" element={<PrivacyPolicy />} />
               <Route path="/" element={<MainLandingPage />} />
+              <Route path="/pricing" element={<PricingPage />} />
               <Route path="/ai-probability-engine" element={<AIPobabilityEnginePage />} />
               <Route path="/affiliate-partner" element={<AffiliatePartnerPage />} />
               <Route
@@ -218,6 +282,7 @@ const App = () => (
               <Route path="/wl/:slug/dashboard" element={<WhitelabelDashboardPage />} />
               <Route path="*" element={<Navigate to="/home" replace />} />
             </Routes>
+            <AppChatbots />
           </div>
         </BrowserRouter>
       </TooltipProvider>

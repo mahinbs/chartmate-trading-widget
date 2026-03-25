@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import {
   X, Send, Phone, ChevronDown, Bot, User, MessageSquare,
@@ -297,16 +296,8 @@ function MarkdownText({ text }: { text: string }) {
   );
 }
 
-// Show only on landing & admin pages (non-logged-in routes)
-const CHATBOT_PATHS = ["/", "/rsb-fintech-founder", "/dsn-fintech-founder", "/contact-us"];
-function useShowChatbot(): boolean {
-  const { pathname } = useLocation();
-  if (pathname.startsWith("/admin")) return true;
-  return CHATBOT_PATHS.includes(pathname);
-}
-
+/** Visibility is controlled by the parent (e.g. App): mount only on public marketing routes for guests. */
 export function PlatformChatbot() {
-  const showChatbot = useShowChatbot();
   const [open, setOpen]         = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput]       = useState("");
@@ -377,11 +368,9 @@ export function PlatformChatbot() {
     }
   }, [messages]);
 
-  if (!showChatbot) return null;
-
   return (
     <>
-      <div className="fixed bottom-5 right-5 z-50 flex flex-col items-end gap-1.5">
+      <div className="fixed bottom-5 right-5 z-[100] flex flex-col items-end gap-1.5">
         {!open && hasNotif && (
           <div className="animate-bounce bg-background/95 border border-border shadow-md rounded-xl px-2.5 py-1.5 text-xs font-medium max-w-[180px] text-center backdrop-blur-sm">
             Ask me anything about the platform
@@ -404,7 +393,7 @@ export function PlatformChatbot() {
       </div>
 
       <div className={cn(
-        "fixed bottom-20 right-5 z-50 w-[380px] max-w-[calc(100vw-24px)] flex flex-col rounded-2xl shadow-2xl border bg-background transition-all duration-300 origin-bottom-right",
+        "fixed bottom-20 right-5 z-[100] w-[380px] max-w-[calc(100vw-24px)] flex flex-col rounded-2xl shadow-2xl border bg-background transition-all duration-300 origin-bottom-right",
         open ? "scale-100 opacity-100 pointer-events-auto" : "scale-95 opacity-0 pointer-events-none"
       )} style={{ maxHeight: "calc(100vh - 130px)" }}>
 

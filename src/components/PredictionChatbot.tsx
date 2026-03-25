@@ -346,9 +346,9 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
   return (
     <>
       {/* Floating trigger */}
-      <div className="fixed bottom-5 right-5 z-50 flex flex-col items-end gap-2">
+      <div className="fixed bottom-5 right-5 z-[100] flex flex-col items-end gap-2">
         {!open && (
-          <div className="absolute -top-12 right-0 bg-background/80 backdrop-blur-md border border-primary/20 px-3 py-1.5 rounded-xl shadow-xl shadow-primary/10 animate-bounce">
+          <div className="absolute -top-8 right-0 bg-background/80 backdrop-blur-md border border-primary/20 px-3 py-1.5 rounded-xl shadow-xl shadow-primary/10 animate-bounce">
             <p className="text-[10px] font-medium whitespace-nowrap text-primary">Ask about stocks, prices & markets</p>
             <div className="absolute -bottom-1 right-5 w-2 h-2 bg-background/80 border-r border-b border-primary/20 rotate-45" />
           </div>
@@ -374,7 +374,7 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
             <span className="absolute inset-0 rounded-full bg-gradient-to-t from-black/20 to-white/10" />
             {open
               ? <X className="h-6 w-6 text-white relative z-10 transition-transform duration-300" />
-              : <AssistantLogo size={24} className="relative z-10 drop-shadow-[0_0_6px_rgba(255,255,255,0.45)]" />
+              : <AssistantLogo size={35} className="relative z-10" />
             }
           </button>
         </div>
@@ -382,7 +382,7 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
 
       {/* Chat window */}
       <div className={cn(
-        "fixed bottom-24 right-5 z-50 w-[420px] max-w-[calc(100vw-2rem)] bg-background/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex flex-col transition-all duration-500 origin-bottom-right",
+        "fixed bottom-24 right-5 z-[100] w-[420px] max-w-[calc(100vw-2rem)] bg-background/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex flex-col transition-all duration-500 origin-bottom-right",
         open ? "scale-100 opacity-100 translate-y-0" : "scale-90 opacity-0 translate-y-10 pointer-events-none"
       )} style={{ height: "620px", maxHeight: "calc(100vh - 10rem)" }}>
 

@@ -77,25 +77,24 @@ export default function HomePage() {
   const [newsLoading, setNewsLoading] = useState(true);
   const [algoStatus, setAlgoStatus] = useState<string | null>(null);
   const isAlgoProvisioned = isPremium && (algoStatus === "provisioned" || algoStatus === "active");
-  const algoEntryPath = !isPremium ? "/#pricing" : (isAlgoProvisioned ? "/trading-dashboard" : "/algo-setup");
+  const algoEntryPath = !isPremium ? "/pricing" : (isAlgoProvisioned ? "/trading-dashboard" : "/algo-setup");
 
   const navLinks: NavLinkItem[] = [
     { to: "/home", label: "Dashboard", icon: LayoutDashboard },
     { to: "/predict", label: "New Analysis", icon: LineChart },
     { to: "/predictions", label: "Past Analyses", icon: Activity, iconOpacity: "opacity-50" },
     { to: "/active-trades?tab=completed", label: "Paper Trade Performance", icon: BarChart3 },
-    // { to: "/active-trades", label: "Order List", icon: List },
-    { to: "/tick-chart", label: "Live Tick Chart", icon: BarChart2 },
+   //  { to: "/tick-chart", label: "Live Tick Chart", icon: BarChart2 },
     { to: "/news", label: "News Feed", icon: Newspaper },
   ];
   if (isPremium) {
     if (isAlgoProvisioned) {
-      navLinks.push({ to: "/trading-dashboard", label: "Live Trading", icon: Activity });
+      navLinks.push({ to: "/trading-dashboard", label: "Algo Trade", icon: Activity });
     } else {
       navLinks.push({ to: "/algo-setup", label: "Algo Trade", icon: Bot, iconColor: "text-primary opacity-80" });
     }
   } else {
-    navLinks.push({ to: "/#pricing", label: "Algo Trade", icon: Bot, iconColor: "text-primary opacity-80" });
+    navLinks.push({ to: "/pricing", label: "Algo Trade", icon: Bot, iconColor: "text-primary opacity-80" });
   }
 
   if (isAdmin) {
@@ -418,27 +417,6 @@ export default function HomePage() {
                 </div>
               </DialogContent>
             </Dialog>
-
-            {/* UPSELL (If free user) */}
-            {!isPremium && (
-               <div className="glass-card-premium p-5 flex flex-col sm:flex-row items-center justify-between gap-5 relative overflow-hidden shadow-lg shadow-background/20">
-                  <div className="absolute inset-0 bg-primary/5 opacity-50"></div>
-                  <div className="flex gap-4 relative z-10 w-full sm:w-auto">
-                     <div className="p-3 bg-card border border-border/80 rounded-xl shrink-0 shadow-sm h-fit">
-                        <Lock className="h-5 w-5 text-muted-foreground" />
-                     </div>
-                     <div className="pt-0.5">
-                        <p className="font-bold text-foreground text-base tracking-tight">Unlock Live Trading</p>
-                        <p className="text-[13px] text-muted-foreground/90 mt-1 font-medium leading-relaxed max-w-lg">
-                           Connect your broker, place real orders & auto-execute strategies.
-                        </p>
-                     </div>
-                  </div>
-                  <Button onClick={() => { window.location.href = '/#pricing'; }} className="shrink-0 w-full sm:w-auto bg-primary text-primary-foreground text-sm px-6 h-11 rounded-xl font-semibold relative z-10 hover:shadow-[0_4px_12px_-4px_var(--primary)] transition-shadow">
-                     Upgrade to Pro →
-                  </Button>
-               </div>
-            )}
 
             {/* SECONDARY ROW (2 Col) */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
