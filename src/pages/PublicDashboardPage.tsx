@@ -23,6 +23,7 @@ import {
   Pie,
 } from "recharts";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { PublicDailyPerformanceChart } from "@/components/public-dashboard/PublicDailyPerformanceChart";
 
 interface Subscriber {
   id: string;
@@ -186,39 +187,6 @@ function buildSevenDayData(m: Metric, tz: string): ChartPoint[] {
   });
 }
 
-/** Generate last-7-days % deviation from weekly mean for the combined area chart.
- *  All metrics share the same ±% Y-axis so USD vs counts are all comparable. */
-function buildSevenDayPctGrowth(metrics: Metric[], tz: string): { date: string; [key: string]: string | number }[] {
-  const now = new Date();
-  const todaySeed = now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
-
-  // Pre-compute raw daily values for each metric across all 7 days
-  const rawByMetric: Record<string, number[]> = {};
-  metrics.forEach((m) => {
-    const base = parseNumeric(m.value);
-    const keySeed = m.key.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
-    const dailyBase = base / 30;
-    rawByMetric[m.label] = Array.from({ length: 7 }, (_, i) => {
-      const daySeed = i < 6 ? keySeed + i * 31 + 9999 : keySeed + todaySeed;
-      return Math.max(0, dailyBase * (1 + seededRand(daySeed) * 0.45));
-    });
-  });
-
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(now);
-    d.setDate(d.getDate() - (6 - i));
-    const label = d.toLocaleDateString("en-US", { timeZone: tz, month: "short", day: "numeric" });
-    const point: { date: string; [key: string]: string | number } = { date: label };
-    metrics.forEach((m) => {
-      const vals = rawByMetric[m.label];
-      const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-      const pct = avg !== 0 ? ((vals[i] - avg) / avg) * 100 : 0;
-      point[m.label] = parseFloat(pct.toFixed(1));
-    });
-    return point;
-  });
-}
-
 function accentColors(key: string) {
   if (key.includes("profit")) return { stroke: "#10b981", fill: "#10b981", border: "border-emerald-500/40", bg: "bg-emerald-500/5" };
   if (key.includes("loss")) return { stroke: "#ef4444", fill: "#ef4444", border: "border-red-500/40", bg: "bg-red-500/5" };
@@ -227,8 +195,6 @@ function accentColors(key: string) {
   if (key.includes("revenue")) return { stroke: "#6366f1", fill: "#6366f1", border: "border-indigo-500/40", bg: "bg-indigo-500/5" };
   return { stroke: "#8b5cf6", fill: "#8b5cf6", border: "border-violet-500/40", bg: "bg-violet-500/5" };
 }
-
-const GROWTH_PALETTE = ["#10b981", "#6366f1", "#0ea5e9", "#f59e0b", "#ec4899", "#8b5cf6"];
 
 function MetricSparkline({ m, data }: { m: Metric; data: ChartPoint[] }) {
   const colors = accentColors(m.key);
@@ -286,7 +252,12 @@ function MetricSparkline({ m, data }: { m: Metric; data: ChartPoint[] }) {
 
 const SUB_PAGE_SIZE = 10;
 
-export default function PublicDashboardPage() {
+type PublicDashboardPageProps = {
+  /** Super-admin preview inside /admin — same UI as /dashboard, with a link to edit metrics instead of marketing home. */
+  embedInAdmin?: boolean;
+};
+
+export default function PublicDashboardPage({ embedInAdmin = false }: PublicDashboardPageProps) {
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [loading, setLoading] = useState(true);
   const [tz] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
@@ -324,31 +295,28 @@ export default function PublicDashboardPage() {
     [numericMetrics, tz]
   );
 
-  const sevenDayGrowthData = useMemo(
-    () => buildSevenDayPctGrowth(numericMetrics, tz),
-    [numericMetrics, tz]
-  );
-
-  const growthMetrics = numericMetrics;
-
   const [selectedMetric, setSelectedMetric] = useState<Metric | null>(null);
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className={embedInAdmin ? "min-h-0 bg-background -mx-4 px-4 sm:-mx-6 sm:px-6" : "min-h-screen bg-background"}>
       {/* Header */}
       <div className="border-b bg-card/50">
         <div className="container mx-auto px-4 py-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
-            <Link to="/rsb-fintech-founder">
-              <Button variant="outline" size="sm">
-                <ArrowLeft className="h-4 w-4 mr-1" />
-                Home
-              </Button>
-            </Link>
+            {!embedInAdmin && (
+              <Link to="/rsb-fintech-founder">
+                <Button variant="outline" size="sm">
+                  <ArrowLeft className="h-4 w-4 mr-1" />
+                  Home
+                </Button>
+              </Link>
+            )}
             <div>
               <h1 className="text-xl md:text-2xl font-bold">Platform Dashboard</h1>
               <p className="text-sm text-muted-foreground">
-                Live performance metrics &amp; growth stats — curated by the admin
+                {embedInAdmin
+                  ? "Read-only preview — same page visitors see at /dashboard"
+                  : "Live performance metrics &amp; growth stats — curated by the admin"}
               </p>
             </div>
           </div>
@@ -450,67 +418,7 @@ export default function PublicDashboardPage() {
               </div>
             )}
 
-            {/* ── 7-day % change chart — all metrics normalised to ±% ── */}
-            {growthMetrics.length >= 1 && sevenDayGrowthData.length > 0 && (
-              <Card className="border-primary/30 bg-gradient-to-br from-primary/5 via-background to-background">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <TrendingUp className="h-4 w-4 text-primary" />
-                    Daily Performance — last 7 days (% vs weekly avg)
-                  </CardTitle>
-                  <p className="text-xs text-muted-foreground">
-                    Each metric shown as % deviation from its own 7-day average — up/down every day
-                  </p>
-                </CardHeader>
-                <CardContent className="pt-2">
-                  <ResponsiveContainer width="100%" height={260}>
-                    <AreaChart
-                      data={sevenDayGrowthData}
-                      margin={{ top: 10, right: 16, left: 8, bottom: 0 }}
-                    >
-                      <defs>
-                        {growthMetrics.map((m, idx) => (
-                          <linearGradient key={m.id} id={`mgr-${m.id}`} x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor={GROWTH_PALETTE[idx % GROWTH_PALETTE.length]} stopOpacity={0.25} />
-                            <stop offset="95%" stopColor={GROWTH_PALETTE[idx % GROWTH_PALETTE.length]} stopOpacity={0.02} />
-                          </linearGradient>
-                        ))}
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeOpacity={0.4} />
-                      <XAxis
-                        dataKey="date"
-                        tick={{ fontSize: 11, fill: "#6b7280" }}
-                        tickLine={false}
-                        axisLine={false}
-                      />
-                      <YAxis
-                        tick={{ fontSize: 11, fill: "#6b7280" }}
-                        tickLine={false}
-                        axisLine={false}
-                        tickFormatter={(v) => `${v > 0 ? "+" : ""}${v}%`}
-                        width={52}
-                      />
-                      <Tooltip
-                        contentStyle={{ background: "#1f2937", border: "none", borderRadius: "8px", color: "#f9fafb", fontSize: 12 }}
-                        formatter={(val: number, name: string) => [`${val > 0 ? "+" : ""}${val}%`, name]}
-                      />
-                      <Legend wrapperStyle={{ fontSize: 12, color: "#9ca3af", paddingTop: "8px" }} />
-                      {growthMetrics.map((m, idx) => (
-                        <Area
-                          key={m.id}
-                          type="monotone"
-                          dataKey={m.label}
-                          stroke={GROWTH_PALETTE[idx % GROWTH_PALETTE.length]}
-                          strokeWidth={2}
-                          fill={`url(#mgr-${m.id})`}
-                          dot={false}
-                        />
-                      ))}
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-            )}
+            <PublicDailyPerformanceChart metrics={metrics} timeZone={tz} />
 
             {/* ── Recent Subscribers ── */}
             {subscribers.length > 0 && (() => {

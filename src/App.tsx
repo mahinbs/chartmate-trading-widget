@@ -208,10 +208,11 @@ const App = () => (
                 element={<MarketPicksPage />}
               />
               <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
-                <Route index element={<Navigate to="users" replace />} />
+                <Route index element={<Navigate to="dashboard" replace />} />
                 <Route path="users" element={<AdminUsersPage />} />
                 <Route path="predictions" element={<AdminPredictionsPage />} />
                 <Route path="blogs" element={<AdminBlogsPage />} />
+                <Route path="dashboard" element={<PublicDashboardPage embedInAdmin />} />
                 <Route path="public-dashboard" element={<AdminPublicDashboardPage />} />
                 <Route path="affiliates" element={<AdminAffiliatesPage />} />
                 <Route path="contacts" element={<AdminContactsPage />} />

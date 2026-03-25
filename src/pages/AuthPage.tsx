@@ -30,7 +30,7 @@ const AuthPage = () => {
         return;
       }
       if (role === 'super_admin') {
-        navigate('/admin/users', { replace: true });
+        navigate("/admin", { replace: true });
         return;
       }
       if (role === 'admin') {

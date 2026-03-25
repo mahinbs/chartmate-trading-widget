@@ -47,7 +47,7 @@ export default function ChangePasswordPage() {
         return;
       }
       if (isSuperAdmin) {
-        navigate("/admin/users", { replace: true });
+        navigate("/admin", { replace: true });
         return;
       }
       if (role === "admin") {

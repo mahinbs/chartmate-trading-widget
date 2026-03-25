@@ -241,7 +241,7 @@ export default function AdminPublicDashboardPage() {
   };
 
   const deleteSubscriber = async (id: string) => {
-    if (!confirm("Remove this subscriber from the public list?")) return;
+    if (!confirm("Remove this row from the members list?")) return;
     try {
       const { error } = await (supabase as any).from("recent_subscribers").delete().eq("id", id);
       if (error) throw error;
@@ -403,10 +403,10 @@ export default function AdminPublicDashboardPage() {
             <div>
               <CardTitle className="text-xl text-white flex items-center gap-2">
                 <LayoutDashboard className="h-5 w-5 text-primary" />
-                Public Dashboard Metrics
+                Overview figures
               </CardTitle>
               <CardDescription className="text-zinc-400 mt-1">
-                Manage the key performance indicators shown on the public dashboard.
+                Edit headline values and chart types used on the live overview.
               </CardDescription>
             </div>
             {metrics.length === 0 && !loading && (
@@ -586,7 +586,7 @@ export default function AdminPublicDashboardPage() {
                 Recent Subscribers
               </CardTitle>
               <CardDescription className="text-zinc-400 mt-1">
-                Manage the recent members list shown on the public dashboard.
+                Manage the recent members list on the live overview.
               </CardDescription>
             </div>
             <div className="relative">
