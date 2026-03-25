@@ -64,14 +64,38 @@ Deno.serve(async (req: Request) => {
     const expiresHours = Math.min(Math.max(Number(body.expires_hours) || 24, 1), 168);
     const expiresAt = new Date(Date.now() + expiresHours * 60 * 60 * 1000).toISOString();
 
+    // Duplicate pending guard: same strategy+symbol+side shouldn't queue repeatedly
+    const normalizedSymbol = symbol.trim().toUpperCase();
+    const normalizedAction = action.toUpperCase();
+    const { data: existingPending } = await supabase
+      .from("pending_conditional_orders")
+      .select("id, created_at")
+      .eq("user_id", user.id)
+      .eq("strategy_id", strategy_id)
+      .eq("symbol", normalizedSymbol)
+      .eq("action", normalizedAction)
+      .eq("status", "pending")
+      .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (existingPending) {
+      return new Response(JSON.stringify({
+        success: true,
+        id: existingPending.id,
+        deduped: true,
+        message: "Already deployed and pending for this strategy/symbol/side.",
+      }), { status: 200, headers });
+    }
+
     const { data: inserted, error: insertErr } = await supabase
       .from("pending_conditional_orders")
       .insert({
         user_id: user.id,
         strategy_id,
-        symbol: symbol.trim().toUpperCase(),
+        symbol: normalizedSymbol,
         exchange: (body.exchange ?? "NSE").toUpperCase(),
-        action: action.toUpperCase(),
+        action: normalizedAction,
         quantity: Number(quantity) || 1,
         product: (body.product ?? "MIS").toUpperCase(),
         paper_strategy_type: body.paper_strategy_type ?? "trend_following",

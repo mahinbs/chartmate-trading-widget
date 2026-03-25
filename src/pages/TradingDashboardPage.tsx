@@ -882,7 +882,7 @@ function LiveDashboard({ broker }: { broker: string }) {
             <span className="flex items-center gap-1.5 text-xs text-teal-400 bg-teal-500/10 border border-teal-500/20 px-3 py-1.5 rounded-full">
               <span className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse" />
               {brokerLabel} Connected
-            </span>
+                  </span>
             <EntryPointNotificationsHeaderButton />
           </div>
         </div>

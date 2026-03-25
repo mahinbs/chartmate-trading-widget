@@ -474,6 +474,17 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
   } | null>(null);
   const [backtestLoading, setBacktestLoading] = useState(false);
   const [toggleLoading, setToggleLoading] = useState<string | null>(null);
+  const [deployLoading, setDeployLoading] = useState<string | null>(null);
+  const [deployStateByStrategy, setDeployStateByStrategy] = useState<Record<string, {
+    status: "pending" | "executed" | "cancelled" | "expired";
+    action: "BUY" | "SELL";
+    symbol: string;
+    quantity: number;
+    created_at: string;
+    executed_at?: string | null;
+    broker_order_id?: string | null;
+    error_message?: string | null;
+  } | null>>({});
   const [firePanel, setFirePanel]         = useState<Record<string, {
     open: boolean; symbol: string; exchange: string; quantity: string; product: string; firing: boolean;
     aiOverride?: boolean;
@@ -693,7 +704,35 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
         body: { action: "list" },
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
-      setStrategies((res.data as any)?.strategies ?? []);
+      const list = ((res.data as any)?.strategies ?? []) as Strategy[];
+      setStrategies(list);
+
+      const ids = list.map((s) => s.id);
+      if (ids.length > 0) {
+        const { data: pendingRows } = await (supabase as any)
+          .from("pending_conditional_orders")
+          .select("strategy_id,status,action,symbol,quantity,created_at,executed_at,broker_order_id,error_message")
+          .in("strategy_id", ids)
+          .order("created_at", { ascending: false });
+        const map: Record<string, any> = {};
+        for (const r of (pendingRows ?? [])) {
+          const sid = String(r.strategy_id ?? "");
+          if (!sid || map[sid]) continue;
+          map[sid] = {
+            status: String(r.status ?? "pending"),
+            action: String(r.action ?? "BUY"),
+            symbol: String(r.symbol ?? ""),
+            quantity: Number(r.quantity ?? 0),
+            created_at: String(r.created_at ?? ""),
+            executed_at: r.executed_at ?? null,
+            broker_order_id: r.broker_order_id ?? null,
+            error_message: r.error_message ?? null,
+          };
+        }
+        setDeployStateByStrategy(map);
+      } else {
+        setDeployStateByStrategy({});
+      }
     } catch { /* silent */ } finally { setStratLoading(false); }
   }, []);
 
@@ -830,6 +869,59 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
       }
     } catch (e: any) { toast.error(e?.message ?? "Signal failed"); }
     finally { setFireState(strategy.id, { firing: false }); }
+  };
+
+  const deployStrategy = async (strategy: Strategy, action: "BUY" | "SELL") => {
+    if (!strategy.is_active) {
+      toast.error("Activate strategy first to deploy live.");
+      return;
+    }
+    const fs = getFireState(strategy.id);
+    const sym = fs.symbol.trim().toUpperCase() || (strategy.symbols?.[0] ?? "");
+    if (!sym) {
+      toast.error("Enter/select symbol to deploy live monitoring.");
+      return;
+    }
+    try {
+      const rawList = (strategy as any)?.symbols;
+      const list = Array.isArray(rawList)
+        ? rawList.map((x: any) => String(x?.symbol ?? x ?? "").toUpperCase().trim()).filter(Boolean)
+        : [];
+      if (list.length && !list.includes(sym)) {
+        toast.error(`This strategy is restricted to: ${list.slice(0, 6).join(", ")}${list.length > 6 ? "…" : ""}`);
+        return;
+      }
+    } catch { /* non-blocking */ }
+
+    setDeployLoading(strategy.id);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await supabase.functions.invoke("queue-conditional-order", {
+        body: {
+          strategy_id: strategy.id,
+          symbol: sym,
+          exchange: fs.exchange || "NSE",
+          action,
+          quantity: parseInt(fs.quantity) || 1,
+          product: fs.product || (strategy.is_intraday ? "MIS" : "CNC"),
+          paper_strategy_type: String(strategy.paper_strategy_type ?? "trend_following"),
+          expires_hours: 72,
+        },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      const err = (res.data as any)?.error;
+      if (res.error || err) {
+        toast.error(String(err ?? res.error?.message ?? "Could not deploy strategy"));
+        return;
+      }
+      toast.success(`Live deployment started for ${strategy.name}. Status: pending until conditions match.`);
+      await loadStrategies();
+      setFireState(strategy.id, { open: false });
+    } catch (e: any) {
+      toast.error(e?.message ?? "Could not deploy strategy");
+    } finally {
+      setDeployLoading(null);
+    }
   };
 
   // ── Load all portfolio data ───────────────────────────────────────────────
@@ -1611,6 +1703,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                 <div className="space-y-2">
                   {strategies.map(s => {
                     const fs = getFireState(s.id);
+                    const dep = deployStateByStrategy[s.id];
                     return (
                       <div key={s.id} className={`rounded-xl border transition-colors ${
                         s.is_active ? "bg-purple-500/5 border-purple-500/20" : "bg-zinc-900 border-zinc-800"
@@ -1655,6 +1748,21 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                           <span className={`text-xs px-2 py-0.5 rounded font-bold tracking-tight ${
                             s.is_active ? "bg-purple-500/15 text-purple-300 border border-purple-500/20" : "bg-zinc-800 text-zinc-500 border border-zinc-700/30"
                           }`}>{s.is_active ? "● ACTIVE" : "○ INACTIVE"}</span>
+                          {dep?.status === "pending" && (
+                            <span className="text-xs px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30 font-bold">
+                              LIVE DEPLOYED · PENDING
+                            </span>
+                          )}
+                          {dep?.status === "executed" && (
+                            <span className="text-xs px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 font-bold">
+                              EXECUTED · {dep.symbol} · #{String(dep.broker_order_id ?? "").slice(-8) || "—"}
+                            </span>
+                          )}
+                          {dep?.status === "cancelled" && (
+                            <span className="text-xs px-2 py-0.5 rounded bg-red-500/10 text-red-300 border border-red-500/30 font-bold" title={dep.error_message ?? ""}>
+                              DEPLOY CANCELLED
+                            </span>
+                          )}
                           <span className="text-xs px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/30 font-medium">{s.trading_mode}</span>
                           <span className="text-xs px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/30 font-medium">{s.is_intraday ? "Intraday" : "Positional"}</span>
                           <span className="text-xs text-zinc-500 font-medium tabular-nums ml-1" title="Session window (IST). Fire from UI = executes immediately. Webhook = when conditions met within this window.">{s.start_time}–{s.end_time}</span>
@@ -1824,6 +1932,22 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                                 checked={fs.aiOverride ?? false}
                                 onCheckedChange={(v) => setFireState(s.id, { aiOverride: v })}
                               />
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                onClick={() => deployStrategy(s, "BUY")} disabled={Boolean(fs.firing || deployLoading === s.id)}
+                                className="py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50"
+                              >
+                                {deployLoading === s.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+                                DEPLOY BUY
+                              </button>
+                              <button
+                                onClick={() => deployStrategy(s, "SELL")} disabled={Boolean(fs.firing || deployLoading === s.id)}
+                                className="py-2 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50"
+                              >
+                                {deployLoading === s.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+                                DEPLOY SELL
+                              </button>
                             </div>
                             <div className="grid grid-cols-2 gap-2">
                               <button
