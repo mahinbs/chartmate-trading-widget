@@ -13,7 +13,7 @@ const corsHeaders: Record<string, string> = {
 };
 
 // Used to confirm the deployed function version in browser Network → Response.
-const BUILD_ID = "backtest-vectorbt:disable-broker:2026-03-18-01";
+const BUILD_ID = "backtest-vectorbt:execution-days-daily-ret:2026-03-25-03";
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -67,6 +67,11 @@ Deno.serve(async (req: Request) => {
         max_hold_days: body.max_hold_days ?? 10,
         data_source: body.data_source ?? "auto",
         openalgo_api_key: openalgoApiKey,
+        // Custom strategy conditions from AlgoStrategyBuilder
+        entry_conditions: body.entry_conditions ?? null,
+        exit_conditions: body.exit_conditions ?? null,
+        custom_strategy_name: body.custom_strategy_name ?? null,
+        execution_days: Array.isArray(body.execution_days) ? body.execution_days : null,
       }),
     });
 

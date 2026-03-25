@@ -8,8 +8,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { STRATEGIES } from "@/components/trading/StrategySelectionDialog";
-import { Loader2, Sparkles, Target, History, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, Sparkles, Target, History, ChevronLeft, ChevronRight, Clock3, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
@@ -18,6 +26,14 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { LiveEntryTrackingSection } from "@/components/prediction/LiveEntryTrackingSection";
 
 export interface PostAnalysisContext {
   result?: string;
@@ -30,6 +46,8 @@ export interface StrategyEntrySignalsPanelProps {
   postAnalysis?: PostAnalysisContext | null;
   /** Only show when user has run post-analysis (recommended) */
   requirePostAnalysis?: boolean;
+  /** Optional deep-link history id to open full saved scan detail */
+  initialHistoryId?: string | null;
 }
 
 type SignalRow = {
@@ -64,7 +82,76 @@ type CustomStrategy = {
   stop_loss_pct: number;
   take_profit_pct: number;
   paper_strategy_type?: string | null;
+  entry_conditions?: Record<string, unknown> | null;
+  exit_conditions?: Record<string, unknown> | null;
+  position_config?: Record<string, unknown> | null;
+  risk_config?: Record<string, unknown> | null;
+  chart_config?: Record<string, unknown> | null;
+  execution_days?: number[] | null;
+  market_type?: string | null;
 };
+
+type ExistingScheduleRow = {
+  id: string;
+  symbol: string;
+  timezone: string;
+  notify_time: string;
+  enabled: boolean;
+  schedule_mode: string;
+  selected_strategies?: string[];
+  selected_custom_strategy_ids?: string[];
+  days_of_week?: number[];
+  one_off_local_date?: string | null;
+  last_digest_on?: string | null;
+};
+
+const DAY_LABELS: { bit: number; label: string }[] = [
+  { bit: 0, label: "Sun" },
+  { bit: 1, label: "Mon" },
+  { bit: 2, label: "Tue" },
+  { bit: 3, label: "Wed" },
+  { bit: 4, label: "Thu" },
+  { bit: 5, label: "Fri" },
+  { bit: 6, label: "Sat" },
+];
+
+function timeInputValueFromDb(t: string | undefined): string {
+  if (!t) return "09:30";
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(t).trim());
+  if (!m) return "09:30";
+  return `${m[1].padStart(2, "0")}:${m[2]}`;
+}
+
+function dbTimeFromInput(hhmm: string): string {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim());
+  if (!m) return "09:30:00";
+  return `${m[1].padStart(2, "0")}:${m[2]}:00`;
+}
+
+function formatDateKeyInTz(d: Date, tz: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+  const y = parts.find((p) => p.type === "year")?.value ?? "1970";
+  const mo = parts.find((p) => p.type === "month")?.value ?? "01";
+  const da = parts.find((p) => p.type === "day")?.value ?? "01";
+  return `${y}-${mo}-${da}`;
+}
+
+function getTomorrowDateKeyInTz(tz: string): string {
+  const now = new Date();
+  const today = formatDateKeyInTz(now, tz);
+  let t = now.getTime();
+  for (let step = 0; step < 72; step++) {
+    t += 3600000;
+    const k = formatDateKeyInTz(new Date(t), tz);
+    if (k !== today) return k;
+  }
+  return formatDateKeyInTz(new Date(now.getTime() + 36 * 3600000), tz);
+}
 
 type HistoryItem = {
   id: string;
@@ -98,6 +185,7 @@ export function StrategyEntrySignalsPanel({
   symbol,
   postAnalysis,
   requirePostAnalysis = false,
+  initialHistoryId = null,
 }: StrategyEntrySignalsPanelProps) {
   const { toast } = useToast();
   const [selected, setSelected] = useState<Set<string>>(
@@ -118,6 +206,12 @@ export function StrategyEntrySignalsPanel({
   const [historyDetail, setHistoryDetail] = useState<HistoryDetail | null>(null);
   const [historySignalPage, setHistorySignalPage] = useState(1);
   const [historyDetailLoading, setHistoryDetailLoading] = useState(false);
+  const [pendingHistoryId, setPendingHistoryId] = useState<string | null>(initialHistoryId);
+  const [entryAlarmsOpen, setEntryAlarmsOpen] = useState(false);
+  const [scheduleTab, setScheduleTab] = useState<"create" | "existing">("create");
+  const [existingSchedules, setExistingSchedules] = useState<ExistingScheduleRow[]>([]);
+  const [schedulesLoading, setSchedulesLoading] = useState(false);
+  const [deletingScheduleId, setDeletingScheduleId] = useState<string | null>(null);
 
   const todayKey = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
@@ -146,14 +240,27 @@ export function StrategyEntrySignalsPanel({
           body: { action: "list" },
           headers: { Authorization: `Bearer ${session.access_token}` },
         });
+        if (res.error) throw new Error(res.error.message);
         const data = (res.data as { strategies?: CustomStrategy[] } | null)?.strategies ?? [];
-        if (!cancelled) setCustomStrategies(data);
-      } catch {
-        if (!cancelled) setCustomStrategies([]);
+        if (!cancelled) {
+          setCustomStrategies(data);
+          setSelectedCustom((prev) => {
+            if (prev.size > 0) return prev;
+            return new Set(data.map((d) => d.id));
+          });
+        }
+      } catch (e: unknown) {
+        if (!cancelled) {
+          toast({
+            title: "Could not load custom strategies",
+            description: e instanceof Error ? e.message : "Unknown error",
+            variant: "destructive",
+          });
+        }
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [toast]);
 
   // Keep "UPCOMING/LIVE" labels fresh as time moves.
   useEffect(() => {
@@ -208,6 +315,16 @@ export function StrategyEntrySignalsPanel({
   }, [toast]);
 
   useEffect(() => {
+    if (initialHistoryId) setPendingHistoryId(initialHistoryId);
+  }, [initialHistoryId]);
+
+  useEffect(() => {
+    if (!pendingHistoryId) return;
+    void openHistoryDetail(pendingHistoryId);
+    setPendingHistoryId(null);
+  }, [pendingHistoryId, openHistoryDetail]);
+
+  useEffect(() => {
     fetchHistoryList(1);
   }, [fetchHistoryList]);
 
@@ -237,6 +354,106 @@ export function StrategyEntrySignalsPanel({
       return n;
     });
   };
+  const loadExistingSchedules = useCallback(async () => {
+    setSchedulesLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const { data, error } = await (supabase as any)
+        .from("live_entry_trackers")
+        .select("id,symbol,timezone,notify_time,enabled,schedule_mode,selected_strategies,selected_custom_strategy_ids,days_of_week,one_off_local_date,last_digest_on")
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      setExistingSchedules((data as ExistingScheduleRow[]) ?? []);
+    } catch (e: unknown) {
+      toast({
+        title: "Could not load schedules",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setSchedulesLoading(false);
+    }
+  }, [toast]);
+
+  const removeExistingSchedule = useCallback(async (id: string) => {
+    setDeletingScheduleId(id);
+    try {
+      const { error } = await (supabase as any).from("live_entry_trackers").delete().eq("id", id);
+      if (error) throw error;
+      setExistingSchedules((prev) => prev.filter((r) => r.id !== id));
+      toast({ title: "Schedule removed" });
+    } catch (e: unknown) {
+      toast({
+        title: "Delete failed",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingScheduleId(null);
+    }
+  }, [toast]);
+
+  const applyCurrentStrategySelectionToSchedule = useCallback(async (id: string) => {
+    try {
+      const payload = {
+        selected_strategies: selected.size > 0
+          ? Array.from(selected)
+          : ["trend_following", "mean_reversion", "momentum"],
+        selected_custom_strategy_ids: Array.from(selectedCustom),
+      };
+      const { error } = await (supabase as any).from("live_entry_trackers").update(payload).eq("id", id);
+      if (error) throw error;
+      setExistingSchedules((prev) => prev.map((r) => (r.id === id ? { ...r, ...payload } : r)));
+      toast({ title: "Schedule updated", description: "Strategy selection saved." });
+    } catch (e: unknown) {
+      toast({
+        title: "Could not update schedule",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
+  }, [selected, selectedCustom, toast]);
+
+  const updateExistingSchedule = useCallback(async (
+    id: string,
+    patch: Partial<{
+      notify_time: string;
+      schedule_mode: string;
+      days_of_week: number[];
+      enabled: boolean;
+      one_off_local_date: string | null;
+    }>,
+  ) => {
+    try {
+      // Reset last_digest_on so updated schedule can still fire today if time window is upcoming.
+      const fullPatch = { ...patch, last_digest_on: null };
+      const { error } = await (supabase as any).from("live_entry_trackers").update(fullPatch).eq("id", id);
+      if (error) throw error;
+      setExistingSchedules((prev) => prev.map((r) => (r.id === id ? { ...r, ...fullPatch } : r)));
+    } catch (e: unknown) {
+      toast({
+        title: "Could not update schedule",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
+  }, [toast]);
+
+  const toggleExistingDay = useCallback((id: string, bit: number, selectedDays: number[]) => {
+    const set = new Set(selectedDays ?? []);
+    if (set.has(bit)) set.delete(bit);
+    else set.add(bit);
+    void updateExistingSchedule(id, { days_of_week: Array.from(set).sort((a, b) => a - b) });
+  }, [updateExistingSchedule]);
+
+  useEffect(() => {
+    if (entryAlarmsOpen) void loadExistingSchedules();
+  }, [entryAlarmsOpen, loadExistingSchedules]);
+  const selectAllBuiltIn = () => setSelected(new Set(STRATEGIES.map((s) => s.value)));
+  const clearBuiltIn = () => setSelected(new Set());
+  const selectAllCustom = () => setSelectedCustom(new Set(customStrategies.map((cs) => cs.id)));
+  const clearCustom = () => setSelectedCustom(new Set());
 
   const runScan = useCallback(async () => {
     if (!symbol.trim()) return;
@@ -270,6 +487,13 @@ export function StrategyEntrySignalsPanel({
           stopLossPct: cs.stop_loss_pct,
           takeProfitPct: cs.take_profit_pct,
           isIntraday: cs.is_intraday,
+          entryConditions: cs.entry_conditions ?? null,
+          exitConditions: cs.exit_conditions ?? null,
+          positionConfig: cs.position_config ?? null,
+          riskConfig: cs.risk_config ?? null,
+          chartConfig: cs.chart_config ?? null,
+          executionDays: Array.isArray(cs.execution_days) ? cs.execution_days : [],
+          marketType: cs.market_type ?? "stocks",
         }));
 
       const { data, error } = await supabase.functions.invoke("strategy-entry-signals", {
@@ -431,41 +655,205 @@ export function StrategyEntrySignalsPanel({
   return (
     <Card className="border-white/10 bg-black/20">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium text-white flex items-center gap-2">
-          <Target className="h-4 w-4 text-teal-400" />
-          Strategy library — entry &amp; exit signals + AI score
-        </CardTitle>
-        <p className="text-xs text-muted-foreground">
-          Symbol: <span className="text-white/90 font-mono">{symbol}</span>
-        </p>
-        <p className="text-xs text-muted-foreground">
-          Select strategies. We detect both{" "}
-          <span className="text-emerald-400">entry (BUY)</span> and{" "}
-          <span className="text-red-400">exit (SELL)</span> points, rank each with an AI score,
-          and surface today's best opportunities first.
-          {postAnalysis?.result ? " Using your post-analysis outcome as extra context." : ""}
-        </p>
-        {marketNote ? <p className="text-[11px] text-muted-foreground mt-1">{marketNote}</p> : null}
-        {scanMeta && (
-          <p className="text-[10px] text-zinc-500 mt-1">
-            Data: <span className="text-zinc-400">{scanMeta.dataSource ?? "yahoo"}</span>
-            {" · "}Indicators: <span className="text-zinc-400">{scanMeta.indicatorSource ?? "computed"}</span>
-            {" · "}AI scoring: <span className="text-teal-400">Gemini</span>
-          </p>
-        )}
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1 space-y-1">
+            <CardTitle className="text-sm font-medium text-white flex items-center gap-2">
+              <Target className="h-4 w-4 text-teal-400 shrink-0" />
+              Strategy library — entry &amp; exit signals + AI score
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Symbol: <span className="text-white/90 font-mono">{symbol}</span>
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Select strategies. We detect both{" "}
+              <span className="text-emerald-400">entry (BUY)</span> and{" "}
+              <span className="text-red-400">exit (SELL)</span> points, rank each with an AI score,
+              and surface today's best opportunities first.
+              {postAnalysis?.result ? " Using your post-analysis outcome as extra context." : ""}
+            </p>
+            {marketNote ? <p className="text-[11px] text-muted-foreground mt-1">{marketNote}</p> : null}
+            {scanMeta && (
+              <p className="text-[10px] text-zinc-500 mt-1">
+                Data: <span className="text-zinc-400">{scanMeta.dataSource ?? "yahoo"}</span>
+                {" · "}Indicators: <span className="text-zinc-400">{scanMeta.indicatorSource ?? "computed"}</span>
+                {" · "}AI scoring: <span className="text-teal-400">Gemini</span>
+              </p>
+            )}
+          </div>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="shrink-0 h-8 px-3 rounded-md border-teal-500/30 bg-black/40 text-teal-300 hover:bg-teal-500/10 hover:border-teal-400/50 text-xs"
+                aria-label="Open schedule popup"
+                onClick={() => setEntryAlarmsOpen(true)}
+              >
+                <Clock3 className="h-3.5 w-3.5 mr-1.5" />
+                Schedule
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left" className="max-w-[220px]">
+              Open schedule popup: create/edit and manage existing schedules.
+            </TooltipContent>
+          </Tooltip>
+        </div>
       </CardHeader>
 
+      <Sheet open={entryAlarmsOpen} onOpenChange={setEntryAlarmsOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto border-l border-zinc-800 bg-zinc-950 p-4 pt-10">
+          <SheetHeader className="mb-3">
+            <SheetTitle className="text-zinc-100">Schedule</SheetTitle>
+            <SheetDescription className="text-zinc-400">
+              Create a schedule for this symbol, or manage old schedules.
+            </SheetDescription>
+          </SheetHeader>
+
+          <Tabs value={scheduleTab} onValueChange={(v) => setScheduleTab(v as "create" | "existing")} className="space-y-3">
+            <TabsList className="grid w-full grid-cols-2 bg-zinc-900 border border-zinc-800">
+              <TabsTrigger value="create" className="text-xs data-[state=active]:bg-teal-500/20 data-[state=active]:text-teal-300">
+                Create schedule
+              </TabsTrigger>
+              <TabsTrigger value="existing" className="text-xs data-[state=active]:bg-teal-500/20 data-[state=active]:text-teal-300">
+                Existing schedules
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="create" className="mt-0">
+              <LiveEntryTrackingSection
+                symbol={symbol}
+                selectedBuiltInStrategies={Array.from(selected)}
+                selectedCustomStrategyIds={Array.from(selectedCustom)}
+              />
+            </TabsContent>
+
+            <TabsContent value="existing" className="mt-0">
+              <div className="rounded-lg border border-white/10 bg-black/20 p-3 space-y-2">
+                {schedulesLoading ? (
+                  <p className="text-xs text-zinc-500">Loading schedules…</p>
+                ) : existingSchedules.length === 0 ? (
+                  <p className="text-xs text-zinc-500">No schedules created yet.</p>
+                ) : (
+                  existingSchedules.map((row) => (
+                    <div key={row.id} className="rounded-md border border-white/10 p-2 space-y-2">
+                      <div className="min-w-0">
+                        <p className="text-xs text-white font-mono">{row.symbol}</p>
+                        <p className="text-[11px] text-zinc-400">
+                          {row.notify_time?.slice(0, 5)} · {row.timezone} · {row.schedule_mode}
+                          {!row.enabled ? " · off" : ""}
+                        </p>
+                        <p className="text-[11px] text-zinc-500 mt-1">
+                          Strategies: {(row.selected_strategies ?? []).length > 0
+                            ? (row.selected_strategies ?? [])
+                              .map((id) => STRATEGIES.find((s) => s.value === id)?.label ?? id)
+                              .join(", ")
+                            : "Default"}
+                          {(row.selected_custom_strategy_ids ?? []).length > 0
+                            ? ` · Custom: ${(row.selected_custom_strategy_ids ?? [])
+                              .map((id) => customStrategies.find((c) => c.id === id)?.name ?? id)
+                              .join(", ")}`
+                            : ""}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={!!row.enabled}
+                          onCheckedChange={(v) => {
+                            void updateExistingSchedule(row.id, { enabled: !!v });
+                          }}
+                        />
+                        <input
+                          type="time"
+                          className="h-7 rounded-md border border-zinc-700 bg-black/40 px-2 text-xs text-white"
+                          value={timeInputValueFromDb(row.notify_time)}
+                          onChange={(e) => {
+                            void updateExistingSchedule(row.id, { notify_time: dbTimeFromInput(e.target.value) });
+                          }}
+                        />
+                        <Select
+                          value={row.schedule_mode || "all_days"}
+                          onValueChange={(v) => {
+                            if (v === "tomorrow_once") {
+                              void updateExistingSchedule(row.id, {
+                                schedule_mode: v,
+                                one_off_local_date: getTomorrowDateKeyInTz(row.timezone),
+                                days_of_week: [],
+                              });
+                            } else if (v === "custom") {
+                              void updateExistingSchedule(row.id, { schedule_mode: v });
+                            } else {
+                              void updateExistingSchedule(row.id, {
+                                schedule_mode: v,
+                                days_of_week: [],
+                                one_off_local_date: null,
+                              });
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="h-7 w-[170px] text-xs bg-black/40 border-zinc-700">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all_days">Every day</SelectItem>
+                            <SelectItem value="weekdays">Weekdays</SelectItem>
+                            <SelectItem value="custom">Custom days</SelectItem>
+                            <SelectItem value="tomorrow_once">Tomorrow once</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 text-[11px] border-teal-500/30 text-teal-300"
+                          onClick={() => void applyCurrentStrategySelectionToSchedule(row.id)}
+                        >
+                          Save current selection
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-zinc-400 hover:text-red-300 ml-auto"
+                          disabled={deletingScheduleId === row.id}
+                          onClick={() => void removeExistingSchedule(row.id)}
+                        >
+                          {deletingScheduleId === row.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                        </Button>
+                      </div>
+                      {row.schedule_mode === "custom" && (
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          {DAY_LABELS.map(({ bit, label }) => (
+                            <label key={bit} className="flex items-center gap-1.5 text-[11px] text-zinc-300 cursor-pointer">
+                              <Checkbox
+                                checked={(row.days_of_week ?? []).includes(bit)}
+                                onCheckedChange={() => toggleExistingDay(row.id, bit, row.days_of_week ?? [])}
+                              />
+                              {label}
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
+        </SheetContent>
+      </Sheet>
+
       <CardContent className="space-y-4">
-        <Button
-          className="w-full bg-teal-600 hover:bg-teal-500"
-          onClick={runScan}
-          disabled={loading}
-        >
-          {loading
-            ? <Loader2 className="h-4 w-4 animate-spin mr-2" />
-            : <Sparkles className="h-4 w-4 mr-2" />}
-          Run strategy entry scan
-        </Button>
+        <div className="rounded-lg border border-teal-500/20 bg-teal-500/5 p-3 space-y-2">
+          <p className="text-[11px] font-semibold text-teal-300">Select strategies for this scan</p>
+          <p className="text-[10px] text-zinc-400">
+            Selected: {selected.size} built-in
+            {customStrategies.length > 0 ? ` + ${selectedCustom.size} custom` : ""}
+          </p>
+          {selected.size + selectedCustom.size === 0 ? (
+            <p className="text-[10px] text-amber-300">Pick at least one strategy before running scan.</p>
+          ) : null}
+        </div>
 
         {/* Signal counts — always visible once results exist */}
         {counts.total > 0 && (
@@ -497,7 +885,17 @@ export function StrategyEntrySignalsPanel({
 
         {/* Strategy picker */}
         <div className="rounded-lg border border-white/10 p-3 max-h-48 overflow-y-auto space-y-2">
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Built-in strategies</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Built-in strategies</p>
+            <div className="flex items-center gap-1">
+              <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={selectAllBuiltIn}>
+                Select all
+              </Button>
+              <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={clearBuiltIn}>
+                Clear
+              </Button>
+            </div>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {STRATEGIES.map((s) => (
               <label key={s.value} className="flex items-start gap-2 text-xs cursor-pointer">
@@ -518,9 +916,19 @@ export function StrategyEntrySignalsPanel({
         {/* User's custom algo strategies */}
         {customStrategies.length > 0 && (
           <div className="rounded-lg border border-purple-500/20 bg-purple-500/5 p-3 max-h-40 overflow-y-auto space-y-2">
-            <p className="text-[10px] uppercase tracking-wide text-purple-300">
-              Your custom strategies ({customStrategies.length})
-            </p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[10px] uppercase tracking-wide text-purple-300">
+                Your custom strategies ({customStrategies.length})
+              </p>
+              <div className="flex items-center gap-1">
+                <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-[10px] text-purple-200 hover:text-purple-100" onClick={selectAllCustom}>
+                  Select all
+                </Button>
+                <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-[10px] text-purple-200 hover:text-purple-100" onClick={clearCustom}>
+                  Clear
+                </Button>
+              </div>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {customStrategies.map((cs) => {
                 const baseLabel = STRATEGIES.find((s) => s.value === (cs.paper_strategy_type || ""))?.label;
@@ -544,6 +952,17 @@ export function StrategyEntrySignalsPanel({
             </div>
           </div>
         )}
+
+        <Button
+          className="w-full bg-teal-600 hover:bg-teal-500"
+          onClick={runScan}
+          disabled={loading}
+        >
+          {loading
+            ? <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            : <Sparkles className="h-4 w-4 mr-2" />}
+          Run strategy entry scan
+        </Button>
 
         {/* Results table */}
         {visibleSignals.length > 0 && (

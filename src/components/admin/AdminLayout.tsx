@@ -1,7 +1,7 @@
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Users, BarChart3, FileText, Globe, Link2, Mail, ShieldCheck, Zap } from "lucide-react";
+import { ArrowLeft, Users, BarChart3, FileText, Globe, Link2, LayoutDashboard, Mail, ShieldCheck, Zap, Database } from "lucide-react";
 import { useAdmin } from "@/hooks/useAdmin";
 import { Badge } from "@/components/ui/badge";
 
@@ -15,6 +15,8 @@ export function AdminLayout() {
     ? "daily"
     : path.includes("/admin/blogs")
     ? "blogs"
+    : path.includes("/admin/dashboard")
+    ? "dashboard"
     : path.includes("/admin/public-dashboard")
     ? "stats"
     : path.includes("/admin/affiliates")
@@ -49,6 +51,7 @@ export function AdminLayout() {
             onValueChange={(v) => {
               if (v === "daily") navigate("/admin/predictions");
               else if (v === "blogs") navigate("/admin/blogs");
+              else if (v === "dashboard") navigate("/admin/dashboard");
               else if (v === "stats") navigate("/admin/public-dashboard");
               else if (v === "affiliates") navigate("/admin/affiliates");
               else if (v === "contacts") navigate("/admin/contacts");
@@ -58,6 +61,10 @@ export function AdminLayout() {
             }}
           >
             <TabsList className="flex w-full max-w-3xl h-auto flex-wrap gap-1 bg-muted/40 p-1">
+              <TabsTrigger value="dashboard" className="flex items-center gap-1.5 text-xs">
+                <LayoutDashboard className="h-3.5 w-3.5" />
+                Dashboard
+              </TabsTrigger>
               <TabsTrigger value="users" className="flex items-center gap-1.5 text-xs">
                 <Users className="h-3.5 w-3.5" />
                 List of Users
@@ -71,8 +78,8 @@ export function AdminLayout() {
                 Blogs
               </TabsTrigger>
               <TabsTrigger value="stats" className="flex items-center gap-1.5 text-xs">
-                <BarChart3 className="h-3.5 w-3.5" />
-                Public Dashboard
+                <Database className="h-3.5 w-3.5" />
+                Dataset
               </TabsTrigger>
               <TabsTrigger value="affiliates" className="flex items-center gap-1.5 text-xs">
                 <Link2 className="h-3.5 w-3.5" />

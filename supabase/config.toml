@@ -63,3 +63,10 @@ verify_jwt = false
 
 [functions.analyze-news-google]
 verify_jwt = false
+
+# Auth is enforced inside the function (user JWT or ENTRY_DIGEST_SECRET for daily digest jobs).
+[functions.strategy-entry-signals]
+verify_jwt = false
+
+[functions.entry-point-daily-digest]
+verify_jwt = false

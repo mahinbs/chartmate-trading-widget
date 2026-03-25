@@ -217,6 +217,19 @@ function sma(arr: number[], p: number): number[] {
   return out;
 }
 
+function ema(arr: number[], period: number): number[] {
+  const out = new Array(arr.length).fill(NaN);
+  if (!Array.isArray(arr) || arr.length === 0 || period <= 0) return out;
+  const k = 2 / (period + 1);
+  let prev = arr[0];
+  out[0] = prev;
+  for (let i = 1; i < arr.length; i++) {
+    prev = arr[i] * k + prev * (1 - k);
+    out[i] = prev;
+  }
+  return out;
+}
+
 function rsi(arr: number[], period = 14): number[] {
   const n = arr.length;
   const out = new Array(n).fill(NaN);
@@ -438,6 +451,7 @@ async function fetchRealIndicators(
 }
 
 const STRATEGY_LABELS: Record<string, string> = {
+  time_scheduled: "Time Scheduled",
   trend_following: "Trend Following",
   breakout_breakdown: "Breakout & Breakdown",
   mean_reversion: "Mean Reversion",
@@ -476,6 +490,9 @@ function checkSignal(
   const OB_BUY = relaxed ? 55 : 60;
   const OB_SELL = relaxed ? 45 : 40;
 
+  if (strategy === "time_scheduled") {
+    return false;
+  }
   if (strategy === "trend_following") {
     return action === "BUY"
       ? Number.isFinite(s) && c[i] > s && rsiV > 50
@@ -520,6 +537,396 @@ function checkSignal(
     return action === "BUY" && rsiV < (relaxed ? 45 : 40) && Math.abs(c[i] - (s || c[i])) / c[i] < 0.03;
   }
   return action === "BUY" && rsiV > 50;
+}
+
+type ConditionRhs =
+  | { kind?: "number"; value?: number }
+  | { kind?: "indicator"; id?: string; period?: number };
+
+type AlgoCondition = {
+  indicator?: string;
+  period?: number;
+  op?: string;
+  rhs?: ConditionRhs;
+};
+
+type ConditionGroup = {
+  logic?: "AND" | "OR";
+  conditions?: AlgoCondition[];
+};
+
+type EntryConditionsConfig = {
+  mode?: "visual" | "raw";
+  groupLogic?: "AND" | "OR";
+  groups?: ConditionGroup[];
+  rawExpression?: string;
+  strategySubtype?: "indicator_based" | "time_based" | "hybrid";
+  clockEntryTime?: string;
+};
+
+type ConditionEvalCtx = {
+  c: number[];
+  h: number[];
+  l: number[];
+  realIndicators: RealIndicators;
+  rsiCache: Map<number, number[]>;
+  smaCache: Map<number, number[]>;
+  emaCache: Map<number, number[]>;
+  /** Unix seconds per candle — required for TIME_IS(...) */
+  timestamps?: number[];
+  /** IANA zone for wall-clock rules (IST for Indian symbols, UTC otherwise) */
+  timeZone?: string;
+};
+
+function parseHHMM(hhmm: string): { h: number; m: number } | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm ?? "").trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const mi = Number(m[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(mi) || h < 0 || h > 23 || mi < 0 || mi > 59) return null;
+  return { h, m: mi };
+}
+
+function parseTimeFromRawExpression(raw: string): string | null {
+  const m = /TIME_IS\s*\(\s*(\d{1,2}):(\d{2})\s*\)/i.exec(String(raw ?? ""));
+  if (!m) return null;
+  return `${Number(m[1])}:${m[2].padStart(2, "0")}`;
+}
+
+function wallClockHM(tsSec: number, timeZone: string): { h: number; m: number } | null {
+  if (!Number.isFinite(tsSec)) return null;
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(tsSec * 1000));
+  const hh = Number(parts.find((p) => p.type === "hour")?.value ?? NaN);
+  const mm = Number(parts.find((p) => p.type === "minute")?.value ?? NaN);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+  return { h: hh, m: mm };
+}
+
+function evaluateClockMatch(tsSec: number | undefined, hhmm: string, timeZone: string): boolean {
+  if (tsSec == null) return false;
+  const target = parseHHMM(hhmm);
+  if (!target) return false;
+  const wc = wallClockHM(tsSec, timeZone);
+  if (!wc) return false;
+  return wc.h === target.h && wc.m === target.m;
+}
+
+function stripTimeIsCalls(raw: string): string {
+  return String(raw ?? "")
+    .replace(/TIME_IS\s*\([^)]*\)/gi, " ")
+    .replace(/\bAND\b/gi, "AND")
+    .replace(/\bOR\b/gi, "OR")
+    .replace(/^\s*(AND|OR)\s+/i, "")
+    .replace(/\s+(AND|OR)\s*$/i, "")
+    .trim();
+}
+
+function getSeriesValue(series: number[], idx: number): number | null {
+  if (idx < 0 || idx >= series.length) return null;
+  const v = series[idx];
+  return Number.isFinite(v) ? v : null;
+}
+
+function resolveIndicatorValue(
+  idRaw: string,
+  period: number | undefined,
+  idx: number,
+  ctx: ConditionEvalCtx,
+): number | null {
+  const id = String(idRaw ?? "").toUpperCase().trim();
+  const p = Math.max(1, Math.floor(Number(period) || 14));
+  if (id === "PRICE") return getSeriesValue(ctx.c, idx);
+  if (id === "CHANGE_PCT") return ctx.realIndicators.changePct;
+  if (id === "RSI") {
+    if (!ctx.rsiCache.has(p)) ctx.rsiCache.set(p, rsi(ctx.c, p));
+    return getSeriesValue(ctx.rsiCache.get(p) ?? [], idx);
+  }
+  if (id === "SMA") {
+    if (!ctx.smaCache.has(p)) ctx.smaCache.set(p, sma(ctx.c, p));
+    return getSeriesValue(ctx.smaCache.get(p) ?? [], idx);
+  }
+  if (id === "EMA") {
+    if (!ctx.emaCache.has(p)) ctx.emaCache.set(p, ema(ctx.c, p));
+    return getSeriesValue(ctx.emaCache.get(p) ?? [], idx);
+  }
+  if (id === "MACD") return ctx.realIndicators.macdLine;
+  if (id === "MACD_SIGNAL") return ctx.realIndicators.macdSignal;
+  if (id === "MACD_HIST") {
+    if (ctx.realIndicators.macdLine == null || ctx.realIndicators.macdSignal == null) return null;
+    return ctx.realIndicators.macdLine - ctx.realIndicators.macdSignal;
+  }
+  if (id === "BB_UPPER") return ctx.realIndicators.bbUpper;
+  if (id === "BB_MIDDLE") return ctx.realIndicators.bbMiddle;
+  if (id === "BB_LOWER") return ctx.realIndicators.bbLower;
+  return null;
+}
+
+function compareByOp(left: number, right: number, opRaw: string): boolean {
+  const op = String(opRaw ?? "").toLowerCase().trim();
+  if (op === "less_than") return left < right;
+  if (op === "greater_than") return left > right;
+  if (op === "equals") return Math.abs(left - right) <= 1e-6;
+  if (op === "less_than_or_equal") return left <= right;
+  if (op === "greater_than_or_equal") return left >= right;
+  return false;
+}
+
+function evaluateCondition(cond: AlgoCondition, idx: number, ctx: ConditionEvalCtx): boolean {
+  const lhsId = String(cond.indicator ?? "");
+  const op = String(cond.op ?? "equals");
+  const lhs = resolveIndicatorValue(lhsId, cond.period, idx, ctx);
+  if (lhs == null) return false;
+
+  let rhsValNow: number | null = null;
+  let rhsValPrev: number | null = null;
+  if (cond.rhs?.kind === "indicator") {
+    rhsValNow = resolveIndicatorValue(String(cond.rhs.id ?? ""), cond.rhs.period, idx, ctx);
+    rhsValPrev = resolveIndicatorValue(String(cond.rhs.id ?? ""), cond.rhs.period, idx - 1, ctx);
+  } else {
+    rhsValNow = Number((cond.rhs && "value" in cond.rhs ? cond.rhs.value : 0) ?? 0);
+    rhsValPrev = rhsValNow;
+  }
+  if (rhsValNow == null) return false;
+
+  if (op === "crosses_above" || op === "crosses_below") {
+    const lhsPrev = resolveIndicatorValue(lhsId, cond.period, idx - 1, ctx);
+    if (lhsPrev == null || rhsValPrev == null) return false;
+    return op === "crosses_above"
+      ? lhsPrev <= rhsValPrev && lhs > rhsValNow
+      : lhsPrev >= rhsValPrev && lhs < rhsValNow;
+  }
+  return compareByOp(lhs, rhsValNow, op);
+}
+
+function evaluateConditionGroups(
+  groups: ConditionGroup[],
+  groupLogic: "AND" | "OR",
+  idx: number,
+  ctx: ConditionEvalCtx,
+): boolean {
+  if (!groups.length) return false;
+  const groupResults = groups.map((g) => {
+    const conditions = Array.isArray(g.conditions) ? g.conditions : [];
+    if (!conditions.length) return false;
+    const local = String(g.logic ?? "AND").toUpperCase() === "OR" ? "OR" : "AND";
+    const vals = conditions.map((c) => evaluateCondition(c, idx, ctx));
+    return local === "OR" ? vals.some(Boolean) : vals.every(Boolean);
+  });
+  return groupLogic === "OR" ? groupResults.some(Boolean) : groupResults.every(Boolean);
+}
+
+function evaluateRawExpression(expression: string, idx: number, ctx: ConditionEvalCtx): boolean {
+  const raw = String(expression ?? "").trim();
+  if (!raw) return false;
+  const tz = ctx.timeZone ?? "UTC";
+  const onlyTime = /^\s*TIME_IS\s*\(\s*(\d{1,2}):(\d{2})\s*\)\s*$/i.exec(raw);
+  if (onlyTime && ctx.timestamps && idx >= 0) {
+    const ts = ctx.timestamps[idx];
+    const hhmm = `${Number(onlyTime[1])}:${onlyTime[2].padStart(2, "0")}`;
+    return evaluateClockMatch(ts, hhmm, tz);
+  }
+  let expr = raw.toUpperCase();
+  const replaceIndicator = (rx: RegExp, resolver: (m: RegExpExecArray) => number | null) => {
+    expr = expr.replace(rx, (...args) => {
+      const m = args.slice(0, -2) as unknown as RegExpExecArray;
+      const v = resolver(m);
+      return Number.isFinite(v as number) ? String(v) : "NaN";
+    });
+  };
+
+  replaceIndicator(/RSI\((\d+)\)/g, (m) => resolveIndicatorValue("RSI", Number(m[1]), idx, ctx));
+  replaceIndicator(/EMA\((\d+)\)/g, (m) => resolveIndicatorValue("EMA", Number(m[1]), idx, ctx));
+  replaceIndicator(/SMA\((\d+)\)/g, (m) => resolveIndicatorValue("SMA", Number(m[1]), idx, ctx));
+  replaceIndicator(/\bMACD_SIGNAL\b/g, () => resolveIndicatorValue("MACD_SIGNAL", undefined, idx, ctx));
+  replaceIndicator(/\bMACD_HIST\b/g, () => resolveIndicatorValue("MACD_HIST", undefined, idx, ctx));
+  replaceIndicator(/\bMACD\b/g, () => resolveIndicatorValue("MACD", undefined, idx, ctx));
+  replaceIndicator(/\bBB_UPPER\b/g, () => resolveIndicatorValue("BB_UPPER", undefined, idx, ctx));
+  replaceIndicator(/\bBB_MIDDLE\b/g, () => resolveIndicatorValue("BB_MIDDLE", undefined, idx, ctx));
+  replaceIndicator(/\bBB_LOWER\b/g, () => resolveIndicatorValue("BB_LOWER", undefined, idx, ctx));
+  replaceIndicator(/\bCHANGE_PCT\b/g, () => resolveIndicatorValue("CHANGE_PCT", undefined, idx, ctx));
+  replaceIndicator(/\bPRICE\b/g, () => resolveIndicatorValue("PRICE", undefined, idx, ctx));
+
+  expr = expr.replace(/\bAND\b/g, "&&").replace(/\bOR\b/g, "||");
+  expr = expr.replace(/(?<![<>!=])=(?!=)/g, "==");
+
+  if (!/^[\d\s()+\-/*.<>=!&|NAN]+$/.test(expr)) return false;
+  try {
+    const out = Function(`"use strict"; return (${expr});`)();
+    return Boolean(out);
+  } catch {
+    return false;
+  }
+}
+
+function inferEntrySubtype(cfg: EntryConditionsConfig): "indicator_based" | "time_based" | "hybrid" {
+  const s = String(cfg.strategySubtype ?? "").toLowerCase().trim();
+  if (s === "time_based" || s === "hybrid" || s === "indicator_based") {
+    return s;
+  }
+  const hasVisual = Array.isArray(cfg.groups) && cfg.groups.length > 0;
+  const raw = String(cfg.rawExpression ?? "").trim();
+  if (/^\s*TIME_IS\s*\(\s*\d{1,2}:\d{2}\s*\)\s*$/i.test(raw) && !hasVisual) {
+    return "time_based";
+  }
+  return "indicator_based";
+}
+
+function customEntrySignalIfMatched(
+  cs: {
+    id: string;
+    name: string;
+    tradingMode: string;
+    entryConditions?: EntryConditionsConfig | null;
+  },
+  timestamps: number[],
+  c: number[],
+  h: number[],
+  l: number[],
+  dataSource: string,
+  indicatorSource: string,
+  realIndicators: RealIndicators,
+  requestedActions: Array<"BUY" | "SELL">,
+  scanTimeZone: string,
+): RawSignal[] {
+  const entryCfg = cs.entryConditions;
+  if (!entryCfg || typeof entryCfg !== "object") return [];
+  const idx = c.length - 1;
+  if (idx < 20) return [];
+
+  const subtype = inferEntrySubtype(entryCfg);
+
+  const ctx: ConditionEvalCtx = {
+    c,
+    h,
+    l,
+    realIndicators,
+    rsiCache: new Map<number, number[]>(),
+    smaCache: new Map<number, number[]>(),
+    emaCache: new Map<number, number[]>(),
+    timestamps,
+    timeZone: scanTimeZone,
+  };
+
+  let match = false;
+
+  if (subtype === "time_based") {
+    const hhmm =
+      String(entryCfg.clockEntryTime ?? "").trim() ||
+      parseTimeFromRawExpression(String(entryCfg.rawExpression ?? "")) ||
+      "";
+    if (!hhmm) return [];
+    match = evaluateClockMatch(timestamps[idx], hhmm, scanTimeZone);
+  } else if (subtype === "hybrid") {
+    const hhmm = String(entryCfg.clockEntryTime ?? "").trim();
+    const timeOk = hhmm ? evaluateClockMatch(timestamps[idx], hhmm, scanTimeZone) : false;
+    let indOk = false;
+    if (entryCfg.mode === "raw") {
+      const indExpr = stripTimeIsCalls(String(entryCfg.rawExpression ?? ""));
+      indOk = indExpr.length > 0 ? evaluateRawExpression(indExpr, idx, ctx) : false;
+    } else {
+      indOk = evaluateConditionGroups(
+        Array.isArray(entryCfg.groups) ? entryCfg.groups : [],
+        String(entryCfg.groupLogic ?? "AND").toUpperCase() === "OR" ? "OR" : "AND",
+        idx,
+        ctx,
+      );
+    }
+    match = timeOk && indOk;
+  } else {
+    const hasVisual = Array.isArray(entryCfg.groups) && entryCfg.groups.length > 0;
+    const hasRaw = typeof entryCfg.rawExpression === "string" && entryCfg.rawExpression.trim().length > 0;
+    if (!hasVisual && !hasRaw) return [];
+    match = entryCfg.mode === "raw"
+      ? evaluateRawExpression(String(entryCfg.rawExpression ?? ""), idx, ctx)
+      : evaluateConditionGroups(
+        Array.isArray(entryCfg.groups) ? entryCfg.groups : [],
+        String(entryCfg.groupLogic ?? "AND").toUpperCase() === "OR" ? "OR" : "AND",
+        idx,
+        ctx,
+      );
+  }
+  if (!match) return [];
+
+  const lastTs = timestamps[idx];
+  const d = new Date(lastTs * 1000);
+  const allowed: Array<"BUY" | "SELL"> = cs.tradingMode === "LONG"
+    ? ["BUY"]
+    : cs.tradingMode === "SHORT"
+    ? ["SELL"]
+    : ["BUY", "SELL"];
+  const actions = requestedActions.filter((a) => allowed.includes(a));
+  if (!actions.length) return [];
+
+  const sma20 = sma(c, 20);
+  const r = rsi(c, 14);
+  return actions.map((side) => ({
+    strategyId: cs.id,
+    strategyLabel: cs.name,
+    entryIndex: idx,
+    entryDate: d.toISOString().slice(0, 10),
+    entryTime: d.toISOString(),
+    entryTimestamp: lastTs * 1000,
+    side,
+    priceAtEntry: c[idx],
+    isLive: true,
+    marketData: mkMarketData(idx, c, h, l, r, sma20, dataSource, indicatorSource),
+  }));
+}
+
+/** Scheduled wall-clock exit (e.g. exit at 13:01) — opposite side to open position intent */
+function clockExitSignalsIfMatched(
+  cs: {
+    id: string;
+    name: string;
+    tradingMode: string;
+    exitConditions?: Record<string, unknown> | null;
+  },
+  timestamps: number[],
+  c: number[],
+  h: number[],
+  l: number[],
+  dataSource: string,
+  indicatorSource: string,
+  requestedActions: Array<"BUY" | "SELL">,
+  scanTimeZone: string,
+): RawSignal[] {
+  const ex = cs.exitConditions && typeof cs.exitConditions === "object"
+    ? (cs.exitConditions as { clockExitTime?: string }).clockExitTime
+    : undefined;
+  if (!ex || !String(ex).trim()) return [];
+  const idx = c.length - 1;
+  if (idx < 20) return [];
+  if (!evaluateClockMatch(timestamps[idx], String(ex).trim(), scanTimeZone)) return [];
+
+  const tm = String(cs.tradingMode ?? "LONG").toUpperCase();
+  const exitSide: "BUY" | "SELL" | null = tm === "LONG"
+    ? "SELL"
+    : tm === "SHORT"
+    ? "BUY"
+    : null;
+  if (!exitSide || !requestedActions.includes(exitSide)) return [];
+
+  const sma20 = sma(c, 20);
+  const r = rsi(c, 14);
+  const lastTs = timestamps[idx];
+  const d = new Date(lastTs * 1000);
+  return [{
+    strategyId: cs.id,
+    strategyLabel: `${cs.name} (time exit)`,
+    entryIndex: idx,
+    entryDate: d.toISOString().slice(0, 10),
+    entryTime: d.toISOString(),
+    entryTimestamp: lastTs * 1000,
+    side: exitSide,
+    priceAtEntry: c[idx],
+    isLive: true,
+    marketData: mkMarketData(idx, c, h, l, r, sma20, dataSource, indicatorSource),
+  }];
 }
 
 function mkMarketData(
@@ -962,14 +1369,14 @@ Scoring guide — USE THE REAL INDICATORS above:
   if (!res.ok) {
     const errText = await res.text();
     console.error(`Gemini ${res.status} (${GEMINI_MODEL}):`, errText);
-    throw new Error(`Gemini ${res.status}`);
+    return mergeAiScoresIntoRaw(raw, null);
   }
   let data: GeminiLikeResponse = {};
   try {
     data = await res.json() as GeminiLikeResponse;
   } catch (e) {
     console.error("Gemini JSON decode failed:", e);
-    throw new Error("Gemini response decode failed");
+    return mergeAiScoresIntoRaw(raw, null);
   }
   const text = geminiAllText(data);
   const finish = (data as { candidates?: Array<{ finishReason?: string }> })?.candidates?.[0]?.finishReason;
@@ -980,7 +1387,7 @@ Scoring guide — USE THE REAL INDICATORS above:
   const parsed = parseJsonArrayFromModelText(text);
   if (!parsed) {
     console.error("Gemini JSON parse failed; text head:", text.slice(0, 1500));
-    throw new Error("Gemini response parse failed");
+    return mergeAiScoresIntoRaw(raw, null);
   }
   return mergeAiScoresIntoRaw(raw, parsed);
 }
@@ -992,18 +1399,32 @@ Deno.serve(async (req: Request) => {
   const headers = { "Content-Type": "application/json", ...corsHeaders, "Access-Control-Allow-Methods": "POST, OPTIONS" };
 
   try {
-    const authHeader = req.headers.get("Authorization") ?? "";
-    if (!authHeader.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers });
-    }
-
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
-    const { data: { user }, error: authErr } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
-    if (authErr || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers });
+
+    const digestSecret = Deno.env.get("ENTRY_DIGEST_SECRET") ?? "";
+    const digestUserId = (req.headers.get("x-digest-user-id") ?? "").trim();
+
+    let user: { id: string; email?: string | null };
+
+    if (digestSecret && req.headers.get("x-digest-secret") === digestSecret && digestUserId) {
+      const { data: adminData, error: adminErr } = await supabase.auth.admin.getUserById(digestUserId);
+      if (adminErr || !adminData?.user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers });
+      }
+      user = adminData.user;
+    } else {
+      const authHeader = req.headers.get("Authorization") ?? "";
+      if (!authHeader.startsWith("Bearer ")) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers });
+      }
+      const { data: { user: u }, error: authErr } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
+      if (authErr || !u) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers });
+      }
+      user = u;
     }
 
     const body = await req.json().catch(() => ({})) as Record<string, unknown>;
@@ -1032,6 +1453,13 @@ Deno.serve(async (req: Request) => {
       stopLossPct: number;
       takeProfitPct: number;
       isIntraday?: boolean;
+      entryConditions?: EntryConditionsConfig | null;
+      exitConditions?: Record<string, unknown> | null;
+      positionConfig?: Record<string, unknown> | null;
+      riskConfig?: Record<string, unknown> | null;
+      chartConfig?: Record<string, unknown> | null;
+      executionDays?: number[];
+      marketType?: string;
     };
     const customStrategies = Array.isArray(body.customStrategies)
       ? (body.customStrategies as CustomStrategyConfig[])
@@ -1109,6 +1537,8 @@ Deno.serve(async (req: Request) => {
 
     // ── Fetch real indicators from APIs (enriches Gemini scoring context) ──
     const realIndicators = await fetchRealIndicators(yahooSymbol, assetType, c);
+    /** Wall-clock evaluation for TIME_IS / clock exit (Indian sessions → IST; else UTC) */
+    const scanTimeZone = isIndian ? "Asia/Kolkata" : "UTC";
     const maxPerStrategy = 4;
     const allRaw: RawSignal[] = [];
     const realtimeMode = usedInterval !== "1d";
@@ -1124,9 +1554,19 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // 1b) Custom user-created strategies — use their baseType for detection logic,
-    //     their custom SL/TP, and label them with the custom strategy name.
+    // 1b) Custom user-created strategies:
+    //     - if entry_conditions are configured, evaluate those directly on the latest candle
+    //     - otherwise fall back to baseType detection logic.
     const customLabelMap: Record<string, string> = {};
+    const hasCustomConditions = (cs: CustomStrategyConfig): boolean => {
+      const cfg = cs.entryConditions;
+      if (!cfg || typeof cfg !== "object") return false;
+      const st = String((cfg as EntryConditionsConfig).strategySubtype ?? "").toLowerCase();
+      if (st === "time_based" || st === "hybrid") return true;
+      const hasVisual = Array.isArray(cfg.groups) && cfg.groups.length > 0;
+      const hasRaw = typeof cfg.rawExpression === "string" && cfg.rawExpression.trim().length > 0;
+      return hasVisual || hasRaw;
+    };
     for (const cs of customStrategies) {
       const baseType = String(cs.baseType ?? "trend_following").toLowerCase().trim();
       if (!STRATEGY_LABELS[baseType]) continue;
@@ -1134,6 +1574,46 @@ Deno.serve(async (req: Request) => {
       customLabelMap[csId] = cs.name;
       // Register label for custom strategy so it shows its name, not the base type
       STRATEGY_LABELS[csId] = cs.name;
+      const conditionalSignals = customEntrySignalIfMatched(
+        {
+          id: csId,
+          name: cs.name,
+          tradingMode: String(cs.tradingMode ?? "BOTH").toUpperCase(),
+          entryConditions: cs.entryConditions ?? null,
+        },
+        t,
+        c,
+        h,
+        l,
+        dataSource,
+        realIndicators.source,
+        realIndicators,
+        scanActions,
+        scanTimeZone,
+      );
+      const scheduledExitSignals = clockExitSignalsIfMatched(
+        {
+          id: csId,
+          name: cs.name,
+          tradingMode: String(cs.tradingMode ?? "BOTH"),
+          exitConditions: cs.exitConditions ?? null,
+        },
+        t,
+        c,
+        h,
+        l,
+        dataSource,
+        realIndicators.source,
+        scanActions,
+        scanTimeZone,
+      );
+      if (conditionalSignals.length > 0) {
+        allRaw.push(...conditionalSignals);
+      }
+      allRaw.push(...scheduledExitSignals);
+      if (conditionalSignals.length > 0) {
+        continue;
+      }
       const csActions: Array<"BUY" | "SELL"> =
         cs.tradingMode === "LONG" ? ["BUY"]
           : cs.tradingMode === "SHORT" ? ["SELL"]
@@ -1153,6 +1633,7 @@ Deno.serve(async (req: Request) => {
     const allScanIds = [...validIds];
     const customBaseMap: Record<string, string> = {};
     for (const cs of customStrategies) {
+      if (hasCustomConditions(cs)) continue;
       const csId = String(cs.id);
       const baseType = String(cs.baseType ?? "trend_following").toLowerCase().trim();
       if (!STRATEGY_LABELS[baseType] && baseType !== csId) continue;
@@ -1188,6 +1669,7 @@ Deno.serve(async (req: Request) => {
 
       // Also predict for custom strategies
       for (const cs of customStrategies) {
+        if (hasCustomConditions(cs)) continue;
         const baseType = String(cs.baseType ?? "trend_following").toLowerCase().trim();
         if (!STRATEGY_LABELS[baseType]) continue;
         const csId = String(cs.id);

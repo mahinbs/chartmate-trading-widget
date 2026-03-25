@@ -19,6 +19,7 @@ import { getStrategyParams } from "@/constants/strategyParams";
 
 // ── All OpenAlgo-compatible strategies ────────────────────────────────────────
 export const STRATEGIES: { value: string; label: string; description: string; product: string }[] = [
+  { value: "time_scheduled",     label: "Time Scheduled",       description: "Enter and exit at fixed clock times (intraday schedule / MIS-style).",          product: "MIS"  },
   { value: "trend_following",    label: "Trend Following",      description: "Ride the direction of the prevailing trend. Best for bull/bear markets.",          product: "CNC"  },
   { value: "breakout_breakdown", label: "Breakout & Breakdown",  description: "Enter on breakout above resistance or breakdown below support.",                   product: "CNC"  },
   { value: "mean_reversion",     label: "Mean Reversion",        description: "Bet on price returning to average after an extreme move.",                        product: "CNC"  },
@@ -34,6 +35,7 @@ export const STRATEGIES: { value: string; label: string; description: string; pr
 
 // Static fallback details per strategy
 export const STRATEGY_DETAILS: Record<string, { whenToUse: string; pros: string[]; cons: string[]; inTrendWhen: string }> = {
+  time_scheduled:     { whenToUse: "You want deterministic clock-based entries/exits (open/close at exact times).", pros: ["No indicator noise", "Simple to explain", "Good for liquidity windows"], cons: ["Ignores price action", "Gap/slip risk at the clock"], inTrendWhen: "N/A — time-driven, not trend-driven." },
   trend_following:    { whenToUse: "Strong directional moves; clear higher highs/higher lows.", pros: ["Works in strong trends", "Clear rules", "Cuts losers early"], cons: ["Whipsaws in sideways markets", "Lags at reversals"], inTrendWhen: "Markets are making new highs or new lows with momentum." },
   breakout_breakdown: { whenToUse: "Price at key support/resistance; volume confirmation.", pros: ["Captures big moves", "Defined risk at level"], cons: ["False breakouts common", "Needs volume filter"], inTrendWhen: "Volatility is rising and price is testing key levels." },
   mean_reversion:     { whenToUse: "Oversold/overbought extremes; price far from moving average.", pros: ["Good risk/reward at extremes", "Works in chop"], cons: ["Dangerous in strong trends", "Requires timing"], inTrendWhen: "Market is range-bound or after a sharp overextended move." },
@@ -49,6 +51,7 @@ export const STRATEGY_DETAILS: Record<string, { whenToUse: string; pros: string[
 
 // Which direction each strategy naturally favours as first entry
 const STRATEGY_DIRECTION: Record<string, "buy" | "sell" | "both"> = {
+  time_scheduled:     "both",
   trend_following:    "both",
   breakout_breakdown: "both",
   mean_reversion:     "both",
@@ -64,6 +67,7 @@ const STRATEGY_DIRECTION: Record<string, "buy" | "sell" | "both"> = {
 
 // What the system auto-executes after the strategy exit conditions are met
 const AUTO_EXIT_NOTE: Record<string, { buy: string; sell: string }> = {
+  time_scheduled:     { buy: "Auto-SELL at your scheduled exit clock time (and/or TP/SL from the algo builder).", sell: "Auto-BUY to cover at your scheduled exit clock time (and/or TP/SL)." },
   trend_following:    { buy: "Auto-SELL when trend reverses — price crosses below SMA or makes a lower low.", sell: "Auto-BUY to cover when downtrend ends and price reclaims SMA." },
   breakout_breakdown: { buy: "Auto-SELL if price fails to hold the breakout level or hits target.", sell: "Auto-BUY to cover when price reclaims the breakdown level." },
   mean_reversion:     { buy: "Auto-SELL when price returns to the moving average / mean target.", sell: "Auto-BUY to cover when price reverts back to mean from oversold." },

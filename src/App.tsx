@@ -54,6 +54,8 @@ import NewsDetailPage from "./pages/NewsDetailPage";
 import TickChart from "./pages/TickChart";
 import PricingPage from "./pages/PricingPage";
 import { PredictionChatbot } from "./components/PredictionChatbot";
+import { EntryDigestToastBridge } from "./components/EntryDigestToastBridge";
+import { EntryPointNotificationsBell } from "./components/EntryPointNotificationsBell";
 import { useAuth } from "./hooks/useAuth";
 import { useLocation } from "react-router-dom";
 
@@ -268,10 +270,11 @@ const App = () => (
                 element={<MarketPicksPage />}
               />
               <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
-                <Route index element={<Navigate to="users" replace />} />
+                <Route index element={<Navigate to="dashboard" replace />} />
                 <Route path="users" element={<AdminUsersPage />} />
                 <Route path="predictions" element={<AdminPredictionsPage />} />
                 <Route path="blogs" element={<AdminBlogsPage />} />
+                <Route path="dashboard" element={<PublicDashboardPage embedInAdmin />} />
                 <Route path="public-dashboard" element={<AdminPublicDashboardPage />} />
                 <Route path="affiliates" element={<AdminAffiliatesPage />} />
                 <Route path="contacts" element={<AdminContactsPage />} />

@@ -196,18 +196,18 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
         role: "bot",
         text: WELCOME_TEXT,
         component: (
-          <div className="flex flex-wrap gap-2 mt-3">
-            <Button variant="outline" size="sm"
+        <div className="flex flex-wrap gap-2 mt-3">
+          <Button variant="outline" size="sm"
               className="bg-primary/10 border-primary/20 hover:bg-primary/20 text-xs gap-1.5"
               onClick={() => { setOpen(false); navigate("/predict"); }}>
               <ExternalLink className="h-3 w-3" /> Open Detailed Analysis
-            </Button>
-            <Button variant="outline" size="sm"
+          </Button>
+          <Button variant="outline" size="sm"
               className="bg-purple-500/10 border-purple-500/20 hover:bg-purple-500/20 text-xs gap-1.5"
               onClick={() => sendMessage("What's the latest market news and sentiment?")}>
               <Newspaper className="h-3 w-3" /> Market News
-            </Button>
-          </div>
+          </Button>
+        </div>
         ),
       }]);
       setTimeout(() => inputRef.current?.focus(), 200);
@@ -411,8 +411,8 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
             </Button>
             <Button variant="ghost" size="icon" onClick={() => setOpen(false)}
               className="hover:bg-white/5 rounded-full h-8 w-8">
-              <ChevronDown className="h-5 w-5" />
-            </Button>
+            <ChevronDown className="h-5 w-5" />
+          </Button>
           </div>
         </div>
 
@@ -460,50 +460,50 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
 
         {/* Messages */}
         {!loadingHistory && !showHistory && (
-          <ScrollArea className="flex-1 p-4">
-            <div className="space-y-5">
+        <ScrollArea className="flex-1 p-4">
+          <div className="space-y-5">
               {messages.map(msg => (
-                <div key={msg.id} className={cn("flex gap-3", msg.role === "user" ? "flex-row-reverse" : "flex-row")}>
+              <div key={msg.id} className={cn("flex gap-3", msg.role === "user" ? "flex-row-reverse" : "flex-row")}>
+                <div className={cn(
+                  "h-8 w-8 rounded-full flex items-center justify-center shrink-0 shadow-sm",
+                  msg.role === "bot" ? "bg-primary/10 border border-primary/20" : "bg-muted border border-white/5"
+                )}>
+                  {msg.role === "bot" ? <Bot className="h-4 w-4 text-primary" /> : <User className="h-4 w-4" />}
+                </div>
+                <div className="flex flex-col gap-2 max-w-[85%]">
                   <div className={cn(
-                    "h-8 w-8 rounded-full flex items-center justify-center shrink-0 shadow-sm",
-                    msg.role === "bot" ? "bg-primary/10 border border-primary/20" : "bg-muted border border-white/5"
+                    "rounded-2xl px-4 py-3 text-sm shadow-md",
+                    msg.role === "bot"
+                      ? "bg-muted/40 backdrop-blur-sm rounded-tl-sm border border-white/5"
+                      : "bg-primary text-primary-foreground rounded-tr-sm shadow-primary/20"
                   )}>
-                    {msg.role === "bot" ? <Bot className="h-4 w-4 text-primary" /> : <User className="h-4 w-4" />}
-                  </div>
-                  <div className="flex flex-col gap-2 max-w-[85%]">
-                    <div className={cn(
-                      "rounded-2xl px-4 py-3 text-sm shadow-md",
-                      msg.role === "bot"
-                        ? "bg-muted/40 backdrop-blur-sm rounded-tl-sm border border-white/5"
-                        : "bg-primary text-primary-foreground rounded-tr-sm shadow-primary/20"
-                    )}>
                       {msg.role === "bot"
                         ? <MarkdownText text={msg.text} />
                         : <div className="whitespace-pre-wrap leading-relaxed">{msg.text}</div>
                       }
-                    </div>
-                    {msg.component && (
-                      <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">{msg.component}</div>
-                    )}
                   </div>
+                  {msg.component && (
+                    <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">{msg.component}</div>
+                  )}
                 </div>
-              ))}
+              </div>
+            ))}
 
               {typing && (
-                <div className="flex gap-3">
-                  <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Bot className="h-4 w-4 text-primary" />
-                  </div>
-                  <div className="bg-muted/50 rounded-2xl rounded-tl-sm px-4 py-2.5 flex items-center gap-1">
-                    <span className="h-1.5 w-1.5 bg-muted-foreground rounded-full animate-bounce" />
-                    <span className="h-1.5 w-1.5 bg-muted-foreground rounded-full animate-bounce [animation-delay:0.2s]" />
-                    <span className="h-1.5 w-1.5 bg-muted-foreground rounded-full animate-bounce [animation-delay:0.4s]" />
-                  </div>
+              <div className="flex gap-3">
+                <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Bot className="h-4 w-4 text-primary" />
                 </div>
-              )}
-              <div ref={bottomRef} />
-            </div>
-          </ScrollArea>
+                <div className="bg-muted/50 rounded-2xl rounded-tl-sm px-4 py-2.5 flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 bg-muted-foreground rounded-full animate-bounce" />
+                  <span className="h-1.5 w-1.5 bg-muted-foreground rounded-full animate-bounce [animation-delay:0.2s]" />
+                  <span className="h-1.5 w-1.5 bg-muted-foreground rounded-full animate-bounce [animation-delay:0.4s]" />
+                </div>
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+        </ScrollArea>
         )}
 
         {/* Quick actions at start only */}
