@@ -126,7 +126,7 @@ export default function NewsPage() {
       {/* Header */}
       <div className="border-b border-white/5 bg-background/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
+          <div className="pt-10 lg:pt-0 flex items-center gap-4">
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold tracking-tight">Market News</h1>
             </div>

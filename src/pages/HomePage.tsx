@@ -387,6 +387,38 @@ export default function HomePage() {
               </DialogContent>
             </Dialog>
 
+            
+            {/* ALGO TRADE CTA */}
+            <div className="bg-gradient-to-r from-card to-trading-dark border border-primary/20 hover:border-primary/40 rounded-2xl p-7 shadow-[0_0_40px] shadow-primary/5 relative overflow-hidden group transition-all duration-500 mt-2">
+              <div className="absolute inset-0 w-[40%] h-[40%] blur-3xl bg-primary opacity-50 transition-opacity duration-700 -translate-x-1/2 left-1/2 top-1/2"></div>
+              <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
+                <div className="flex gap-5 w-full md:w-auto">
+                  <div className="p-4 bg-card border border-border/80 rounded-2xl shrink-0 h-fit shadow-lg shadow-background/50 group-hover:border-primary/40 transition-colors">
+                    <Bot className="h-7 w-7 text-primary" />
+                  </div>
+                  <div className="pt-0.5">
+                    <h2 className="text-[22px] font-bold text-foreground tracking-tight">
+                      Algo Trade
+                    </h2>
+                    <p className="text-[14px] text-muted-foreground mt-1.5 font-medium leading-relaxed max-w-xl">
+                      Automate your strategy with AI-powered signals and dynamic
+                      risk management rules designed for modern markets.
+                    </p>
+                  </div>
+                </div>
+                <Link
+                  to={algoEntryPath}
+                  className="shrink-0 w-full md:w-auto flex justify-center bg-primary text-primary-foreground px-8 h-[52px] items-center rounded-xl font-semibold hover:bg-primary/90 transition-all shadow-[0_4px_16px_-4px_var(--primary)] group-hover:shadow-[0_8px_24px_-6px_var(--primary)] text-base glass-button-premium border-white/20"
+                >
+                  {!isPremium
+                    ? "Upgrade to Unlock →"
+                    : isAlgoProvisioned
+                      ? "Open Live Dashboard →"
+                      : "Complete Algo Setup →"}
+                </Link>
+              </div>
+            </div>
+
             {/* SECONDARY ROW (2 Col) */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <Link to="/predictions" className="block outline-none group">
@@ -467,36 +499,6 @@ export default function HomePage() {
                </Link> */}
             </div>
 
-            {/* ALGO TRADE CTA */}
-            <div className="bg-gradient-to-r from-card to-trading-dark border border-primary/20 hover:border-primary/40 rounded-2xl p-7 shadow-[0_0_40px] shadow-primary/5 relative overflow-hidden group transition-all duration-500 mt-2">
-              <div className="absolute inset-0 w-[40%] h-[40%] blur-3xl bg-primary opacity-50 transition-opacity duration-700 -translate-x-1/2 left-1/2 top-1/2"></div>
-              <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
-                <div className="flex gap-5 w-full md:w-auto">
-                  <div className="p-4 bg-card border border-border/80 rounded-2xl shrink-0 h-fit shadow-lg shadow-background/50 group-hover:border-primary/40 transition-colors">
-                    <Bot className="h-7 w-7 text-primary" />
-                  </div>
-                  <div className="pt-0.5">
-                    <h2 className="text-[22px] font-bold text-foreground tracking-tight">
-                      Algo Trade
-                    </h2>
-                    <p className="text-[14px] text-muted-foreground mt-1.5 font-medium leading-relaxed max-w-xl">
-                      Automate your strategy with AI-powered signals and dynamic
-                      risk management rules designed for modern markets.
-                    </p>
-                  </div>
-                </div>
-                <Link
-                  to={algoEntryPath}
-                  className="shrink-0 w-full md:w-auto flex justify-center bg-primary text-primary-foreground px-8 h-[52px] items-center rounded-xl font-semibold hover:bg-primary/90 transition-all shadow-[0_4px_16px_-4px_var(--primary)] group-hover:shadow-[0_8px_24px_-6px_var(--primary)] text-base glass-button-premium border-white/20"
-                >
-                  {!isPremium
-                    ? "Upgrade to Unlock →"
-                    : isAlgoProvisioned
-                      ? "Open Live Dashboard →"
-                      : "Complete Algo Setup →"}
-                </Link>
-              </div>
-            </div>
 
             {/* PLATFORM CAPABILITIES */}
             <div className="pt-2">

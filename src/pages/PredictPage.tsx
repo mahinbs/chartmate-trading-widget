@@ -930,6 +930,10 @@ const PredictPage = () => {
           geminiForecast: predictionData.geminiForecast,
           savedUserProfile: userProfile,
           savedDisplayCurrency: displayCurrency,
+          focusTimeframe:
+            timeframe === "custom" && customTimeframe
+              ? customTimeframe
+              : timeframe,
         },
       });
 
@@ -1237,7 +1241,7 @@ const PredictPage = () => {
           {/* Header */}
           <div className="border-b border-white/5 bg-background/80 backdrop-blur-xl z-50">
             <Container className="py-3 sm:py-4">
-              <div className="text-center space-y-2">
+              <div className="text-center space-y-2 pt-10 lg:pt-0">
                 <h1
                   className={`${isMobile ? "text-2xl" : "text-3xl md:text-4xl"} font-bold text-gradient`}
                 >

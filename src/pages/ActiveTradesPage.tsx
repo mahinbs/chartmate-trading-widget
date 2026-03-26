@@ -627,7 +627,7 @@ export default function ActiveTradesPage() {
       <div className="container max-w-7xl mx-auto p-3 sm:p-6 space-y-4 sm:space-y-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-3">
-          <div>
+          <div className="pt-10 lg:pt-0">
             <h1 className="text-2xl sm:text-3xl font-bold text-gradient">
               Active Trades
             </h1>
