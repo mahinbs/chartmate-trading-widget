@@ -1,25 +1,26 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { RiskGrade } from "./RiskGrade";
 import { formatCurrency, formatPercentage } from "@/lib/display-utils";
 import {
-  TrendingUp,
-  TrendingDown,
   DollarSign,
   Target,
   AlertTriangle,
   Clock,
-  Package
+  Package,
+  Scale,
+  LineChart,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface DecisionScreenProps {
   symbol: string;
   currentPrice: number;
   investment: number;
-  action: 'BUY' | 'SELL' | 'HOLD';
+  action: "BUY" | "SELL" | "HOLD";
   confidence: number;
-  riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'VERY_HIGH';
+  riskLevel: "LOW" | "MEDIUM" | "HIGH" | "VERY_HIGH";
   expectedROI: {
     best: number;
     likely: number;
@@ -39,6 +40,9 @@ interface DecisionScreenProps {
   /** If true, show fractional units (crypto). */
   isCrypto?: boolean;
 }
+
+const tileClass =
+  "p-3 sm:p-4 bg-background rounded-lg border border-primary/20 shadow-sm shadow-black/5";
 
 export function DecisionScreen({
   symbol,
@@ -67,174 +71,220 @@ export function DecisionScreen({
   const takeProfitAmount = (investment * takeProfit) / 100;
 
   const getActionRecommendation = () => {
-    if (action === 'BUY' && confidence >= 70) {
+    if (action === "BUY" && confidence >= 70) {
       return {
-        explanation: `Strong upward momentum detected at ${confidence}% confidence. Multiple technical indicators align for a bullish move — risk level is ${riskLevel.toLowerCase()}. The market structure favours continuation of the current trend.`
-      };
-    } else if (action === 'BUY' && confidence >= 50) {
-      return {
-        explanation: `Moderate upward signal at ${confidence}% confidence. Some bullish indicators are present but not all aligned — risk level is ${riskLevel.toLowerCase()}. Consider a smaller position size until confirmation improves.`
-      };
-    } else if (action === 'SELL') {
-      return {
-        explanation: `Downward pressure detected at ${confidence}% confidence. Technical indicators suggest a bearish move is likely — risk level is ${riskLevel.toLowerCase()}. Opening a long position now conflicts with the current market direction.`
-      };
-    } else {
-      return {
-        explanation: `Mixed or unclear signals — only ${confidence}% model confidence. Entering a position now carries ${riskLevel.toLowerCase()} risk with uncertain reward. The market lacks a clear directional edge; ${confidence < 40 ? 'wait for a much stronger setup' : 'wait for stronger confirmation'} before committing capital.`
+        explanation: `Strong upward momentum detected at ${confidence}% confidence. Multiple technical indicators align for a bullish move — risk level is ${riskLevel.toLowerCase()}. The market structure favours continuation of the current trend.`,
       };
     }
+    if (action === "BUY" && confidence >= 50) {
+      return {
+        explanation: `Moderate upward signal at ${confidence}% confidence. Some bullish indicators are present but not all aligned — risk level is ${riskLevel.toLowerCase()}. Consider a smaller position size until confirmation improves.`,
+      };
+    }
+    if (action === "SELL") {
+      return {
+        explanation: `Downward pressure detected at ${confidence}% confidence. Technical indicators suggest a bearish move is likely — risk level is ${riskLevel.toLowerCase()}. Opening a long position now conflicts with the current market direction.`,
+      };
+    }
+    return {
+      explanation: `Mixed or unclear signals — only ${confidence}% model confidence. Entering a position now carries ${riskLevel.toLowerCase()} risk with uncertain reward. The market lacks a clear directional edge; ${confidence < 40 ? "wait for a much stronger setup" : "wait for stronger confirmation"} before committing capital.`,
+    };
   };
 
   const recommendation = getActionRecommendation();
 
-  return (
-    <Card className="glass-panel overflow-hidden relative">
-      <div className={`absolute top-0 inset-x-0 h-1 ${action === 'BUY' ? 'bg-gradient-to-r from-green-500/0 via-green-500 to-green-500/0' :
-          action === 'SELL' ? 'bg-gradient-to-r from-red-500/0 via-red-500 to-red-500/0' :
-            'bg-gradient-to-r from-amber-500/0 via-amber-500 to-amber-500/0'
-        }`} />
+  const actionStyles =
+    action === "BUY"
+      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+      : action === "SELL"
+        ? "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300"
+        : "border-primary/40 bg-primary/10 text-primary";
 
-      <CardHeader className="pb-6 pt-8 px-6">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <CardTitle className="text-3xl font-bold tracking-tight text-white">Investment Analysis</CardTitle>
-          <div className="flex gap-3 bg-black/40 p-1.5 rounded-2xl backdrop-blur-sm border border-white/10">
-            <RiskGrade level={riskLevel} size="lg" />
+  return (
+    <Card className="border-primary/30 bg-primary/5 overflow-hidden">
+      <CardContent className="pt-6 space-y-4">
+        {/* Title + risk + signal badges */}
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/30 bg-primary/10">
+              <LineChart className="h-4 w-4 text-primary" />
+            </div>
+            <div className="min-w-0 space-y-1">
+              <h3 className="font-semibold text-base tracking-tight text-foreground">Investment analysis</h3>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Scenario outlook for your notional size — illustrative only, not a promise of returns.
+              </p>
+              <div className="flex flex-wrap gap-x-3 gap-y-1 pt-1 text-xs text-muted-foreground">
+                <span>
+                  <span className="font-semibold text-foreground">{symbol}</span>
+                </span>
+                <span className="text-border">·</span>
+                <span>Spot {fmt(currentPrice, isCrypto ? 4 : 2)}</span>
+                <span className="text-border">·</span>
+                <span>Notional {fmt(investment, 0)}</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-end lg:flex-col lg:items-end">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Badge variant="outline" className={cn("text-xs font-semibold border", actionStyles)}>
+                {action}
+              </Badge>
+              <Badge
+                variant="outline"
+                className="text-xs font-medium border-primary/30 bg-background text-foreground"
+              >
+                {confidence}% confidence
+              </Badge>
+            </div>
+            <div className="flex justify-end rounded-lg border border-primary/20 bg-background/80 px-2 py-1.5">
+              <RiskGrade level={riskLevel} size="lg" />
+            </div>
           </div>
         </div>
 
-        {/* Market context — no BUY/SELL/HOLD words */}
-        <Alert className="mt-6 backdrop-blur-md shadow-lg border-l-4 border-l-primary border-y-0 border-r-0 bg-primary/5">
-          <AlertTriangle className="h-5 w-5 text-primary" />
-          <AlertDescription className="ml-2">
-            <p className="font-semibold text-base mb-1 tracking-wide text-primary">
-              Market Context
-            </p>
-            <p className="text-sm text-zinc-300 leading-relaxed">
-              {recommendation.explanation}
-            </p>
+        <Alert className="border-primary/50 bg-background/80">
+          <Scale className="h-4 w-4 text-primary" />
+          <AlertDescription>
+            <p className="font-semibold text-sm mb-1.5 text-foreground">Market context</p>
+            <p className="text-sm leading-relaxed text-muted-foreground">{recommendation.explanation}</p>
           </AlertDescription>
         </Alert>
-      </CardHeader>
 
-      <CardContent className="space-y-8 px-6 pb-8">
-
-        {/* Main Investment Scenario */}
-        <div className="p-6 bg-zinc-900/50 rounded-2xl border border-white/5 shadow-inner">
-          <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-white">
-            <DollarSign className="h-5 w-5 text-primary" />
-            If You Invest {fmt(investment, 0)} Today
-          </h3>
-
-          <div className="grid sm:grid-cols-3 gap-4">
-            {/* Best Case - use 2 decimals so small investments (e.g. ₹10) don't show ₹0 */}
-            <div className="text-center p-4 bg-green-500/10 rounded-lg border border-green-500/20">
-              <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">Best Case</div>
-              <div className="text-2xl font-bold text-green-400">
+        {/* ROI scenarios */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <DollarSign className="h-4 w-4 text-primary shrink-0" />
+            <h4 className="font-semibold text-sm text-foreground">
+              If you allocate {fmt(investment, 0)} today
+            </h4>
+          </div>
+          <div className="grid sm:grid-cols-3 gap-3">
+            <div
+              className={cn(
+                tileClass,
+                "text-center border-emerald-500/25 bg-emerald-500/[0.06]",
+              )}
+            >
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5">Best case</p>
+              <p className="text-xl sm:text-2xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
                 {fmt(bestCaseAmount, 2)}
-              </div>
-              <div className="text-sm text-green-500 font-medium">
-                ({formatPercentage(expectedROI.best)})
-              </div>
+              </p>
+              <p className="text-xs font-medium text-emerald-600/90 dark:text-emerald-400/90 mt-0.5">
+                {formatPercentage(expectedROI.best)}
+              </p>
             </div>
-
-            {/* Likely Case */}
-            <div className="text-center p-4 bg-primary/10 rounded-lg border-2 border-primary/30">
-              <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">Likely</div>
-              <div className="text-2xl font-bold text-blue-400">
+            <div
+              className={cn(
+                tileClass,
+                "text-center border-primary/40 bg-primary/10 ring-1 ring-primary/20",
+              )}
+            >
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5">Likely</p>
+              <p className="text-xl sm:text-2xl font-bold text-primary tabular-nums">
                 {fmt(likelyCaseAmount, 2)}
-              </div>
-              <div className="text-sm text-primary font-medium">
-                ({formatPercentage(expectedROI.likely)})
-              </div>
+              </p>
+              <p className="text-xs font-medium text-primary/90 mt-0.5">{formatPercentage(expectedROI.likely)}</p>
             </div>
-
-            {/* Worst Case */}
-            <div className="text-center p-4 bg-red-500/10 rounded-lg border border-red-500/20">
-              <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">Worst Case</div>
-              <div className="text-2xl font-bold text-red-400">
+            <div className={cn(tileClass, "text-center border-red-500/25 bg-red-500/[0.06]")}>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5">Worst case</p>
+              <p className="text-xl sm:text-2xl font-bold text-red-600 dark:text-red-400 tabular-nums">
                 {fmt(worstCaseAmount, 2, true)}
-              </div>
-              <div className="text-sm text-red-500 font-medium">
-                ({formatPercentage(expectedROI.worst)})
-              </div>
+              </p>
+              <p className="text-xs font-medium text-red-600/90 dark:text-red-400/90 mt-0.5">
+                {formatPercentage(expectedROI.worst)}
+              </p>
             </div>
           </div>
         </div>
 
-        {/* Position Sizing */}
-        <div className="grid md:grid-cols-2 gap-4">
-          <div className="p-4 bg-white/5 rounded-lg border border-white/5">
+        <div className="grid md:grid-cols-2 gap-3">
+          <div className={tileClass}>
             <div className="flex items-center gap-2 mb-3">
-              <Package className="h-4 w-4 text-primary" />
-              <h4 className="font-semibold text-white">Position Size</h4>
+              <Package className="h-4 w-4 text-primary shrink-0" />
+              <span className="font-semibold text-sm text-foreground">Position size</span>
             </div>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">{isCrypto ? "Units to buy:" : "Shares to buy:"}</span>
-                <span className="font-bold text-white">
+            <div className="space-y-2 text-xs sm:text-sm">
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground">{isCrypto ? "Units" : "Shares"}</span>
+                <span className="font-semibold text-foreground tabular-nums text-right">
                   {isCrypto
                     ? positionSize.shares.toFixed(6).replace(/\.?0+$/, "")
                     : positionSize.shares}
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">{isCrypto ? "Price per unit:" : "Price per share:"}</span>
-                <span className="font-medium text-zinc-300">{fmt(positionSize.costPerShare, 2)}</span>
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground">{isCrypto ? "Price / unit" : "Price / share"}</span>
+                <span className="font-medium text-foreground tabular-nums">{fmt(positionSize.costPerShare, 2)}</span>
               </div>
-              <div className="flex justify-between pt-2 border-t border-white/10">
-                <span className="text-muted-foreground">Total cost:</span>
-                <span className="font-bold text-white">{fmt(positionSize.totalCost, 2)}</span>
+              <div className="flex justify-between gap-2 pt-2 border-t border-primary/10">
+                <span className="text-muted-foreground">Total cost</span>
+                <span className="font-semibold text-foreground tabular-nums">{fmt(positionSize.totalCost, 2)}</span>
               </div>
             </div>
           </div>
 
-          <div className="p-4 bg-white/5 rounded-lg border border-white/5">
+          <div className={tileClass}>
             <div className="flex items-center gap-2 mb-3">
-              <Target className="h-4 w-4 text-primary" />
-              <h4 className="font-semibold text-white">Risk Management</h4>
+              <Target className="h-4 w-4 text-primary shrink-0" />
+              <span className="font-semibold text-sm text-foreground">Risk management</span>
             </div>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Stop Loss:</span>
-                <span className="font-bold text-red-400">-{fmt(stopLossAmount, 0)} ({formatPercentage(stopLoss, 0, false)})</span>
+            <div className="space-y-2 text-xs sm:text-sm">
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground">Stop loss</span>
+                <span className="font-semibold text-red-600 dark:text-red-400 tabular-nums text-right">
+                  -{fmt(stopLossAmount, 0)} ({formatPercentage(stopLoss, 0, false)})
+                </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Take Profit:</span>
-                <span className="font-bold text-green-400">+{fmt(takeProfitAmount, 0)} ({formatPercentage(takeProfit, 0, false)})</span>
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground">Take profit</span>
+                <span className="font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums text-right">
+                  +{fmt(takeProfitAmount, 0)} ({formatPercentage(takeProfit, 0, false)})
+                </span>
               </div>
               {leverage > 1 && (
-                <div className="flex justify-between pt-2 border-t border-white/10">
-                  <span className="text-muted-foreground">Leverage:</span>
-                  <span className="font-bold text-orange-400">{leverage}x</span>
+                <div className="flex justify-between gap-2 pt-2 border-t border-primary/10">
+                  <span className="text-muted-foreground">Leverage</span>
+                  <span className="font-semibold text-amber-600 dark:text-amber-400 tabular-nums">{leverage}×</span>
                 </div>
               )}
             </div>
           </div>
         </div>
 
-        {/* Holding Period */}
         {recommendedHoldPeriod && (
-          <Alert className="border-primary/20 bg-primary/5">
+          <Alert className="border-primary/30 bg-muted/40">
             <Clock className="h-4 w-4 text-primary" />
-            <AlertDescription>
-              <span className="font-semibold text-zinc-300">Recommended Holding Period:</span>{' '}
-              <span className="text-primary font-bold">{recommendedHoldPeriod}</span>
+            <AlertDescription className="text-sm">
+              <span className="font-semibold text-foreground">Suggested horizon: </span>
+              <span className="text-primary font-semibold">{recommendedHoldPeriod}</span>
             </AlertDescription>
           </Alert>
         )}
 
-        {/* Leverage Warning */}
         {leverage > 1 && (
-          <Alert variant="destructive" className="bg-red-900/10 border-red-900/20 text-red-400">
+          <Alert variant="destructive" className="border-destructive/40 bg-destructive/5">
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription>
-              <span className="font-semibold">Leverage Warning:</span> {leverage}x leverage amplifies both
-              gains and losses. A {(100 / leverage).toFixed(1)}% adverse move could wipe out your position.
+              <p className="font-semibold text-sm mb-1">Leverage warning</p>
+              <p className="text-xs leading-relaxed opacity-95">
+                {leverage}× leverage magnifies both gains and losses. A {(100 / leverage).toFixed(1)}% move against
+                you can eliminate the position. Use only if you understand the risk.
+              </p>
             </AlertDescription>
           </Alert>
         )}
 
+        <div className="p-4 bg-muted/50 rounded-lg border border-primary/15 text-xs space-y-2">
+          <p className="text-muted-foreground leading-relaxed">
+            <strong className="text-foreground">Illustrative only:</strong> ROI bands are model-derived scenarios,
+            not guaranteed outcomes. Slippage, fees, and market gaps are not fully reflected.
+          </p>
+        </div>
+
+        <p className="text-center text-xs text-muted-foreground pt-1 border-t border-primary/15">
+          Do your own research — this screen supports decisions; it does not replace professional advice
+        </p>
       </CardContent>
     </Card>
   );
