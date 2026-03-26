@@ -1,6 +1,11 @@
 /**
  * strategy-entry-signals — Multi-strategy library entry scan + AI scoring
  *
+ * Real data used here (dynamically fetched each run):
+ * - OHLCV: Twelve Data (TWELVE_DATA_API_KEY) → Yahoo Finance chart (no key) → Alpha Vantage (ALPHA_VANTAGE_API_KEY)
+ * - Indicators snapshot: Twelve Data → Alpha Vantage → computed from OHLCV
+ * - Scoring: Gemini (GEMINI_API_KEY) blended with rule-based read
+ *
  * Body: {
  *   symbol: string,
  *   strategies: string[],  // e.g. ["trend_following","mean_reversion"]
@@ -13,7 +18,7 @@
  *   }
  * }
  *
- * Returns: { signals: [...], yahooSymbol?: string }
+ * Returns: { signals: [...], yahooSymbol?: string, lookbackDaysUsed?: number, predictedCount: 0 (no projected entries) }
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -259,6 +264,15 @@ function rsi(arr: number[], period = 14): number[] {
   return out;
 }
 
+type ConditionAuditLine = { ok: boolean; label: string };
+
+type StrategyConditionAudit = {
+  kind: "custom_time" | "custom_raw" | "custom_visual" | "custom_hybrid" | "clock_exit";
+  overallMatch: boolean;
+  lines: ConditionAuditLine[];
+  snapshot?: Record<string, unknown>;
+};
+
 type RawSignal = {
   strategyId: string;
   strategyLabel: string;
@@ -270,6 +284,8 @@ type RawSignal = {
   priceAtEntry: number;
   isLive?: boolean;
   isPredicted?: boolean;
+  /** Custom / clock rules: per-condition evaluation on the signal bar */
+  conditionAudit?: StrategyConditionAudit;
   marketData?: {
     rsi14: number | null;
     sma20: number | null;
@@ -287,45 +303,6 @@ function detectAssetType(yahooSymbol: string): AssetType {
   if (s.includes("-USD") || s.includes("-EUR") || s.includes("-GBP") || s.includes("-BTC") || s.includes("-ETH")) return "crypto";
   if (s.endsWith("=X") || s.endsWith("=F")) return "forex";
   return "stock";
-}
-
-/**
- * Returns how many minutes into the future we can predict, based on asset type + market hours.
- * Returns 0 if market is closed (no predictions possible).
- */
-function getPredictionWindowMinutes(assetType: AssetType, yahooSymbol: string): number {
-  if (assetType === "crypto") return 24 * 60; // always open
-
-  const now = new Date();
-  const utcDay = now.getUTCDay(); // 0=Sun, 6=Sat
-
-  if (assetType === "forex") {
-    // Forex: Sun 17:00 ET to Fri 17:00 ET → simplified: Mon-Fri
-    if (utcDay === 0 || utcDay === 6) return 0;
-    return 24 * 60;
-  }
-
-  // Stock markets
-  const isIndian = yahooSymbol.endsWith(".NS") || yahooSymbol.endsWith(".BO");
-  if (isIndian) {
-    // IST = UTC+5:30, market 09:15–15:30 IST
-    const utcMins = now.getUTCHours() * 60 + now.getUTCMinutes();
-    const istMins = utcMins + 330; // +5h30m
-    const openMins = 9 * 60 + 15;  // 09:15
-    const closeMins = 15 * 60 + 30; // 15:30
-    if (utcDay === 0 || utcDay === 6) return 0;
-    if (istMins < openMins || istMins >= closeMins) return 0;
-    return closeMins - istMins;
-  }
-
-  // US market: ~09:30–16:00 ET (UTC-4 in DST, UTC-5 otherwise; approximate with UTC-4)
-  const utcMins = now.getUTCHours() * 60 + now.getUTCMinutes();
-  const etMins = utcMins - 240; // UTC-4 approximate
-  const openMins = 9 * 60 + 30;
-  const closeMins = 16 * 60;
-  if (utcDay === 0 || utcDay === 6) return 0;
-  if (etMins < openMins || etMins >= closeMins) return 0;
-  return closeMins - etMins;
 }
 
 /** Real-time indicator snapshot from external APIs, used to enrich Gemini context. */
@@ -703,6 +680,104 @@ function evaluateCondition(cond: AlgoCondition, idx: number, ctx: ConditionEvalC
   return compareByOp(lhs, rhsValNow, op);
 }
 
+function fmtCondNum(n: number): string {
+  if (!Number.isFinite(n)) return "NaN";
+  const a = Math.abs(n);
+  if (a >= 1000) return n.toFixed(2);
+  if (a >= 1) return n.toFixed(4);
+  return n.toFixed(6);
+}
+
+/** One visual condition → human-readable pass/fail with values at bar `idx`. */
+function formatConditionResult(cond: AlgoCondition, idx: number, ctx: ConditionEvalCtx): ConditionAuditLine {
+  const lhsId = String(cond.indicator ?? "").trim() || "?";
+  const op = String(cond.op ?? "equals");
+  const opReadable = op.replace(/_/g, " ");
+  const lhs = resolveIndicatorValue(lhsId, cond.period, idx, ctx);
+  if (lhs == null) {
+    return {
+      ok: false,
+      label: `${lhsId}${cond.period != null ? `(${cond.period})` : ""} — value unavailable at this bar`,
+    };
+  }
+
+  let rhsValNow: number | null = null;
+  let rhsValPrev: number | null = null;
+  let rhsLabel = "";
+  if (cond.rhs?.kind === "indicator") {
+    const rid = String(cond.rhs.id ?? "");
+    rhsValNow = resolveIndicatorValue(rid, cond.rhs.period, idx, ctx);
+    rhsValPrev = resolveIndicatorValue(rid, cond.rhs.period, idx - 1, ctx);
+    rhsLabel = `${rid}${cond.rhs.period != null ? `(${cond.rhs.period})` : ""}`;
+  } else {
+    rhsValNow = Number((cond.rhs && "value" in cond.rhs ? cond.rhs.value : 0) ?? 0);
+    rhsValPrev = rhsValNow;
+    rhsLabel = String(rhsValNow);
+  }
+  if (rhsValNow == null) {
+    return { ok: false, label: `${lhsId} ${opReadable} ${rhsLabel} — right-hand value unavailable` };
+  }
+
+  const ok = evaluateCondition(cond, idx, ctx);
+
+  if (op === "crosses_above" || op === "crosses_below") {
+    const lhsPrev = resolveIndicatorValue(lhsId, cond.period, idx - 1, ctx);
+    if (lhsPrev == null || rhsValPrev == null) {
+      return { ok: false, label: `${lhsId} ${opReadable} ${rhsLabel} — need prior bar; unavailable` };
+    }
+    return {
+      ok,
+      label: `${opReadable}: ${lhsId} ${fmtCondNum(lhsPrev)}→${fmtCondNum(lhs)} vs ${rhsLabel} ${fmtCondNum(rhsValPrev)}→${fmtCondNum(rhsValNow)} → ${ok ? "PASS" : "FAIL"}`,
+    };
+  }
+  return {
+    ok,
+    label: `${lhsId}${cond.period != null ? `(${cond.period})` : ""}=${fmtCondNum(lhs)} ${opReadable} ${rhsLabel}=${fmtCondNum(rhsValNow)} → ${ok ? "PASS" : "FAIL"}`,
+  };
+}
+
+function indicatorSnapshotAtBar(idx: number, ctx: ConditionEvalCtx): Record<string, unknown> {
+  return {
+    PRICE: resolveIndicatorValue("PRICE", undefined, idx, ctx),
+    RSI_14: resolveIndicatorValue("RSI", 14, idx, ctx),
+    SMA_20: resolveIndicatorValue("SMA", 20, idx, ctx),
+    EMA_12: resolveIndicatorValue("EMA", 12, idx, ctx),
+    MACD: resolveIndicatorValue("MACD", undefined, idx, ctx),
+    MACD_SIGNAL: resolveIndicatorValue("MACD_SIGNAL", undefined, idx, ctx),
+    BB_UPPER: resolveIndicatorValue("BB_UPPER", undefined, idx, ctx),
+    BB_LOWER: resolveIndicatorValue("BB_LOWER", undefined, idx, ctx),
+    CHANGE_PCT_SNAPSHOT: ctx.realIndicators.changePct,
+  };
+}
+
+function auditVisualGroupsToLines(
+  groups: ConditionGroup[],
+  groupLogic: "AND" | "OR",
+  idx: number,
+  ctx: ConditionEvalCtx,
+): { ok: boolean; lines: ConditionAuditLine[] } {
+  const lines: ConditionAuditLine[] = [];
+  if (!groups.length) {
+    return { ok: false, lines: [{ ok: false, label: "No condition groups configured" }] };
+  }
+  lines.push({ ok: true, label: `Top-level group combiner: ${groupLogic}` });
+  groups.forEach((g, gi) => {
+    const local = String(g.logic ?? "AND").toUpperCase() === "OR" ? "OR" : "AND";
+    const conds = Array.isArray(g.conditions) ? g.conditions : [];
+    lines.push({ ok: true, label: `Group ${gi + 1} — inner logic ${local}, ${conds.length} condition(s)` });
+    for (const c of conds) {
+      const row = formatConditionResult(c, idx, ctx);
+      lines.push({ ok: row.ok, label: `  • ${row.label}` });
+    }
+    const vals = conds.map((c) => evaluateCondition(c, idx, ctx));
+    const gPass = !conds.length ? false : local === "OR" ? vals.some(Boolean) : vals.every(Boolean);
+    lines.push({ ok: gPass, label: `  → Group ${gi + 1} aggregate: ${gPass ? "PASS" : "FAIL"}` });
+  });
+  const overall = evaluateConditionGroups(groups, groupLogic, idx, ctx);
+  lines.push({ ok: overall, label: `══ All groups (${groupLogic}): ${overall ? "PASS" : "FAIL"}` });
+  return { ok: overall, lines };
+}
+
 function evaluateConditionGroups(
   groups: ConditionGroup[],
   groupLogic: "AND" | "OR",
@@ -774,6 +849,95 @@ function inferEntrySubtype(cfg: EntryConditionsConfig): "indicator_based" | "tim
     return "time_based";
   }
   return "indicator_based";
+}
+
+function buildCustomStrategyConditionAudit(
+  subtype: "indicator_based" | "time_based" | "hybrid",
+  entryCfg: EntryConditionsConfig,
+  idx: number,
+  ctx: ConditionEvalCtx,
+  timestamps: number[],
+  scanTimeZone: string,
+): StrategyConditionAudit {
+  const baseSnap: Record<string, unknown> = {
+    barIndex: idx,
+    barTimeIso: new Date(timestamps[idx] * 1000).toISOString(),
+    evaluationTimeZone: scanTimeZone,
+    ...indicatorSnapshotAtBar(idx, ctx),
+  };
+
+  if (subtype === "time_based") {
+    const hhmm =
+      String(entryCfg.clockEntryTime ?? "").trim() ||
+      parseTimeFromRawExpression(String(entryCfg.rawExpression ?? "")) ||
+      "";
+    const ok = hhmm ? evaluateClockMatch(timestamps[idx], hhmm, scanTimeZone) : false;
+    const wc = wallClockHM(timestamps[idx], scanTimeZone);
+    const lines: ConditionAuditLine[] = [
+      {
+        ok,
+        label: `Time entry target ${hhmm || "(missing)"} (${scanTimeZone}); bar wall-clock ${wc ? `${wc.h}:${String(wc.m).padStart(2, "0")}` : "?"} → ${ok ? "PASS" : "FAIL"}`,
+      },
+    ];
+    return { kind: "custom_time", overallMatch: ok, lines, snapshot: baseSnap };
+  }
+
+  if (subtype === "hybrid") {
+    const hhmm = String(entryCfg.clockEntryTime ?? "").trim();
+    const timeOk = hhmm ? evaluateClockMatch(timestamps[idx], hhmm, scanTimeZone) : false;
+    const wc = wallClockHM(timestamps[idx], scanTimeZone);
+    const lines: ConditionAuditLine[] = [
+      {
+        ok: timeOk,
+        label: `Clock gate ${hhmm || "(missing)"} (${scanTimeZone}); now ${wc ? `${wc.h}:${String(wc.m).padStart(2, "0")}` : "?"} → ${timeOk ? "PASS" : "FAIL"}`,
+      },
+      { ok: true, label: "── Indicator leg" },
+    ];
+    let indOk = false;
+    if (entryCfg.mode === "raw") {
+      const indExpr = stripTimeIsCalls(String(entryCfg.rawExpression ?? ""));
+      indOk = indExpr.length > 0 ? evaluateRawExpression(indExpr, idx, ctx) : false;
+      const rawFull = String(entryCfg.rawExpression ?? "").trim();
+      lines.push({ ok: indOk, label: `Raw (stored): ${rawFull.slice(0, 280)}${rawFull.length > 280 ? "…" : ""}` });
+      lines.push({ ok: indOk, label: `Indicator expression after TIME_IS stripped: ${indExpr || "(empty)"}` });
+      lines.push({ ok: indOk, label: `Boolean eval at bar: ${indOk ? "TRUE" : "FALSE"}` });
+    } else {
+      const gl = String(entryCfg.groupLogic ?? "AND").toUpperCase() === "OR" ? "OR" : "AND";
+      const { ok, lines: inner } = auditVisualGroupsToLines(
+        Array.isArray(entryCfg.groups) ? entryCfg.groups : [],
+        gl,
+        idx,
+        ctx,
+      );
+      indOk = ok;
+      lines.push(...inner);
+    }
+    const overall = timeOk && indOk;
+    lines.push({
+      ok: overall,
+      label: `══ Hybrid combined (clock AND indicator leg): ${overall ? "PASS" : "FAIL"}`,
+    });
+    return { kind: "custom_hybrid", overallMatch: overall, lines, snapshot: baseSnap };
+  }
+
+  if (entryCfg.mode === "raw") {
+    const raw = String(entryCfg.rawExpression ?? "").trim();
+    const ok = evaluateRawExpression(raw, idx, ctx);
+    const lines: ConditionAuditLine[] = [
+      { ok: ok, label: `Raw expression: ${raw.slice(0, 320)}${raw.length > 320 ? "…" : ""}` },
+      { ok: ok, label: `Evaluated at bar ${idx}: ${ok ? "TRUE" : "FALSE"}` },
+    ];
+    return { kind: "custom_raw", overallMatch: ok, lines, snapshot: baseSnap };
+  }
+
+  const gl = String(entryCfg.groupLogic ?? "AND").toUpperCase() === "OR" ? "OR" : "AND";
+  const { ok, lines: inner } = auditVisualGroupsToLines(
+    Array.isArray(entryCfg.groups) ? entryCfg.groups : [],
+    gl,
+    idx,
+    ctx,
+  );
+  return { kind: "custom_visual", overallMatch: ok, lines: inner, snapshot: baseSnap };
 }
 
 function customEntrySignalIfMatched(
@@ -852,6 +1016,8 @@ function customEntrySignalIfMatched(
   }
   if (!match) return [];
 
+  const conditionAudit = buildCustomStrategyConditionAudit(subtype, entryCfg, idx, ctx, timestamps, scanTimeZone);
+
   const lastTs = timestamps[idx];
   const d = new Date(lastTs * 1000);
   const allowed: Array<"BUY" | "SELL"> = cs.tradingMode === "LONG"
@@ -874,6 +1040,7 @@ function customEntrySignalIfMatched(
     side,
     priceAtEntry: c[idx],
     isLive: true,
+    conditionAudit,
     marketData: mkMarketData(idx, c, h, l, r, sma20, dataSource, indicatorSource),
   }));
 }
@@ -915,6 +1082,29 @@ function clockExitSignalsIfMatched(
   const r = rsi(c, 14);
   const lastTs = timestamps[idx];
   const d = new Date(lastTs * 1000);
+  const exStr = String(ex).trim();
+  const wc = wallClockHM(lastTs, scanTimeZone);
+  const clockOk = true;
+  const conditionAudit: StrategyConditionAudit = {
+    kind: "clock_exit",
+    overallMatch: clockOk,
+    lines: [
+      {
+        ok: clockOk,
+        label: `Scheduled exit time ${exStr} (${scanTimeZone}) matched bar at ${d.toISOString()} — wall ${wc ? `${wc.h}:${String(wc.m).padStart(2, "0")}` : "?"}`,
+      },
+      {
+        ok: true,
+        label: `Exit side ${exitSide} for trading mode ${tm} (flatten / cover per your rule)`,
+      },
+    ],
+    snapshot: {
+      barIndex: idx,
+      barTimeIso: d.toISOString(),
+      evaluationTimeZone: scanTimeZone,
+      clockExitTime: exStr,
+    },
+  };
   return [{
     strategyId: cs.id,
     strategyLabel: `${cs.name} (time exit)`,
@@ -925,6 +1115,7 @@ function clockExitSignalsIfMatched(
     side: exitSide,
     priceAtEntry: c[idx],
     isLive: true,
+    conditionAudit,
     marketData: mkMarketData(idx, c, h, l, r, sma20, dataSource, indicatorSource),
   }];
 }
@@ -1075,104 +1266,6 @@ function evaluateRecentCandles(
   return out;
 }
 
-/**
- * Project price forward using recent momentum and check when strategies might fire.
- * Uses percentage-based movement (not raw slope) to avoid overflow for high-value assets.
- * Clamps projections to ±5% of current price to stay realistic.
- */
-function predictFutureSignals(
-  strategies: string[],
-  c: number[],
-  h: number[],
-  l: number[],
-  timestamps: number[],
-  actions: Array<"BUY" | "SELL">,
-  maxMinutes: number,
-  intervalMinutes: number = 5,
-  dataSource = "projected",
-  indicatorSource = "projected",
-): RawSignal[] {
-  const n = c.length;
-  if (n < 25 || maxMinutes <= 0) return [];
-
-  const lastPrice = c[n - 1];
-  if (lastPrice <= 0) return [];
-
-  // Percentage-based slope from last 12 candles (% change per candle)
-  const lookback = Math.min(12, n - 1);
-  const pctSlope = ((c[n - 1] / c[n - 1 - lookback]) - 1) / lookback;
-
-  // Per-candle volatility (for realistic hi/lo spread)
-  let sumSqRet = 0;
-  for (let i = n - lookback; i < n; i++) {
-    const ret = (c[i] - c[i - 1]) / c[i - 1];
-    sumSqRet += ret * ret;
-  }
-  const vol = Math.sqrt(sumSqRet / lookback);
-  const maxDeviation = 0.05; // ±5% max from current price
-
-  const steps = Math.min(Math.floor(maxMinutes / intervalMinutes), 288);
-  if (steps <= 0) return [];
-
-  // Extend arrays with projected candles using percentage-based movement
-  const fC = [...c];
-  const fH = [...h];
-  const fL = [...l];
-  const fT = [...timestamps];
-  const lastT = timestamps[n - 1];
-
-  for (let step = 1; step <= steps; step++) {
-    // Momentum decays toward 0 over the projection window (mean-reverting)
-    const decay = Math.max(0, 1 - step / (steps * 1.5));
-    // Oscillation simulates natural price breathing
-    const osc = vol * Math.sin(step * 0.4) * 0.3;
-    const pctMove = pctSlope * step * decay + osc;
-    // Clamp to ±5% of lastPrice
-    const clampedPct = Math.max(-maxDeviation, Math.min(maxDeviation, pctMove));
-    const pC = lastPrice * (1 + clampedPct);
-    const spread = Math.max(vol * 0.5, 0.001); // at least 0.1% spread
-    fC.push(pC);
-    fH.push(pC * (1 + spread));
-    fL.push(pC * (1 - spread));
-    fT.push(lastT + step * intervalMinutes * 60);
-  }
-
-  // Run strategy checks on extended array, only report future candles
-  const sma20Ext = sma(fC, 20);
-  const rsiExt = rsi(fC, 14);
-  const out: RawSignal[] = [];
-  const seen = new Set<string>();
-
-  // Start checking from at least 2 candles into the future (10+ min for 5m)
-  const startAt = n + 2;
-  for (let i = startAt; i < fC.length; i++) {
-    const d = new Date(fT[i] * 1000);
-    for (const strategy of strategies) {
-      for (const action of actions) {
-        const key = `${strategy}|${action}`;
-        if (seen.has(key)) continue;
-        if (checkSignal(strategy, action, i, fC, fH, fL, rsiExt, sma20Ext, true)) {
-          seen.add(key);
-          out.push({
-            strategyId: strategy,
-            strategyLabel: STRATEGY_LABELS[strategy] ?? strategy,
-            entryIndex: i,
-            entryDate: d.toISOString().slice(0, 10),
-            entryTime: d.toISOString(),
-            entryTimestamp: fT[i] * 1000,
-            side: action,
-            priceAtEntry: Math.round(fC[i] * 100) / 100,
-            isPredicted: true,
-            marketData: mkMarketData(i, fC, fH, fL, rsiExt, sma20Ext, dataSource, indicatorSource),
-          });
-        }
-      }
-    }
-  }
-
-  return out;
-}
-
 /** Join all text parts (Gemini 3.x may split across multiple parts). */
 type GeminiLikeResponse = {
   candidates?: Array<{
@@ -1254,11 +1347,149 @@ function parseJsonArrayFromModelText(text: string): unknown[] | null {
   }
 }
 
-/** Map AI rows by strategyId+entryDate+side, preserve raw order. */
+type MergedAiRow = {
+  probabilityScore: number;
+  verdict: string;
+  rationale: string;
+  entryExitRuleSummary: string;
+  liveViability: string;
+  rejectionDetail: string;
+  whyThisScore: string;
+  scoreSource: string;
+};
+
+function strField(v: unknown): string {
+  return typeof v === "string" && v.trim().length > 0 ? v.trim() : "";
+}
+
+/** Rule-based quality read so we never silently default to 50 with no basis. */
+function heuristicMergeRow(raw: RawSignal, ind: RealIndicators | null): MergedAiRow {
+  const rsiBar = raw.marketData?.rsi14;
+  const rsiSnap = ind?.rsi14;
+  const rsi = rsiBar != null && Number.isFinite(rsiBar) ? rsiBar : rsiSnap;
+  const price = raw.priceAtEntry;
+  let score = 54;
+  const reasons: string[] = [];
+
+  if (rsi != null && Number.isFinite(rsi)) {
+    if (raw.side === "BUY") {
+      if (rsi < 32) {
+        score += 20;
+        reasons.push(`RSI ${rsi.toFixed(1)} is deeply oversold — historically better for dip-style longs.`);
+      } else if (rsi < 42) {
+        score += 11;
+        reasons.push(`RSI ${rsi.toFixed(1)} leans oversold for a BUY.`);
+      } else if (rsi > 64) {
+        score -= 17;
+        reasons.push(`RSI ${rsi.toFixed(1)} is stretched up — chasing risk on fresh BUY.`);
+      } else if (rsi > 52) {
+        score -= 7;
+        reasons.push(`RSI ${rsi.toFixed(1)} is neutral-high for a BUY context.`);
+      } else {
+        reasons.push(`RSI ${rsi.toFixed(1)} is mid-range for BUY.`);
+      }
+    } else {
+      if (rsi > 68) {
+        score += 20;
+        reasons.push(`RSI ${rsi.toFixed(1)} is overbought — aligns with exit/short-style SELL.`);
+      } else if (rsi > 58) {
+        score += 11;
+        reasons.push(`RSI ${rsi.toFixed(1)} leans overbought for SELL.`);
+      } else if (rsi < 36) {
+        score -= 17;
+        reasons.push(`RSI ${rsi.toFixed(1)} is washed out — weak timing for exit/short.`);
+      } else if (rsi < 48) {
+        score -= 7;
+        reasons.push(`RSI ${rsi.toFixed(1)} is low for a SELL/exit read.`);
+      } else {
+        reasons.push(`RSI ${rsi.toFixed(1)} is mid-range for SELL.`);
+      }
+    }
+  } else {
+    reasons.push("RSI missing at this bar — score leans on pattern + freshness only.");
+  }
+
+  if (ind?.bbLower != null && ind?.bbUpper != null && price > 0) {
+    if (raw.side === "BUY" && price <= ind.bbLower * 1.012) {
+      score += 7;
+      reasons.push("Price near/below lower Bollinger — mean-reversion long context.");
+    }
+    if (raw.side === "SELL" && price >= ind.bbUpper * 0.988) {
+      score += 7;
+      reasons.push("Price near/above upper Bollinger — take-profit / fade context.");
+    }
+  }
+
+  if (ind?.macdLine != null && ind?.macdSignal != null) {
+    const d = ind.macdLine - ind.macdSignal;
+    if (raw.side === "BUY") {
+      if (d > 0) {
+        score += 4;
+        reasons.push("MACD line above signal — momentum not fighting the long.");
+      } else {
+        score -= 5;
+        reasons.push("MACD line below signal — momentum weak vs the BUY cue.");
+      }
+    } else {
+      if (d < 0) {
+        score += 4;
+        reasons.push("MACD line below signal — momentum supports exit/short.");
+      } else {
+        score -= 5;
+        reasons.push("MACD still positive — exit/short fights short-term trend.");
+      }
+    }
+  }
+
+  const ts = raw.entryTimestamp ?? (raw.entryTime ? new Date(raw.entryTime).getTime() : NaN);
+  if (Number.isFinite(ts)) {
+    const ageDays = (Date.now() - ts) / 86400000;
+    if (!raw.isLive && ageDays > 10) {
+      const pen = Math.min(14, Math.floor(ageDays / 7));
+      score -= pen;
+      reasons.push(`Signal is ~${Math.round(ageDays)}d old — discretionary weight decays.`);
+    }
+  }
+
+  if (raw.isLive) {
+    score += 5;
+    reasons.push("Matches latest bar — actionable now if liquidity and risk limits allow.");
+  }
+
+  score = Math.max(14, Math.min(93, Math.round(score)));
+  const verdict = score >= 69 ? "confirm" : score <= 37 ? "reject" : "review";
+  const whyThisScore = reasons.join(" ");
+  const entryExitRuleSummary = raw.side === "BUY"
+    ? `Strategy rule produced a long (BUY) candidate for “${raw.strategyLabel}”.`
+    : `Strategy rule produced an exit/short (SELL) candidate for “${raw.strategyLabel}”.`;
+  const liveViability = raw.isLive
+    ? "Live: conditions match the current candle; invalid if a gap, headline, or volatility regime breaks the setup."
+    : "";
+  const rejectionDetail = verdict === "reject"
+    ? `Rejected on rule-based read: ${whyThisScore}`
+    : verdict === "review"
+    ? `Review bucket — mixed evidence: ${whyThisScore}`
+    : "";
+  const rationale = `${whyThisScore} Composite → ${score}/100 (${verdict}).`;
+
+  return {
+    probabilityScore: score,
+    verdict,
+    rationale,
+    entryExitRuleSummary,
+    liveViability,
+    rejectionDetail,
+    whyThisScore,
+    scoreSource: "heuristic",
+  };
+}
+
+/** Map AI rows by strategyId+entryDate+side, blend with heuristic (no blind 50s). */
 function mergeAiScoresIntoRaw(
   raw: RawSignal[],
   parsed: unknown[] | null,
-): Array<{ strategyId: string; entryDate: string; probabilityScore: number; verdict: string; rationale: string }> {
+  ind: RealIndicators | null,
+): MergedAiRow[] {
   const map = new Map<string, Record<string, unknown>>();
   if (parsed) {
     for (const row of parsed) {
@@ -1268,30 +1499,190 @@ function mergeAiScoresIntoRaw(
       const ed = String(r.entryDate ?? "");
       const side = String(r.side ?? "BUY");
       if (sid && ed) {
-        // Key includes side so BUY and SELL on the same day don't collide.
         map.set(`${sid}|${ed}|${side}`, r);
-        // Also index without side as fallback (AI may omit it).
         map.set(`${sid}|${ed}`, r);
       }
     }
   }
+
   return raw.map((s) => {
+    const h = heuristicMergeRow(s, ind);
     const r = map.get(`${s.strategyId}|${s.entryDate}|${s.side}`) ?? map.get(`${s.strategyId}|${s.entryDate}`);
-    const score = typeof r?.probabilityScore === "number" ? r.probabilityScore : 50;
-    const verdict = typeof r?.verdict === "string" ? r.verdict : "review";
-    const rationale = typeof r?.rationale === "string"
-      ? r.rationale
-      : parsed === null
-      ? "AI response was empty or not valid JSON; try again or reduce number of strategies."
-      : "No AI row matched this signal.";
+
+    if (!r) {
+      const extra = parsed === null
+        ? " Gemini pass failed or empty — showing rule-based breakdown only."
+        : " No matching AI row — showing rule-based breakdown only.";
+      return {
+        ...h,
+        rationale: h.rationale + extra,
+        scoreSource: "heuristic",
+      };
+    }
+
+    const aiScoreRaw = r.probabilityScore;
+    const aiScore = typeof aiScoreRaw === "number" && Number.isFinite(aiScoreRaw)
+      ? Math.max(0, Math.min(100, aiScoreRaw))
+      : null;
+    const aiVerdict = typeof r.verdict === "string" ? r.verdict.toLowerCase() : "";
+    const aiRationale = strField(r.rationale);
+    const aiEntry = strField(r.entryExitRuleSummary);
+    const aiLive = strField(r.liveViability);
+    const aiReject = strField(r.rejectionDetail);
+    const aiWhy = strField(r.whyThisScore);
+
+    if (aiScore === null) {
+      return {
+        ...h,
+        rationale: (aiRationale || h.rationale) + " (AI omitted numeric score; rule-based score used.)",
+        scoreSource: "heuristic",
+      };
+    }
+
+    const aiVague = aiScore === 50 && aiRationale.length < 50;
+    const blended = aiVague
+      ? Math.round(0.22 * aiScore + 0.78 * h.probabilityScore)
+      : Math.round(0.52 * aiScore + 0.48 * h.probabilityScore);
+    const probabilityScore = Math.max(14, Math.min(93, blended));
+
+    const verdictOk = aiVerdict === "confirm" || aiVerdict === "reject" || aiVerdict === "review";
+    const verdict = aiVague
+      ? h.verdict
+      : verdictOk
+      ? aiVerdict
+      : h.verdict;
+
+    const entryExitRuleSummary = aiEntry || h.entryExitRuleSummary;
+    const whyThisScore = aiWhy || h.whyThisScore;
+    const liveViability = s.isLive ? (aiLive || h.liveViability) : "";
+    let rejectionDetail = aiReject || h.rejectionDetail;
+    if (verdict === "reject" && !rejectionDetail) {
+      rejectionDetail = `Rejected: ${whyThisScore}`;
+    }
+    if (verdict === "review" && !rejectionDetail) {
+      rejectionDetail = `Neither clean accept nor hard reject: ${whyThisScore}`;
+    }
+    if (verdict === "confirm") {
+      rejectionDetail = rejectionDetail || "";
+    }
+
+    const rationale = aiVague
+      ? `${h.whyThisScore} Model returned a neutral score with thin text; prioritizing structured rule read.`
+      : `${aiRationale || "Model assessment."} Rule-based cross-check: ${h.whyThisScore}`;
+
     return {
-      strategyId: s.strategyId,
-      entryDate: s.entryDate,
-      probabilityScore: score,
+      probabilityScore,
       verdict,
       rationale,
+      entryExitRuleSummary,
+      liveViability,
+      rejectionDetail,
+      whyThisScore,
+      scoreSource: aiVague ? "heuristic+gemini" : "gemini+heuristic",
     };
   });
+}
+
+/**
+ * After the signal bar, measure max favorable vs adverse excursion on the SAME series used for detection.
+ * Not a full trade backtest — informational only.
+ */
+function simpleForwardRead(
+  entryIndex: number,
+  side: "BUY" | "SELL",
+  priceAtEntry: number,
+  h: number[],
+  l: number[],
+  isLive: boolean,
+): {
+  simpleOutcomeLabel: string;
+  simpleOutcomeNote: string;
+  forwardProbeBars: number;
+  forwardMaxFavorablePct: number | null;
+  forwardMaxAdversePct: number | null;
+} {
+  const n = h.length;
+  if (priceAtEntry <= 0 || entryIndex < 0 || entryIndex >= n || h.length !== l.length) {
+    return {
+      simpleOutcomeLabel: "unknown",
+      simpleOutcomeNote: "Insufficient aligned OHLC data for a forward read.",
+      forwardProbeBars: 0,
+      forwardMaxFavorablePct: null,
+      forwardMaxAdversePct: null,
+    };
+  }
+  if (isLive || entryIndex >= n - 1) {
+    return {
+      simpleOutcomeLabel: "pending",
+      simpleOutcomeNote:
+        "Live or last bar in series — no subsequent candles in this snapshot to score follow-through.",
+      forwardProbeBars: 0,
+      forwardMaxFavorablePct: null,
+      forwardMaxAdversePct: null,
+    };
+  }
+  const maxBars = Math.min(20, n - 1 - entryIndex);
+  let maxFav = 0;
+  let maxAdv = 0;
+  for (let i = 1; i <= maxBars; i++) {
+    const hi = h[entryIndex + i];
+    const lo = l[entryIndex + i];
+    if (side === "BUY") {
+      maxFav = Math.max(maxFav, (hi - priceAtEntry) / priceAtEntry);
+      maxAdv = Math.max(maxAdv, (priceAtEntry - lo) / priceAtEntry);
+    } else {
+      maxFav = Math.max(maxFav, (priceAtEntry - lo) / priceAtEntry);
+      maxAdv = Math.max(maxAdv, (hi - priceAtEntry) / priceAtEntry);
+    }
+  }
+  const favPct = maxFav * 100;
+  const advPct = maxAdv * 100;
+  let label: string;
+  let note: string;
+  const thr = 0.12;
+  if (side === "BUY") {
+    if (favPct >= thr && favPct > advPct * 1.08) {
+      label = "follow_through";
+      note =
+        `Next ${maxBars} bars: favorable excursion ~${favPct.toFixed(2)}% vs adverse ~${advPct.toFixed(2)}% from entry (high/low path).`;
+    } else if (advPct >= thr && advPct > favPct * 1.08) {
+      label = "adverse_first";
+      note =
+        `Next ${maxBars} bars: price worked against the long ~${advPct.toFixed(2)}% before favoring ~${favPct.toFixed(2)}%.`;
+    } else {
+      label = "mixed";
+      note =
+        `Next ${maxBars} bars: mixed path (favorable ~${favPct.toFixed(2)}%, adverse ~${advPct.toFixed(2)}%).`;
+    }
+  } else {
+    if (favPct >= thr && favPct > advPct * 1.08) {
+      label = "follow_through";
+      note =
+        `Next ${maxBars} bars: move aligned with exit/short read ~${favPct.toFixed(2)}% vs bounce ~${advPct.toFixed(2)}%.`;
+    } else if (advPct >= thr && advPct > favPct * 1.08) {
+      label = "adverse_first";
+      note =
+        `Next ${maxBars} bars: rally vs the exit/short read ~${advPct.toFixed(2)}% vs favorable ~${favPct.toFixed(2)}%.`;
+    } else {
+      label = "mixed";
+      note =
+        `Next ${maxBars} bars: mixed excursion (favorable ~${favPct.toFixed(2)}%, adverse ~${advPct.toFixed(2)}%).`;
+    }
+  }
+  return {
+    simpleOutcomeLabel: label,
+    simpleOutcomeNote: note,
+    forwardProbeBars: maxBars,
+    forwardMaxFavorablePct: Math.round(favPct * 100) / 100,
+    forwardMaxAdversePct: Math.round(advPct * 100) / 100,
+  };
+}
+
+/** Compact pass/fail trace for custom strategies — passed to Gemini for aligned scoring. */
+function conditionTraceForPrompt(x: RawSignal): string | null {
+  const a = x.conditionAudit;
+  if (!a?.lines?.length) return null;
+  return a.lines.slice(0, 18).map((l) => `${l.ok ? "PASS" : "FAIL"}: ${l.label}`).join("\n");
 }
 
 async function scoreWithGemini(
@@ -1301,15 +1692,12 @@ async function scoreWithGemini(
   raw: RawSignal[],
   indicators: RealIndicators | null,
   post?: { result?: string; actualChangePercent?: number; predictedDirection?: string },
-): Promise<Array<Record<string, unknown>>> {
-  if (!GEMINI_API_KEY || raw.length === 0) {
-    return raw.map((s) => ({
-      strategyId: s.strategyId,
-      entryDate: s.entryDate,
-      probabilityScore: 50,
-      verdict: "review",
-      rationale: "AI key not configured or no signals; default neutral score.",
-    }));
+): Promise<MergedAiRow[]> {
+  const indForMerge = indicators ?? null;
+  if (raw.length === 0) return [];
+
+  if (!GEMINI_API_KEY) {
+    return mergeAiScoresIntoRaw(raw, null, indForMerge);
   }
 
   const indBlock = indicators
@@ -1320,9 +1708,9 @@ Bollinger Bands: Upper ${indicators.bbUpper?.toFixed(2) ?? "N/A"} | Middle ${ind
 Current Price: ${indicators.currentPrice?.toFixed(2) ?? "N/A"}, Change: ${indicators.changePct?.toFixed(2) ?? "N/A"}%`
     : "\nNo external indicator data available — using OHLCV-computed values.";
 
-  const prompt = `You are a trading risk assistant. Score each trading signal for quality using real market data and indicators (not financial advice).
-BUY signals = entry points (go long). SELL signals = exit/short points (go short or exit long).
-Some signals are PREDICTED (future projections based on current momentum) — score them based on likelihood given CURRENT indicator state.
+  const prompt = `You are a trading risk assistant. Score ONLY real historical or live-detected signals (not forecasts). Not financial advice.
+BUY = long entry candidate. SELL = exit or short-side candidate.
+Do NOT assume future price paths. Score based on indicator snapshot + bar context.
 
 Symbol: ${symbol} (data: ${yahooSymbol})
 Last close: ${lastClose}
@@ -1336,19 +1724,29 @@ ${JSON.stringify(raw.map((x) => ({
     entryDate: x.entryDate,
     side: x.side,
     priceAtEntry: x.priceAtEntry,
-    isPredicted: x.isPredicted ?? false,
     isLive: x.isLive ?? false,
     marketData: x.marketData ?? null,
+    customConditionKind: x.conditionAudit?.kind ?? null,
+    customConditionTrace: conditionTraceForPrompt(x),
   })))}
 
-Return ONLY a JSON array (no markdown), SAME LENGTH AND SAME ORDER as input, each object:
-{ "strategyId": string, "entryDate": string, "side": string, "probabilityScore": number 0-100, "verdict": "confirm" | "reject" | "review", "rationale": string (1-2 sentences referencing actual RSI/MACD/BB values) }
+When customConditionTrace is present, the signal already satisfied that rule stack on this bar — your score and verdict must agree with those PASS lines (do not contradict the documented checks).
 
-Scoring guide — USE THE REAL INDICATORS above:
-- BUY: high score if RSI<40 (oversold), price near/below lower BB, MACD crossing up, uptrend.
-- SELL: high score if RSI>60 (overbought), price near/above upper BB, MACD crossing down, downtrend.
-- PREDICTED: high score if current indicators strongly support the projected direction sustaining.
-- Low score if stale (>5 days old) or signal contradicts the indicator snapshot.`;
+Return ONLY a JSON array (no markdown), SAME LENGTH AND SAME ORDER as input. Each object MUST include:
+{ "strategyId": string, "entryDate": string, "side": string,
+  "probabilityScore": number (0-100; spread scores when setups differ — avoid giving every row 50),
+  "verdict": "confirm" | "reject" | "review",
+  "rationale": string (2-4 sentences; cite RSI/MACD/BB or say explicitly if missing),
+  "entryExitRuleSummary": string (one sentence: what the strategy rule implies for this bar),
+  "whyThisScore": string (explicit tie from indicators + freshness/live flag to the number),
+  "liveViability": string (empty "" if not live; if live, why it could work OR what breaks it),
+  "rejectionDetail": string (if verdict is reject or review: why not a clean confirm; if confirm: short risk caveat or "") }
+
+Scoring guide:
+- BUY: higher if oversold RSI, price near lower BB, MACD not bearish; lower if overbought or stale without reset.
+- SELL: higher if overbought RSI, price near upper BB, MACD not bullish; lower if washed-out RSI.
+- Live signals: mention immediacy and gap/news risk.
+- If evidence is mixed, use verdict "review" and explain the conflict in rejectionDetail.`;
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
   const res = await fetch(url, {
@@ -1369,27 +1767,27 @@ Scoring guide — USE THE REAL INDICATORS above:
   if (!res.ok) {
     const errText = await res.text();
     console.error(`Gemini ${res.status} (${GEMINI_MODEL}):`, errText);
-    return mergeAiScoresIntoRaw(raw, null);
+    return mergeAiScoresIntoRaw(raw, null, indForMerge);
   }
   let data: GeminiLikeResponse = {};
   try {
     data = await res.json() as GeminiLikeResponse;
   } catch (e) {
     console.error("Gemini JSON decode failed:", e);
-    return mergeAiScoresIntoRaw(raw, null);
+    return mergeAiScoresIntoRaw(raw, null, indForMerge);
   }
   const text = geminiAllText(data);
   const finish = (data as { candidates?: Array<{ finishReason?: string }> })?.candidates?.[0]?.finishReason;
   if (!text.trim()) {
     console.error("Gemini empty output", { finish, snippet: JSON.stringify(data).slice(0, 600) });
-    return mergeAiScoresIntoRaw(raw, null);
+    return mergeAiScoresIntoRaw(raw, null, indForMerge);
   }
   const parsed = parseJsonArrayFromModelText(text);
   if (!parsed) {
     console.error("Gemini JSON parse failed; text head:", text.slice(0, 1500));
-    return mergeAiScoresIntoRaw(raw, null);
+    return mergeAiScoresIntoRaw(raw, null, indForMerge);
   }
-  return mergeAiScoresIntoRaw(raw, parsed);
+  return mergeAiScoresIntoRaw(raw, parsed, indForMerge);
 }
 
 Deno.serve(async (req: Request) => {
@@ -1660,53 +2058,32 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // 3) Predicted future entry/exit points — project current momentum forward
-    const predictionWindow = getPredictionWindowMinutes(assetType, yahooSymbol);
-    let predictedSignals: RawSignal[] = [];
-    if (predictionWindow > 0 && realtimeMode) {
-      const builtInPredicted = predictFutureSignals(validIds, c, h, l, t, scanActions, predictionWindow, 5, dataSource, realIndicators.source);
-      predictedSignals.push(...builtInPredicted);
+    // No projected/upcoming “entries” — only live + historical detections.
 
-      // Also predict for custom strategies
-      for (const cs of customStrategies) {
-        if (hasCustomConditions(cs)) continue;
-        const baseType = String(cs.baseType ?? "trend_following").toLowerCase().trim();
-        if (!STRATEGY_LABELS[baseType]) continue;
-        const csId = String(cs.id);
-        const csActions: Array<"BUY" | "SELL"> =
-          cs.tradingMode === "LONG" ? ["BUY"]
-            : cs.tradingMode === "SHORT" ? ["SELL"]
-            : ["BUY", "SELL"];
-        const csPredicted = predictFutureSignals([baseType], c, h, l, t, csActions, predictionWindow, 5, dataSource, realIndicators.source);
-        for (const sig of csPredicted) {
-          sig.strategyId = csId;
-          sig.strategyLabel = customLabelMap[csId] ?? cs.name;
-        }
-        predictedSignals.push(...csPredicted);
-      }
-
-      // Add predicted signals (dedup by strategy+side since we only want 1 predicted per combo)
-      for (const ps of predictedSignals) {
-        const key = `${ps.strategyId}|${ps.side}|predicted`;
-        if (!existingKeys.has(key)) {
-          allRaw.push(ps);
-          existingKeys.add(key);
-        }
-      }
-    }
-
-    // Sort: predicted first, then live, then by recency.
+    // Sort: live first, then more recent bars, then by index.
     allRaw.sort((a, b) => {
-      const aPri = a.isPredicted ? 3 : a.isLive ? 2 : 1;
-      const bPri = b.isPredicted ? 3 : b.isLive ? 2 : 1;
+      const aPri = a.isLive ? 2 : 1;
+      const bPri = b.isLive ? 2 : 1;
       if (aPri !== bPri) return bPri - aPri;
+      const ta = a.entryTimestamp ?? 0;
+      const tb = b.entryTimestamp ?? 0;
+      if (ta !== tb) return tb - ta;
       return b.entryIndex - a.entryIndex;
     });
-    const capped = allRaw.slice(0, 60);
+    const capped = allRaw.slice(0, 80);
     const scored = await scoreWithGemini(symbol, yahooSymbol, c[c.length - 1] ?? 0, capped, realIndicators, postAnalysis);
+    const scanEvaluatedAt = new Date().toISOString();
 
     const merged = capped.map((rawSig, i) => {
       const ai = scored[i];
+      const fwd = simpleForwardRead(
+        rawSig.entryIndex,
+        rawSig.side,
+        rawSig.priceAtEntry,
+        h,
+        l,
+        rawSig.isLive ?? false,
+      );
       return {
         strategyId: rawSig.strategyId,
         strategyLabel: rawSig.strategyLabel,
@@ -1715,20 +2092,34 @@ Deno.serve(async (req: Request) => {
         entryTimestamp: rawSig.entryTimestamp ?? null,
         side: rawSig.side,
         priceAtEntry: rawSig.priceAtEntry,
-        probabilityScore: ai?.probabilityScore ?? 50,
+        probabilityScore: ai?.probabilityScore ?? 54,
         verdict: ai?.verdict ?? "review",
         rationale: ai?.rationale ?? "",
+        entryExitRuleSummary: ai?.entryExitRuleSummary ?? "",
+        whyThisScore: ai?.whyThisScore ?? "",
+        liveViability: ai?.liveViability ?? "",
+        rejectionDetail: ai?.rejectionDetail ?? "",
+        scoreSource: ai?.scoreSource ?? "heuristic",
         isLive: rawSig.isLive ?? false,
-        isPredicted: rawSig.isPredicted ?? false,
+        isPredicted: false,
         marketData: rawSig.marketData ?? null,
+        scanEvaluatedAt,
+        ohlcvPipeline: dataSource,
+        indicatorPipeline: realIndicators.source,
+        simpleOutcomeLabel: fwd.simpleOutcomeLabel,
+        simpleOutcomeNote: fwd.simpleOutcomeNote,
+        forwardProbeBars: fwd.forwardProbeBars,
+        forwardMaxFavorablePct: fwd.forwardMaxFavorablePct,
+        forwardMaxAdversePct: fwd.forwardMaxAdversePct,
+        conditionAudit: rawSig.conditionAudit ?? null,
       };
     });
 
-    // Final sort: predicted first, live, today's, then history by score.
+    // Final sort: live, today’s date, then higher score.
     const nowIso = new Date().toISOString().slice(0, 10);
     merged.sort((a, b) => {
-      const aPri = a.isPredicted ? 3 : a.isLive ? 2 : a.entryDate === nowIso ? 1 : 0;
-      const bPri = b.isPredicted ? 3 : b.isLive ? 2 : b.entryDate === nowIso ? 1 : 0;
+      const aPri = a.isLive ? 2 : a.entryDate === nowIso ? 1 : 0;
+      const bPri = b.isLive ? 2 : b.entryDate === nowIso ? 1 : 0;
       if (bPri !== aPri) return bPri - aPri;
       return (b.probabilityScore as number) - (a.probabilityScore as number);
     });
@@ -1749,7 +2140,7 @@ Deno.serve(async (req: Request) => {
         interval: usedInterval,
         signal_count: merged.length,
         live_count: liveSignals.length,
-        predicted_count: predictedSignals.length,
+        predicted_count: 0,
         signals: merged,
       })
       .select("id")
@@ -1767,9 +2158,10 @@ Deno.serve(async (req: Request) => {
         interval: usedInterval,
         isIntraday: usedInterval !== "1d",
         liveCount: liveSignals.length,
-        predictedCount: predictedSignals.length,
+        predictedCount: 0,
         assetType,
-        predictionWindowMinutes: predictionWindow,
+        predictionWindowMinutes: 0,
+        lookbackDaysUsed: days,
         dataSource,
         indicatorSource: realIndicators.source,
       }),
