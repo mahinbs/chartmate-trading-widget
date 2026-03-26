@@ -1,5 +1,6 @@
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { formatKeyDriver } from "@/lib/display-utils";
+import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -11,6 +12,7 @@ import {
   Clock,
   Activity,
   RefreshCw,
+  type LucideIcon,
 } from "lucide-react";
 import { CardInfoTooltip } from "@/components/ui/card-info-tooltip";
 import { HELP } from "@/lib/analysis-ui-help";
@@ -62,6 +64,11 @@ interface ProbabilityPanelProps {
   analysedAt?: Date | null;
   /** Callback to re-run the analysis from the parent. */
   onRefresh?: () => void;
+  /**
+   * User-selected analysis horizon (e.g. `1h`, `4h`, or custom `2d`).
+   * Shown after each panel card title, e.g. “… for next 1 hr”.
+   */
+  selectedHorizon?: string;
 }
 
 /* ─────────────────────────────── helpers ────────────────────────────── */
@@ -215,6 +222,69 @@ function fmtVolume(n: number): string {
   return n.toLocaleString();
 }
 
+/** Human label for the user’s timeframe (presets + compact codes like 2h, 3d). */
+function formatSelectedHorizonForPanel(horizon: string | undefined): string | null {
+  if (!horizon?.trim()) return null;
+  const h = horizon.trim();
+  if (h.toLowerCase() === "custom") return null;
+
+  const presets: Record<string, string> = {
+    "15m": "15 min",
+    "30m": "30 min",
+    "1h": "1 hr",
+    "4h": "4 hr",
+    "1d": "1 day",
+    "1w": "1 week",
+  };
+  if (presets[h]) return presets[h];
+
+  const compact = h.replace(/\s+/g, "");
+  const m = /^(\d+)(m|h|d|w)$/i.exec(compact);
+  if (m) {
+    const n = m[1];
+    const u = m[2].toLowerCase();
+    if (u === "m") return `${n} min`;
+    if (u === "h") return `${n} hr`;
+    if (u === "d") return `${n} ${n === "1" ? "day" : "days"}`;
+    return `${n} ${n === "1" ? "week" : "weeks"}`;
+  }
+
+  return h;
+}
+
+function PanelSectionTitle({
+  icon: Icon,
+  iconClassName,
+  children,
+  horizonLabel,
+}: {
+  icon: LucideIcon;
+  iconClassName: string;
+  children: ReactNode;
+  /** Preformatted label from {@link formatSelectedHorizonForPanel} */
+  horizonLabel: string | null;
+}) {
+  return (
+    <CardTitle
+      className={cn(
+        "text-sm font-semibold text-zinc-200",
+        "flex items-start gap-2",
+      )}
+    >
+      <Icon className={cn("h-4 w-4 shrink-0 mt-0.5", iconClassName)} aria-hidden />
+      <span className="min-w-0 leading-snug">
+        {children}
+        {horizonLabel ? (
+          <span className="font-normal text-zinc-400">
+            {" "}
+            for next {horizonLabel}
+          </span>
+        ) : null}
+      </span>
+    </CardTitle>
+  );
+}
+
 export function ProbabilityPanel({
   symbol,
   currentPrice,
@@ -222,6 +292,7 @@ export function ProbabilityPanel({
   volumeData,
   analysedAt,
   onRefresh,
+  selectedHorizon,
 }: ProbabilityPanelProps) {
   const forecasts = geminiForecast.forecasts ?? [];
   const primaryForecast = forecasts[0];
@@ -368,6 +439,8 @@ export function ProbabilityPanel({
     symbol,
   ]);
 
+  const horizonDisplay = formatSelectedHorizonForPanel(selectedHorizon);
+
   return (
     <div className="space-y-4">
       {/* Section header */}
@@ -378,6 +451,12 @@ export function ProbabilityPanel({
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-lg font-bold text-white tracking-tight">
                 AI Probability Analysis
+                {horizonDisplay ? (
+                  <span className="font-semibold text-zinc-400">
+                    {" "}
+                    · next {horizonDisplay}
+                  </span>
+                ) : null}
               </h2>
               <CardInfoTooltip text={HELP.probabilityPanel} className="text-zinc-500" />
             </div>
@@ -411,10 +490,13 @@ export function ProbabilityPanel({
         {/* 1. Directional Probability Gauge — single card, three directions */}
         <Card className="glass-panel border-white/10 bg-zinc-900/50">
           <CardHeader className="pb-3 flex flex-row items-start justify-between space-y-0 gap-2">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-zinc-200">
-              <TrendingUp className="h-4 w-4 shrink-0 text-emerald-400" />
+            <PanelSectionTitle
+              icon={TrendingUp}
+              iconClassName="text-emerald-400"
+              horizonLabel={horizonDisplay}
+            >
               Market Direction Probability
-            </CardTitle>
+            </PanelSectionTitle>
             <CardInfoTooltip text={HELP.marketDirection} className="text-zinc-500" />
           </CardHeader>
           <CardContent className="space-y-4">
@@ -451,10 +533,13 @@ export function ProbabilityPanel({
         {/* 2. AI Confidence Score */}
         <Card className="glass-panel border-white/10 bg-zinc-900/50">
           <CardHeader className="pb-3 flex flex-row items-start justify-between space-y-0 gap-2">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-zinc-200">
-              <Brain className="h-4 w-4 shrink-0 text-primary" />
+            <PanelSectionTitle
+              icon={Brain}
+              iconClassName="text-primary"
+              horizonLabel={horizonDisplay}
+            >
               AI Market Confidence
-            </CardTitle>
+            </PanelSectionTitle>
             <CardInfoTooltip text={HELP.aiConfidence} className="text-zinc-500" />
           </CardHeader>
           <CardContent className="space-y-4">
@@ -517,10 +602,13 @@ export function ProbabilityPanel({
         {/* 3. Scenario Probability — sub-breakdown of direction totals above */}
         <Card className="glass-panel border-white/10 bg-zinc-900/50">
           <CardHeader className="pb-3 flex flex-row items-start justify-between space-y-0 gap-2">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-zinc-200">
-              <Activity className="h-4 w-4 shrink-0 text-indigo-400" />
+            <PanelSectionTitle
+              icon={Activity}
+              iconClassName="text-indigo-400"
+              horizonLabel={horizonDisplay}
+            >
               Next Move Scenarios
-            </CardTitle>
+            </PanelSectionTitle>
             <CardInfoTooltip text={HELP.nextMoveScenarios} className="text-zinc-500" />
           </CardHeader>
           <CardContent className="space-y-3">
@@ -570,10 +658,13 @@ export function ProbabilityPanel({
         {/* 4. Heat Map — Bullish / Neutral / Bearish */}
         <Card className="glass-panel border-white/10 bg-zinc-900/50">
           <CardHeader className="pb-3 flex flex-row items-start justify-between space-y-0 gap-2">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-zinc-200">
-              <Flame className="h-4 w-4 shrink-0 text-orange-400" />
+            <PanelSectionTitle
+              icon={Flame}
+              iconClassName="text-orange-400"
+              horizonLabel={horizonDisplay}
+            >
               Market Pressure Map
-            </CardTitle>
+            </PanelSectionTitle>
             <CardInfoTooltip text={HELP.pressureMap} className="text-zinc-500" />
           </CardHeader>
           <CardContent className="space-y-4">
@@ -638,10 +729,13 @@ export function ProbabilityPanel({
         {/* 5. Price Target Probability */}
         <Card className="glass-panel border-white/10 bg-zinc-900/50">
           <CardHeader className="pb-3 flex flex-row items-start justify-between space-y-0 gap-2">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-zinc-200">
-              <Target className="h-4 w-4 shrink-0 text-amber-400" />
+            <PanelSectionTitle
+              icon={Target}
+              iconClassName="text-amber-400"
+              horizonLabel={horizonDisplay}
+            >
               Price Level Probabilities
-            </CardTitle>
+            </PanelSectionTitle>
             <CardInfoTooltip text={HELP.priceLevels} className="text-zinc-500" />
           </CardHeader>
           <CardContent className="space-y-3">
@@ -710,10 +804,13 @@ export function ProbabilityPanel({
         {/* 6. Probability Timeline */}
         <Card className="glass-panel border-white/10 bg-zinc-900/50">
           <CardHeader className="pb-3 flex flex-row items-start justify-between space-y-0 gap-2">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-zinc-200">
-              <Clock className="h-4 w-4 shrink-0 text-sky-400" />
+            <PanelSectionTitle
+              icon={Clock}
+              iconClassName="text-sky-400"
+              horizonLabel={horizonDisplay}
+            >
               Probability Timeline
-            </CardTitle>
+            </PanelSectionTitle>
             <CardInfoTooltip text={HELP.probTimeline} className="text-zinc-500" />
           </CardHeader>
           <CardContent className="space-y-3">
@@ -785,10 +882,13 @@ export function ProbabilityPanel({
         {/* 7. Market Pressure Meter (Buyer vs Seller) */}
         <Card className="glass-panel border-white/10 bg-zinc-900/50">
           <CardHeader className="pb-3 flex flex-row items-start justify-between space-y-0 gap-2">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-zinc-200">
-              <Activity className="h-4 w-4 shrink-0 text-violet-400" />
+            <PanelSectionTitle
+              icon={Activity}
+              iconClassName="text-violet-400"
+              horizonLabel={horizonDisplay}
+            >
               Market Pressure Meter
-            </CardTitle>
+            </PanelSectionTitle>
             <CardInfoTooltip text={HELP.pressureMeter} className="text-zinc-500" />
           </CardHeader>
           <CardContent className="space-y-5">
@@ -895,10 +995,13 @@ export function ProbabilityPanel({
       {volumeData && (volumeData.volume24h || volumeData.volumeProfile) && (
         <Card className="glass-panel border-white/10 bg-zinc-900/50">
           <CardHeader className="pb-3 flex flex-row items-start justify-between space-y-0 gap-2">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-zinc-200">
-              <Activity className="h-4 w-4 shrink-0 text-cyan-400" />
+            <PanelSectionTitle
+              icon={Activity}
+              iconClassName="text-cyan-400"
+              horizonLabel={horizonDisplay}
+            >
               Volume Intelligence
-            </CardTitle>
+            </PanelSectionTitle>
             <CardInfoTooltip text={HELP.volumeIntel} className="text-zinc-500" />
           </CardHeader>
           <CardContent>

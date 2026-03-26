@@ -1785,6 +1785,11 @@ const PredictPage = () => {
                       geminiForecast={result.geminiForecast}
                       volumeData={result.volumeData}
                       analysedAt={predictedAt}
+                      selectedHorizon={
+                        timeframe === "custom" && customTimeframe.trim()
+                          ? customTimeframe.trim()
+                          : timeframe
+                      }
                       onRefresh={() => {
                         if (savedPredictionId) {
                           toast.info(
