@@ -69,7 +69,8 @@ export function Stepper({ steps, currentStep, completedSteps, className }: Stepp
                     className?.includes('mobile-stepper') ? "w-8 h-8" : "w-10 h-10",
                     {
                       "bg-primary border-primary text-primary-foreground shadow-sm": isCompleted,
-                      "bg-primary/5 border-primary text-primary ring-4 ring-primary/5": isCurrent,
+                      "bg-primary/5 border-primary text-primary ring-4 ring-primary/5":
+                        isCurrent && !isCompleted,
                       "bg-muted border-muted-foreground/20 text-muted-foreground": isUpcoming,
                     }
                   )}

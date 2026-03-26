@@ -1,7 +1,6 @@
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -16,7 +15,6 @@ import {
   AlertCircle,
   Zap,
   Activity,
-  FileCheck,
   AlertTriangle
 } from "lucide-react";
 
@@ -660,7 +658,7 @@ export const UserProfileForm = ({
         </CardContent>
       </Card>
 
-      {/* NEW: Risk Acceptance Disclaimer */}
+      {/* Risk Acceptance Disclaimer — temporarily disabled (Continue no longer gated on checkbox)
       <Card id="risk-acknowledge-block" className="border-red-500/30 bg-red-500/5">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg text-red-600">
@@ -716,6 +714,7 @@ export const UserProfileForm = ({
           )}
         </CardContent>
       </Card>
+      */}
 
     </div>
   );

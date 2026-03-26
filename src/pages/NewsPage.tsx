@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import logo from '../assets/logo.png';
+import { DashboardShellLayout } from "@/components/layout/DashboardShellLayout";
 
 interface NewsArticle {
   id: string;
@@ -120,21 +121,13 @@ export default function NewsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <DashboardShellLayout>
+      <div className="min-h-screen bg-background text-foreground">
       {/* Header */}
       <div className="border-b border-white/5 bg-background/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => navigate('/home')}
-              className="hover:bg-white/5"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
             <div className="flex items-center gap-2">
-              <img src={logo} alt="logo" className="w-8 h-8 object-contain" />
               <h1 className="text-xl font-bold tracking-tight">Market News</h1>
             </div>
           </div>
@@ -201,6 +194,7 @@ export default function NewsPage() {
         )}
       </main>
     </div>
+    </DashboardShellLayout>
   );
 }
 

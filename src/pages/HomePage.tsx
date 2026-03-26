@@ -260,15 +260,15 @@ export default function HomePage() {
                 </div>
               </a>
             ))}
-            <Link
-              to="/news"
-              className="block w-full text-center py-2.5 mt-2 rounded-[10px] glass-button-premium border-white/10 text-[13px] font-semibold text-foreground/80 hover:bg-white/10 hover:text-foreground transition-all"
-            >
-              See more
-            </Link>
           </>
         )}
       </div>
+      <Link
+        to="/news"
+        className="block w-full text-center py-2.5 mt-2 rounded-[10px] glass-button-premium border-white/10 text-[13px] font-semibold text-foreground/80 hover:bg-white/10 hover:text-foreground transition-all"
+      >
+        See more
+      </Link>
     </>
   );
 
@@ -587,7 +587,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          <aside className="sticky top-4 z-10 w-full shrink-0 border-t xl:border-t-0 xl:border-l border-sidebar-border bg-sidebar xl:p-5 p-4 rounded-xl xl:rounded-none mt-0 xl:mt-0 max-h-[calc(100vh-6rem)] overflow-y-auto overflow-x-hidden flex flex-col min-h-0 self-start">
+          <aside className="sticky top-4 z-10 w-full shrink-0 border-t xl:border-t-0 xl:border-l border-sidebar-border bg-sidebar xl:p-5 p-4 rounded-xl xl:rounded-none mt-0 xl:mt-0 max-h-full overflow-y-auto overflow-x-hidden flex flex-col min-h-0 self-start">
             {newsPanel}
           </aside>
         </div>

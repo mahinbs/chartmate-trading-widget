@@ -53,4 +53,10 @@ export const HELP = {
     "Each row is another horizon from the same run. Compare to how long you plan to stay in the trade.",
   analysisTimelineCard:
     "Pipeline order plus optional horizon countdowns. Timing is diagnostic only.",
+  predictSymbol:
+    "Search for a listed ticker: stocks, crypto pairs (e.g. BTC-USD), or forex. Choose the exact exchange and symbol the chart and AI should use. A mismatched symbol feeds the wrong data into the whole run.",
+  predictTimeframe:
+    "Sets how far ahead the model anchors its probability window (for example 1h or 1d). Shorter horizons react more to very recent movement; longer ones smooth the picture. Custom lets you enter values like 2h, 3d, or 1w when supported.",
+  predictInvestment:
+    "Notional amount used for position sizing, ROI scenarios, and stop or take-profit math in the report. Switch INR or USD to match how you size risk. Entering a number here does not place an order by itself.",
 } as const;

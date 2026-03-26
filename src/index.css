@@ -132,8 +132,8 @@
   }
 
   .container {
-    @apply px-4 md:px-8 mx-auto !max-w-full;
-    /* @apply px-4 md:px-8 max-w-[90rem] mx-auto; */
+    /* @apply px-4 md:px-8 mx-auto !max-w-full; */
+    @apply px-4 md:px-8 max-w-[90rem] mx-auto;
   }
 
   /* Hide scrollbar for Chrome, Safari and Opera */

@@ -190,7 +190,7 @@ const ContactUsPage = () => {
                     </ScrollReveal>
 
                     <ScrollReveal delay={0.4}>
-                        <div className="bg-zinc-900/50 backdrop-blur-xl p-8 md:p-10 rounded-3xl border border-white/10 shadow-[0_0_40px_rgba(6,182,212,0.1)]">
+                        <div className="bg-zinc-900/50 backdrop-blur-xl p-8 md:p-10 rounded-3xl border border-white/10 shadow-[0_0_40px_rgba(6,182,212,0.1)] max-w-3xl mx-auto">
                             <Form {...form}>
                                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                                     <FormField

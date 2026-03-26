@@ -1286,12 +1286,19 @@ const PredictPage = () => {
                           Market
                         </p>
                         <div>
-                          <Label
-                            htmlFor="symbol"
-                            className="text-sm font-medium mb-2 block"
-                          >
-                            Symbol
-                          </Label>
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <Label
+                              htmlFor="symbol"
+                              className="text-sm font-medium"
+                            >
+                              Symbol
+                            </Label>
+                            <CardInfoTooltip
+                              text={HELP.predictSymbol}
+                              className="text-muted-foreground"
+                              side="top"
+                            />
+                          </div>
                           <SymbolSearch
                             value={symbol}
                             onValueChange={setSymbol}
@@ -1316,12 +1323,19 @@ const PredictPage = () => {
                         )}
 
                         <div>
-                          <Label
-                            htmlFor="timeframe"
-                            className="text-sm font-medium mb-2 block"
-                          >
-                            Analysis timeframe
-                          </Label>
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <Label
+                              htmlFor="timeframe"
+                              className="text-sm font-medium"
+                            >
+                              Analysis timeframe
+                            </Label>
+                            <CardInfoTooltip
+                              text={HELP.predictTimeframe}
+                              className="text-muted-foreground"
+                              side="top"
+                            />
+                          </div>
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
                             {["15m", "30m", "1h", "4h", "1d", "1w"].map(
                               (tf) => (
@@ -1423,12 +1437,19 @@ const PredictPage = () => {
                           </div>
                         </div>
                         <div>
-                          <Label
-                            htmlFor="investment"
-                            className="text-sm font-medium mb-2 block"
-                          >
-                            Investment amount ({displayCurrency})
-                          </Label>
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <Label
+                              htmlFor="investment"
+                              className="text-sm font-medium"
+                            >
+                              Investment amount ({displayCurrency})
+                            </Label>
+                            <CardInfoTooltip
+                              text={HELP.predictInvestment}
+                              className="text-muted-foreground"
+                              side="top"
+                            />
+                          </div>
                           <div className="relative">
                             <span className="absolute left-3 top-3 h-4 w-4 flex items-center justify-center text-muted-foreground font-medium">
                               {displayCurrency === "INR" ? "₹" : "$"}
@@ -1536,17 +1557,11 @@ const PredictPage = () => {
                           onClick={handleNextStep}
                           className="w-full sm:flex-1"
                           size="lg"
-                          disabled={!userProfile.riskAcceptance}
                         >
                           Continue to Review
                           <ArrowRight className="ml-2 h-4 w-4" />
                         </Button>
                       </div>
-                      {!userProfile.riskAcceptance && (
-                        <p className="text-sm text-center text-yellow-600 mt-2">
-                          ⚠️ You must accept the risk disclosure to continue
-                        </p>
-                      )}
                     </div>
                   </StepContainer>
                 </div>
@@ -1882,360 +1897,7 @@ const PredictPage = () => {
                     </Card>
                   )}
 
-                  {/* ── Trading mode CTA — OpenAlgo or Paper only ── */}
-                  {!placedTrade && (
-                    <Card className="glass-panel border border-primary/30 bg-gradient-to-br from-background/80 to-primary/5 shadow-xl">
-                      <CardContent className="p-5 space-y-3">
-                        {/* Header row */}
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h3 className="text-lg font-bold text-white">
-                              Trade {result.symbol}
-                            </h3>
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              AI signal:{" "}
-                              <span
-                                className={
-                                  result.geminiForecast?.action_signal
-                                    ?.action === "SELL"
-                                    ? "text-red-400 font-semibold"
-                                    : "text-green-400 font-semibold"
-                                }
-                              >
-                                {result.geminiForecast?.action_signal?.action ??
-                                  "HOLD"}
-                              </span>
-                              {" · "}Confidence:{" "}
-                              <span className="font-semibold">
-                                {result.geminiForecast?.action_signal
-                                  ?.confidence ??
-                                  result.confidence ??
-                                  0}
-                                %
-                              </span>
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-xs text-muted-foreground">
-                              Current price
-                            </p>
-                            <p className="text-lg font-bold text-white">
-                              {result.isCrypto ? "$" : "₹"}
-                              {result.currentPrice.toLocaleString()}
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Subscription status for OpenAlgo users */}
-                        {isPremium && (
-                          <div className="space-y-2">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Badge className="bg-teal-500/20 text-teal-300 border border-teal-500/40">
-                                Subscription Active
-                              </Badge>
-                              {isInGracePeriod && (
-                                <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                                  Grace Period (24h after expiry)
-                                </Badge>
-                              )}
-                            </div>
-
-                            {isExpiringSoon && (
-                              <Alert className="bg-amber-500/10 border-amber-500/40 text-amber-300 py-2.5">
-                                <AlertTriangle className="h-3.5 w-3.5" />
-                                <AlertDescription className="text-xs">
-                                  Your subscription expires in{" "}
-                                  {Math.max(daysUntilExpiry ?? 0, 0)} day(s).
-                                  Renew to avoid OpenAlgo interruption.
-                                </AlertDescription>
-                              </Alert>
-                            )}
-
-                            {isAutoRenewDisabled && (
-                              <Alert className="bg-red-500/10 border-red-500/40 text-red-300 py-2.5">
-                                <AlertTriangle className="h-3.5 w-3.5" />
-                                <AlertDescription className="text-xs">
-                                  Auto-renew is OFF. OpenAlgo access disables 24
-                                  hours after expiry unless you renew.
-                                </AlertDescription>
-                              </Alert>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Two main buttons */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          <Button
-                            disabled={checkingOnboarding}
-                            onClick={async () => {
-                              if (!isPremium) {
-                                setShowPremiumDialog(true);
-                                return;
-                              }
-                              // Check algo_onboarding provisioning status
-                              setCheckingOnboarding(true);
-                              const { data: onboarding } = await (
-                                supabase as any
-                              )
-                                .from("algo_onboarding")
-                                .select("status")
-                                .eq("user_id", user?.id)
-                                .maybeSingle();
-                              setCheckingOnboarding(false);
-
-                              if (!onboarding) {
-                                navigate("/algo-setup");
-                                return;
-                              }
-                              if (onboarding.status === "pending") {
-                                toast.info(
-                                  "Your algo trading account is being set up. Our team will activate it within 24 hours.",
-                                  { duration: 5000 },
-                                );
-                                return;
-                              }
-                              navigate("/algo-setup");
-                            }}
-                            className="py-5 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 w-full"
-                          >
-                            {checkingOnboarding ? (
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                              <Timer className="mr-2 h-4 w-4" />
-                            )}
-                            OpenAlgo Dashboard
-                          </Button>
-                          <Button
-                            variant="outline"
-                            onClick={async () => {
-                              setIsPaperTrade(true);
-                              setAssignedStrategy(null);
-                              const { tradeTrackingService } =
-                                await import("@/services/tradeTrackingService");
-                              const last =
-                                await tradeTrackingService.getLastUsedStrategy();
-                              if (last) {
-                                const label =
-                                  STRATEGIES.find(
-                                    (s) => s.value === last.strategyType,
-                                  )?.label ?? last.strategyType;
-                                setLastUsedStrategy({ ...last, label });
-                                setShowPreviousOrNewDialog(true);
-                              } else {
-                                setShowStrategyDialog(true);
-                              }
-                            }}
-                            className="py-5 border-2 border-violet-500/50 text-violet-300 hover:bg-violet-500/10 hover:border-violet-500 w-full"
-                          >
-                            <FlaskConical className="mr-2 h-4 w-4" />
-                            Paper Trade
-                          </Button>
-                        </div>
-
-                        <p className="text-[11px] text-center text-muted-foreground/70">
-                          <strong className="text-muted-foreground">
-                            Paper Trade
-                          </strong>{" "}
-                          is free & simulated — no real money.{" "}
-                          <strong className="text-muted-foreground">
-                            OpenAlgo Dashboard
-                          </strong>{" "}
-                          requires a premium plan.
-                        </p>
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {/* ── Live P&L card — appears after order is placed ── */}
-                  {placedTrade &&
-                    (() => {
-                      const isShort = placedTrade.action === "SELL";
-                      const livePrice =
-                        placedTrade.currentPrice ?? placedTrade.entryPrice;
-                      const pnl = isShort
-                        ? (placedTrade.entryPrice - livePrice) *
-                          placedTrade.shares
-                        : (livePrice - placedTrade.entryPrice) *
-                          placedTrade.shares;
-                      const pnlPct =
-                        placedTrade.investmentAmount > 0
-                          ? (pnl / placedTrade.investmentAmount) * 100
-                          : 0;
-                      const isNeutral =
-                        Math.abs(pnl) < 0.005 && Math.abs(pnlPct) < 0.005;
-                      const isProfit = !isNeutral && pnl > 0;
-                      const pnlPrefix = isNeutral ? "" : isProfit ? "+" : "";
-                      const pnlTone = isNeutral
-                        ? "text-slate-400"
-                        : isProfit
-                          ? "text-green-400"
-                          : "text-red-400";
-                      const pnlToneSoft = isNeutral
-                        ? "text-slate-500"
-                        : isProfit
-                          ? "text-green-500"
-                          : "text-red-500";
-                      const pnlBoxTone = isNeutral
-                        ? "bg-slate-500/10 border-slate-500/30"
-                        : isProfit
-                          ? "bg-green-500/10 border-green-500/30"
-                          : "bg-red-500/10 border-red-500/30";
-                      const strategyLabel =
-                        STRATEGIES.find(
-                          (s) => s.value === placedTrade.strategyType,
-                        )?.label ??
-                        placedTrade.strategyType ??
-                        "Strategy";
-                      const isPaper = (
-                        placedTrade.brokerOrderId ?? ""
-                      ).startsWith("PAPER-");
-
-                      return (
-                        <Card
-                          className={`border-2 ${isNeutral ? "border-slate-500/40 bg-slate-500/5" : isProfit ? "border-green-500/50 bg-green-500/5" : "border-red-500/50 bg-red-500/5"} shadow-xl`}
-                        >
-                          <CardContent className="p-4 space-y-3">
-                            {/* Header */}
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <Badge
-                                className={
-                                  isShort ? "bg-red-600" : "bg-green-600"
-                                }
-                              >
-                                {isShort ? (
-                                  <TrendingDown className="h-3 w-3 mr-1" />
-                                ) : (
-                                  <TrendingUp className="h-3 w-3 mr-1" />
-                                )}
-                                {placedTrade.action} {placedTrade.symbol}
-                              </Badge>
-                              <Badge variant="outline" className="text-xs">
-                                {strategyLabel}
-                              </Badge>
-                              {isPaper && (
-                                <Badge className="bg-violet-500/20 text-violet-300 border border-violet-500/40 text-[10px]">
-                                  🧪 Paper
-                                </Badge>
-                              )}
-                              <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
-                                <Repeat2 className="h-3 w-3" />
-                                <span>Auto-exit on strategy achievement</span>
-                              </div>
-                            </div>
-
-                            {/* Price row */}
-                            <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                              <div className="rounded bg-background/60 border p-2">
-                                <p className="text-muted-foreground">
-                                  Entry price
-                                </p>
-                                <p className="font-bold text-sm text-white">
-                                  {result.isCrypto ? "$" : "₹"}
-                                  {placedTrade.entryPrice.toLocaleString()}
-                                </p>
-                              </div>
-                              <div className="rounded bg-background/60 border p-2">
-                                <p className="text-muted-foreground">
-                                  Live price
-                                </p>
-                                <p className="font-bold text-sm text-white">
-                                  {result.isCrypto ? "$" : "₹"}
-                                  {livePrice.toLocaleString()}
-                                </p>
-                              </div>
-                              <div
-                                className={`rounded border p-2 ${pnlBoxTone}`}
-                              >
-                                <p className="text-muted-foreground">P&amp;L</p>
-                                <p className={`font-bold text-sm ${pnlTone}`}>
-                                  {pnlPrefix}
-                                  {result.isCrypto ? "$" : "₹"}
-                                  {(isNeutral ? 0 : Math.abs(pnl)).toFixed(2)}
-                                </p>
-                                <p className={`text-[10px] ${pnlToneSoft}`}>
-                                  {pnlPrefix}
-                                  {(isNeutral ? 0 : pnlPct).toFixed(2)}%
-                                </p>
-                              </div>
-                            </div>
-
-                            {/* Shares & investment */}
-                            <div className="flex gap-4 text-xs text-muted-foreground">
-                              <span>
-                                Shares held:{" "}
-                                <strong className="text-white">
-                                  {placedTrade.shares}
-                                </strong>
-                              </span>
-                              <span>
-                                Invested:{" "}
-                                <strong className="text-white">
-                                  {result.isCrypto ? "$" : "₹"}
-                                  {placedTrade.investmentAmount.toLocaleString()}
-                                </strong>
-                              </span>
-                              {placedTrade.stopLossPercentage && (
-                                <span>
-                                  SL:{" "}
-                                  <strong className="text-red-400">
-                                    {placedTrade.stopLossPercentage}%
-                                  </strong>
-                                </span>
-                              )}
-                              {placedTrade.targetProfitPercentage && (
-                                <span>
-                                  TP:{" "}
-                                  <strong className="text-green-400">
-                                    {placedTrade.targetProfitPercentage}%
-                                  </strong>
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Action buttons */}
-                            <div className="flex gap-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="flex-1 border-green-500/50 text-green-400 hover:bg-green-500/10"
-                                onClick={() => {
-                                  setBuyMoreAmount("");
-                                  setShowBuyMoreDialog(true);
-                                }}
-                              >
-                                <PlusCircle className="h-3.5 w-3.5 mr-1.5" />
-                                Buy More
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="flex-1 border-red-500/50 text-red-400 hover:bg-red-500/10"
-                                onClick={() => {
-                                  setSellSharesInput(
-                                    String(placedTrade.shares),
-                                  );
-                                  setShowSellDialog(true);
-                                }}
-                              >
-                                <Minus className="h-3.5 w-3.5 mr-1.5" />
-                                Sell
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="text-muted-foreground hover:text-white"
-                                onClick={() =>
-                                  navigate(`/trade/${placedTrade.id}`)
-                                }
-                              >
-                                <ExternalLink className="h-3.5 w-3.5 mr-1" />
-                                Full view
-                              </Button>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      );
-                    })()}
+                  
 
                   {/* Use previous strategy or choose new */}
                   {result && lastUsedStrategy && (
@@ -2536,11 +2198,369 @@ const PredictPage = () => {
                     </Button>
                   </div>
                 </div>
+
+
+              <div className="xl:sticky xl:top-4 flex flex-col gap-3">
+                  {/* ── Trading mode CTA — OpenAlgo or Paper only ── */}
+                  {!placedTrade && (
+                    <Card className="glass-panel border border-primary/30 bg-gradient-to-br from-background/80 to-primary/5 shadow-xl">
+                      <CardContent className="p-5 space-y-3">
+                        {/* Header row */}
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h3 className="text-lg font-bold text-white">
+                              Trade {result.symbol}
+                            </h3>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              AI signal:{" "}
+                              <span
+                                className={
+                                  result.geminiForecast?.action_signal
+                                    ?.action === "SELL"
+                                    ? "text-red-400 font-semibold"
+                                    : "text-green-400 font-semibold"
+                                }
+                              >
+                                {result.geminiForecast?.action_signal?.action ??
+                                  "HOLD"}
+                              </span>
+                              {" · "}Confidence:{" "}
+                              <span className="font-semibold">
+                                {result.geminiForecast?.action_signal
+                                  ?.confidence ??
+                                  result.confidence ??
+                                  0}
+                                %
+                              </span>
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs text-muted-foreground">
+                              Current price
+                            </p>
+                            <p className="text-lg font-bold text-white">
+                              {result.isCrypto ? "$" : "₹"}
+                              {result.currentPrice.toLocaleString()}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Subscription status for OpenAlgo users */}
+                        {isPremium && (
+                          <div className="space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge className="bg-teal-500/20 text-teal-300 border border-teal-500/40">
+                                Subscription Active
+                              </Badge>
+                              {isInGracePeriod && (
+                                <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                                  Grace Period (24h after expiry)
+                                </Badge>
+                              )}
+                            </div>
+
+                            {isExpiringSoon && (
+                              <Alert className="bg-amber-500/10 border-amber-500/40 text-amber-300 py-2.5">
+                                <AlertTriangle className="h-3.5 w-3.5" />
+                                <AlertDescription className="text-xs">
+                                  Your subscription expires in{" "}
+                                  {Math.max(daysUntilExpiry ?? 0, 0)} day(s).
+                                  Renew to avoid OpenAlgo interruption.
+                                </AlertDescription>
+                              </Alert>
+                            )}
+
+                            {isAutoRenewDisabled && (
+                              <Alert className="bg-red-500/10 border-red-500/40 text-red-300 py-2.5">
+                                <AlertTriangle className="h-3.5 w-3.5" />
+                                <AlertDescription className="text-xs">
+                                  Auto-renew is OFF. OpenAlgo access disables 24
+                                  hours after expiry unless you renew.
+                                </AlertDescription>
+                              </Alert>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Two main buttons */}
+                        <div className="grid grid-cols-1 gap-2">
+                          <Button
+                            disabled={checkingOnboarding}
+                            onClick={async () => {
+                              if (!isPremium) {
+                                setShowPremiumDialog(true);
+                                return;
+                              }
+                              // Check algo_onboarding provisioning status
+                              setCheckingOnboarding(true);
+                              const { data: onboarding } = await (
+                                supabase as any
+                              )
+                                .from("algo_onboarding")
+                                .select("status")
+                                .eq("user_id", user?.id)
+                                .maybeSingle();
+                              setCheckingOnboarding(false);
+
+                              if (!onboarding) {
+                                navigate("/algo-setup");
+                                return;
+                              }
+                              if (onboarding.status === "pending") {
+                                toast.info(
+                                  "Your algo trading account is being set up. Our team will activate it within 24 hours.",
+                                  { duration: 5000 },
+                                );
+                                return;
+                              }
+                              navigate("/algo-setup");
+                            }}
+                            className="py-5 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 w-full"
+                          >
+                            {checkingOnboarding ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                              <Timer className="mr-2 h-4 w-4" />
+                            )}
+                            OpenAlgo Dashboard
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={async () => {
+                              setIsPaperTrade(true);
+                              setAssignedStrategy(null);
+                              const { tradeTrackingService } =
+                                await import("@/services/tradeTrackingService");
+                              const last =
+                                await tradeTrackingService.getLastUsedStrategy();
+                              if (last) {
+                                const label =
+                                  STRATEGIES.find(
+                                    (s) => s.value === last.strategyType,
+                                  )?.label ?? last.strategyType;
+                                setLastUsedStrategy({ ...last, label });
+                                setShowPreviousOrNewDialog(true);
+                              } else {
+                                setShowStrategyDialog(true);
+                              }
+                            }}
+                            className="py-5 border-2 border-violet-500/50 text-violet-300 hover:bg-violet-500/10 hover:border-violet-500 w-full"
+                          >
+                            <FlaskConical className="mr-2 h-4 w-4" />
+                            Paper Trade
+                          </Button>
+                        </div>
+
+                        <p className="text-[11px] text-center text-muted-foreground/70">
+                          <strong className="text-muted-foreground">
+                            Paper Trade
+                          </strong>{" "}
+                          is free & simulated — no real money.{" "}
+                          <strong className="text-muted-foreground">
+                            OpenAlgo Dashboard
+                          </strong>{" "}
+                          requires a premium plan.
+                        </p>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* ── Live P&L card — appears after order is placed ── */}
+                  {placedTrade &&
+                    (() => {
+                      const isShort = placedTrade.action === "SELL";
+                      const livePrice =
+                        placedTrade.currentPrice ?? placedTrade.entryPrice;
+                      const pnl = isShort
+                        ? (placedTrade.entryPrice - livePrice) *
+                          placedTrade.shares
+                        : (livePrice - placedTrade.entryPrice) *
+                          placedTrade.shares;
+                      const pnlPct =
+                        placedTrade.investmentAmount > 0
+                          ? (pnl / placedTrade.investmentAmount) * 100
+                          : 0;
+                      const isNeutral =
+                        Math.abs(pnl) < 0.005 && Math.abs(pnlPct) < 0.005;
+                      const isProfit = !isNeutral && pnl > 0;
+                      const pnlPrefix = isNeutral ? "" : isProfit ? "+" : "";
+                      const pnlTone = isNeutral
+                        ? "text-slate-400"
+                        : isProfit
+                          ? "text-green-400"
+                          : "text-red-400";
+                      const pnlToneSoft = isNeutral
+                        ? "text-slate-500"
+                        : isProfit
+                          ? "text-green-500"
+                          : "text-red-500";
+                      const pnlBoxTone = isNeutral
+                        ? "bg-slate-500/10 border-slate-500/30"
+                        : isProfit
+                          ? "bg-green-500/10 border-green-500/30"
+                          : "bg-red-500/10 border-red-500/30";
+                      const strategyLabel =
+                        STRATEGIES.find(
+                          (s) => s.value === placedTrade.strategyType,
+                        )?.label ??
+                        placedTrade.strategyType ??
+                        "Strategy";
+                      const isPaper = (
+                        placedTrade.brokerOrderId ?? ""
+                      ).startsWith("PAPER-");
+
+                      return (
+                        <Card
+                          className={`border-2 ${isNeutral ? "border-slate-500/40 bg-slate-500/5" : isProfit ? "border-green-500/50 bg-green-500/5" : "border-red-500/50 bg-red-500/5"} shadow-xl`}
+                        >
+                          <CardContent className="p-4 space-y-3">
+                            {/* Header */}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge
+                                className={
+                                  isShort ? "bg-red-600" : "bg-green-600"
+                                }
+                              >
+                                {isShort ? (
+                                  <TrendingDown className="h-3 w-3 mr-1" />
+                                ) : (
+                                  <TrendingUp className="h-3 w-3 mr-1" />
+                                )}
+                                {placedTrade.action} {placedTrade.symbol}
+                              </Badge>
+                              <Badge variant="outline" className="text-xs">
+                                {strategyLabel}
+                              </Badge>
+                              {isPaper && (
+                                <Badge className="bg-violet-500/20 text-violet-300 border border-violet-500/40 text-[10px]">
+                                  🧪 Paper
+                                </Badge>
+                              )}
+                              <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
+                                <Repeat2 className="h-3 w-3" />
+                                <span>Auto-exit on strategy achievement</span>
+                              </div>
+                            </div>
+
+                            {/* Price row */}
+                            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                              <div className="rounded bg-background/60 border p-2">
+                                <p className="text-muted-foreground">
+                                  Entry price
+                                </p>
+                                <p className="font-bold text-sm text-white">
+                                  {result.isCrypto ? "$" : "₹"}
+                                  {placedTrade.entryPrice.toLocaleString()}
+                                </p>
+                              </div>
+                              <div className="rounded bg-background/60 border p-2">
+                                <p className="text-muted-foreground">
+                                  Live price
+                                </p>
+                                <p className="font-bold text-sm text-white">
+                                  {result.isCrypto ? "$" : "₹"}
+                                  {livePrice.toLocaleString()}
+                                </p>
+                              </div>
+                              <div
+                                className={`rounded border p-2 ${pnlBoxTone}`}
+                              >
+                                <p className="text-muted-foreground">P&amp;L</p>
+                                <p className={`font-bold text-sm ${pnlTone}`}>
+                                  {pnlPrefix}
+                                  {result.isCrypto ? "$" : "₹"}
+                                  {(isNeutral ? 0 : Math.abs(pnl)).toFixed(2)}
+                                </p>
+                                <p className={`text-[10px] ${pnlToneSoft}`}>
+                                  {pnlPrefix}
+                                  {(isNeutral ? 0 : pnlPct).toFixed(2)}%
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Shares & investment */}
+                            <div className="flex gap-4 text-xs text-muted-foreground">
+                              <span>
+                                Shares held:{" "}
+                                <strong className="text-white">
+                                  {placedTrade.shares}
+                                </strong>
+                              </span>
+                              <span>
+                                Invested:{" "}
+                                <strong className="text-white">
+                                  {result.isCrypto ? "$" : "₹"}
+                                  {placedTrade.investmentAmount.toLocaleString()}
+                                </strong>
+                              </span>
+                              {placedTrade.stopLossPercentage && (
+                                <span>
+                                  SL:{" "}
+                                  <strong className="text-red-400">
+                                    {placedTrade.stopLossPercentage}%
+                                  </strong>
+                                </span>
+                              )}
+                              {placedTrade.targetProfitPercentage && (
+                                <span>
+                                  TP:{" "}
+                                  <strong className="text-green-400">
+                                    {placedTrade.targetProfitPercentage}%
+                                  </strong>
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Action buttons */}
+                            <div className="grid grid-cols-1 gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="flex-1 border-green-500/50 text-green-400 hover:bg-green-500/10"
+                                onClick={() => {
+                                  setBuyMoreAmount("");
+                                  setShowBuyMoreDialog(true);
+                                }}
+                              >
+                                <PlusCircle className="h-3.5 w-3.5 mr-1.5" />
+                                Buy More
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="flex-1 border-red-500/50 text-red-400 hover:bg-red-500/10"
+                                onClick={() => {
+                                  setSellSharesInput(
+                                    String(placedTrade.shares),
+                                  );
+                                  setShowSellDialog(true);
+                                }}
+                              >
+                                <Minus className="h-3.5 w-3.5 mr-1.5" />
+                                Sell
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-muted-foreground hover:text-white"
+                                onClick={() =>
+                                  navigate(`/trade/${placedTrade.id}`)
+                                }
+                              >
+                                <ExternalLink className="h-3.5 w-3.5 mr-1" />
+                                Full view
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    })()}
                 <LiveChartBlock
-                  cardClassName="h-[11rem] sm:h-[14rem] xl:min-h-[22rem] xl:h-[min(32rem,78vh)] 2xl:h-[34rem]"
-                  wrapperClassName="w-full xl:sticky xl:top-4"
+                  cardClassName="h-[11rem] sm:h-[14rem] xl:min-h-[22rem] xl:h-[min(23rem,78vh)] 2xl:h-[23rem]"
+                  wrapperClassName="w-full"
                   title="Live price"
                 />
+              </div>
               </div>
             )}
           </Container>
