@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ArrowLeft, Clock, ChevronDown, Plus, History, Maximize2 } from "lucide-react";
+import { ArrowLeft, Clock, ChevronDown, Plus, History, Maximize2, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { PredictionTimeline } from "@/components/PredictionTimeline";
@@ -17,7 +17,10 @@ import { Insights } from "@/components/prediction/Insights";
 import { PostPredictionReport } from "@/components/prediction/PostPredictionReport";
 import { formatCurrency, formatPercentage } from "@/lib/display-utils";
 import { Container } from "@/components/layout/Container";
-import { getEffectiveStart, getEffectiveTarget } from "@/lib/market-hours";
+import { getPredictionWindowEnd } from "@/lib/prediction-window";
+import { getEffectiveStart } from "@/lib/market-hours";
+import { CardInfoTooltip } from "@/components/ui/card-info-tooltip";
+import { HELP } from "@/lib/analysis-ui-help";
 import {
   readPredictionAnalysisCache,
   writePredictionAnalysisCache,
@@ -40,6 +43,15 @@ interface Prediction {
   price_target_min: number | null;
   price_target_max: number | null;
   created_at: string;
+  updated_at?: string;
+  post_outcome_analysis?: {
+    evaluation?: CachedAnalysisData["evaluation"];
+    ai?: CachedAnalysisData["ai"];
+    marketData?: CachedAnalysisData["marketData"];
+    dataSource?: string;
+    summary?: string;
+    updated_at?: string;
+  } | null;
   raw_response: any;
 }
 
@@ -75,26 +87,20 @@ export default function PredictionsPage() {
     return null;
   };
 
-  // Calculate expected completion time for prediction windows using market hours
-  const calculateExpectedTime = (createdAt: string, timeframe: string, marketStatus?: any): Date => {
-    const baseTime = new Date(createdAt);
-    const timeframeMinutes = {
-      '15m': 15,
-      '30m': 30,
-      '1h': 60,
-      '4h': 240,
-      '1d': 1440,
-      '1w': 10080
+  /** Merge server-stored outcome scoring into UI state (survives new device / cleared cache). */
+  function postOutcomeToAnalysisData(
+    symbol: string,
+    po: NonNullable<Prediction["post_outcome_analysis"]>,
+  ): AnalysisData {
+    return {
+      symbol,
+      evaluation: po.evaluation,
+      ai: po.ai,
+      marketData: po.marketData,
+      dataSource: po.dataSource,
+      summary: po.summary,
     };
-    const minutes = timeframeMinutes[timeframe as keyof typeof timeframeMinutes] || 60;
-    
-    if (marketStatus) {
-      const effectiveStart = getEffectiveStart(baseTime, marketStatus);
-      return getEffectiveTarget(minutes, effectiveStart);
-    }
-    
-    return new Date(baseTime.getTime() + minutes * 60 * 1000);
-  };
+  }
 
   // React to predictions list changing: fetch market statuses + schedule auto-analysis
   useEffect(() => {
@@ -113,7 +119,12 @@ export default function PredictionsPage() {
         const st = analysisStates[prediction.id];
         if (!st?.data && !st?.loading && !st?.error) {
           const marketStatus = marketStatuses[prediction.symbol];
-          const expectedTime = calculateExpectedTime(prediction.created_at, prediction.timeframe, marketStatus);
+          const expectedTime = getPredictionWindowEnd(
+            prediction.created_at,
+            prediction.timeframe,
+            prediction.raw_response,
+            marketStatus,
+          );
           const now = new Date();
           if (now >= expectedTime) {
             await analyzePostPrediction(prediction as PredictionRow, expectedTime);
@@ -151,7 +162,22 @@ export default function PredictionsPage() {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setPredictions((data as any) || []);
+      const rows = (data as Prediction[]) || [];
+      setPredictions(rows);
+
+      const cached = readPredictionAnalysisCache();
+      const fromServer: Record<string, { loading: boolean; data: AnalysisData | null; error: string | null }> = {};
+      for (const p of rows) {
+        const po = p.post_outcome_analysis;
+        if (po?.evaluation) {
+          fromServer[p.id] = {
+            loading: false,
+            data: postOutcomeToAnalysisData(p.symbol, po),
+            error: null,
+          };
+        }
+      }
+      setAnalysisStates((prev) => ({ ...cached, ...prev, ...fromServer }));
     } catch (error) {
       console.error('Error fetching predictions:', error);
       toast({
@@ -380,14 +406,25 @@ export default function PredictionsPage() {
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {predictions.map((prediction) => {
-              const startTime = new Date(prediction.created_at);
               const marketStatus = marketStatuses[prediction.symbol];
-              const expectedTime = calculateExpectedTime(prediction.created_at, prediction.timeframe, marketStatus);
+              const effectiveStart = getEffectiveStart(new Date(prediction.created_at), marketStatus);
+              const expectedTime = getPredictionWindowEnd(
+                prediction.created_at,
+                prediction.timeframe,
+                prediction.raw_response,
+                marketStatus,
+              );
               const timeRemaining = expectedTime.getTime() - Date.now();
-              const elapsedPercent = getElapsedPercent(startTime, expectedTime, new Date());
+              const elapsedPercent = getElapsedPercent(effectiveStart, expectedTime, new Date());
               const isExpired = timeRemaining < 0;
               const isAnalyzing = analysisStates[prediction.id]?.loading;
               const outcome = getOutcome(prediction, isExpired, isAnalyzing);
+              const evaluation = analysisStates[prediction.id]?.data?.evaluation;
+              const outcomeScoredAt = prediction.post_outcome_analysis?.updated_at;
+              const recordUpdatedMs =
+                prediction.updated_at &&
+                new Date(prediction.updated_at).getTime() - new Date(prediction.created_at).getTime() >
+                  90_000;
               return (
                 <Card
                   key={prediction.id}
@@ -439,11 +476,13 @@ export default function PredictionsPage() {
                         <div className="flex items-center gap-2">
                           <Clock className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                           <span className="text-muted-foreground text-xs sm:text-sm">
-                            {isExpired ? 'Completed' : `${formatDuration(timeRemaining)} remaining`}
+                            {isExpired
+                              ? `Window ended ${formatDateTime(expectedTime)}`
+                              : `${formatDuration(timeRemaining)} remaining`}
                           </span>
                         </div>
                         <span className="text-xs text-muted-foreground pl-5 sm:pl-0">
-                          {formatDateTime(prediction.created_at)}
+                          Started {formatDateTime(prediction.created_at)}
                         </span>
                       </div>
                       <Progress value={isExpired ? 100 : elapsedPercent} className="h-1.5" />
@@ -459,7 +498,11 @@ export default function PredictionsPage() {
                       </div>
                       <div>
                         <p className="text-[10px] sm:text-xs text-muted-foreground">Timeframe</p>
-                        <p className="font-semibold text-white text-sm sm:text-base">{prediction.timeframe}</p>
+                        <p className="font-semibold text-white text-sm sm:text-base">
+                          {prediction.timeframe === "custom" && prediction.raw_response?.timeframe
+                            ? String(prediction.raw_response.timeframe)
+                            : prediction.timeframe}
+                        </p>
                       </div>
                       <div>
                         <p className="text-[10px] sm:text-xs text-muted-foreground">Expected Move</p>
@@ -480,13 +523,108 @@ export default function PredictionsPage() {
                       </div>
                     </div>
 
+                    {/* Prediction window vs market (after window ends) */}
+                    {isExpired && (
+                      <div className="rounded-xl border border-primary/35 bg-gradient-to-br from-primary/[0.12] via-primary/[0.04] to-transparent p-4 sm:p-5 space-y-3 ring-1 ring-primary/15">
+                        <p className="text-sm sm:text-base font-bold text-white tracking-tight">
+                          Prediction vs actual (your window)
+                        </p>
+                        {evaluation && evaluation.startPrice > 0 ? (
+                          <>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                              <div>
+                                <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wide">
+                                  Price at start
+                                </p>
+                                <p className="font-mono font-bold text-white text-base sm:text-lg">
+                                  {formatCurrency(evaluation.startPrice, 4)}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wide">
+                                  Price after window
+                                </p>
+                                <p className="font-mono font-bold text-white text-base sm:text-lg">
+                                  {formatCurrency(evaluation.endPrice, 4)}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wide">
+                                  Actual move
+                                </p>
+                                <p
+                                  className={`font-bold text-base sm:text-lg ${
+                                    evaluation.actualChangePercent >= 0 ? "text-emerald-400" : "text-red-400"
+                                  }`}
+                                >
+                                  {formatPercentage(evaluation.actualChangePercent, 2, true)}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wide">
+                                  Accuracy read
+                                </p>
+                                <div className="mt-0.5">
+                                  <OutcomeBadge outcome={evaluation.result} size="md" />
+                                </div>
+                              </div>
+                            </div>
+                            <p className="text-xs text-muted-foreground leading-relaxed">
+                              Compared to your expected{" "}
+                              <span className="text-foreground font-medium">
+                                {prediction.expected_move_direction || "—"} /{" "}
+                                {prediction.expected_move_percent != null
+                                  ? formatPercentage(prediction.expected_move_percent, 1, false)
+                                  : "—"}
+                              </span>
+                              . Open <strong>Probability Outcome</strong> below for the full report.
+                            </p>
+                            {outcomeScoredAt && (
+                              <p className="text-[11px] text-primary/90 font-medium">
+                                Outcome scored {formatDateTime(outcomeScoredAt)}
+                              </p>
+                            )}
+                          </>
+                        ) : isAnalyzing ? (
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                            Scoring start vs end price over your window…
+                          </div>
+                        ) : (
+                          <p className="text-sm text-muted-foreground leading-relaxed">
+                            This prediction&apos;s timeframe finished at{" "}
+                            <span className="text-foreground font-semibold">
+                              {formatDateTime(expectedTime)}
+                            </span>
+                            . Tap <strong>Analyze outcome</strong> above to fetch closing prices for the window and
+                            label how accurate the call was.
+                          </p>
+                        )}
+                        {recordUpdatedMs && prediction.updated_at && (
+                          <p className="text-[11px] text-amber-200/90 border-t border-white/10 pt-2">
+                            This saved row was updated again at {formatDateTime(prediction.updated_at)} (for example
+                            after a refresh or re-save), so the snapshot may differ slightly from the original run time.
+                          </p>
+                        )}
+                      </div>
+                    )}
+
                     {/* Multi-Horizon Forecasts */}
                     {prediction.raw_response?.geminiForecast?.forecasts && (
                       <Collapsible>
                         <CollapsibleTrigger asChild>
-                          <Button variant="ghost" className="w-full justify-between p-0 h-auto hover:bg-white/5">
-                            <h3 className="text-sm font-medium text-white">Multi-Horizon Forecasts</h3>
-                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                          <Button variant="ghost" className="w-full justify-between p-0 h-auto hover:bg-white/5 gap-2">
+                            <span className="flex items-center gap-2 min-w-0">
+                              <h3 className="text-sm font-medium text-white">Multi-Horizon Forecasts</h3>
+                              <span
+                                className="shrink-0 inline-flex"
+                                onClick={(e) => e.stopPropagation()}
+                                onKeyDown={(e) => e.stopPropagation()}
+                              >
+                                <CardInfoTooltip text={HELP.multiHorizonTable} className="text-zinc-500" />
+                              </span>
+                            </span>
+                            <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
                           </Button>
                         </CollapsibleTrigger>
                         <CollapsibleContent className="mt-3">
@@ -495,6 +633,9 @@ export default function PredictionsPage() {
                             predictedAt={new Date(prediction.created_at)}
                             marketStatus={marketStatus}
                           />
+                          <p className="text-[10px] sm:text-xs text-muted-foreground mt-2 leading-relaxed">
+                            {HELP.multiHorizonTable}
+                          </p>
                         </CollapsibleContent>
                       </Collapsible>
                     )}
@@ -503,9 +644,18 @@ export default function PredictionsPage() {
                     {prediction.raw_response?.geminiForecast?.support_resistance && (
                       <Collapsible>
                         <CollapsibleTrigger asChild>
-                          <Button variant="ghost" className="w-full justify-between p-0 h-auto hover:bg-white/5">
-                            <h3 className="text-sm font-medium text-white">Key Price Levels</h3>
-                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                          <Button variant="ghost" className="w-full justify-between p-0 h-auto hover:bg-white/5 gap-2">
+                            <span className="flex items-center gap-2 min-w-0">
+                              <h3 className="text-sm font-medium text-white">Key Price Levels</h3>
+                              <span
+                                className="shrink-0 inline-flex"
+                                onClick={(e) => e.stopPropagation()}
+                                onKeyDown={(e) => e.stopPropagation()}
+                              >
+                                <CardInfoTooltip text={HELP.priceLevels} className="text-zinc-500" />
+                              </span>
+                            </span>
+                            <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
                           </Button>
                         </CollapsibleTrigger>
                         <CollapsibleContent className="mt-3">
@@ -514,6 +664,9 @@ export default function PredictionsPage() {
                             resistanceLevels={prediction.raw_response.geminiForecast.support_resistance.resistances}
                             currentPrice={prediction.current_price || 0}
                           />
+                          <p className="text-[10px] sm:text-xs text-muted-foreground mt-2 leading-relaxed">
+                            {HELP.priceLevelsCardGuide}
+                          </p>
                         </CollapsibleContent>
                       </Collapsible>
                     )}
@@ -549,7 +702,11 @@ export default function PredictionsPage() {
                         <CollapsibleContent className="mt-3 space-y-4">
                           <PostPredictionReport
                             symbol={prediction.symbol}
-                            timeframe={prediction.timeframe}
+                            timeframe={
+                              prediction.timeframe === "custom" && prediction.raw_response?.timeframe
+                                ? String(prediction.raw_response.timeframe)
+                                : prediction.timeframe
+                            }
                             evaluation={analysisStates[prediction.id]?.data?.evaluation}
                             marketData={analysisStates[prediction.id]?.data?.marketData}
                             ai={analysisStates[prediction.id]?.data?.ai}
@@ -574,9 +731,18 @@ export default function PredictionsPage() {
                     {prediction.raw_response?.meta?.pipeline && (
                       <Collapsible>
                         <CollapsibleTrigger asChild>
-                          <Button variant="ghost" className="w-full justify-between p-0 h-auto hover:bg-white/5">
-                            <h3 className="text-sm font-medium text-white">Analysis Timeline</h3>
-                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                          <Button variant="ghost" className="w-full justify-between p-0 h-auto hover:bg-white/5 gap-2">
+                            <span className="flex items-center gap-2 min-w-0">
+                              <h3 className="text-sm font-medium text-white">Analysis Timeline</h3>
+                              <span
+                                className="shrink-0 inline-flex"
+                                onClick={(e) => e.stopPropagation()}
+                                onKeyDown={(e) => e.stopPropagation()}
+                              >
+                                <CardInfoTooltip text={HELP.analysisTimelineCard} className="text-zinc-500" />
+                              </span>
+                            </span>
+                            <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
                           </Button>
                         </CollapsibleTrigger>
                         <CollapsibleContent className="mt-3">
@@ -593,6 +759,12 @@ export default function PredictionsPage() {
                             symbol={prediction.symbol}
                             marketStatus={marketStatus}
                           />
+                          <p className="text-[10px] sm:text-xs text-muted-foreground mt-2 leading-relaxed">
+                            <span className="font-semibold text-foreground/85">Pipeline: </span>
+                            {HELP.analysisTimelineCard}{" "}
+                            <span className="font-semibold text-foreground/85">Forecast rows: </span>
+                            {HELP.probTimeline}
+                          </p>
                         </CollapsibleContent>
                       </Collapsible>
                     )}

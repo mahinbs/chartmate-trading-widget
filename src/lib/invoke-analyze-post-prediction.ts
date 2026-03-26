@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getEffectiveStart, getEffectiveTarget } from "@/lib/market-hours";
+import { resolvePredictionHorizon } from "@/lib/prediction-window";
 import type { CachedAnalysisData } from "@/lib/prediction-analysis-cache";
 
 export interface PredictionRow {
@@ -23,7 +24,8 @@ export async function invokeAnalyzePostPrediction(
   toOverride?: Date,
 ): Promise<CachedAnalysisData> {
   const effectiveStart = getEffectiveStart(new Date(prediction.created_at), marketStatus);
-  const effectiveEnd = toOverride || getEffectiveTarget(prediction.timeframe, effectiveStart);
+  const horizon = resolvePredictionHorizon(prediction.timeframe, prediction.raw_response);
+  const effectiveEnd = toOverride || getEffectiveTarget(horizon, effectiveStart);
 
   const requestBody = {
     symbol: prediction.symbol,

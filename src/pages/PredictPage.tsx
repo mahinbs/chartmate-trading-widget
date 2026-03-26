@@ -932,6 +932,10 @@ const PredictPage = () => {
           geminiForecast: predictionData.geminiForecast,
           savedUserProfile: userProfile,
           savedDisplayCurrency: displayCurrency,
+          focusTimeframe:
+            timeframe === "custom" && customTimeframe
+              ? customTimeframe
+              : timeframe,
         },
       });
 
