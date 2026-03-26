@@ -1362,6 +1362,29 @@ function strField(v: unknown): string {
   return typeof v === "string" && v.trim().length > 0 ? v.trim() : "";
 }
 
+/**
+ * Model text often cites its pre-blend score; we show heuristic+Gemini blend in the UI.
+ * Strip those stale claims so the headline number never fights the paragraph.
+ */
+function stripStaleScoreClaims(text: string, finalScore: number): string {
+  let t = (text || "").trim();
+  if (!t) return t;
+  t = t.replace(/\b(?:scored at|scored)\s*:?\s*\d{1,3}(?:\s*\/\s*100)?\b/gi, "");
+  t = t.replace(/\b(?:a\s+)?score\s+of\s+\d{1,3}(?:\s*\/\s*100)?\b/gi, "");
+  t = t.replace(/\bgiven\s+(?:a\s+)?score\s+of\s+\d{1,3}\b/gi, "");
+  t = t.replace(/\bassigned\s+(?:a\s+)?(?:score|rating)\s+of\s+\d{1,3}\b/gi, "");
+  t = t.replace(/\bcomposite\s*(?:→|->)\s*\d{1,3}\s*\/\s*100\b/gi, `Composite → ${finalScore}/100`);
+  t = t.replace(/\s{2,}/g, " ").replace(/\s+([.,;:])/g, "$1").replace(/^[,;.:\s]+/, "").trim();
+  return t;
+}
+
+/** Single source of truth line + cleaned reasoning (no other 0–100 headline in prose). */
+function whyThisScoreAligned(body: string, finalScore: number): string {
+  const cleaned = stripStaleScoreClaims(body, finalScore);
+  if (!cleaned) return `Blended score ${finalScore}/100 (rules + model).`;
+  return `Blended score ${finalScore}/100 — ${cleaned}`;
+}
+
 /** Rule-based quality read so we never silently default to 50 with no basis. */
 function heuristicMergeRow(raw: RawSignal, ind: RealIndicators | null): MergedAiRow {
   const rsiBar = raw.marketData?.rsi14;
@@ -1532,9 +1555,13 @@ function mergeAiScoresIntoRaw(
     const aiWhy = strField(r.whyThisScore);
 
     if (aiScore === null) {
+      const fs = h.probabilityScore;
       return {
         ...h,
-        rationale: (aiRationale || h.rationale) + " (AI omitted numeric score; rule-based score used.)",
+        whyThisScore: whyThisScoreAligned(aiWhy || h.whyThisScore, fs),
+        rationale:
+          `${stripStaleScoreClaims((aiRationale || h.rationale) + " (AI omitted numeric score; rule-based score used.)", fs)} Same blended score as the headline: ${fs}/100.`,
+        rejectionDetail: stripStaleScoreClaims(h.rejectionDetail, fs),
         scoreSource: "heuristic",
       };
     }
@@ -1553,7 +1580,7 @@ function mergeAiScoresIntoRaw(
       : h.verdict;
 
     const entryExitRuleSummary = aiEntry || h.entryExitRuleSummary;
-    const whyThisScore = aiWhy || h.whyThisScore;
+    const whyThisScore = whyThisScoreAligned(aiWhy || h.whyThisScore, probabilityScore);
     const liveViability = s.isLive ? (aiLive || h.liveViability) : "";
     let rejectionDetail = aiReject || h.rejectionDetail;
     if (verdict === "reject" && !rejectionDetail) {
@@ -1565,10 +1592,12 @@ function mergeAiScoresIntoRaw(
     if (verdict === "confirm") {
       rejectionDetail = rejectionDetail || "";
     }
+    rejectionDetail = stripStaleScoreClaims(rejectionDetail, probabilityScore);
 
-    const rationale = aiVague
+    const rationaleCore = aiVague
       ? `${h.whyThisScore} Model returned a neutral score with thin text; prioritizing structured rule read.`
       : `${aiRationale || "Model assessment."} Rule-based cross-check: ${h.whyThisScore}`;
+    const rationale = `${stripStaleScoreClaims(rationaleCore, probabilityScore)} Same blended score as the headline: ${probabilityScore}/100.`;
 
     return {
       probabilityScore,
@@ -1738,7 +1767,7 @@ Return ONLY a JSON array (no markdown), SAME LENGTH AND SAME ORDER as input. Eac
   "verdict": "confirm" | "reject" | "review",
   "rationale": string (2-4 sentences; cite RSI/MACD/BB or say explicitly if missing),
   "entryExitRuleSummary": string (one sentence: what the strategy rule implies for this bar),
-  "whyThisScore": string (explicit tie from indicators + freshness/live flag to the number),
+  "whyThisScore": string (indicator + context only; do NOT write a different numeric score here — the server blends your probabilityScore with rules; if you mention a score it must equal probabilityScore),
   "liveViability": string (empty "" if not live; if live, why it could work OR what breaks it),
   "rejectionDetail": string (if verdict is reject or review: why not a clean confirm; if confirm: short risk caveat or "") }
 
