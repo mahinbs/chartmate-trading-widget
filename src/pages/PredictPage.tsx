@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -86,6 +86,12 @@ import {
 import gsap from "gsap";
 import { Container } from "@/components/layout/Container";
 import { formatCurrency } from "@/lib/display-utils";
+import { isUsdDenominatedSymbol } from "@/lib/tradingview-symbols";
+import { fetchUsdPerInr } from "@/lib/fx-inr-usd";
+import {
+  convertQuoteToDisplayAmount,
+  convertDisplayInputToQuoteAmount,
+} from "@/lib/convert-quote-display-currency";
 import type { ActiveTrade } from "@/services/tradeTrackingService";
 import {
   predictionRowToResult,
@@ -443,6 +449,8 @@ const PredictPage = () => {
   } | null>(null);
   const [assignedStrategy, setAssignedStrategy] = useState<string | null>(null);
   const [displayCurrency, setDisplayCurrency] = useState<"INR" | "USD">("INR");
+  /** USD per 1 INR — loaded on results when display currency ≠ quote currency */
+  const [usdPerInr, setUsdPerInr] = useState<number | null>(null);
   const [isPaperTrade, setIsPaperTrade] = useState(false);
   const [showPremiumDialog, setShowPremiumDialog] = useState(false);
   const [checkingOnboarding, setCheckingOnboarding] = useState(false);
@@ -463,6 +471,47 @@ const PredictPage = () => {
   const [sellSharesInput, setSellSharesInput] = useState("");
   const [buyMoreLoading, setBuyMoreLoading] = useState(false);
   const [sellLoading, setSellLoading] = useState(false);
+
+  const quoteInUsd = useMemo(
+    () => Boolean(result && isUsdDenominatedSymbol(result.symbol)),
+    [result?.symbol],
+  );
+
+  const effectivePriceCurrency = useMemo((): "INR" | "USD" => {
+    if (!result) return displayCurrency;
+    const mismatch =
+      (displayCurrency === "USD" && !quoteInUsd) ||
+      (displayCurrency === "INR" && quoteInUsd);
+    if (mismatch && (usdPerInr == null || usdPerInr <= 0))
+      return quoteInUsd ? "USD" : "INR";
+    return displayCurrency;
+  }, [result, displayCurrency, usdPerInr, quoteInUsd]);
+
+  const formatPriceForUi = useCallback(
+    (n: number, decimals = 2) =>
+      formatCurrency(
+        convertQuoteToDisplayAmount(n, quoteInUsd, displayCurrency, usdPerInr),
+        decimals,
+        false,
+        effectivePriceCurrency,
+      ),
+    [quoteInUsd, displayCurrency, usdPerInr, effectivePriceCurrency],
+  );
+
+  useEffect(() => {
+    if (currentStep !== "results" || !result) return;
+    const q = isUsdDenominatedSymbol(result.symbol);
+    const needsFx =
+      (displayCurrency === "USD" && !q) || (displayCurrency === "INR" && q);
+    if (!needsFx) return;
+    let cancelled = false;
+    fetchUsdPerInr().then((r) => {
+      if (!cancelled && r != null) setUsdPerInr(r);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentStep, result?.symbol, displayCurrency, result]);
 
   // ── Mock / Paper order + track ────────────────────────────────────────────
   // `selectedAction` = user's chosen direction from StrategySelectionDialog.
@@ -768,7 +817,9 @@ const PredictPage = () => {
     const presetCurrency = (
       preset.profile as { displayCurrency?: "INR" | "USD" }
     )?.displayCurrency;
-    if (presetCurrency) setDisplayCurrency(presetCurrency);
+    // When keepSymbol is true, the user just set symbol + amount + currency on step 1;
+    // do not overwrite their currency with an older preset (common INR default).
+    if (presetCurrency && !keepSymbol) setDisplayCurrency(presetCurrency);
 
     if (!keepSymbol) {
       setSymbol("");
@@ -1785,6 +1836,8 @@ const PredictPage = () => {
                       geminiForecast={result.geminiForecast}
                       volumeData={result.volumeData}
                       analysedAt={predictedAt}
+                      displayCurrency={displayCurrency}
+                      usdPerInr={usdPerInr}
                       selectedHorizon={
                         timeframe === "custom" && customTimeframe.trim()
                           ? customTimeframe.trim()
@@ -1846,7 +1899,12 @@ const PredictPage = () => {
                   {result.geminiForecast && (
                     <DecisionScreen
                       symbol={result.symbol}
-                      currentPrice={result.currentPrice}
+                      currentPrice={convertQuoteToDisplayAmount(
+                        result.currentPrice,
+                        quoteInUsd,
+                        displayCurrency,
+                        usdPerInr,
+                      )}
                       investment={parseFloat(investment)}
                       action={
                         result.geminiForecast.action_signal?.action || "HOLD"
@@ -1867,10 +1925,19 @@ const PredictPage = () => {
                       }}
                       positionSize={{
                         shares: result.positionSize?.shares || 0,
-                        costPerShare:
+                        costPerShare: convertQuoteToDisplayAmount(
                           result.positionSize?.costPerShare ||
-                          result.currentPrice,
-                        totalCost: result.positionSize?.totalCost || 0,
+                            result.currentPrice,
+                          quoteInUsd,
+                          displayCurrency,
+                          usdPerInr,
+                        ),
+                        totalCost: convertQuoteToDisplayAmount(
+                          result.positionSize?.totalCost || 0,
+                          quoteInUsd,
+                          displayCurrency,
+                          usdPerInr,
+                        ),
                       }}
                       recommendedHoldPeriod={
                         result.geminiForecast.positioning_guidance
@@ -1880,6 +1947,7 @@ const PredictPage = () => {
                       takeProfit={userProfile.targetProfitPercentage || 15}
                       leverage={userProfile.leverage || 1}
                       currency={displayCurrency}
+                      priceCurrency={effectivePriceCurrency}
                       isCrypto={result.isCrypto}
                     />
                   )}
@@ -1901,6 +1969,7 @@ const PredictPage = () => {
                             result.geminiForecast.support_resistance.resistances
                           }
                           currentPrice={result.currentPrice}
+                          formatLevelPrice={(lvl) => formatPriceForUi(lvl, 2)}
                         />
                       </CardContent>
                     </Card>
@@ -2001,7 +2070,12 @@ const PredictPage = () => {
                         {/* Capital Scenarios - Small vs Large investors */}
                         {result.geminiForecast?.expected_roi && (
                           <CapitalScenarios
-                            currentPrice={result.currentPrice}
+                            currentPrice={convertQuoteToDisplayAmount(
+                              result.currentPrice,
+                              quoteInUsd,
+                              displayCurrency,
+                              usdPerInr,
+                            )}
                             expectedROI={{
                               best:
                                 result.geminiForecast.expected_roi.best_case ||
@@ -2018,6 +2092,7 @@ const PredictPage = () => {
                             }
                             leverage={userProfile.leverage}
                             allowFractionalShares={true}
+                            currency={displayCurrency}
                           />
                         )}
 
@@ -2034,6 +2109,7 @@ const PredictPage = () => {
                                 : 5
                             }
                             currentLeverage={userProfile.leverage || 1}
+                            currency={displayCurrency}
                           />
                         ) : null}
 
@@ -2248,8 +2324,7 @@ const PredictPage = () => {
                               Current price
                             </p>
                             <p className="text-lg font-bold text-white">
-                              {result.isCrypto ? "$" : "₹"}
-                              {result.currentPrice.toLocaleString()}
+                              {formatPriceForUi(result.currentPrice)}
                             </p>
                           </div>
                         </div>
@@ -2458,8 +2533,7 @@ const PredictPage = () => {
                                   Entry price
                                 </p>
                                 <p className="font-bold text-sm text-white">
-                                  {result.isCrypto ? "$" : "₹"}
-                                  {placedTrade.entryPrice.toLocaleString()}
+                                  {formatPriceForUi(placedTrade.entryPrice)}
                                 </p>
                               </div>
                               <div className="rounded bg-background/60 border p-2">
@@ -2467,8 +2541,7 @@ const PredictPage = () => {
                                   Live price
                                 </p>
                                 <p className="font-bold text-sm text-white">
-                                  {result.isCrypto ? "$" : "₹"}
-                                  {livePrice.toLocaleString()}
+                                  {formatPriceForUi(livePrice)}
                                 </p>
                               </div>
                               <div
@@ -2476,9 +2549,18 @@ const PredictPage = () => {
                               >
                                 <p className="text-muted-foreground">P&amp;L</p>
                                 <p className={`font-bold text-sm ${pnlTone}`}>
-                                  {pnlPrefix}
-                                  {result.isCrypto ? "$" : "₹"}
-                                  {(isNeutral ? 0 : Math.abs(pnl)).toFixed(2)}
+                                  {!isNeutral && isProfit ? "+" : ""}
+                                  {formatCurrency(
+                                    convertQuoteToDisplayAmount(
+                                      isNeutral ? 0 : Math.abs(pnl),
+                                      quoteInUsd,
+                                      displayCurrency,
+                                      usdPerInr,
+                                    ),
+                                    2,
+                                    false,
+                                    effectivePriceCurrency,
+                                  )}
                                 </p>
                                 <p className={`text-[10px] ${pnlToneSoft}`}>
                                   {pnlPrefix}
@@ -2498,8 +2580,12 @@ const PredictPage = () => {
                               <span>
                                 Invested:{" "}
                                 <strong className="text-white">
-                                  {result.isCrypto ? "$" : "₹"}
-                                  {placedTrade.investmentAmount.toLocaleString()}
+                                  {formatCurrency(
+                                    placedTrade.investmentAmount,
+                                    0,
+                                    false,
+                                    displayCurrency,
+                                  )}
                                 </strong>
                               </span>
                               {placedTrade.stopLossPercentage && (
@@ -2595,8 +2681,7 @@ const PredictPage = () => {
                         Current avg price
                       </p>
                       <p className="font-bold">
-                        {result?.isCrypto ? "$" : "₹"}
-                        {placedTrade.entryPrice.toLocaleString()}
+                        {formatPriceForUi(placedTrade.entryPrice)}
                       </p>
                     </div>
                     <div>
@@ -2608,9 +2693,7 @@ const PredictPage = () => {
                   </div>
                 )}
                 <div className="space-y-1.5">
-                  <Label>
-                    Additional amount ({result?.isCrypto ? "USD" : "INR"})
-                  </Label>
+                  <Label>Additional amount ({displayCurrency})</Label>
                   <Input
                     type="number"
                     min={1}
@@ -2623,10 +2706,15 @@ const PredictPage = () => {
                   <p className="text-xs text-muted-foreground">
                     ≈{" "}
                     {Math.floor(
-                      parseFloat(buyMoreAmount) / result.currentPrice,
+                      convertDisplayInputToQuoteAmount(
+                        parseFloat(buyMoreAmount),
+                        quoteInUsd,
+                        displayCurrency,
+                        usdPerInr,
+                      ) / result.currentPrice,
                     )}{" "}
-                    more shares at current price {result.isCrypto ? "$" : "₹"}
-                    {result.currentPrice}
+                    more shares at current price{" "}
+                    {formatPriceForUi(result.currentPrice)}
                   </p>
                 )}
               </div>
@@ -2652,7 +2740,12 @@ const PredictPage = () => {
                         await import("@/services/tradeTrackingService");
                       const res = await tradeTrackingService.addToPosition({
                         tradeId: placedTrade.id,
-                        additionalAmount: parseFloat(buyMoreAmount),
+                        additionalAmount: convertDisplayInputToQuoteAmount(
+                          parseFloat(buyMoreAmount),
+                          quoteInUsd,
+                          displayCurrency,
+                          usdPerInr,
+                        ),
                         currentPrice: result.currentPrice,
                         allowFractional: result.isCrypto,
                       });
@@ -2721,8 +2814,7 @@ const PredictPage = () => {
                               Entry
                             </p>
                             <p className="font-bold">
-                              {result?.isCrypto ? "$" : "₹"}
-                              {placedTrade.entryPrice.toLocaleString()}
+                              {formatPriceForUi(placedTrade.entryPrice)}
                             </p>
                           </div>
                           <div>
@@ -2730,8 +2822,7 @@ const PredictPage = () => {
                               Live price
                             </p>
                             <p className="font-bold">
-                              {result?.isCrypto ? "$" : "₹"}
-                              {livePrice.toLocaleString()}
+                              {formatPriceForUi(livePrice)}
                             </p>
                           </div>
                           <div>
@@ -2774,9 +2865,18 @@ const PredictPage = () => {
                                     : "text-red-600 font-semibold"
                                 }
                               >
-                                {isProfit ? "+" : ""}
-                                {result?.isCrypto ? "$" : "₹"}
-                                {Math.abs(estimatedPnl).toFixed(2)}
+                                {estimatedPnl > 0 ? "+" : ""}
+                                {formatCurrency(
+                                  convertQuoteToDisplayAmount(
+                                    Math.abs(estimatedPnl),
+                                    quoteInUsd,
+                                    displayCurrency,
+                                    usdPerInr,
+                                  ),
+                                  2,
+                                  false,
+                                  effectivePriceCurrency,
+                                )}
                               </span>
                             </p>
                           )}

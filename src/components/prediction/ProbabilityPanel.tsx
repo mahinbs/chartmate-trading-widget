@@ -1,5 +1,7 @@
 import { useMemo, type ReactNode } from "react";
-import { formatKeyDriver } from "@/lib/display-utils";
+import { formatCurrency, formatKeyDriver } from "@/lib/display-utils";
+import { isUsdDenominatedSymbol } from "@/lib/tradingview-symbols";
+import { convertQuoteToDisplayAmount } from "@/lib/convert-quote-display-currency";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -66,9 +68,13 @@ interface ProbabilityPanelProps {
   onRefresh?: () => void;
   /**
    * User-selected analysis horizon (e.g. `1h`, `4h`, or custom `2d`).
-   * Shown after each panel card title, e.g. “… for next 1 hr”.
+   * Shown after each panel card title, e.g. “… (for next 1 hr)”.
    */
   selectedHorizon?: string;
+  /** User display currency; defaults to match instrument quote (USD vs INR). */
+  displayCurrency?: "INR" | "USD";
+  /** From Frankfurter INR→USD when converting levels for display */
+  usdPerInr?: number | null;
 }
 
 /* ─────────────────────────────── helpers ────────────────────────────── */
@@ -274,12 +280,7 @@ function PanelSectionTitle({
       <Icon className={cn("h-4 w-4 shrink-0 mt-0.5", iconClassName)} aria-hidden />
       <span className="min-w-0 leading-snug">
         {children}
-        {horizonLabel ? (
-          <span className="font-normal text-zinc-400">
-            {" "}
-            for next {horizonLabel}
-          </span>
-        ) : null}
+        {horizonLabel ? <>{" "}(for next {horizonLabel})</> : null}
       </span>
     </CardTitle>
   );
@@ -293,6 +294,8 @@ export function ProbabilityPanel({
   analysedAt,
   onRefresh,
   selectedHorizon,
+  displayCurrency: displayCurrencyProp,
+  usdPerInr = null,
 }: ProbabilityPanelProps) {
   const forecasts = geminiForecast.forecasts ?? [];
   const primaryForecast = forecasts[0];
@@ -441,6 +444,24 @@ export function ProbabilityPanel({
 
   const horizonDisplay = formatSelectedHorizonForPanel(selectedHorizon);
 
+  const quoteInUsd = isUsdDenominatedSymbol(symbol);
+  const dc = displayCurrencyProp ?? (quoteInUsd ? "USD" : "INR");
+  const mismatch =
+    (dc === "USD" && !quoteInUsd) || (dc === "INR" && quoteInUsd);
+  const effectivePanelPriceCurrency: "INR" | "USD" =
+    mismatch && (usdPerInr == null || usdPerInr <= 0)
+      ? quoteInUsd
+        ? "USD"
+        : "INR"
+      : dc;
+  const formatPanelPrice = (n: number) =>
+    formatCurrency(
+      convertQuoteToDisplayAmount(n, quoteInUsd, dc, mismatch ? usdPerInr : null),
+      2,
+      false,
+      effectivePanelPriceCurrency,
+    );
+
   return (
     <div className="space-y-4">
       {/* Section header */}
@@ -451,12 +472,7 @@ export function ProbabilityPanel({
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-lg font-bold text-white tracking-tight">
                 AI Probability Analysis
-                {horizonDisplay ? (
-                  <span className="font-semibold text-zinc-400">
-                    {" "}
-                    · next {horizonDisplay}
-                  </span>
-                ) : null}
+                {horizonDisplay ? ` (for next ${horizonDisplay})` : ""}
               </h2>
               <CardInfoTooltip text={HELP.probabilityPanel} className="text-zinc-500" />
             </div>
@@ -756,7 +772,7 @@ export function ProbabilityPanel({
                     >
                       {tag === "res" ? "R" : "S"}
                     </Badge>
-                    <span className="font-mono text-white">${price.toLocaleString()}</span>
+                    <span className="font-mono text-white">{formatPanelPrice(price)}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="w-16 bg-white/5 rounded-full h-1.5 overflow-hidden">

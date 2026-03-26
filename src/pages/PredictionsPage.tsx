@@ -517,9 +517,11 @@ export default function PredictionsPage() {
                           className={cn(
                             "grid gap-3 sm:gap-4",
                             "grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto]",
-                            "items-start sm:items-center",
+                            // Top-align so status/actions never vertically center over price/confidence
+                            "items-start",
                           )}
                         >
+                          <div className="min-w-0">
                           <SummaryHeader
                             variant="flat"
                             symbol={prediction.symbol}
@@ -533,10 +535,11 @@ export default function PredictionsPage() {
                             }
                             confidence={prediction.confidence ?? undefined}
                           />
+                          </div>
                           <div
                             className={cn(
                               "flex flex-wrap items-center gap-2",
-                              "w-full sm:w-auto sm:shrink-0 sm:flex-nowrap sm:justify-end",
+                              "w-full sm:w-auto sm:shrink-0 sm:justify-end sm:self-start",
                             )}
                             onClick={(e) => e.stopPropagation()}
                             onKeyDown={(e) => e.stopPropagation()}

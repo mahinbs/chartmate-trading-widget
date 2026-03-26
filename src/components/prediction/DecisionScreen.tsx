@@ -35,8 +35,10 @@ interface DecisionScreenProps {
   stopLoss: number;
   takeProfit: number;
   leverage?: number;
-  /** Display currency for all amounts (INR or USD). Default USD. */
+  /** Display currency for notional, ROI % amounts, SL/TP (user’s chosen currency). */
   currency?: "INR" | "USD";
+  /** Quote currency for spot / share prices; defaults to `currency`. */
+  priceCurrency?: "INR" | "USD";
   /** If true, show fractional units (crypto). */
   isCrypto?: boolean;
 }
@@ -58,10 +60,14 @@ export function DecisionScreen({
   takeProfit,
   leverage = 1,
   currency = "USD",
+  priceCurrency: priceCurrencyProp,
   isCrypto = false,
 }: DecisionScreenProps) {
+  const priceCurrency = priceCurrencyProp ?? currency;
   const fmt = (amount: number, decimals = 2, allowNegative = false) =>
     formatCurrency(amount, decimals, allowNegative, currency);
+  const fmtPrice = (amount: number, decimals = 2, allowNegative = false) =>
+    formatCurrency(amount, decimals, allowNegative, priceCurrency);
 
   const bestCaseAmount = (investment * expectedROI.best) / 100;
   const likelyCaseAmount = (investment * expectedROI.likely) / 100;
@@ -124,7 +130,7 @@ export function DecisionScreen({
                   <span className="font-semibold text-foreground">{symbol}</span>
                 </span>
                 <span className="text-border">·</span>
-                <span>Spot {fmt(currentPrice, isCrypto ? 4 : 2)}</span>
+                <span>Spot {fmtPrice(currentPrice, isCrypto ? 4 : 2)}</span>
                 <span className="text-border">·</span>
                 <span>Notional {fmt(investment, 0)}</span>
               </div>
@@ -220,11 +226,11 @@ export function DecisionScreen({
               </div>
               <div className="flex justify-between gap-2">
                 <span className="text-muted-foreground">{isCrypto ? "Price / unit" : "Price / share"}</span>
-                <span className="font-medium text-foreground tabular-nums">{fmt(positionSize.costPerShare, 2)}</span>
+                <span className="font-medium text-foreground tabular-nums">{fmtPrice(positionSize.costPerShare, 2)}</span>
               </div>
               <div className="flex justify-between gap-2 pt-2 border-t border-primary/10">
                 <span className="text-muted-foreground">Total cost</span>
-                <span className="font-semibold text-foreground tabular-nums">{fmt(positionSize.totalCost, 2)}</span>
+                <span className="font-semibold text-foreground tabular-nums">{fmtPrice(positionSize.totalCost, 2)}</span>
               </div>
             </div>
           </div>

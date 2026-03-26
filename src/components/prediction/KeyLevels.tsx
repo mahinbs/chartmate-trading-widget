@@ -13,9 +13,15 @@ interface KeyLevelsProps {
   supportLevels?: SupportResistanceLevel[]
   resistanceLevels?: SupportResistanceLevel[]
   currentPrice: number
+  /** When set, used for level prices (e.g. after INR↔USD conversion for display). */
+  formatLevelPrice?: (level: number) => string
 }
 
-export function KeyLevels({ supportLevels = [], resistanceLevels = [], currentPrice }: KeyLevelsProps) {
+export function KeyLevels({ supportLevels = [], resistanceLevels = [], currentPrice, formatLevelPrice }: KeyLevelsProps) {
+  const formatLevel = (level: number) =>
+    formatLevelPrice
+      ? formatLevelPrice(level)
+      : formatCurrency(asNumber(level), 2)
   const getStrengthColor = (strength: number) => {
     const normalizedStrength = asNumber(strength)
     if (normalizedStrength >= 0.8) return "bg-green-500/20 text-green-700 border-green-500/30"
@@ -54,7 +60,7 @@ export function KeyLevels({ supportLevels = [], resistanceLevels = [], currentPr
               .map((support, index) => (
                 <div key={index} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
                   <div>
-                    <p className="font-mono font-semibold">{formatCurrency(asNumber(support.level), 2)}</p>
+                    <p className="font-mono font-semibold">{formatLevel(asNumber(support.level))}</p>
                     <p className="text-xs text-muted-foreground">
                       {formatDistance(asNumber(support.level))} from current
                     </p>
@@ -85,7 +91,7 @@ export function KeyLevels({ supportLevels = [], resistanceLevels = [], currentPr
               .map((resistance, index) => (
                 <div key={index} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
                   <div>
-                    <p className="font-mono font-semibold">{formatCurrency(asNumber(resistance.level), 2)}</p>
+                    <p className="font-mono font-semibold">{formatLevel(asNumber(resistance.level))}</p>
                     <p className="text-xs text-muted-foreground">
                       {formatDistance(asNumber(resistance.level))} from current
                     </p>

@@ -7,13 +7,17 @@ interface LeverageSimulatorProps {
   investment: number;
   expectedMove: number; // Expected price movement in %
   currentLeverage?: number;
+  currency?: "INR" | "USD";
 }
 
 export function LeverageSimulator({ 
   investment, 
   expectedMove,
-  currentLeverage = 1 
+  currentLeverage = 1,
+  currency = "USD",
 }: LeverageSimulatorProps) {
+  const fmt = (amount: number, decimals: number, allowNegative = false) =>
+    formatCurrency(amount, decimals, allowNegative, currency);
   
   const scenarios = [
     { leverage: 1, label: 'No Leverage (Cash)', safe: true },
@@ -87,7 +91,7 @@ export function LeverageSimulator({
                   {/* Exposure */}
                   <div className="flex justify-between text-muted-foreground">
                     <span>Total Exposure:</span>
-                    <span className="font-medium">{formatCurrency(scenario.totalExposure, 0)}</span>
+                    <span className="font-medium">{fmt(scenario.totalExposure, 0)}</span>
                   </div>
 
                   {/* Gain Scenario */}
@@ -99,7 +103,7 @@ export function LeverageSimulator({
                       </span>
                       <div className="text-right">
                         <div className="font-bold text-green-600">
-                          +{formatCurrency(scenario.gainAmount, 0)}
+                          +{fmt(scenario.gainAmount, 0)}
                         </div>
                         <div className="text-xs text-green-600">
                           ({formatPercentage(scenario.gainPercent, 1, true)})
@@ -117,7 +121,7 @@ export function LeverageSimulator({
                       </span>
                       <div className="text-right">
                         <div className="font-bold text-red-600">
-                          {formatCurrency(scenario.lossAmount, 0, true)}
+                          {fmt(scenario.lossAmount, 0, true)}
                         </div>
                         <div className="text-xs text-red-600">
                           ({formatPercentage(scenario.lossPercent, 1, true)})
