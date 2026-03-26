@@ -407,17 +407,8 @@ export default function PredictionsPage() {
         {/* Header */}
         <div className="border-b border-white/5 bg-background/80 backdrop-blur-xl z-50">
           <Container className="py-3 sm:py-4">
-            <div className="flex items-center justify-end mb-3">
-              <Button
-                size="sm"
-                onClick={() => navigate("/predict")}
-                className="shadow-[0_0_20px_rgba(20,184,166,0.2)]"
-              >
-                <Plus className="h-4 w-4 mr-1.5" />
-                New Analysis
-              </Button>
-            </div>
-            <div>
+            <div className="flex items-center flex-wrap gap-5 justify-between w-full mb-3">
+            <div className="pt-10 lg:pt-0">
               <h1 className="text-2xl sm:text-3xl font-bold text-gradient flex items-center gap-2">
                 <History className="h-6 w-6 sm:h-8 sm:w-8 text-primary" />
                 My Analyses
@@ -427,6 +418,16 @@ export default function PredictionsPage() {
                 outcomes
               </p>
             </div>
+              <Button
+                size="sm"
+                onClick={() => navigate("/predict")}
+                className="shadow-[0_0_20px_rgba(20,184,166,0.2)]"
+              >
+                <Plus className="h-4 w-4 mr-1.5" />
+                New Analysis
+              </Button>
+            </div>
+            
           </Container>
         </div>
         {/* Main Content */}
@@ -573,10 +574,10 @@ export default function PredictionsPage() {
                         </div>
                       </div>
                       {/* Time Progress */}
-                      <div className="mt-3 sm:mt-4 space-y-2">
+                      <div className="pt-3 sm:pt-4 space-y-2">
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-sm">
-                          <div className="flex items-center gap-2">
-                            <Clock className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                          <div className="flex gap-2">
+                            <Clock className="mt-0.5 h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                             <span className="text-muted-foreground text-xs sm:text-sm">
                               {isExpired
                                 ? `Window ended ${formatDateTime(expectedTime)}`
@@ -682,7 +683,7 @@ export default function PredictionsPage() {
                           <div className="mt-3 space-y-3 sm:mt-4">
                             {evaluation && evaluation.startPrice > 0 ? (
                               <>
-                                <div className="grid grid-cols-1 gap-2 min-[400px]:grid-cols-2 lg:grid-cols-4 lg:gap-3">
+                                <div className="grid grid-cols-1 gap-2 min-[400px]:grid-cols-2 lg:grid-cols-2 lg:gap-3">
                                   <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2.5 min-[400px]:min-h-[4.5rem] sm:px-3.5 sm:py-3">
                                     <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                                       Price at start
@@ -794,7 +795,7 @@ export default function PredictionsPage() {
                       )}
 
                       {/* Multi-Horizon Forecasts */}
-                      {prediction.raw_response?.geminiForecast?.forecasts && (
+                      {/* {prediction.raw_response?.geminiForecast?.forecasts && (
                         <Collapsible>
                           <CollapsibleTrigger asChild>
                             <Button
@@ -832,10 +833,10 @@ export default function PredictionsPage() {
                             </p>
                           </CollapsibleContent>
                         </Collapsible>
-                      )}
+                      )} */}
 
                       {/* Key Levels */}
-                      {prediction.raw_response?.geminiForecast
+                      {/* {prediction.raw_response?.geminiForecast
                         ?.support_resistance && (
                         <Collapsible>
                           <CollapsibleTrigger asChild>
@@ -878,10 +879,10 @@ export default function PredictionsPage() {
                             </p>
                           </CollapsibleContent>
                         </Collapsible>
-                      )}
+                      )} */}
 
                       {/* AI Insights */}
-                      <Collapsible>
+                      {/* <Collapsible>
                         <CollapsibleTrigger asChild>
                           <Button
                             variant="ghost"
@@ -920,10 +921,10 @@ export default function PredictionsPage() {
                             {HELP.probTimeline}
                           </p>
                         </CollapsibleContent>
-                      </Collapsible>
+                      </Collapsible> */}
 
                       {/* AI-Powered Analysis Results */}
-                      {analysisStates[prediction.id]?.data && (
+                      {/* {analysisStates[prediction.id]?.data && (
                         <Collapsible>
                           <CollapsibleTrigger asChild>
                             <Button
@@ -970,10 +971,10 @@ export default function PredictionsPage() {
                             </p>
                           </CollapsibleContent>
                         </Collapsible>
-                      )}
+                      )} */}
 
                       {/* Pipeline Timeline */}
-                      {prediction.raw_response?.meta?.pipeline && (
+                      {/* {prediction.raw_response?.meta?.pipeline && (
                         <Collapsible>
                           <CollapsibleTrigger asChild>
                             <Button
@@ -1018,7 +1019,7 @@ export default function PredictionsPage() {
                             />
                           </CollapsibleContent>
                         </Collapsible>
-                      )}
+                      )} */}
                     </CardContent>
                   </Card>
                 );
