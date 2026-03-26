@@ -310,6 +310,8 @@ const PredictPage = () => {
   const [presetChecked, setPresetChecked] = useState(false);
   // Have we already asked \"use previous details?\" in this flow (after symbol + investment)?
   const [presetPromptShown, setPresetPromptShown] = useState(false);
+  /** Tracks last non-null `saved` query so we can detect /predict?saved=… → /predict */
+  const prevSavedPredictionIdRef = useRef<string | null>(null);
 
   const { signOut, user } = useAuth();
   const navigate = useNavigate();
@@ -927,6 +929,29 @@ const PredictPage = () => {
     setPresetPromptShown(false);
     // Preset dialog is shown when user completes asset + investment and continues
   };
+
+  // Leaving a saved analysis (e.g. sidebar "New Analysis" → /predict) clears `saved` but
+  // React keeps component state — reset to a fresh flow.
+  useEffect(() => {
+    if (savedPredictionId) {
+      prevSavedPredictionIdRef.current = savedPredictionId;
+      return;
+    }
+    const hadSaved = prevSavedPredictionIdRef.current != null;
+    prevSavedPredictionIdRef.current = null;
+    if (!hadSaved) return;
+    startNewPredictionFlow();
+    setLoadedPostOutcome(null);
+    setPlacedTrade(null);
+    setChartAnalysis(null);
+    setChartDataSource(null);
+    setShowAdvancedLoader(false);
+    setLoading(false);
+    setAnalysisReady(false);
+    setMarketClosed(false);
+    setMarketTimeZone(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to `saved` query; same as startNewPredictionFlow
+  }, [savedPredictionId]);
 
   useEffect(() => {
     if (!user?.id || presetChecked) return;

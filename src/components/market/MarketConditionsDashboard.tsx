@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -54,6 +55,126 @@ interface MarketConditions {
   };
 }
 
+/** Mirrors loaded dashboard layout while data is fetching */
+function MarketConditionsDashboardSkeleton() {
+  return (
+    <Card className="border-2 border-primary/20">
+      <CardHeader>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <Skeleton className="h-9 w-9 shrink-0 rounded-lg" />
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Skeleton className="h-7 w-44 sm:w-52" />
+                <Skeleton className="h-5 w-5 shrink-0 rounded-full" />
+              </div>
+              <Skeleton className="h-4 max-w-xl" />
+            </div>
+          </div>
+          <Skeleton className="h-9 w-[5.5rem] shrink-0" />
+        </div>
+      </CardHeader>
+
+      <CardContent className="space-y-6">
+        {/* Safe to trade alert */}
+        <div className="space-y-3 rounded-lg border-2 border-border/80 bg-muted/20 p-4">
+          <Skeleton className="h-6 w-52" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-[92%]" />
+          <Skeleton className="h-4 w-[70%]" />
+        </div>
+
+        {/* Market sentiment block */}
+        <div className="space-y-3 rounded-lg border-2 border-border/60 p-4">
+          <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+            <Skeleton className="h-5 w-44" />
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-6 w-24 rounded-full" />
+              <Skeleton className="h-5 w-5 shrink-0 rounded-full" />
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <Skeleton className="h-4 w-20" />
+            <Skeleton className="h-7 w-24" />
+          </div>
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-[88%]" />
+        </div>
+
+        {/* Major indices */}
+        <div>
+          <div className="mb-3 flex items-center gap-2">
+            <Skeleton className="h-4 w-4 shrink-0 rounded" />
+            <Skeleton className="h-5 w-36" />
+            <Skeleton className="h-5 w-5 shrink-0 rounded-full" />
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            {["a", "b", "c"].map((k) => (
+              <div
+                key={k}
+                className="space-y-2 rounded-lg bg-muted/50 p-3"
+              >
+                <Skeleton className="h-3 w-14" />
+                <Skeleton className="h-6 w-[4.5rem]" />
+                <div className="mt-1 flex items-center gap-2">
+                  <Skeleton className="h-3 w-3 rounded" />
+                  <Skeleton className="h-3 w-12" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* VIX + News impact */}
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
+            <div className="flex items-start justify-between gap-2">
+              <Skeleton className="h-4 w-36" />
+              <div className="flex items-center gap-1">
+                <Skeleton className="h-6 w-16 rounded-full" />
+                <Skeleton className="h-5 w-5 shrink-0 rounded-full" />
+              </div>
+            </div>
+            <Skeleton className="h-10 w-20" />
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="h-3 w-[85%]" />
+            <div className="mt-3 space-y-2 border-t border-border/60 pt-3">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="flex justify-between gap-2">
+                  <Skeleton className="h-3 w-10" />
+                  <Skeleton className="h-3 w-20" />
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
+            <div className="flex items-center justify-between gap-2">
+              <Skeleton className="h-4 w-28" />
+              <Skeleton className="h-5 w-5 shrink-0 rounded-full" />
+            </div>
+            <Skeleton className="h-6 w-28 rounded-full" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-full" />
+            <div className="mt-3 space-y-2 border-t border-border/60 pt-3">
+              <Skeleton className="h-3 w-28" />
+              <Skeleton className="h-3 w-full" />
+              <Skeleton className="h-3 w-[90%]" />
+              <Skeleton className="h-3 w-[75%]" />
+            </div>
+          </div>
+        </div>
+
+        {/* Summary footer */}
+        <div className="space-y-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-[95%]" />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function MarketConditionsDashboard({ symbol }: { symbol?: string }) {
   const [conditions, setConditions] = useState<MarketConditions | null>(null);
   const [loading, setLoading] = useState(true);
@@ -85,15 +206,7 @@ export function MarketConditionsDashboard({ symbol }: { symbol?: string }) {
   }, [fetchConditions]);
 
   if (loading && !conditions) {
-    return (
-      <Card>
-        <CardContent className="p-6">
-          <div className="flex items-center justify-center">
-            <RefreshCw className="h-6 w-6 animate-spin text-primary" />
-          </div>
-        </CardContent>
-      </Card>
-    );
+    return <MarketConditionsDashboardSkeleton />;
   }
 
   if (!conditions) return null;
