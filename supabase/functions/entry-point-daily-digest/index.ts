@@ -198,7 +198,7 @@ Deno.serve(async (req: Request) => {
       const signals = Array.isArray((payload as any)?.signals) ? (payload as any).signals : [];
       const historyId = typeof (payload as any)?.historyId === "string" ? String((payload as any).historyId) : null;
       const live = signals.filter((s: any) => s.isLive).length;
-      const predicted = signals.filter((s: any) => s.isPredicted).length;
+      const past = Math.max(0, signals.length - live);
       const buy = signals.filter((s: any) => s.side === "BUY").length;
       const sell = signals.filter((s: any) => s.side === "SELL").length;
 
@@ -206,7 +206,7 @@ Deno.serve(async (req: Request) => {
       const message =
         signals.length === 0
           ? `Entry digest — no scored signals right now for ${row.symbol}. Open Live Trading → Scanner to rescan.`
-          : `Entry digest — ${live} live · ${predicted} upcoming · ${buy} BUY / ${sell} SELL (${signals.length} total). Tap to open Scanner for full table.`;
+          : `Entry digest — ${live} live · ${past} past · ${buy} BUY / ${sell} SELL (${signals.length} total). Tap Scanner for full breakdown.`;
 
       const { error: insErr } = await supabase.from("entry_point_alerts").insert({
         user_id: row.user_id,
@@ -215,7 +215,7 @@ Deno.serve(async (req: Request) => {
         message,
         metadata: {
           live,
-          predicted,
+          past,
           buy,
           sell,
           total: signals.length,

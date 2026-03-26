@@ -61,6 +61,11 @@ type SignalRow = {
   probabilityScore: number;
   verdict: string;
   rationale: string;
+  entryExitRuleSummary?: string;
+  whyThisScore?: string;
+  liveViability?: string;
+  rejectionDetail?: string;
+  scoreSource?: string;
   isLive?: boolean;
   isPredicted?: boolean;
   marketData?: {
@@ -71,7 +76,28 @@ type SignalRow = {
     dataSource?: string;
     indicatorSource?: string;
   } | null;
+  /** Server time when this row was scored (same for all signals in one scan). */
+  scanEvaluatedAt?: string;
+  ohlcvPipeline?: string;
+  indicatorPipeline?: string;
+  /** follow_through | adverse_first | mixed | pending | unknown */
+  simpleOutcomeLabel?: string;
+  simpleOutcomeNote?: string;
+  forwardProbeBars?: number;
+  forwardMaxFavorablePct?: number | null;
+  forwardMaxAdversePct?: number | null;
+  conditionAudit?: {
+    kind: string;
+    overallMatch: boolean;
+    lines?: Array<{ ok: boolean; label: string }>;
+    snapshot?: Record<string, unknown>;
+  } | null;
 };
+
+const HISTORY_LIST_PAGE_SIZE = 25;
+const DETAIL_SIGNALS_PAGE_SIZE = 12;
+/** Main scanner card grid — paginate so tall cards don’t bury controls */
+const MAIN_SIGNALS_PAGE_SIZE = 8;
 
 type CustomStrategy = {
   id: string;
@@ -114,6 +140,218 @@ const DAY_LABELS: { bit: number; label: string }[] = [
   { bit: 5, label: "Fri" },
   { bit: 6, label: "Sat" },
 ];
+
+function SignalAnalysisCard(props: {
+  row: SignalRow;
+  todayKey: string;
+  formatEntry: (row: SignalRow) => string;
+  formatEntryWithZone: (row: SignalRow) => string;
+  formatMarketData: (row: SignalRow) => string;
+  sideLabel: (side: string) => string;
+  sideClass: (side: string) => string;
+  verdictVariant: (v: string) => "default" | "destructive" | "secondary";
+  compactZone?: boolean;
+}) {
+  const {
+    row,
+    todayKey,
+    formatEntry,
+    formatEntryWithZone,
+    formatMarketData,
+    sideLabel,
+    sideClass,
+    verdictVariant,
+    compactZone,
+  } = props;
+  const isPast = !row.isLive && row.entryDate !== todayKey;
+  return (
+    <div
+      className={`rounded-xl border p-4 space-y-3 ${
+        row.verdict === "reject"
+          ? "border-red-500/40 bg-red-950/25"
+          : row.isLive
+          ? "border-teal-500/35 bg-teal-950/20"
+          : row.entryDate === todayKey
+          ? "border-teal-500/20 bg-black/35"
+          : "border-white/10 bg-black/25"
+      }`}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            {row.isLive ? (
+              <span className="text-[10px] font-bold uppercase tracking-wider bg-teal-500/35 text-teal-200 rounded px-2 py-0.5">
+                Live
+              </span>
+            ) : null}
+            {isPast ? (
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Past</span>
+            ) : null}
+            {!row.isLive && row.entryDate === todayKey ? (
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-teal-400/90">Today</span>
+            ) : null}
+            <h3 className="text-base font-semibold text-white leading-tight">{row.strategyLabel}</h3>
+          </div>
+          <p className={`text-sm font-medium ${sideClass(row.side)}`}>{sideLabel(row.side)}</p>
+        </div>
+        <div className="text-right shrink-0">
+          <p className="text-2xl font-bold tabular-nums text-teal-300">{row.probabilityScore}</p>
+          <p className="text-[10px] text-zinc-500 uppercase tracking-wide">Score</p>
+          <Badge variant={verdictVariant(row.verdict)} className="mt-1.5 text-xs font-semibold capitalize">
+            {row.verdict}
+          </Badge>
+        </div>
+      </div>
+
+      <div className="grid gap-1 text-sm text-zinc-300">
+        <p>
+          <span className="text-zinc-500 font-medium">When: </span>
+          <span className="font-mono text-zinc-200">{compactZone ? formatEntry(row) : formatEntryWithZone(row)}</span>
+        </p>
+        <p>
+          <span className="text-zinc-500 font-medium">Price: </span>
+          <span className="font-mono text-white">{row.priceAtEntry?.toFixed?.(2) ?? row.priceAtEntry}</span>
+        </p>
+        <p className="text-xs text-zinc-400 leading-relaxed">
+          <span className="text-zinc-500 font-medium">Bar context: </span>
+          {formatMarketData(row)}
+        </p>
+        {row.scoreSource ? (
+          <p className="text-[11px] text-zinc-600">
+            Score mix: <span className="text-zinc-500">{row.scoreSource}</span>
+          </p>
+        ) : null}
+        {row.scanEvaluatedAt ? (
+          <p className="text-[11px] text-zinc-500">
+            <span className="font-medium text-zinc-600">Scored at: </span>
+            {new Date(row.scanEvaluatedAt).toLocaleString([], {
+              year: "numeric",
+              month: "short",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+            })}
+          </p>
+        ) : null}
+        {row.ohlcvPipeline || row.indicatorPipeline ? (
+          <p className="text-[11px] text-zinc-600 leading-snug">
+            <span className="font-medium text-zinc-600">Feeds this row: </span>
+            OHLCV <span className="text-zinc-500">{row.ohlcvPipeline ?? "—"}</span>
+            {" · "}Indicators <span className="text-zinc-500">{row.indicatorPipeline ?? "—"}</span>
+          </p>
+        ) : null}
+      </div>
+
+      {row.simpleOutcomeLabel &&
+      row.simpleOutcomeLabel !== "pending" &&
+      row.simpleOutcomeLabel !== "unknown" &&
+      row.simpleOutcomeNote ? (
+        <div className="rounded-lg border border-zinc-600/40 bg-zinc-900/40 p-3 space-y-1">
+          <p className="text-xs font-bold uppercase tracking-wide text-zinc-400">After signal (same chart series)</p>
+          <p className="text-sm text-zinc-200 leading-relaxed">{row.simpleOutcomeNote}</p>
+          {row.forwardMaxFavorablePct != null && row.forwardMaxAdversePct != null ? (
+            <p className="text-[11px] text-zinc-500">
+              Max favorable ≈ {row.forwardMaxFavorablePct}% · Max adverse ≈ {row.forwardMaxAdversePct}% over{" "}
+              {row.forwardProbeBars ?? "?"} bars — not a full trade result.
+            </p>
+          ) : null}
+        </div>
+      ) : row.simpleOutcomeLabel === "pending" && row.simpleOutcomeNote ? (
+        <p className="text-xs text-zinc-500 leading-relaxed">{row.simpleOutcomeNote}</p>
+      ) : null}
+
+      {row.conditionAudit && row.conditionAudit.lines && row.conditionAudit.lines.length > 0 ? (
+        <div className="rounded-lg border border-purple-500/30 bg-purple-950/20 p-3 space-y-2">
+          <p className="text-xs font-bold uppercase tracking-wide text-purple-300">
+            Strategy conditions (this bar, engine-checked)
+          </p>
+          <p className="text-[11px] text-zinc-500">
+            Kind: <span className="text-zinc-400 font-mono">{row.conditionAudit.kind}</span>
+            {" · "}
+            Stack:{" "}
+            <span className={row.conditionAudit.overallMatch ? "text-emerald-400 font-semibold" : "text-red-400 font-semibold"}>
+              {row.conditionAudit.overallMatch ? "all required checks passed" : "check log below"}
+            </span>
+          </p>
+          <ul className="space-y-1.5 text-sm leading-snug">
+            {row.conditionAudit.lines.map((ln, j) => (
+              <li
+                key={j}
+                className={`font-mono text-[13px] pl-2 border-l-2 ${
+                  ln.ok ? "border-emerald-500/60 text-emerald-100/95" : "border-red-500/60 text-red-200/90"
+                }`}
+              >
+                {ln.label}
+              </li>
+            ))}
+          </ul>
+          {row.conditionAudit.snapshot && Object.keys(row.conditionAudit.snapshot).length > 0 ? (
+            <div className="pt-2 border-t border-white/10">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-zinc-500 mb-1">Values at bar</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] font-mono text-zinc-400">
+                {Object.entries(row.conditionAudit.snapshot).map(([k, v]) => (
+                  <span key={k} className="truncate" title={`${k}: ${String(v)}`}>
+                    <span className="text-zinc-600">{k}</span>={String(v)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {row.entryExitRuleSummary ? (
+        <div className="space-y-1">
+          <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">Rule / setup</p>
+          <p className="text-sm text-zinc-100 leading-relaxed font-medium">{row.entryExitRuleSummary}</p>
+        </div>
+      ) : null}
+
+      {row.whyThisScore ? (
+        <div className="space-y-1">
+          <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">Why this score</p>
+          <p className="text-sm text-zinc-200 leading-relaxed">{row.whyThisScore}</p>
+        </div>
+      ) : null}
+
+      <div className="space-y-1">
+        <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">Full rationale</p>
+        <p className="text-sm text-zinc-300 leading-relaxed">{row.rationale || "—"}</p>
+      </div>
+
+      {row.isLive && row.liveViability ? (
+        <div className="rounded-lg border border-teal-500/25 bg-teal-950/15 p-3 space-y-1">
+          <p className="text-xs font-bold uppercase tracking-wide text-teal-400/90">Why live could work (or break)</p>
+          <p className="text-sm text-teal-100/90 leading-relaxed">{row.liveViability}</p>
+        </div>
+      ) : null}
+
+      {(row.verdict === "reject" || row.verdict === "review") && (row.rejectionDetail || row.rationale) ? (
+        <div
+          className={`rounded-lg border p-3 space-y-1 ${
+            row.verdict === "reject" ? "border-red-500/30 bg-red-950/20" : "border-amber-500/25 bg-amber-950/15"
+          }`}
+        >
+          <p
+            className={`text-xs font-bold uppercase tracking-wide ${
+              row.verdict === "reject" ? "text-red-300" : "text-amber-200/90"
+            }`}
+          >
+            {row.verdict === "reject" ? "Rejected — detail" : "Review — why not a hard confirm"}
+          </p>
+          <p className="text-sm text-zinc-200 leading-relaxed">{row.rejectionDetail || row.rationale}</p>
+        </div>
+      ) : null}
+
+      {row.verdict === "confirm" ? (
+        <p className="text-xs text-zinc-500 leading-relaxed">
+          Confirmed setups still carry gap, liquidity, and news risk — use position sizing and stops.
+        </p>
+      ) : null}
+    </div>
+  );
+}
 
 function timeInputValueFromDb(t: string | undefined): string {
   if (!t) return "09:30";
@@ -194,7 +432,12 @@ export function StrategyEntrySignalsPanel({
   const [loading, setLoading] = useState(false);
   const [signals, setSignals] = useState<SignalRow[]>([]);
   const [marketStatus, setMarketStatus] = useState<any>(null);
-  const [scanMeta, setScanMeta] = useState<{ dataSource?: string; indicatorSource?: string; assetType?: string } | null>(null);
+  const [scanMeta, setScanMeta] = useState<{
+    dataSource?: string;
+    indicatorSource?: string;
+    assetType?: string;
+    lookbackDaysUsed?: number;
+  } | null>(null);
   const [customStrategies, setCustomStrategies] = useState<CustomStrategy[]>([]);
   const [selectedCustom, setSelectedCustom] = useState<Set<string>>(new Set());
   const [nowMs, setNowMs] = useState(Date.now());
@@ -205,6 +448,7 @@ export function StrategyEntrySignalsPanel({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyDetail, setHistoryDetail] = useState<HistoryDetail | null>(null);
   const [historySignalPage, setHistorySignalPage] = useState(1);
+  const [mainResultsPage, setMainResultsPage] = useState(1);
   const [historyDetailLoading, setHistoryDetailLoading] = useState(false);
   const [pendingHistoryId, setPendingHistoryId] = useState<string | null>(initialHistoryId);
   const [entryAlarmsOpen, setEntryAlarmsOpen] = useState(false);
@@ -262,7 +506,7 @@ export function StrategyEntrySignalsPanel({
     return () => { cancelled = true; };
   }, [toast]);
 
-  // Keep "UPCOMING/LIVE" labels fresh as time moves.
+  // Keep LIVE window fresh as time moves.
   useEffect(() => {
     const id = setInterval(() => setNowMs(Date.now()), 30000);
     return () => clearInterval(id);
@@ -275,7 +519,7 @@ export function StrategyEntrySignalsPanel({
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
       const res = await supabase.functions.invoke("strategy-scan-history", {
-        body: { action: "list", symbol: symbol.trim(), page, pageSize: 10 },
+        body: { action: "list", symbol: symbol.trim(), page, pageSize: HISTORY_LIST_PAGE_SIZE },
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
       if (res.error) throw new Error(res.error.message);
@@ -527,24 +771,23 @@ export function StrategyEntrySignalsPanel({
         dataSource: (data as any)?.dataSource,
         indicatorSource: (data as any)?.indicatorSource,
         assetType: (data as any)?.assetType,
+        lookbackDaysUsed: typeof (data as any)?.lookbackDaysUsed === "number" ? (data as any).lookbackDaysUsed : undefined,
       });
 
-      const predicted = list.filter((s) => s.isPredicted);
       const live = list.filter((s) => s.isLive);
-      const todaysCount = list.filter((s) => s.entryDate === todayKey && !s.isPredicted).length;
-      const historical = list.length - predicted.length - live.length - todaysCount;
+      const todaysCount = list.filter((s) => s.entryDate === todayKey).length;
+      const historical = list.filter((s) => !s.isLive && s.entryDate !== todayKey).length;
 
       if (!list.length) {
         toast({ title: "No signals found", description: "Try selecting more strategies or check the symbol." });
       } else {
         const parts: string[] = [];
-        if (predicted.length) parts.push(`${predicted.length} predicted upcoming`);
         if (live.length) parts.push(`${live.length} live`);
         if (todaysCount) parts.push(`${todaysCount} today`);
-        if (historical > 0) parts.push(`${historical} historical`);
+        if (historical > 0) parts.push(`${historical} past`);
         toast({
           title: `${list.length} signals scored`,
-          description: parts.join(" · "),
+          description: parts.join(" · ") || "Live and historical only (no projected entries).",
         });
       }
       fetchHistoryList(1);
@@ -619,21 +862,33 @@ export function StrategyEntrySignalsPanel({
     const isFuture = ts > nowMs;
     return {
       ...row,
-      isPredicted: row.isPredicted ? isFuture : false,
+      isPredicted: false,
       isLive: row.isLive ? !isFuture && nowMs - ts <= fifteenMin : false,
     };
   }, [nowMs]);
 
-  const visibleSignals = useMemo(() => signals.map(applyDynamicStatus), [signals, applyDynamicStatus]);
+  const visibleSignals = useMemo(
+    () => signals.map(applyDynamicStatus).filter((s) => !s.isPredicted),
+    [signals, applyDynamicStatus],
+  );
+
+  useEffect(() => {
+    setMainResultsPage(1);
+  }, [signals]);
+
+  const mainResultsTotalPages = Math.max(1, Math.ceil(visibleSignals.length / MAIN_SIGNALS_PAGE_SIZE));
+  const effectiveMainPage = Math.min(mainResultsPage, mainResultsTotalPages);
+  const pagedMainSignals = useMemo(() => {
+    const start = (effectiveMainPage - 1) * MAIN_SIGNALS_PAGE_SIZE;
+    return visibleSignals.slice(start, start + MAIN_SIGNALS_PAGE_SIZE);
+  }, [visibleSignals, effectiveMainPage]);
 
   const counts = useMemo(() => {
-    const predicted = visibleSignals.filter((s) => s.isPredicted);
     const live = visibleSignals.filter((s) => s.isLive);
-    const todays = visibleSignals.filter((s) => s.entryDate === todayKey && !s.isPredicted);
-    const history = visibleSignals.filter((s) => !s.isLive && !s.isPredicted && s.entryDate !== todayKey);
+    const todays = visibleSignals.filter((s) => s.entryDate === todayKey);
+    const history = visibleSignals.filter((s) => !s.isLive && s.entryDate !== todayKey);
     return {
       total: visibleSignals.length,
-      predicted: predicted.length,
       today: todays.length,
       live: live.length,
       history: history.length,
@@ -643,40 +898,47 @@ export function StrategyEntrySignalsPanel({
   }, [visibleSignals, todayKey]);
 
   const historySignals = useMemo(
-    () => (historyDetail?.signals ?? []).map(applyDynamicStatus),
+    () =>
+      (historyDetail?.signals ?? [])
+        .filter((s) => !s.isPredicted)
+        .map(applyDynamicStatus),
     [historyDetail, applyDynamicStatus],
   );
-  const historySignalTotalPages = Math.max(1, Math.ceil(historySignals.length / 10));
+  const historySignalTotalPages = Math.max(1, Math.ceil(historySignals.length / DETAIL_SIGNALS_PAGE_SIZE));
+  const effectiveHistorySignalPage = Math.min(historySignalPage, historySignalTotalPages);
   const pagedHistorySignals = useMemo(() => {
-    const start = (historySignalPage - 1) * 10;
-    return historySignals.slice(start, start + 10);
-  }, [historySignals, historySignalPage]);
+    const start = (effectiveHistorySignalPage - 1) * DETAIL_SIGNALS_PAGE_SIZE;
+    return historySignals.slice(start, start + DETAIL_SIGNALS_PAGE_SIZE);
+  }, [historySignals, effectiveHistorySignalPage]);
 
   return (
     <Card className="border-white/10 bg-black/20">
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1 space-y-1">
-            <CardTitle className="text-sm font-medium text-white flex items-center gap-2">
+            <CardTitle className="text-base font-semibold text-white flex items-center gap-2">
               <Target className="h-4 w-4 text-teal-400 shrink-0" />
-              Strategy library — entry &amp; exit signals + AI score
+              Strategy scanner — live &amp; past signals
             </CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Symbol: <span className="text-white/90 font-mono">{symbol}</span>
+            <p className="text-sm text-muted-foreground">
+              Symbol: <span className="text-white/90 font-mono font-medium">{symbol}</span>
             </p>
-            <p className="text-xs text-muted-foreground">
-              Select strategies. We detect both{" "}
-              <span className="text-emerald-400">entry (BUY)</span> and{" "}
-              <span className="text-red-400">exit (SELL)</span> points, rank each with an AI score,
-              and surface today's best opportunities first.
-              {postAnalysis?.result ? " Using your post-analysis outcome as extra context." : ""}
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              We scan up to ~1 year of daily context (and intraday when available), detect{" "}
+              <span className="text-emerald-400 font-medium">entry (BUY)</span> and{" "}
+              <span className="text-red-400 font-medium">exit (SELL)</span> candidates, then score each with
+              structured rules plus Gemini — with explicit reasons for confirm, review, and reject.
+              No projected &quot;upcoming&quot; entries.
+              {postAnalysis?.result ? " Your post-analysis outcome is included as extra context." : ""}
             </p>
-            {marketNote ? <p className="text-[11px] text-muted-foreground mt-1">{marketNote}</p> : null}
+            {marketNote ? <p className="text-xs text-muted-foreground mt-1">{marketNote}</p> : null}
             {scanMeta && (
-              <p className="text-[10px] text-zinc-500 mt-1">
+              <p className="text-[11px] text-zinc-500 mt-1">
                 Data: <span className="text-zinc-400">{scanMeta.dataSource ?? "yahoo"}</span>
                 {" · "}Indicators: <span className="text-zinc-400">{scanMeta.indicatorSource ?? "computed"}</span>
-                {" · "}AI scoring: <span className="text-teal-400">Gemini</span>
+                {" · "}Lookback:{" "}
+                <span className="text-zinc-400">{scanMeta.lookbackDaysUsed != null ? `${scanMeta.lookbackDaysUsed}d` : "365d default"}</span>
+                {" · "}AI: <span className="text-teal-400">Gemini + rule blend</span>
               </p>
             )}
           </div>
@@ -857,28 +1119,23 @@ export function StrategyEntrySignalsPanel({
 
         {/* Signal counts — always visible once results exist */}
         {counts.total > 0 && (
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            {counts.predicted > 0 && (
-              <Badge className="bg-amber-500/20 border border-amber-400/40 text-amber-300 hover:bg-amber-500/30 animate-pulse">
-                PREDICTED: {counts.predicted}
-              </Badge>
-            )}
+          <div className="flex flex-wrap items-center gap-2 text-sm">
             {counts.live > 0 && (
-              <Badge className="bg-teal-500/20 border border-teal-400/40 text-teal-300 hover:bg-teal-500/30 animate-pulse">
-                LIVE NOW: {counts.live}
+              <Badge className="bg-teal-500/20 border border-teal-400/40 text-teal-200 hover:bg-teal-500/30 text-sm font-semibold px-2.5 py-1">
+                Live: {counts.live}
               </Badge>
             )}
-            <Badge className="bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20">
+            <Badge className="bg-emerald-500/15 border border-emerald-500/30 text-emerald-200 hover:bg-emerald-500/20 text-sm font-medium">
               Entry (BUY): {counts.buyTotal}
             </Badge>
-            <Badge className="bg-red-500/15 border border-red-500/30 text-red-300 hover:bg-red-500/20">
+            <Badge className="bg-red-500/15 border border-red-500/30 text-red-200 hover:bg-red-500/20 text-sm font-medium">
               Exit (SELL): {counts.sellTotal}
             </Badge>
             {counts.today > 0 && (
-              <span className="text-teal-400 text-[11px]">✦ {counts.today} today</span>
+              <span className="text-teal-400 text-sm font-medium">Today: {counts.today}</span>
             )}
             {counts.history > 0 && (
-              <span className="text-zinc-500 text-[11px]">{counts.history} historical</span>
+              <span className="text-zinc-400 text-sm font-medium">Past: {counts.history}</span>
             )}
           </div>
         )}
@@ -964,89 +1221,63 @@ export function StrategyEntrySignalsPanel({
           Run strategy entry scan
         </Button>
 
-        {/* Results table */}
+        {/* Results — detailed cards */}
         {visibleSignals.length > 0 && (
-          <div className="overflow-x-auto rounded-lg border border-white/10">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-left text-muted-foreground border-b border-white/10 bg-black/20">
-                  <th className="p-2">Strategy</th>
-                  <th className="p-2">Signal type</th>
-                  <th className="p-2">Time</th>
-                  <th className="p-2 text-right">Price</th>
-                  <th className="p-2">Market data</th>
-                  <th className="p-2 text-right">Score</th>
-                  <th className="p-2">Verdict</th>
-                  <th className="p-2">Failed reason</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleSignals.map((row, i) => (
-                  <tr
-                    key={`${row.strategyId}-${row.entryDate}-${row.side}-${i}`}
-                    className={`border-b border-white/5 ${
-                      row.verdict === "reject" ? "bg-red-500/10 border-l-2 border-l-red-500/60"
-                      :
-                      row.isPredicted ? "bg-amber-500/10 border-l-2 border-l-amber-400"
-                      : row.isLive ? "bg-teal-500/10 border-l-2 border-l-teal-400"
-                      : row.entryDate === todayKey ? "bg-teal-500/5"
-                      : ""
-                    }`}
-                  >
-                    <td className="p-2 text-white font-medium">
-                      {row.isPredicted && (
-                        <span className="inline-block text-[9px] font-bold uppercase tracking-wider bg-amber-500/30 text-amber-300 rounded px-1 py-0.5 mr-1.5 animate-pulse">
-                          UPCOMING
-                        </span>
-                      )}
-                      {row.isLive && !row.isPredicted && (
-                        <span className="inline-block text-[9px] font-bold uppercase tracking-wider bg-teal-500/30 text-teal-300 rounded px-1 py-0.5 mr-1.5">
-                          LIVE
-                        </span>
-                      )}
-                      {row.strategyLabel}
-                    </td>
-                    <td className={`p-2 ${sideClass(row.side)}`}>{sideLabel(row.side)}</td>
-                    <td className="p-2 font-mono text-muted-foreground text-[10px]">
-                      {row.isPredicted ? (
-                        <span className="text-amber-400">~{formatEntry(row)}</span>
-                      ) : (
-                        formatEntry(row)
-                      )}
-                    </td>
-                    <td className="p-2 text-right font-mono">
-                      {row.isPredicted ? (
-                        <span className="text-amber-400/80">~{row.priceAtEntry?.toFixed?.(2) ?? row.priceAtEntry}</span>
-                      ) : (
-                        row.priceAtEntry?.toFixed?.(2) ?? row.priceAtEntry
-                      )}
-                    </td>
-                    <td className="p-2 text-[10px] text-zinc-300 max-w-[240px]">{formatMarketData(row)}</td>
-                    <td className="p-2 text-right font-mono text-teal-400">{row.probabilityScore}</td>
-                    <td className="p-2">
-                      <Badge variant={verdictVariant(row.verdict)} className="text-[10px]">
-                        {row.verdict}
-                      </Badge>
-                    </td>
-                    <td className="p-2 text-[10px] text-red-300/90 max-w-[320px]">
-                      {row.verdict === "reject" ? row.rationale : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {/* AI rationale notes */}
-            <div className="p-2 space-y-1 border-t border-white/10 bg-black/20">
-              {visibleSignals.slice(0, 12).map((row, i) => (
-                <p key={i} className="text-[10px] text-muted-foreground">
-                  {row.isPredicted && <span className="text-amber-400 font-bold mr-1">PREDICTED</span>}
-                  {row.isLive && !row.isPredicted && <span className="text-teal-400 font-bold mr-1">LIVE</span>}
-                  {row.verdict === "reject" && <span className="text-red-400 font-bold mr-1">FAILED</span>}
-                  <span className={sideClass(row.side)}>{row.side === "BUY" ? "↑" : "↓"}</span>{" "}
-                  <span className="text-white/80">{row.strategyLabel}</span> · {formatEntryWithZone(row)}: {row.rationale}
-                </p>
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Signal breakdown</p>
+              {visibleSignals.length > MAIN_SIGNALS_PAGE_SIZE ? (
+                <span className="text-[11px] text-zinc-500">
+                  Page {effectiveMainPage} / {mainResultsTotalPages} ({MAIN_SIGNALS_PAGE_SIZE} per page)
+                </span>
+              ) : null}
+            </div>
+            <div className="grid gap-4 sm:grid-cols-1 xl:grid-cols-2">
+              {pagedMainSignals.map((row, i) => (
+                <SignalAnalysisCard
+                  key={`${row.strategyId}-${row.entryDate}-${row.side}-${effectiveMainPage}-${i}`}
+                  row={row}
+                  todayKey={todayKey}
+                  formatEntry={formatEntry}
+                  formatEntryWithZone={formatEntryWithZone}
+                  formatMarketData={formatMarketData}
+                  sideLabel={sideLabel}
+                  sideClass={sideClass}
+                  verdictVariant={verdictVariant}
+                />
               ))}
             </div>
+            {visibleSignals.length > MAIN_SIGNALS_PAGE_SIZE ? (
+              <div className="flex items-center justify-between gap-3 pt-1 border-t border-white/10">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 px-3 shrink-0 border-teal-500/30"
+                  aria-label="Previous signals page"
+                  onClick={() => setMainResultsPage((p) => Math.max(1, p - 1))}
+                  disabled={effectiveMainPage <= 1}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  <span className="ml-1 hidden sm:inline">Prev</span>
+                </Button>
+                <span className="text-xs text-zinc-500 text-center flex-1 min-w-0">
+                  {visibleSignals.length} signals · page {effectiveMainPage} of {mainResultsTotalPages}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 px-3 shrink-0 border-teal-500/30"
+                  aria-label="Next signals page"
+                  onClick={() => setMainResultsPage((p) => Math.min(mainResultsTotalPages, p + 1))}
+                  disabled={effectiveMainPage >= mainResultsTotalPages}
+                >
+                  <span className="mr-1 hidden sm:inline">Next</span>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : null}
           </div>
         )}
 
@@ -1077,12 +1308,16 @@ export function StrategyEntrySignalsPanel({
                 <button
                   key={item.id}
                   onClick={() => openHistoryDetail(item.id)}
-                  className="w-full text-left rounded-md border border-white/10 hover:border-teal-400/40 bg-black/20 p-2 transition-colors"
+                  className="w-full text-left rounded-lg border border-white/10 hover:border-teal-400/40 bg-black/25 p-3 transition-colors"
                 >
-                  <p className="text-xs text-white/90 font-mono">{item.symbol}</p>
-                  <p className="text-[10px] text-muted-foreground">
-                    {new Date(item.scan_completed_at).toLocaleString()} · {item.signal_count} signals · live {item.live_count} · upcoming {item.predicted_count}
+                  <p className="text-sm font-semibold text-white font-mono tracking-tight">{item.symbol}</p>
+                  <p className="text-sm text-zinc-400 font-medium leading-snug">
+                    {new Date(item.scan_completed_at).toLocaleString()} · {item.signal_count} signals ·{" "}
+                    <span className="text-teal-400/90">live {item.live_count}</span>
+                    {" · "}
+                    <span className="text-zinc-500">past {Math.max(0, item.signal_count - item.live_count)}</span>
                   </p>
+                  <p className="text-xs text-zinc-600 mt-1">Full rationale, rule text, and reject/review reasons are stored in this snapshot.</p>
                 </button>
               ))}
               <div className="flex items-center justify-end gap-2">
@@ -1110,100 +1345,77 @@ export function StrategyEntrySignalsPanel({
           )}
         </div>
 
-        {/* Info when no predicted upcoming signals */}
-        {signals.length > 0 && counts.predicted === 0 && (
-          <div className="rounded-lg border border-zinc-700/50 bg-zinc-900/30 p-3 text-xs">
-            <p className="text-zinc-400 font-medium mb-0.5">No predicted upcoming signals</p>
-            <p className="text-muted-foreground">
-              Market may be closed or current conditions don&apos;t project new entry/exit points within the trading window.
-              Historical and live signals are shown above.
-            </p>
-          </div>
-        )}
-
         <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
-          <DialogContent className="w-[98vw] !max-w-[98vw] sm:!max-w-[98vw] h-[92vh] !max-h-[92vh] bg-zinc-950 border-zinc-800 p-0">
-            <div className="h-full flex flex-col">
-              <div className="border-b border-zinc-800 px-5 py-4">
+          <DialogContent className="flex h-[92vh] max-h-[92vh] w-[98vw] !max-w-[98vw] flex-col gap-0 !overflow-hidden border-zinc-800 bg-zinc-950 p-0 sm:!max-w-[98vw]">
+            <div className="flex min-h-0 flex-1 flex-col">
+              <div className="shrink-0 border-b border-zinc-800 px-5 py-4">
                 <DialogHeader className="space-y-1">
                   <DialogTitle className="text-white text-lg">Saved scan details</DialogTitle>
                   <DialogDescription>
-                    Snapshot captured at scan time. UPCOMING/LIVE labels auto-update as time passes.
+                    Snapshot from when the scan ran. Live vs past labels update with your current clock; we do not store projected future entries.
                   </DialogDescription>
                 </DialogHeader>
               </div>
 
-              <div className="flex-1 min-h-0 px-5 py-4 overflow-hidden">
+              <div className="min-h-0 flex-1 overflow-hidden px-5 py-4">
                 {historyDetailLoading ? (
                   <p className="text-sm text-muted-foreground">Loading…</p>
                 ) : !historyDetail ? (
                   <p className="text-sm text-muted-foreground">No detail found.</p>
                 ) : (
-                  <div className="h-full flex flex-col gap-3">
-                    <p className="text-xs text-muted-foreground">
+                  <div className="flex h-full min-h-0 flex-col gap-3">
+                    <p className="shrink-0 text-xs text-muted-foreground">
                       {historyDetail.symbol} · {new Date(historyDetail.scan_completed_at).toLocaleString()} · Data {historyDetail.data_source ?? "n/a"} · Indicators {historyDetail.indicator_source ?? "n/a"}
                     </p>
 
-                    <div className="flex-1 min-h-0 overflow-auto rounded-lg border border-white/10">
-                      <table className="w-full text-xs table-auto">
-                        <thead className="sticky top-0 z-10">
-                          <tr className="text-left text-muted-foreground border-b border-white/10 bg-black/80 backdrop-blur">
-                            <th className="p-2 min-w-[170px]">Strategy</th>
-                            <th className="p-2 min-w-[110px]">Type</th>
-                            <th className="p-2 min-w-[230px]">Time</th>
-                            <th className="p-2 text-right min-w-[90px]">Price</th>
-                            <th className="p-2 min-w-[230px]">Market data</th>
-                            <th className="p-2 text-right min-w-[80px]">Score</th>
-                            <th className="p-2 min-w-[90px]">Verdict</th>
-                            <th className="p-2 min-w-[300px]">Failed reason</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {pagedHistorySignals.map((row, i) => (
-                            <tr
-                              key={`${row.strategyId}-${row.entryDate}-${row.side}-${i}`}
-                              className={`border-b border-white/5 ${row.verdict === "reject" ? "bg-red-500/10" : ""}`}
-                            >
-                              <td className="p-2 text-white">
-                                {row.isPredicted && <span className="text-amber-400 mr-1">UPCOMING</span>}
-                                {row.isLive && !row.isPredicted && <span className="text-teal-400 mr-1">LIVE</span>}
-                                {row.strategyLabel}
-                              </td>
-                              <td className={`p-2 ${sideClass(row.side)}`}>{sideLabel(row.side)}</td>
-                              <td className="p-2 font-mono text-muted-foreground text-[10px]">{formatEntryWithZone(row)}</td>
-                              <td className="p-2 text-right font-mono">{row.priceAtEntry?.toFixed?.(2) ?? row.priceAtEntry}</td>
-                              <td className="p-2 text-[10px] text-zinc-300">{formatMarketData(row)}</td>
-                              <td className="p-2 text-right font-mono text-teal-400">{row.probabilityScore}</td>
-                              <td className="p-2"><Badge variant={verdictVariant(row.verdict)} className="text-[10px]">{row.verdict}</Badge></td>
-                              <td className="p-2 text-[10px] text-red-300/90">{row.verdict === "reject" ? row.rationale : "—"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                    <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded-lg border border-white/10 bg-black/20 p-3">
+                      <div className="grid gap-4 lg:grid-cols-2">
+                        {pagedHistorySignals.map((row, i) => (
+                          <SignalAnalysisCard
+                            key={`${row.strategyId}-${row.entryDate}-${row.side}-${effectiveHistorySignalPage}-${i}`}
+                            row={row}
+                            todayKey={todayKey}
+                            formatEntry={formatEntry}
+                            formatEntryWithZone={formatEntryWithZone}
+                            formatMarketData={formatMarketData}
+                            sideLabel={sideLabel}
+                            sideClass={sideClass}
+                            verdictVariant={verdictVariant}
+                          />
+                        ))}
+                      </div>
                     </div>
                   </div>
                 )}
               </div>
 
-              <div className="border-t border-zinc-800 px-5 py-3 flex items-center justify-end gap-2">
+              <div className="flex shrink-0 items-center justify-between gap-3 border-t border-zinc-800 bg-zinc-950 px-5 py-3 pr-14 sm:pr-5">
                 <Button
+                  type="button"
                   variant="outline"
                   size="sm"
-                  className="h-7 px-2"
+                  className="h-9 shrink-0 px-3"
+                  aria-label="Previous page of signals"
                   onClick={() => setHistorySignalPage((p) => Math.max(1, p - 1))}
-                  disabled={historySignalPage <= 1}
+                  disabled={effectiveHistorySignalPage <= 1}
                 >
-                  <ChevronLeft className="h-3.5 w-3.5" />
+                  <ChevronLeft className="h-4 w-4" />
+                  <span className="ml-1 hidden sm:inline">Prev</span>
                 </Button>
-                <span className="text-[11px] text-muted-foreground">Signals page {historySignalPage} / {historySignalTotalPages} (10 per page)</span>
+                <span className="min-w-0 flex-1 text-center text-xs text-muted-foreground">
+                  Page {effectiveHistorySignalPage} / {historySignalTotalPages} · {DETAIL_SIGNALS_PAGE_SIZE} per page
+                </span>
                 <Button
+                  type="button"
                   variant="outline"
                   size="sm"
-                  className="h-7 px-2"
+                  className="h-9 shrink-0 px-3"
+                  aria-label="Next page of signals"
                   onClick={() => setHistorySignalPage((p) => Math.min(historySignalTotalPages, p + 1))}
-                  disabled={historySignalPage >= historySignalTotalPages}
+                  disabled={effectiveHistorySignalPage >= historySignalTotalPages}
                 >
-                  <ChevronRight className="h-3.5 w-3.5" />
+                  <span className="mr-1 hidden sm:inline">Next</span>
+                  <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
             </div>
