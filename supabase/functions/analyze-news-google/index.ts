@@ -444,7 +444,7 @@ serve(async (req) => {
     const neutralNews = newsData.filter(item => item.sentiment_score >= -0.3 && item.sentiment_score <= 0.3);
     
     const withUrl = newsData.filter((n) => n.url && n.url.startsWith("http")).length;
-    const geminiRows = newsData.filter((n) => (n.source || "").includes("Gemini Search")).length;
+    const geminiRows = newsData.filter((n) => n.novelty === "Grounded web").length;
     const summaryLines =
       newsData.length > 0
         ? [

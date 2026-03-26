@@ -43,6 +43,20 @@ interface NewsAnalysisProps {
   predictedAt?: Date;
 }
 
+/** Strip internal grounding label from older API payloads and cache. */
+function sanitizeNewsSources(data: EnhancedNewsResponse): EnhancedNewsResponse {
+  const strip = (s: string) => s.replace(/^\s*Gemini Search\s*·\s*/i, "").trim() || s;
+  const newsItems = data.newsItems.map((item) => ({
+    ...item,
+    source: strip(item.source),
+  }));
+  return {
+    ...data,
+    newsItems,
+    sources: [...new Set(newsItems.map((i) => i.source))],
+  };
+}
+
 export function NewsAnalysis({ symbol, predictedAt }: NewsAnalysisProps) {
   const [newsData, setNewsData] = useState<EnhancedNewsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -71,7 +85,7 @@ export function NewsAnalysis({ symbol, predictedAt }: NewsAnalysisProps) {
         const isExpired = Date.now() - timestamp > 2 * 60 * 60 * 1000; // 2 hours TTL for news
         
         if (!isExpired) {
-          setNewsData(data);
+          setNewsData(sanitizeNewsSources(data as EnhancedNewsResponse));
           setLoading(false);
           return;
         }
@@ -91,13 +105,15 @@ export function NewsAnalysis({ symbol, predictedAt }: NewsAnalysisProps) {
         throw new Error('No data received');
       }
 
+      const cleaned = sanitizeNewsSources(data as EnhancedNewsResponse);
+
       // Cache the result
       localStorage.setItem(cacheKey, JSON.stringify({
-        data,
+        data: cleaned,
         timestamp: Date.now()
       }));
 
-      setNewsData(data);
+      setNewsData(cleaned);
       console.log(`Enhanced news analysis loaded: ${data.totalNews || 0} news items`);
 
     } catch (err) {

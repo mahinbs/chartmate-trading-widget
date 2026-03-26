@@ -691,6 +691,19 @@ export function ProbabilityPanel({
                 ))}
               </div>
             )}
+            <div className="text-[10px] text-zinc-500 space-y-2 border-t border-white/10 pt-3 mt-1 leading-relaxed">
+              {analysedAt && (
+                <p>
+                  <span className="font-semibold text-zinc-400">Snapshot: </span>
+                  {analysedAt.toLocaleString(undefined, {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  })}
+                  . Levels use prices and structure known at this time.
+                </p>
+              )}
+              <p className="whitespace-pre-line">{HELP.priceLevelsCardGuide}</p>
+            </div>
           </CardContent>
         </Card>
 
@@ -753,9 +766,19 @@ export function ProbabilityPanel({
                 </div>
               ))
             )}
-            <p className="text-[10px] text-zinc-600 pt-1">
-              % = upward probability at each horizon
-            </p>
+            <div className="text-[10px] text-zinc-500 space-y-2 border-t border-white/10 pt-3 mt-1 leading-relaxed">
+              {analysedAt && (
+                <p>
+                  <span className="font-semibold text-zinc-400">Snapshot: </span>
+                  {analysedAt.toLocaleString(undefined, {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  })}
+                  .
+                </p>
+              )}
+              <p className="whitespace-pre-line">{HELP.probTimelineCardGuide}</p>
+            </div>
           </CardContent>
         </Card>
 

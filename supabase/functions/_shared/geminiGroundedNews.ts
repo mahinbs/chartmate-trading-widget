@@ -114,7 +114,7 @@ export async function fetchGeminiGroundedNewsItems(symbol: string, limit = 8): P
     const h = seedHash(symbol);
     const out: GroundedNewsRow[] = [...byUri.values()].map((row, i) => ({
       time: new Date(Date.now() - (i * 37 + (h % 120)) * 60 * 1000).toISOString(),
-      source: `Gemini Search · ${row.source}`,
+      source: row.source,
       headline: row.headline,
       sentiment_score: 0,
       novelty: "Grounded web",

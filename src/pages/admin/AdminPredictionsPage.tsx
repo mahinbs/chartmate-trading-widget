@@ -420,9 +420,13 @@ export default function AdminPredictionsPage() {
               confidence={gf.action_signal?.confidence || analysisResult.confidence || 50}
               technicalFactors={analysisResult.patterns}
               keyDrivers={gf.forecasts?.[0]?.key_drivers}
+              riskFlags={gf.forecasts?.[0]?.risk_flags}
               oneLineSummary={analysisResult.rationale}
               deepAnalysis={gf.deep_analysis}
               marketContext={gf.market_context}
+              positioningNotes={gf.positioning_guidance?.notes}
+              volumeProfile={analysisResult.volumeData?.volumeProfile ?? undefined}
+              analysedAt={analysedAt}
             />
           )}
 

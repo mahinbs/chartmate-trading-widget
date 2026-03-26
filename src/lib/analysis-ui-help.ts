@@ -12,15 +12,25 @@ export const HELP = {
   pressureMap:
     "Bullish, neutral, and bearish pressure mirror the same up, sideways, and down probabilities. The top pin is net bias (up vs down), centered when they balance.",
   priceLevels:
-    "Rough tags for nearby support and resistance from the model. They describe chart structure, not order book certainty.",
+    "Nearby support (S) and resistance (R) zones from the model. Red on R is the level type, not a prediction that price must fall.",
+  priceLevelsCardGuide:
+    "R means resistance: a zone where selling interest often appears (a ceiling). S means support: a zone where buying interest often appears (a floor). Red styling on R only labels resistance type; price can still be trending up with several resistance levels above it. Green S is the same idea for floors. The percentage is how much weight the model puts on price interacting with that zone before the forecast window ends, not a promise from the order book.",
   probTimeline:
-    "At each horizon, the bar shows modeled probability of upward resolution before that time elapses. Longer horizons usually smooth noise.",
+    "Each row is one horizon from the same run. The number is modeled chance of an upward resolution before that horizon ends.",
+  probTimelineCardGuide:
+    "Left column: forecast horizon (how far ahead that row looks). Bar + percentage: estimated probability that price resolves upward before that time elapses, from the same model run as the gauges above (not a second forecast). Bar color: green if that horizon’s tagged direction is up, red if down, gray if sideways; the tiny arrow matches that tag. Compare rows to see whether upside odds rise or fade as the window lengthens. All rows use the snapshot from when you ran this analysis.",
   pressureMeter:
     "Blends directional odds, expected move, momentum, volume confirmation, and the model stance. When the meter pegs about 99 to 100% buyer side, the UI will say BUY explicitly because every input in this blend is maxed long. That is still not a profit promise.",
   volumeIntel:
     "24h volume vs recent average. Vol confirms move checks whether volume supports the lean; neutral volume often means the tape has not proven itself yet.",
   aiReasoningEngine:
     "Plain-language synthesis of what the run saw: drivers, risks, and context. This section explains the setup; it is not an order to trade.",
+  aiReasoningTermGuideIntro:
+    "This section turns jargon from the summary into plain English. Each line comes from rules applied to completed candles at the snapshot time, then blended by the model. They are context clues, not buy or sell commands.",
+  aiReasoningMacdPrimer:
+    "MACD means Moving Average Convergence Divergence. It compares a faster and a slower exponential average of price and plots how they diverge or come together. When the MACD line crosses the signal line, or the histogram flips positive or negative, the engine reads that as short-term momentum shifting on those bars only.",
+  aiReasoningRsiPrimer:
+    "RSI means Relative Strength Index, a 0 to 100 oscillator from recent up vs down closes. Very high or very low readings flag stretched conditions; they are not automatic entry or exit timers without chart context.",
   marketConditions:
     "Backdrop matches your symbol type: US equities use S&P/Nasdaq/Dow and VIX; India listings use Nifty/Sensex/Bank Nifty and India VIX; crypto uses BTC/ETH/SOL with a stress score; FX uses DXY and majors with a stress score. Your ticker can still diverge.",
   marketSentiment:

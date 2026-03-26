@@ -13,6 +13,7 @@ import {
   BarChart3,
   ChevronDown,
   Sparkles,
+  BookOpen,
 } from "lucide-react";
 import { formatTechnicalFactor, formatKeyDriver } from "@/lib/display-utils";
 import { buildExpandedReasoning, softenPunctuation } from "@/lib/expand-analysis-narrative";
@@ -21,6 +22,7 @@ import { useState, useMemo, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { CardInfoTooltip } from "@/components/ui/card-info-tooltip";
 import { HELP } from "@/lib/analysis-ui-help";
+import { buildReasoningGlossaryItems } from "@/lib/insight-explanations";
 
 interface DeepAnalysis {
   bullish_case?: string;
@@ -52,6 +54,8 @@ interface AIReasoningDisplayProps {
   marketContext?: MarketContext;
   positioningNotes?: string | null;
   volumeProfile?: string | null;
+  /** When this analysis was produced; shown with glossary so readers know signals are snapshot-based. */
+  analysedAt?: Date | null;
 }
 
 const tileClass =
@@ -87,6 +91,7 @@ export function AIReasoningDisplay({
   marketContext,
   positioningNotes,
   volumeProfile,
+  analysedAt,
 }: AIReasoningDisplayProps) {
   const [showBullBear, setShowBullBear] = useState(true);
   const [showMarketContext, setShowMarketContext] = useState(true);
@@ -120,6 +125,30 @@ export function AIReasoningDisplay({
     volumeProfile,
     symbol,
   ]);
+
+  const glossaryItems = useMemo(
+    () => buildReasoningGlossaryItems(technicalFactors, keyDrivers, riskFlags),
+    [technicalFactors, keyDrivers, riskFlags],
+  );
+
+  const glossaryShowsMacd = useMemo(
+    () => glossaryItems.some((g) => /macd/i.test(g.title)),
+    [glossaryItems],
+  );
+  const glossaryShowsRsi = useMemo(
+    () => glossaryItems.some((g) => /\brsi\b/i.test(g.title)),
+    [glossaryItems],
+  );
+
+  const analysedAtLabel = useMemo(() => {
+    if (!analysedAt || !(analysedAt instanceof Date) || Number.isNaN(analysedAt.getTime())) {
+      return null;
+    }
+    return analysedAt.toLocaleString(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  }, [analysedAt]);
 
   const actionStyles =
     action === "BUY"
@@ -167,14 +196,92 @@ export function AIReasoningDisplay({
           </div>
         </div>
 
-        {/* Summary — same Alert pattern as RegulatoryDisclaimer */}
-        <Alert className="border-primary/50 bg-background/80">
-          <Sparkles className="h-4 w-4 text-primary" />
-          <AlertDescription>
-            <p className="font-semibold text-sm mb-1.5 text-foreground">At a glance</p>
-            <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-line">
+        {/* Summary — high-contrast callout so the narrative is easy to spot */}
+        <Alert
+          className={cn(
+            "rounded-xl border-primary/45 bg-gradient-to-br from-primary/[0.14] via-primary/[0.06] to-background/95",
+            "p-5 sm:p-6 shadow-[0_12px_40px_-16px_hsl(var(--primary)/0.45)] ring-1 ring-primary/20",
+            "[&>svg]:left-5 [&>svg]:top-5 [&>svg]:h-5 [&>svg]:w-5 [&>svg]:text-primary",
+            "[&>svg~*]:pl-10",
+          )}
+        >
+          <Sparkles className="h-5 w-5 shrink-0 drop-shadow-[0_0_10px_hsl(var(--primary)/0.35)]" />
+          <AlertDescription className="space-y-3 text-base sm:text-lg [&>p]:leading-relaxed">
+            <p className="!mb-0 font-bold text-lg sm:text-xl tracking-tight text-foreground">
+              <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
+                At a glance
+              </span>
+            </p>
+            <p className="!mt-2 text-base sm:text-lg md:text-[1.2rem] font-semibold leading-[1.65] text-foreground/95 whitespace-pre-line">
               {narrativeSummary}
             </p>
+            {(analysedAtLabel || glossaryItems.length > 0) && (
+              <div
+                className={cn(
+                  "mt-5 pt-5 border-t-2 border-primary/25 space-y-4",
+                  glossaryItems.length > 0 &&
+                    "rounded-xl border border-primary/30 bg-gradient-to-b from-primary/[0.14] via-primary/[0.05] to-background/95 p-4 sm:p-5 shadow-[inset_0_1px_0_0_hsl(var(--primary)/0.12)] ring-1 ring-primary/15",
+                )}
+              >
+                {analysedAtLabel && (
+                  <p className="text-sm sm:text-base text-foreground/90 leading-relaxed font-medium">
+                    <span className="font-bold text-foreground">When this was computed: </span>
+                    {analysedAtLabel}. Indicators use the candle data available at that moment, not every later tick.
+                  </p>
+                )}
+                {glossaryItems.length > 0 && (
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap items-center gap-2.5 gap-y-1">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-primary/35 bg-primary/10 text-primary">
+                        <BookOpen className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <p className="font-bold text-base sm:text-lg text-foreground tracking-tight">
+                          Term guide
+                        </p>
+                        <p className="text-xs text-primary/90 font-medium uppercase tracking-wider">
+                          What the words mean
+                        </p>
+                      </div>
+                    </div>
+
+                    <p className="text-sm sm:text-base leading-relaxed text-foreground/95 font-medium">
+                      {HELP.aiReasoningTermGuideIntro}
+                    </p>
+
+                    {glossaryShowsMacd && (
+                      <p className="text-sm sm:text-base leading-relaxed text-foreground/95 font-medium border-l-[3px] border-primary pl-3.5 py-1 bg-background/50 rounded-r-md">
+                        {HELP.aiReasoningMacdPrimer}
+                      </p>
+                    )}
+                    {glossaryShowsRsi && (
+                      <p className="text-sm sm:text-base leading-relaxed text-foreground/95 font-medium border-l-[3px] border-amber-500/60 pl-3.5 py-1 bg-background/50 rounded-r-md">
+                        {HELP.aiReasoningRsiPrimer}
+                      </p>
+                    )}
+
+                    <p className="text-xs sm:text-sm font-bold text-foreground pt-1">
+                      Line-by-line (same snapshot as above)
+                    </p>
+                    <ul className="space-y-3 list-none pl-0">
+                      {glossaryItems.map(({ title, body }) => (
+                        <li
+                          key={title}
+                          className="rounded-lg border border-primary/20 bg-background/70 px-3.5 py-3 sm:px-4 sm:py-3.5 shadow-sm"
+                        >
+                          <p className="text-sm sm:text-base font-bold text-foreground leading-snug mb-1.5">
+                            {title}
+                          </p>
+                          <p className="text-sm sm:text-base leading-relaxed text-muted-foreground font-medium">
+                            {body}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
           </AlertDescription>
         </Alert>
 

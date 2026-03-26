@@ -1848,6 +1848,7 @@ const PredictPage = () => {
                       volumeProfile={
                         result.volumeData?.volumeProfile ?? undefined
                       }
+                      analysedAt={predictedAt}
                     />
                   )}
 
