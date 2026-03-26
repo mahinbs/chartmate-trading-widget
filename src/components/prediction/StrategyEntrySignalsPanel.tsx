@@ -20,6 +20,16 @@ import { STRATEGIES } from "@/components/trading/StrategySelectionDialog";
 import { Loader2, Sparkles, Target, History, ChevronLeft, ChevronRight, Clock3, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -449,6 +459,8 @@ export function StrategyEntrySignalsPanel({
   const [historyDetail, setHistoryDetail] = useState<HistoryDetail | null>(null);
   const [historySignalPage, setHistorySignalPage] = useState(1);
   const [mainResultsPage, setMainResultsPage] = useState(1);
+  const [historyDeleteTarget, setHistoryDeleteTarget] = useState<HistoryItem | null>(null);
+  const [historyDeleting, setHistoryDeleting] = useState(false);
   const [historyDetailLoading, setHistoryDetailLoading] = useState(false);
   const [pendingHistoryId, setPendingHistoryId] = useState<string | null>(initialHistoryId);
   const [entryAlarmsOpen, setEntryAlarmsOpen] = useState(false);
@@ -513,17 +525,17 @@ export function StrategyEntrySignalsPanel({
   }, []);
 
   const fetchHistoryList = useCallback(async (page = 1) => {
-    if (!symbol.trim()) return;
     setHistoryLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
       const res = await supabase.functions.invoke("strategy-scan-history", {
-        body: { action: "list", symbol: symbol.trim(), page, pageSize: HISTORY_LIST_PAGE_SIZE },
+        body: { action: "list", page, pageSize: HISTORY_LIST_PAGE_SIZE },
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
       if (res.error) throw new Error(res.error.message);
-      const payload = res.data as { items?: HistoryItem[]; totalPages?: number; page?: number };
+      const payload = res.data as { items?: HistoryItem[]; totalPages?: number; page?: number; error?: string };
+      if (payload?.error) throw new Error(String(payload.error));
       setHistoryItems(Array.isArray(payload?.items) ? payload.items : []);
       setHistoryTotalPages(Math.max(1, Number(payload?.totalPages) || 1));
       setHistoryPage(Math.max(1, Number(payload?.page) || page));
@@ -534,7 +546,41 @@ export function StrategyEntrySignalsPanel({
     } finally {
       setHistoryLoading(false);
     }
-  }, [symbol]);
+  }, []);
+
+  const confirmDeleteHistoryScan = useCallback(async () => {
+    if (!historyDeleteTarget) return;
+    const delId = historyDeleteTarget.id;
+    const delSymbol = historyDeleteTarget.symbol;
+    setHistoryDeleting(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const res = await supabase.functions.invoke("strategy-scan-history", {
+        body: { action: "delete", id: delId },
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (res.error) throw new Error(res.error.message);
+      const payload = res.data as { error?: string; ok?: boolean };
+      if (payload?.error) throw new Error(payload.error);
+      if (historyDetail?.id === delId) {
+        setHistoryOpen(false);
+        setHistoryDetail(null);
+      }
+      setHistoryDeleteTarget(null);
+      toast({ title: "Scan removed", description: `${delSymbol} · snapshot deleted.` });
+      setHistoryPage(1);
+      await fetchHistoryList(1);
+    } catch (e: unknown) {
+      toast({
+        title: "Delete failed",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setHistoryDeleting(false);
+    }
+  }, [historyDeleteTarget, historyDetail, toast, fetchHistoryList]);
 
   const openHistoryDetail = useCallback(async (id: string) => {
     setHistoryDetailLoading(true);
@@ -1281,17 +1327,20 @@ export function StrategyEntrySignalsPanel({
           </div>
         )}
 
-        {/* Saved scan history (per user, per symbol) */}
+        {/* Saved scan history — all symbols; does not depend on current symbol */}
         <div className="rounded-lg border border-white/10 p-3 space-y-3">
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-white/90 flex items-center gap-1.5">
-              <History className="h-3.5 w-3.5 text-teal-400" />
-              Saved scan history
-            </p>
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <p className="text-xs text-white/90 flex items-center gap-1.5">
+                <History className="h-3.5 w-3.5 text-teal-400" />
+                Saved scan history
+              </p>
+              <p className="text-[10px] text-zinc-500 mt-0.5">All commodities · newest first</p>
+            </div>
             <Button
               variant="outline"
               size="sm"
-              className="h-7 text-[11px]"
+              className="h-7 text-[11px] shrink-0"
               onClick={() => fetchHistoryList(historyPage)}
               disabled={historyLoading}
             >
@@ -1301,24 +1350,43 @@ export function StrategyEntrySignalsPanel({
           {historyLoading ? (
             <p className="text-[11px] text-muted-foreground">Loading history…</p>
           ) : historyItems.length === 0 ? (
-            <p className="text-[11px] text-muted-foreground">No saved scans yet for this symbol.</p>
+            <p className="text-[11px] text-muted-foreground">No saved scans yet.</p>
           ) : (
             <div className="space-y-2">
               {historyItems.map((item) => (
-                <button
+                <div
                   key={item.id}
-                  onClick={() => openHistoryDetail(item.id)}
-                  className="w-full text-left rounded-lg border border-white/10 hover:border-teal-400/40 bg-black/25 p-3 transition-colors"
+                  className="flex gap-1 rounded-lg border border-white/10 bg-black/25 transition-colors hover:border-teal-400/40"
                 >
-                  <p className="text-sm font-semibold text-white font-mono tracking-tight">{item.symbol}</p>
-                  <p className="text-sm text-zinc-400 font-medium leading-snug">
-                    {new Date(item.scan_completed_at).toLocaleString()} · {item.signal_count} signals ·{" "}
-                    <span className="text-teal-400/90">live {item.live_count}</span>
-                    {" · "}
-                    <span className="text-zinc-500">past {Math.max(0, item.signal_count - item.live_count)}</span>
-                  </p>
-                  <p className="text-xs text-zinc-600 mt-1">Full rationale, rule text, and reject/review reasons are stored in this snapshot.</p>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => openHistoryDetail(item.id)}
+                    className="min-w-0 flex-1 text-left p-3 rounded-l-lg"
+                  >
+                    <p className="text-sm font-semibold text-white font-mono tracking-tight">{item.symbol}</p>
+                    <p className="text-sm text-zinc-400 font-medium leading-snug">
+                      {new Date(item.scan_completed_at).toLocaleString()} · {item.signal_count} signals ·{" "}
+                      <span className="text-teal-400/90">live {item.live_count}</span>
+                      {" · "}
+                      <span className="text-zinc-500">past {Math.max(0, item.signal_count - item.live_count)}</span>
+                    </p>
+                    <p className="text-xs text-zinc-600 mt-1">Open for full snapshot. Delete removes this run only.</p>
+                  </button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-auto min-h-[3rem] shrink-0 rounded-l-none rounded-r-lg text-zinc-500 hover:text-red-400 hover:bg-red-950/30"
+                    aria-label={`Delete scan for ${item.symbol}`}
+                    disabled={historyDeleting}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setHistoryDeleteTarget(item);
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               ))}
               <div className="flex items-center justify-end gap-2">
                 <Button
@@ -1421,6 +1489,44 @@ export function StrategyEntrySignalsPanel({
             </div>
           </DialogContent>
         </Dialog>
+
+        <AlertDialog
+          open={historyDeleteTarget !== null}
+          onOpenChange={(open) => {
+            if (!open && !historyDeleting) setHistoryDeleteTarget(null);
+          }}
+        >
+          <AlertDialogContent className="border-zinc-800 bg-zinc-950 text-zinc-100">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="text-white">Delete this scan?</AlertDialogTitle>
+              <AlertDialogDescription asChild>
+                <div className="text-sm text-zinc-400">
+                  {historyDeleteTarget ? (
+                    <p>
+                      Permanently remove the saved snapshot for{" "}
+                      <span className="font-mono text-zinc-200">{historyDeleteTarget.symbol}</span> from{" "}
+                      {new Date(historyDeleteTarget.scan_completed_at).toLocaleString()}. This cannot be undone.
+                    </p>
+                  ) : null}
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={historyDeleting} className="border-zinc-700 bg-zinc-900 text-zinc-200">
+                Cancel
+              </AlertDialogCancel>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={historyDeleting}
+                className="bg-red-600 hover:bg-red-500"
+                onClick={() => void confirmDeleteHistoryScan()}
+              >
+                {historyDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete"}
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </CardContent>
     </Card>
   );

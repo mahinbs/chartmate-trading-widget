@@ -45,6 +45,25 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ item: data }), { status: 200, headers });
     }
 
+    if (action === "delete") {
+      const id = String(body.id ?? "");
+      if (!id) return new Response(JSON.stringify({ error: "id is required" }), { status: 400, headers });
+
+      const { data: deletedRows, error } = await supabase
+        .from("strategy_scan_history")
+        .delete()
+        .eq("id", id)
+        .eq("user_id", user.id)
+        .select("id");
+      if (error) {
+        return new Response(JSON.stringify({ error: error.message }), { status: 500, headers });
+      }
+      if (!deletedRows?.length) {
+        return new Response(JSON.stringify({ error: "Not found or already removed" }), { status: 404, headers });
+      }
+      return new Response(JSON.stringify({ ok: true }), { status: 200, headers });
+    }
+
     const page = Math.max(1, Number(body.page) || 1);
     const pageSize = Math.min(50, Math.max(1, Number(body.pageSize) || 10));
     const symbol = String(body.symbol ?? "").trim();
