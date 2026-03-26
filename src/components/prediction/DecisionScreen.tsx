@@ -73,21 +73,26 @@ export function DecisionScreen({
   const getActionRecommendation = () => {
     if (action === "BUY" && confidence >= 70) {
       return {
-        explanation: `Strong upward momentum detected at ${confidence}% confidence. Multiple technical indicators align for a bullish move — risk level is ${riskLevel.toLowerCase()}. The market structure favours continuation of the current trend.`,
+        explanation: `On ${symbol}, the run shows strong upward lean at about ${confidence}% internal agreement. Several technical votes line up with continuation, while headline and liquidity risk stay at a ${riskLevel.toLowerCase()} bucket. This describes structure, not a personal order ticket.`,
       };
     }
     if (action === "BUY" && confidence >= 50) {
       return {
-        explanation: `Moderate upward signal at ${confidence}% confidence. Some bullish indicators are present but not all aligned — risk level is ${riskLevel.toLowerCase()}. Consider a smaller position size until confirmation improves.`,
+        explanation: `On ${symbol}, the lean is cautiously upward at about ${confidence}% agreement, but not every input agrees. Risk is tagged ${riskLevel.toLowerCase()}; the next sessions matter for whether participation confirms the move.`,
       };
     }
     if (action === "SELL") {
       return {
-        explanation: `Downward pressure detected at ${confidence}% confidence. Technical indicators suggest a bearish move is likely — risk level is ${riskLevel.toLowerCase()}. Opening a long position now conflicts with the current market direction.`,
+        explanation: `On ${symbol}, the run tilts toward weaker near-term structure at about ${confidence}% agreement. That is a read on pressure and indicators for this window, not a comment on what you already hold.`,
+      };
+    }
+    if (action === "HOLD") {
+      return {
+        explanation: `On ${symbol}, the model sees a muddy edge at about ${confidence}% agreement: sentiment or flow can look fine while candles, volume, or horizon math still disagree. The write-up below is the detail; treat it as context for your plan, not a label to obey blindly.`,
       };
     }
     return {
-      explanation: `Mixed or unclear signals — only ${confidence}% model confidence. Entering a position now carries ${riskLevel.toLowerCase()} risk with uncertain reward. The market lacks a clear directional edge; ${confidence < 40 ? "wait for a much stronger setup" : "wait for stronger confirmation"} before committing capital.`,
+      explanation: `On ${symbol}, signals are mixed at about ${confidence}% agreement, so reward for directional bets is uncertain versus ${riskLevel.toLowerCase()} risk. Let the chart print a cleaner story or refresh after news before leaning hard either way.`,
     };
   };
 

@@ -17,11 +17,13 @@ import {
   AlertTriangle,
   Timer
 } from "lucide-react";
-import { formatTimeRemaining, formatDuration, getRelativeTime, formatDateTime, getShortHorizonLabel } from "@/lib/time";
+import { formatTimeRemaining, formatDuration, formatPipelineDuration, getRelativeTime, formatDateTime, getShortHorizonLabel } from "@/lib/time";
 import { getEffectiveStart, getEffectiveTarget, shouldStartTiming } from "@/lib/market-hours";
 import { formatPipelineStep } from "@/lib/display-utils";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
+import { CardInfoTooltip } from "@/components/ui/card-info-tooltip";
+import { HELP } from "@/lib/analysis-ui-help";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { PostPredictionReport } from "@/components/prediction/PostPredictionReport";
@@ -175,18 +177,19 @@ export function PredictionTimeline({
       {/* Pipeline Progress Overview */}
       <GlowCard glowColor="primary" intensity="medium" className="sheen">
         <CardHeader className="pb-4">
-          <CardTitle className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+          <CardTitle className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-3 min-w-0">
               <div className="p-2 rounded-lg bg-gradient-to-br from-primary/20 to-primary/10">
                 <Timer className="h-5 w-5 text-primary" />
               </div>
               <span className="bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text text-transparent">
                 Pipeline Progress
               </span>
+              <CardInfoTooltip text={HELP.pipelineProgress} className="text-zinc-400" />
             </div>
             <StatusPill 
               status="running" 
-              label={formatDuration(pipeline.totalDuration || 0)}
+              label={formatPipelineDuration(pipeline.totalDuration)}
               size="sm"
             />
           </CardTitle>
@@ -239,9 +242,13 @@ export function PredictionTimeline({
                         <span className="font-medium">
                           {formatPipelineStep(step.name)}
                         </span>
-                        {step.duration && (
+                        {(step.duration != null && step.duration > 0) ? (
                           <Badge variant="outline" className="text-xs font-mono">
                             {formatDuration(step.duration)}
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-xs font-mono text-muted-foreground">
+                            —
                           </Badge>
                         )}
                       </div>

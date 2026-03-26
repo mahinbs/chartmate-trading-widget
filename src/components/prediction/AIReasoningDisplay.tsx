@@ -13,11 +13,16 @@ import {
   BarChart3,
   ChevronDown,
   Sparkles,
+  BookOpen,
 } from "lucide-react";
 import { formatTechnicalFactor, formatKeyDriver } from "@/lib/display-utils";
+import { buildExpandedReasoning, softenPunctuation } from "@/lib/expand-analysis-narrative";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { useState, type ReactNode } from "react";
+import { useState, useMemo, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { CardInfoTooltip } from "@/components/ui/card-info-tooltip";
+import { HELP } from "@/lib/analysis-ui-help";
+import { buildReasoningGlossaryItems } from "@/lib/insight-explanations";
 
 interface DeepAnalysis {
   bullish_case?: string;
@@ -43,9 +48,14 @@ interface AIReasoningDisplayProps {
   technicalFactors?: string[];
   fundamentalFactors?: string[];
   keyDrivers?: string[];
+  riskFlags?: string[];
   oneLineSummary?: string;
   deepAnalysis?: DeepAnalysis;
   marketContext?: MarketContext;
+  positioningNotes?: string | null;
+  volumeProfile?: string | null;
+  /** When this analysis was produced; shown with glossary so readers know signals are snapshot-based. */
+  analysedAt?: Date | null;
 }
 
 const tileClass =
@@ -69,31 +79,76 @@ function SectionLabel({
 }
 
 export function AIReasoningDisplay({
-  symbol: _symbol,
+  symbol,
   action,
   confidence,
   technicalFactors = [],
   fundamentalFactors = [],
   keyDrivers = [],
+  riskFlags = [],
   oneLineSummary,
   deepAnalysis,
   marketContext,
+  positioningNotes,
+  volumeProfile,
+  analysedAt,
 }: AIReasoningDisplayProps) {
   const [showBullBear, setShowBullBear] = useState(true);
   const [showMarketContext, setShowMarketContext] = useState(true);
 
-  const generateOneLiner = () => {
-    if (oneLineSummary) return oneLineSummary;
+  const narrativeSummary = useMemo(() => {
+    const expanded = buildExpandedReasoning({
+      rationale: oneLineSummary,
+      positioningNotes: positioningNotes ?? undefined,
+      keyDrivers,
+      riskFlags,
+      patterns: undefined,
+      technicalFactors,
+      convictionRationale: deepAnalysis?.conviction_rationale,
+      bullishCase: deepAnalysis?.bullish_case,
+      bearishCase: deepAnalysis?.bearish_case,
+      contrarianView: deepAnalysis?.contrarian_view,
+      volumeProfile: volumeProfile ?? undefined,
+      symbol,
+    });
+    return softenPunctuation(expanded);
+  }, [
+    oneLineSummary,
+    positioningNotes,
+    deepAnalysis?.conviction_rationale,
+    deepAnalysis?.contrarian_view,
+    deepAnalysis?.bullish_case,
+    deepAnalysis?.bearish_case,
+    keyDrivers,
+    riskFlags,
+    technicalFactors,
+    volumeProfile,
+    symbol,
+  ]);
 
-    const primaryDriver = keyDrivers[0]
-      ? formatKeyDriver(keyDrivers[0])
-      : technicalFactors[0]
-        ? formatTechnicalFactor(technicalFactors[0])
-        : "favorable market conditions";
-    const confidenceLevel = confidence >= 80 ? "strong" : confidence >= 60 ? "moderate" : "weak";
+  const glossaryItems = useMemo(
+    () => buildReasoningGlossaryItems(technicalFactors, keyDrivers, riskFlags),
+    [technicalFactors, keyDrivers, riskFlags],
+  );
 
-    return `${action} signal generated with ${confidenceLevel} confidence due to ${primaryDriver.toLowerCase()}.`;
-  };
+  const glossaryShowsMacd = useMemo(
+    () => glossaryItems.some((g) => /macd/i.test(g.title)),
+    [glossaryItems],
+  );
+  const glossaryShowsRsi = useMemo(
+    () => glossaryItems.some((g) => /\brsi\b/i.test(g.title)),
+    [glossaryItems],
+  );
+
+  const analysedAtLabel = useMemo(() => {
+    if (!analysedAt || !(analysedAt instanceof Date) || Number.isNaN(analysedAt.getTime())) {
+      return null;
+    }
+    return analysedAt.toLocaleString(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  }, [analysedAt]);
 
   const actionStyles =
     action === "BUY"
@@ -102,12 +157,12 @@ export function AIReasoningDisplay({
         ? "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300"
         : "border-primary/40 bg-primary/10 text-primary";
 
-  const confidenceExpl =
+  const agreementExpl =
     confidence >= 80
-      ? `High confidence — multiple strong signals align with historical patterns; model indicates about ${confidence}% consistency in similar conditions.`
+      ? `The ensemble lines up fairly tightly on this window: about ${confidence}% internal agreement. That still does not guarantee price follows the lean; it means inputs were less contradictory than usual.`
       : confidence >= 60
-        ? `Moderate confidence — several supportive indicators, with some mixed signals. Estimated strength around ${confidence}%.`
-        : `Lower confidence — mixed or weak signals and unclear conditions. About ${confidence}% — consider waiting for a clearer setup.`;
+        ? `Signals partially agree: about ${confidence}% agreement inside the model. Expect some conflict between momentum, mean reversion, and headline tone until the next sessions print clearer structure.`
+        : `Inputs diverge: only about ${confidence}% model agreement, so the picture is noisy. Treat the narrative as provisional and refresh after new candles or material news.`;
 
   const hasMarketContext = marketContext && Object.values(marketContext).some(Boolean);
 
@@ -123,7 +178,7 @@ export function AIReasoningDisplay({
             <div>
               <h3 className="font-semibold text-base tracking-tight text-foreground">AI reasoning</h3>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                How the model explains this outlook — informational only, not advice.
+                How the model explains this outlook; informational only, not advice.
               </p>
             </div>
           </div>
@@ -137,15 +192,96 @@ export function AIReasoningDisplay({
             >
               {confidence}% confidence
             </Badge>
+            <CardInfoTooltip text={HELP.aiReasoningEngine} className="text-muted-foreground" />
           </div>
         </div>
 
-        {/* Summary — same Alert pattern as RegulatoryDisclaimer */}
-        <Alert className="border-primary/50 bg-background/80">
-          <Sparkles className="h-4 w-4 text-primary" />
-          <AlertDescription>
-            <p className="font-semibold text-sm mb-1.5 text-foreground">At a glance</p>
-            <p className="text-sm leading-relaxed text-muted-foreground">{generateOneLiner()}</p>
+        {/* Summary — high-contrast callout so the narrative is easy to spot */}
+        <Alert
+          className={cn(
+            "rounded-xl border-primary/45 bg-gradient-to-br from-primary/[0.14] via-primary/[0.06] to-background/95",
+            "p-5 sm:p-6 shadow-[0_12px_40px_-16px_hsl(var(--primary)/0.45)] ring-1 ring-primary/20",
+            "[&>svg]:left-5 [&>svg]:top-5 [&>svg]:h-5 [&>svg]:w-5 [&>svg]:text-primary",
+            "[&>svg~*]:pl-10",
+          )}
+        >
+          <Sparkles className="h-5 w-5 shrink-0 drop-shadow-[0_0_10px_hsl(var(--primary)/0.35)]" />
+          <AlertDescription className="space-y-3 text-base sm:text-lg [&>p]:leading-relaxed">
+            <p className="!mb-0 font-bold text-lg sm:text-xl tracking-tight text-foreground">
+              <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
+                At a glance
+              </span>
+            </p>
+            <p className="!mt-2 text-base sm:text-lg md:text-[1.2rem] font-semibold leading-[1.65] text-foreground/95 whitespace-pre-line">
+              {narrativeSummary}
+            </p>
+            {(analysedAtLabel || glossaryItems.length > 0) && (
+              <div
+                className={cn(
+                  "mt-5 pt-5 border-t-2 border-primary/25 space-y-4",
+                  glossaryItems.length > 0 &&
+                    "rounded-xl border border-primary/30 bg-gradient-to-b from-primary/[0.14] via-primary/[0.05] to-background/95 p-4 sm:p-5 shadow-[inset_0_1px_0_0_hsl(var(--primary)/0.12)] ring-1 ring-primary/15",
+                )}
+              >
+                {analysedAtLabel && (
+                  <p className="text-sm sm:text-base text-foreground/90 leading-relaxed font-medium">
+                    <span className="font-bold text-foreground">When this was computed: </span>
+                    {analysedAtLabel}. Indicators use the candle data available at that moment, not every later tick.
+                  </p>
+                )}
+                {glossaryItems.length > 0 && (
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap items-center gap-2.5 gap-y-1">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-primary/35 bg-primary/10 text-primary">
+                        <BookOpen className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <p className="font-bold text-base sm:text-lg text-foreground tracking-tight">
+                          Term guide
+                        </p>
+                        <p className="text-xs text-primary/90 font-medium uppercase tracking-wider">
+                          What the words mean
+                        </p>
+                      </div>
+                    </div>
+
+                    <p className="text-sm sm:text-base leading-relaxed text-foreground/95 font-medium">
+                      {HELP.aiReasoningTermGuideIntro}
+                    </p>
+
+                    {glossaryShowsMacd && (
+                      <p className="text-sm sm:text-base leading-relaxed text-foreground/95 font-medium border-l-[3px] border-primary pl-3.5 py-1 bg-background/50 rounded-r-md">
+                        {HELP.aiReasoningMacdPrimer}
+                      </p>
+                    )}
+                    {glossaryShowsRsi && (
+                      <p className="text-sm sm:text-base leading-relaxed text-foreground/95 font-medium border-l-[3px] border-amber-500/60 pl-3.5 py-1 bg-background/50 rounded-r-md">
+                        {HELP.aiReasoningRsiPrimer}
+                      </p>
+                    )}
+
+                    <p className="text-xs sm:text-sm font-bold text-foreground pt-1">
+                      Line-by-line (same snapshot as above)
+                    </p>
+                    <ul className="space-y-3 list-none pl-0">
+                      {glossaryItems.map(({ title, body }) => (
+                        <li
+                          key={title}
+                          className="rounded-lg border border-primary/20 bg-background/70 px-3.5 py-3 sm:px-4 sm:py-3.5 shadow-sm"
+                        >
+                          <p className="text-sm sm:text-base font-bold text-foreground leading-snug mb-1.5">
+                            {title}
+                          </p>
+                          <p className="text-sm sm:text-base leading-relaxed text-muted-foreground font-medium">
+                            {body}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
           </AlertDescription>
         </Alert>
 
@@ -181,6 +317,20 @@ export function AIReasoningDisplay({
           </div>
         )}
 
+        {riskFlags.length > 0 && (
+          <div className={tileClass}>
+            <SectionLabel icon={AlertTriangle}>Risk flags</SectionLabel>
+            <ul className="space-y-1.5">
+              {riskFlags.slice(0, 8).map((flag, idx) => (
+                <li key={idx} className="text-xs text-muted-foreground flex gap-2 leading-relaxed">
+                  <span className="text-destructive font-bold leading-none mt-0.5">·</span>
+                  <span>{flag}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {fundamentalFactors.length > 0 && (
           <div className={tileClass}>
             <SectionLabel icon={TrendingUp}>Fundamental factors</SectionLabel>
@@ -198,10 +348,9 @@ export function AIReasoningDisplay({
           </div>
         )}
 
-        {/* Confidence explainer — legal-strip style from disclaimer */}
         <div className="p-4 bg-muted/50 rounded-lg border border-primary/15 text-xs space-y-2">
-          <p className="font-semibold text-sm text-foreground">Model confidence</p>
-          <p className="text-muted-foreground leading-relaxed">{confidenceExpl}</p>
+          <p className="font-semibold text-sm text-foreground">Model agreement (not profit odds)</p>
+          <p className="text-muted-foreground leading-relaxed">{agreementExpl}</p>
         </div>
 
         {deepAnalysis && (
@@ -359,7 +508,7 @@ export function AIReasoningDisplay({
         )}
 
         <p className="text-center text-xs text-muted-foreground pt-2 border-t border-primary/15">
-          AI-generated analysis for research — verify with your own judgment and risk tolerance
+          AI-generated analysis for research, verify with your own judgment and risk tolerance
         </p>
       </CardContent>
     </Card>

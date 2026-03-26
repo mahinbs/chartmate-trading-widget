@@ -6,6 +6,8 @@ import { ExternalLink, Newspaper, TrendingUp, AlertTriangle, Target, Clock } fro
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
+import { CardInfoTooltip } from "@/components/ui/card-info-tooltip";
+import { HELP } from "@/lib/analysis-ui-help";
 
 interface NewsItem {
   time: string;
@@ -14,6 +16,7 @@ interface NewsItem {
   sentiment_score: number;
   novelty: string;
   relevance: string;
+  url?: string;
 }
 
 interface EnhancedNewsResponse {
@@ -38,6 +41,20 @@ interface EnhancedNewsResponse {
 interface NewsAnalysisProps {
   symbol: string;
   predictedAt?: Date;
+}
+
+/** Strip internal grounding label from older API payloads and cache. */
+function sanitizeNewsSources(data: EnhancedNewsResponse): EnhancedNewsResponse {
+  const strip = (s: string) => s.replace(/^\s*Gemini Search\s*·\s*/i, "").trim() || s;
+  const newsItems = data.newsItems.map((item) => ({
+    ...item,
+    source: strip(item.source),
+  }));
+  return {
+    ...data,
+    newsItems,
+    sources: [...new Set(newsItems.map((i) => i.source))],
+  };
 }
 
 export function NewsAnalysis({ symbol, predictedAt }: NewsAnalysisProps) {
@@ -68,7 +85,7 @@ export function NewsAnalysis({ symbol, predictedAt }: NewsAnalysisProps) {
         const isExpired = Date.now() - timestamp > 2 * 60 * 60 * 1000; // 2 hours TTL for news
         
         if (!isExpired) {
-          setNewsData(data);
+          setNewsData(sanitizeNewsSources(data as EnhancedNewsResponse));
           setLoading(false);
           return;
         }
@@ -88,13 +105,15 @@ export function NewsAnalysis({ symbol, predictedAt }: NewsAnalysisProps) {
         throw new Error('No data received');
       }
 
+      const cleaned = sanitizeNewsSources(data as EnhancedNewsResponse);
+
       // Cache the result
       localStorage.setItem(cacheKey, JSON.stringify({
-        data,
+        data: cleaned,
         timestamp: Date.now()
       }));
 
-      setNewsData(data);
+      setNewsData(cleaned);
       console.log(`Enhanced news analysis loaded: ${data.totalNews || 0} news items`);
 
     } catch (err) {
@@ -221,8 +240,9 @@ export function NewsAnalysis({ symbol, predictedAt }: NewsAnalysisProps) {
       <CardContent className="space-y-6">
         {/* AI Summary & Sentiment */}
         <div className="space-y-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h4 className="font-medium">AI Analysis</h4>
+            <CardInfoTooltip text={HELP.newsHeadlines} />
             <Badge 
               variant="outline" 
               className={getConfidenceColor(newsData.analysis?.confidence || 'medium')}
@@ -237,7 +257,7 @@ export function NewsAnalysis({ symbol, predictedAt }: NewsAnalysisProps) {
             </Badge>
           </div>
           
-          <p className="text-sm text-muted-foreground leading-relaxed">
+          <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
             {newsData.analysis?.summary || `Found ${newsData.totalNews} news items for ${newsData.symbol}`}
           </p>
         </div>
@@ -277,30 +297,56 @@ export function NewsAnalysis({ symbol, predictedAt }: NewsAnalysisProps) {
 
         {/* Recent Headlines */}
         <div className="space-y-3">
-          <h4 className="font-medium">Recent Headlines</h4>
+          <div className="flex items-center gap-2">
+            <h4 className="font-medium">Recent Headlines</h4>
+            <CardInfoTooltip text={HELP.newsHeadlines} />
+          </div>
           <div className="space-y-2">
             {newsItems && newsItems.length > 0 ? (
-              newsItems.slice(0, 5).map((item, idx) => (
-                <div key={idx} className="flex items-start justify-between gap-3 p-2 rounded-lg bg-muted/30">
-                  <div className="flex-1 min-w-0">
-                    <a 
-                      href="#" // Placeholder for article URL
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm font-medium hover:text-primary transition-colors block truncate"
-                    >
-                      {item.headline}
-                    </a>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-xs text-muted-foreground">{item.source}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {formatTimeAgo(item.time)}
-                      </span>
+              newsItems.slice(0, 5).map((item, idx) => {
+                const href = item.url?.trim();
+                const isHttp = href?.startsWith("http://") || href?.startsWith("https://");
+                return (
+                  <div key={idx} className="flex items-start justify-between gap-3 p-2 rounded-lg bg-muted/30">
+                    <div className="flex-1 min-w-0">
+                      {isHttp ? (
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-medium text-primary hover:underline block break-words"
+                        >
+                          {item.headline}
+                        </a>
+                      ) : (
+                        <span className="text-sm font-medium text-foreground block break-words">
+                          {item.headline}
+                        </span>
+                      )}
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <span className="text-xs text-muted-foreground">{item.source}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {formatTimeAgo(item.time)}
+                        </span>
+                        {!isHttp && (
+                          <span className="text-[10px] text-muted-foreground/80">Summary only (no URL from feed)</span>
+                        )}
+                      </div>
                     </div>
+                    {isHttp ? (
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-muted-foreground hover:text-primary shrink-0 mt-1"
+                        aria-label="Open article"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    ) : null}
                   </div>
-                  <ExternalLink className="h-3 w-3 text-muted-foreground flex-shrink-0 mt-1" />
-                </div>
-              ))
+                );
+              })
             ) : (
               <p className="text-sm text-muted-foreground">No recent headlines available</p>
             )}

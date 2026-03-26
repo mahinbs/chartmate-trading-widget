@@ -69,14 +69,14 @@ async function assertAdmin(auth: AuthContext, supabaseClient: ReturnType<typeof 
 async function callPredictMovement(symbol: string, timeframe: string, investment: number, profile: Record<string, unknown>) {
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  const horizons = [parseTimeframeMinutes(timeframe), 240, 1440, 10080];
+  const horizons = [60, 240, 1440, 10080];
 
   let response: Response;
   try {
     response = await fetch(`${supabaseUrl}/functions/v1/predict-movement`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceRoleKey}`, apikey: serviceRoleKey },
-      body: JSON.stringify({ symbol, investment, timeframe, horizons, ...profile }),
+      body: JSON.stringify({ symbol, investment, timeframe, focusTimeframe: timeframe, horizons, ...profile }),
     });
   } catch (networkErr) {
     throw new Error(`Network error calling predict-movement for ${symbol}: ${networkErr?.message ?? networkErr}`);

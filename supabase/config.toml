@@ -70,3 +70,10 @@ verify_jwt = false
 
 [functions.entry-point-daily-digest]
 verify_jwt = false
+
+# Cron + internal monitor use secrets in headers, not end-user JWT.
+[functions.process-conditional-orders]
+verify_jwt = false
+
+[functions.stream-conditional-tick]
+verify_jwt = false
