@@ -360,7 +360,6 @@ const PredictPage = () => {
         setCurrentStep("results");
         setCompletedSteps([
           "choose-asset",
-          "set-investment",
           "trading-profile",
           "review",
           "analysis",
@@ -873,7 +872,7 @@ const PredictPage = () => {
     setUserProfile((prev) => ({ ...prev, riskAcceptance: false }));
     resetPredictionForm(true);
     setPresetPromptShown(false);
-    // Preset dialog is shown only after user fills symbol and clicks Continue to Investment
+    // Preset dialog is shown when user completes asset + investment and continues
   };
 
   useEffect(() => {
@@ -887,11 +886,10 @@ const PredictPage = () => {
   }, [currentStep]);
 
   const steps = [
-    { id: "choose-asset", title: "Choose Asset", description: "Select symbol" },
     {
-      id: "set-investment",
-      title: "Set Investment",
-      description: "Amount to invest",
+      id: "choose-asset",
+      title: "Asset & investment",
+      description: "Symbol, timeframe & amount",
     },
     {
       id: "trading-profile",
@@ -942,16 +940,15 @@ const PredictPage = () => {
   };
 
   const handleNextStep = () => {
-    if (currentStep === "choose-asset" && symbol) {
-      setCompletedSteps((prev) => [...prev, "choose-asset"]);
-      setCurrentStep("set-investment");
-    } else if (currentStep === "set-investment" && investment) {
+    if (currentStep === "choose-asset") {
+      const inv = parseFloat(investment || "0");
+      if (!symbol || !investment || inv <= 0 || Number.isNaN(inv)) return;
       if (latestPreset && !presetPromptShown) {
         setShowPresetDialog(true);
         setPresetPromptShown(true);
         return;
       }
-      setCompletedSteps((prev) => [...prev, "set-investment"]);
+      setCompletedSteps((prev) => [...prev, "choose-asset"]);
       setCurrentStep("trading-profile");
     } else if (currentStep === "trading-profile") {
       setCompletedSteps((prev) => [...prev, "trading-profile"]);
@@ -966,7 +963,6 @@ const PredictPage = () => {
   const handlePrevStep = () => {
     const stepOrder = [
       "choose-asset",
-      "set-investment",
       "trading-profile",
       "review",
       "analysis",
@@ -1204,7 +1200,7 @@ const PredictPage = () => {
                   onClick={() => {
                     setShowPresetDialog(false);
                     // User wants fresh settings; continue to Trading Profile with current symbol + amount
-                    setCompletedSteps((prev) => [...prev, "set-investment"]);
+                    setCompletedSteps((prev) => [...prev, "choose-asset"]);
                     setCurrentStep("trading-profile");
                   }}
                 >
@@ -1214,11 +1210,7 @@ const PredictPage = () => {
                   onClick={() => {
                     if (latestPreset) {
                       applyPreset(latestPreset, true);
-                      setCompletedSteps((prev) => [
-                        ...prev,
-                        "choose-asset",
-                        "set-investment",
-                      ]);
+                      setCompletedSteps((prev) => [...prev, "choose-asset"]);
                       setCurrentStep("trading-profile");
                       setShowPresetDialog(false);
                       setTimeout(() => {
@@ -1276,41 +1268,44 @@ const PredictPage = () => {
 
           {/* Main Content */}
           <Container className="py-4 sm:py-8">
-            {/* Step 1 — tall chart on the right */}
+            {/* Step 1 — asset, timeframe & investment + tall chart */}
             {currentStep === "choose-asset" && (
               <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,55%)] gap-4 sm:gap-6 lg:gap-8 items-start">
                 <div className="min-w-0">
                   <StepContainer
-                    title="Choose Your Asset"
-                    description="Search and select the stock, crypto, or forex pair you want to analyze"
+                    title="Asset & investment"
+                    description="Pick what to analyze, choose a timeframe, and enter the amount for position sizing"
                     isActive={true}
                     className="max-w-2xl w-full"
                   >
-                    <div className="space-y-4">
-                      <div>
-                        <Label
-                          htmlFor="symbol"
-                          className="text-sm font-medium mb-2 block"
-                        >
-                          Symbol
-                        </Label>
-                        <SymbolSearch
-                          value={symbol}
-                          onValueChange={setSymbol}
-                          onSelectSymbol={setSelectedSymbol}
-                          placeholder={
-                            isMobile
-                              ? "Search symbols..."
-                              : "Search stocks, crypto, forex... (e.g., AAPL, BTC-USD)"
-                          }
-                        />
-                      </div>
+                    <div className="space-y-6">
+                      <div className="space-y-4">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          Market
+                        </p>
+                        <div>
+                          <Label
+                            htmlFor="symbol"
+                            className="text-sm font-medium mb-2 block"
+                          >
+                            Symbol
+                          </Label>
+                          <SymbolSearch
+                            value={symbol}
+                            onValueChange={setSymbol}
+                            onSelectSymbol={setSelectedSymbol}
+                            placeholder={
+                              isMobile
+                                ? "Search symbols..."
+                                : "Search stocks, crypto, forex... (e.g., AAPL, BTC-USD)"
+                            }
+                          />
+                        </div>
 
-                      <div className="space-y-3">
                         {symbol && (
                           <div className="p-4 bg-muted/30 rounded-lg border">
                             <div className="flex items-center gap-2">
-                              <CheckCircle className="h-5 w-5 text-green-600" />
+                              <CheckCircle className="h-5 w-5 text-green-600 shrink-0" />
                               <span className="font-medium">
                                 Selected: {selectedSymbol?.symbol || symbol}
                               </span>
@@ -1318,13 +1313,12 @@ const PredictPage = () => {
                           </div>
                         )}
 
-                        {/* Timeframe Selector */}
                         <div>
                           <Label
                             htmlFor="timeframe"
                             className="text-sm font-medium mb-2 block"
                           >
-                            Analysis Timeframe
+                            Analysis timeframe
                           </Label>
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
                             {["15m", "30m", "1h", "4h", "1d", "1w"].map(
@@ -1401,13 +1395,85 @@ const PredictPage = () => {
                         )}
                       </div>
 
+                      <div className="border-t border-border pt-6 space-y-4">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          Position size
+                        </p>
+                        <div className="flex items-center justify-between gap-2">
+                          <Label className="text-sm text-muted-foreground">
+                            Show amounts in
+                          </Label>
+                          <div className="flex rounded-full border p-0.5 bg-muted/60">
+                            <button
+                              type="button"
+                              className={`px-3 py-1 rounded-full text-sm ${displayCurrency === "INR" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                              onClick={() => setDisplayCurrency("INR")}
+                            >
+                              INR
+                            </button>
+                            <button
+                              type="button"
+                              className={`px-3 py-1 rounded-full text-sm ${displayCurrency === "USD" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                              onClick={() => setDisplayCurrency("USD")}
+                            >
+                              USD
+                            </button>
+                          </div>
+                        </div>
+                        <div>
+                          <Label
+                            htmlFor="investment"
+                            className="text-sm font-medium mb-2 block"
+                          >
+                            Investment amount ({displayCurrency})
+                          </Label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-3 h-4 w-4 flex items-center justify-center text-muted-foreground font-medium">
+                              {displayCurrency === "INR" ? "₹" : "$"}
+                            </span>
+                            <Input
+                              id="investment"
+                              type="number"
+                              placeholder="1000"
+                              value={investment}
+                              onChange={(e) => setInvestment(e.target.value)}
+                              className="pl-10"
+                              min="1"
+                              step="0.01"
+                            />
+                          </div>
+                        </div>
+
+                        {investment && parseFloat(investment) > 0 && (
+                          <div className="p-4 bg-muted/30 rounded-lg border">
+                            <div className="flex items-center gap-2">
+                              <CheckCircle className="h-5 w-5 text-green-600 shrink-0" />
+                              <span className="font-medium">
+                                Investment:{" "}
+                                {formatCurrency(
+                                  parseFloat(investment),
+                                  0,
+                                  false,
+                                  displayCurrency,
+                                )}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
                       <Button
                         onClick={handleNextStep}
-                        disabled={!symbol}
+                        disabled={
+                          !symbol ||
+                          !investment ||
+                          parseFloat(investment) <= 0 ||
+                          Number.isNaN(parseFloat(investment))
+                        }
                         className="w-full"
                         size="lg"
                       >
-                        Continue to Investment Amount
+                        Continue to trading profile
                         <ArrowRight className="ml-2 h-4 w-4" />
                       </Button>
                     </div>
@@ -1420,109 +1486,7 @@ const PredictPage = () => {
               </div>
             )}
 
-            {/* Step 2 — narrower, shorter chart on the right */}
-            {currentStep === "set-investment" && (
-              <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(15rem,50%)] gap-4 sm:gap-6 lg:gap-8 items-start">
-                <div className="min-w-0 h-full">
-                  <StepContainer
-                    title="Set Investment Amount"
-                    description="Enter the amount you want to invest for position sizing calculations"
-                    isActive={true}
-                    className="h-full"
-                  >
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between gap-2">
-                        <Label className="text-sm text-muted-foreground">
-                          Show amounts in
-                        </Label>
-                        <div className="flex rounded-full border p-0.5 bg-muted/60">
-                          <button
-                            type="button"
-                            className={`px-3 py-1 rounded-full text-sm ${displayCurrency === "INR" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
-                            onClick={() => setDisplayCurrency("INR")}
-                          >
-                            INR
-                          </button>
-                          <button
-                            type="button"
-                            className={`px-3 py-1 rounded-full text-sm ${displayCurrency === "USD" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
-                            onClick={() => setDisplayCurrency("USD")}
-                          >
-                            USD
-                          </button>
-                        </div>
-                      </div>
-                      <div>
-                        <Label
-                          htmlFor="investment"
-                          className="text-sm font-medium mb-2 block"
-                        >
-                          Investment Amount ({displayCurrency})
-                        </Label>
-                        <div className="relative">
-                          <span className="absolute left-3 top-3 h-4 w-4 flex items-center justify-center text-muted-foreground font-medium">
-                            {displayCurrency === "INR" ? "₹" : "$"}
-                          </span>
-                          <Input
-                            id="investment"
-                            type="number"
-                            placeholder="1000"
-                            value={investment}
-                            onChange={(e) => setInvestment(e.target.value)}
-                            className="pl-10"
-                            min="1"
-                            step="0.01"
-                          />
-                        </div>
-                      </div>
-
-                      {investment && (
-                        <div className="p-4 bg-muted/30 rounded-lg border">
-                          <div className="flex items-center gap-2">
-                            <CheckCircle className="h-5 w-5 text-green-600" />
-                            <span className="font-medium">
-                              Investment:{" "}
-                              {formatCurrency(
-                                parseFloat(investment),
-                                0,
-                                false,
-                                displayCurrency,
-                              )}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="flex flex-col sm:flex-row gap-3">
-                        <Button
-                          variant="outline"
-                          onClick={handlePrevStep}
-                          className="w-full sm:w-auto sm:flex-shrink-0"
-                          size="lg"
-                        >
-                          <ArrowLeft className="h-4 w-4 mr-1" /> Back
-                        </Button>
-                        <Button
-                          onClick={handleNextStep}
-                          disabled={!investment || parseFloat(investment) <= 0}
-                          className="w-full sm:flex-1"
-                          size="lg"
-                        >
-                          Continue to Trading Profile
-                          <ArrowRight className="ml-2 h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  </StepContainer>
-                </div>
-                <LiveChartBlock
-                  cardClassName="h-[min(17rem,48vh)] sm:h-[21rem] lg:h-[18rem] xl:h-[25rem]"
-                  wrapperClassName="w-full lg:sticky lg:top-4"
-                />
-              </div>
-            )}
-
-            {/* Step 3 — full-width chart below the form */}
+            {/* Step 2 — full-width chart below the form */}
             {currentStep === "trading-profile" && (
               <div className="flex flex-col-reverse gap-4 sm:gap-6 lg:gap-8 items-start">
                 <div className="min-w-0 w-full">
@@ -1591,7 +1555,7 @@ const PredictPage = () => {
               </div>
             )}
 
-            {/* Step 4 — medium chart on the right */}
+            {/* Step 3 — medium chart on the right */}
             {currentStep === "review" && (
               <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(17rem,36%)] gap-4 sm:gap-6 lg:gap-8 items-start">
                 <div className="min-w-0">
@@ -1761,7 +1725,7 @@ const PredictPage = () => {
               </div>
             )}
 
-            {/* Step 5 — compact chart above status */}
+            {/* Step 4 — compact chart above status */}
             {currentStep === "analysis" && (
               <div className="flex flex-col gap-4">
                 <LiveChartBlock
@@ -1784,7 +1748,7 @@ const PredictPage = () => {
               </div>
             )}
 
-            {/* Step 6 — wide results + tall sticky chart on xl+ */}
+            {/* Step 5 — wide results + tall sticky chart on xl+ */}
             {currentStep === "results" && result && (
               <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(17rem,30%)] gap-6 xl:gap-8 items-start">
                 <div className="space-y-6 relative z-10 w-full min-w-0 animate-in fade-in slide-in-from-bottom-4 duration-700">
