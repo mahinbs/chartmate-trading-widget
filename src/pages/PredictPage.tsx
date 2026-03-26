@@ -38,6 +38,8 @@ import { AIReasoningDisplay } from "@/components/prediction/AIReasoningDisplay";
 // StrategyEntrySignalsPanel moved to Trading Dashboard
 import { CapitalScenarios } from "@/components/prediction/CapitalScenarios";
 import { MarketConditionsDashboard } from "@/components/market/MarketConditionsDashboard";
+import { CardInfoTooltip } from "@/components/ui/card-info-tooltip";
+import { HELP } from "@/lib/analysis-ui-help";
 import { supabase } from "@/integrations/supabase/client";
 import type { SymbolData } from "@/components/SymbolSearch";
 import { useAuth } from "@/hooks/useAuth";
@@ -1030,8 +1032,8 @@ const PredictPage = () => {
             symbol: symbol.split(":")[1] || symbol,
             investment: parseFloat(investment),
             timeframe: effectiveTimeframe,
-            horizons: [primaryHorizon, 240, 1440, 10080], // Primary + 4h, 1d, 1w
-            // Include user profile for personalized AI analysis
+            focusTimeframe: effectiveTimeframe,
+            horizons: [primaryHorizon, 240, 1440, 10080],
             ...userProfile,
           },
         },
@@ -1834,9 +1836,18 @@ const PredictPage = () => {
                       keyDrivers={
                         result.geminiForecast.forecasts?.[0]?.key_drivers
                       }
+                      riskFlags={
+                        result.geminiForecast.forecasts?.[0]?.risk_flags
+                      }
                       oneLineSummary={result.rationale}
                       deepAnalysis={result.geminiForecast.deep_analysis}
                       marketContext={result.geminiForecast.market_context}
+                      positioningNotes={
+                        result.geminiForecast.positioning_guidance?.notes
+                      }
+                      volumeProfile={
+                        result.volumeData?.volumeProfile ?? undefined
+                      }
                     />
                   )}
 
@@ -2399,16 +2410,20 @@ const PredictPage = () => {
                         className="space-y-6 mt-0"
                       >
                         {/* Market Conditions Dashboard */}
-                        <MarketConditionsDashboard />
+                        <MarketConditionsDashboard symbol={result.symbol} />
 
                         {/* Multi-Horizon Forecasts */}
                         {result.geminiForecast?.forecasts && (
                           <Card className="glass-panel">
-                            <CardHeader>
+                            <CardHeader className="flex flex-row items-center justify-between space-y-0 gap-2">
                               <CardTitle className="flex items-center gap-2 text-white">
                                 <BarChart3 className="h-5 w-5" />
                                 Multi-Horizon Forecasts
                               </CardTitle>
+                              <CardInfoTooltip
+                                text={HELP.multiHorizonTable}
+                                className="text-zinc-400"
+                              />
                             </CardHeader>
                             <CardContent>
                               <ForecastTable
@@ -2427,57 +2442,68 @@ const PredictPage = () => {
                         value="deep-insights"
                         className="space-y-6 mt-0"
                       >
-                        {/* AI Insights */}
                         <Card className="glass-panel">
-                          <CardHeader>
+                          <CardHeader className="flex flex-row items-center justify-between space-y-0 gap-2">
                             <CardTitle className="text-white">
                               AI Insights & Analysis
                             </CardTitle>
+                            <CardInfoTooltip text={HELP.aiInsights} className="text-zinc-400" />
                           </CardHeader>
                           <CardContent>
                             <Insights
+                              symbol={result.symbol}
                               keyDrivers={
-                                result.geminiForecast?.forecasts?.[0]
-                                  ?.key_drivers
+                                result.geminiForecast?.forecasts?.[0]?.key_drivers
                               }
                               riskFlags={
-                                result.geminiForecast?.forecasts?.[0]
-                                  ?.risk_flags
+                                result.geminiForecast?.forecasts?.[0]?.risk_flags
                               }
                               opportunities={result.opportunities}
                               rationale={result.rationale}
                               patterns={result.patterns}
+                              technicalFactors={result.patterns}
+                              deepAnalysis={result.geminiForecast?.deep_analysis}
+                              action={result.geminiForecast?.action_signal?.action}
+                              confidence={
+                                result.geminiForecast?.action_signal?.confidence ??
+                                result.confidence ??
+                                0
+                              }
+                              positioningNotes={
+                                result.geminiForecast?.positioning_guidance?.notes
+                              }
+                              volumeProfile={
+                                result.volumeData?.volumeProfile ?? undefined
+                              }
                             />
                           </CardContent>
                         </Card>
 
-                        {/* News & AI Sentiment */}
                         <NewsAnalysis
                           symbol={result.symbol}
                           predictedAt={predictedAt}
                         />
 
-                        {/* Pipeline Timeline */}
                         {result.meta?.pipeline && (
                           <Card className="glass-panel">
-                            <CardHeader>
-                              <CardTitle className="text-white">
-                                Analysis Timeline
-                              </CardTitle>
+                            <CardHeader className="flex flex-row items-center justify-between space-y-0 gap-2">
+                              <CardTitle className="text-white">Analysis Timeline</CardTitle>
+                              <CardInfoTooltip
+                                text={HELP.analysisTimelineCard}
+                                className="text-zinc-400"
+                              />
                             </CardHeader>
                             <CardContent>
                               <PredictionTimeline
                                 pipeline={result.meta.pipeline}
                                 forecasts={
-                                  result.geminiForecast?.forecasts?.map(
-                                    (f) => ({
-                                      horizon: f.horizon,
-                                      direction: f.direction,
-                                      probabilities: f.probabilities,
-                                      expected_return_bp: f.expected_return_bp,
-                                      confidence: f.confidence,
-                                    }),
-                                  ) || []
+                                  result.geminiForecast?.forecasts?.map((f) => ({
+                                    horizon: f.horizon,
+                                    direction: f.direction,
+                                    probabilities: f.probabilities,
+                                    expected_return_bp: f.expected_return_bp,
+                                    confidence: f.confidence,
+                                  })) || []
                                 }
                                 predictedAt={predictedAt || new Date()}
                                 marketTimeZone={marketTimeZone}

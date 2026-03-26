@@ -1,5 +1,6 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { fetchGeminiGroundedNewsItems } from "../_shared/geminiGroundedNews.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -57,6 +58,8 @@ interface PredictionRequest {
   symbol: string;
   investment: number;
   timeframe: string;
+  /** User-selected chart/analysis timeframe (e.g. 1d) — does not replace multi-horizon forecast rows */
+  focusTimeframe?: string;
   horizons?: number[]; // New: array of minutes/days for multiple predictions
   // Enhanced user context for better predictions
   riskTolerance?: 'low' | 'medium' | 'high';
@@ -158,6 +161,8 @@ interface GeminiForecast {
     macro_factors: string;
     institutional_activity: string;
   };
+  /** 3–5 sentence narrative for UI (optional; from model JSON) */
+  executive_rationale?: string;
 }
 
 interface NewsItem {
@@ -167,6 +172,7 @@ interface NewsItem {
   sentiment_score: number;
   novelty: string;
   relevance: string;
+  url?: string;
 }
 
 interface TechnicalContext {
@@ -241,6 +247,88 @@ interface ProviderIntelligence {
     newsSentimentScore: number | null;
     notes?: string;
   };
+}
+
+/** Stable labels for Probability Timeline (must match client display). */
+function horizonMinutesToLabel(minutes: number): string {
+  if (minutes >= 10080 && minutes % 10080 === 0) return `${minutes / 10080}w`;
+  if (minutes >= 1440 && minutes % 1440 === 0) return `${minutes / 1440}d`;
+  if (minutes === 60) return "1h";
+  if (minutes > 60 && minutes < 1440 && minutes % 60 === 0) return `${minutes / 60}h`;
+  return `${minutes}m`;
+}
+
+function clampProb01(n: number): number {
+  return Math.max(0, Math.min(1, n));
+}
+
+function averageNewsSentiment(news: NewsItem[]): number {
+  if (!news?.length) return 0;
+  const v = news.reduce((a, n) => a + n.sentiment_score, 0) / news.length;
+  return Math.max(-1, Math.min(1, v));
+}
+
+function providerNewsSkew(pi: ProviderIntelligence | null | undefined): number {
+  const raw = pi?.sentiment?.newsSentimentScore;
+  if (raw == null || typeof raw !== "number" || Number.isNaN(raw)) return 0;
+  if (raw >= -1 && raw <= 1) return raw * 0.07;
+  return Math.max(-1, Math.min(1, (raw - 50) / 50)) * 0.07;
+}
+
+function normalizeProbsToDecimal(p: { up: number; down: number; sideways: number }): { up: number; down: number; sideways: number } {
+  let u = Number(p.up) || 0;
+  let d = Number(p.down) || 0;
+  let s = Number(p.sideways) || 0;
+  if (u + d + s > 1.5) {
+    u /= 100;
+    d /= 100;
+    s /= 100;
+  }
+  const sum = u + d + s;
+  if (sum < 1e-9) return { up: 1 / 3, down: 1 / 3, sideways: 1 / 3 };
+  return { up: u / sum, down: d / sum, sideways: s / sum };
+}
+
+function calibrateDecimalProbsForHorizon(
+  base: { up: number; down: number; sideways: number },
+  tc: TechnicalContext,
+  newsSent: number,
+  piSkew: number,
+  horizonMinutes: number,
+  horizonIndex: number,
+): { up: number; down: number; sideways: number } {
+  let { up: u, down: d, sideways: s } = normalizeProbsToDecimal(base);
+  const hW = Math.log(1 + horizonMinutes) / Math.log(1 + 10080);
+  const trendNudge = Math.max(-1, Math.min(1, tc.trendStrength)) * (0.08 + 0.12 * hW);
+  const mom = typeof tc.momentum === "number" ? tc.momentum : 0;
+  const momNudge = Math.max(-0.2, Math.min(0.2, mom * 4)) * (0.12 + 0.1 * (1 - hW));
+  const volNudge = Math.max(-1, Math.min(1, tc.volumeConfirmation)) * 0.15;
+  const newsNudge = Math.max(-1, Math.min(1, newsSent)) * 0.08 + piSkew;
+  const mr = typeof tc.meanReversionSignal === "number" ? tc.meanReversionSignal : 0;
+  const mrNudge = -Math.max(-1, Math.min(1, mr)) * 0.07;
+  const rsi = tc.indicators?.rsi ?? 50;
+  const rsiShort = ((rsi - 50) / 50) * 0.06 * (1 - hW);
+  const rsiLong = ((rsi - 50) / 50) * 0.05 * hW;
+  const idxTilt = (horizonIndex - 1.5) * 0.018;
+  const skew = Math.max(-0.34, Math.min(0.34,
+    trendNudge + momNudge + volNudge + newsNudge + mrNudge + rsiShort + rsiLong + idxTilt
+  ));
+  u = clampProb01(u + skew);
+  d = clampProb01(d - skew);
+  const sum = u + d + s;
+  if (sum < 1e-9) return { up: 1 / 3, down: 1 / 3, sideways: 1 / 3 };
+  u /= sum;
+  d /= sum;
+  s /= sum;
+  return { up: u, down: d, sideways: s };
+}
+
+function forecastDirectionFromProbs(p: { up: number; down: number; sideways: number }): "up" | "down" | "sideways" {
+  const { up: u, down: d, sideways: s } = p;
+  const max = Math.max(u, d, s);
+  if (max === u) return "up";
+  if (max === d) return "down";
+  return "sideways";
 }
 
 // Enhanced pipeline with detailed timings
@@ -1567,7 +1655,11 @@ async function fetchNewsData(symbol: string): Promise<NewsItem[]> {
   const newsItems: NewsItem[] = [];
 
   try {
-    // Try multiple news sources for better coverage
+    const geminiNews = await fetchGeminiGroundedNewsItems(symbol, 8);
+    if (geminiNews.length > 0) {
+      newsItems.push(...geminiNews);
+      console.log(`Gemini Search: ${geminiNews.length} grounded news for ${symbol}`);
+    }
 
     // Source 1: Alpha Vantage (if available)
     const alphaVantageNews = await fetchAlphaVantageNews(symbol);
@@ -1590,13 +1682,6 @@ async function fetchNewsData(symbol: string): Promise<NewsItem[]> {
       console.log(`MarketWatch: ${marketWatchNews.length} news items for ${symbol}`);
     }
 
-    // Source 4: Enhanced fallback news for major stocks
-    const fallbackNews = await fetchFallbackNews(symbol);
-    if (fallbackNews.length > 0) {
-      newsItems.push(...fallbackNews);
-      console.log(`Fallback: ${fallbackNews.length} news items for ${symbol}`);
-    }
-
     // Remove duplicates and sort by time
     const uniqueNews = removeDuplicateNews(newsItems);
     const sortedNews = uniqueNews.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
@@ -1606,8 +1691,7 @@ async function fetchNewsData(symbol: string): Promise<NewsItem[]> {
 
   } catch (error) {
     console.error('Error in enhanced news fetching:', error);
-    // Return fallback news even if other sources fail
-    return await fetchFallbackNews(symbol);
+    return [];
   }
 }
 
@@ -1645,7 +1729,8 @@ async function fetchAlphaVantageNews(symbol: string): Promise<NewsItem[]> {
       headline: item.title || '',
       sentiment_score: parseFloat(item.overall_sentiment_score) || 0,
       novelty: item.topics?.[0]?.topic || 'General',
-      relevance: item.ticker_sentiment?.[0]?.relevance_score || '0.0'
+      relevance: item.ticker_sentiment?.[0]?.relevance_score || '0.0',
+      url: typeof item.url === 'string' && item.url.startsWith('http') ? item.url : undefined,
     }));
   } catch (error) {
     console.error('Alpha Vantage news error:', error);
@@ -1918,14 +2003,24 @@ async function fetchYahooFinanceNews(symbol: string): Promise<NewsItem[]> {
 
     // Extract news from Yahoo response if available
     if (data.chart?.result?.[0]?.news) {
-      return data.chart.result[0].news.map((item: any) => ({
-        time: new Date(item.providerPublishTime * 1000).toISOString(),
-        source: item.publisher || 'Yahoo Finance',
-        headline: item.title || '',
-        sentiment_score: 0, // Yahoo doesn't provide sentiment
-        novelty: 'Market News',
-        relevance: '1.0'
-      }));
+      return data.chart.result[0].news.map((item: any) => {
+        const link =
+          typeof item.link === 'string'
+            ? item.link
+            : typeof item.clickThroughUrl === 'string'
+              ? item.clickThroughUrl
+              : undefined;
+        const url = link?.startsWith('http') ? link : undefined;
+        return {
+          time: new Date(item.providerPublishTime * 1000).toISOString(),
+          source: item.publisher || 'Yahoo Finance',
+          headline: item.title || '',
+          sentiment_score: 0,
+          novelty: 'Market News',
+          relevance: '1.0',
+          url,
+        };
+      });
     }
 
     return [];
@@ -1979,99 +2074,14 @@ async function fetchMarketWatchNews(symbol: string): Promise<NewsItem[]> {
   }
 }
 
-// Enhanced fallback news for major stocks
-async function fetchFallbackNews(symbol: string): Promise<NewsItem[]> {
-  const cleanSymbol = symbol.toUpperCase().replace(/[^A-Z]/g, '');
-
-  // Major stock news database
-  const majorStockNews: Record<string, Array<{
-    headline: string;
-    source: string;
-    sentiment: number;
-    timeOffset: number; // hours ago
-  }>> = {
-    'AAPL': [
-      { headline: "Apple's iPhone sales exceed expectations in Q4", source: "Financial Times", sentiment: 0.7, timeOffset: 2 },
-      { headline: "Apple announces new AI features for iOS 18", source: "TechCrunch", sentiment: 0.8, timeOffset: 6 },
-      { headline: "Apple stock reaches new all-time high", source: "MarketWatch", sentiment: 0.6, timeOffset: 12 },
-      { headline: "Apple's services revenue grows 15% year-over-year", source: "Reuters", sentiment: 0.5, timeOffset: 18 },
-      { headline: "Analysts raise Apple price targets on strong earnings", source: "CNBC", sentiment: 0.7, timeOffset: 24 },
-      { headline: "Apple's App Store policies under regulatory scrutiny", source: "Bloomberg", sentiment: -0.3, timeOffset: 30 },
-      { headline: "Apple expands renewable energy initiatives", source: "Green Tech Media", sentiment: 0.9, timeOffset: 36 },
-      { headline: "Apple's supply chain shows signs of recovery", source: "Supply Chain Dive", sentiment: 0.4, timeOffset: 42 },
-      { headline: "Apple's privacy features impact advertising revenue", source: "Ad Age", sentiment: -0.2, timeOffset: 48 },
-      { headline: "Apple's market cap approaches $3 trillion milestone", source: "Forbes", sentiment: 0.8, timeOffset: 54 },
-      { headline: "Apple's China sales face regulatory challenges", source: "South China Morning Post", sentiment: -0.4, timeOffset: 60 },
-      { headline: "Apple's new product pipeline shows innovation", source: "9to5Mac", sentiment: 0.6, timeOffset: 66 },
-      { headline: "Apple's enterprise business grows steadily", source: "Enterprise Tech", sentiment: 0.5, timeOffset: 72 },
-      { headline: "Apple's stock buyback program continues", source: "Seeking Alpha", sentiment: 0.3, timeOffset: 78 },
-      { headline: "Apple's ecosystem lock-in strategy analyzed", source: "Harvard Business Review", sentiment: 0.1, timeOffset: 84 }
-    ],
-    'TSLA': [
-      { headline: "Tesla delivers record number of vehicles in Q4", source: "Electrek", sentiment: 0.8, timeOffset: 3 },
-      { headline: "Tesla's autonomous driving technology advances", source: "TechCrunch", sentiment: 0.7, timeOffset: 8 },
-      { headline: "Tesla expands production in new markets", source: "Reuters", sentiment: 0.6, timeOffset: 15 },
-      { headline: "Tesla's energy storage business grows rapidly", source: "Clean Technica", sentiment: 0.9, timeOffset: 22 },
-      { headline: "Tesla faces competition from traditional automakers", source: "Automotive News", sentiment: -0.3, timeOffset: 28 }
-    ],
-    'MSFT': [
-      { headline: "Microsoft's cloud services revenue surges", source: "ZDNet", sentiment: 0.8, timeOffset: 4 },
-      { headline: "Microsoft acquires AI startup for $1.5B", source: "TechCrunch", sentiment: 0.7, timeOffset: 10 },
-      { headline: "Microsoft's gaming division shows strong growth", source: "GamesIndustry.biz", sentiment: 0.6, timeOffset: 16 },
-      { headline: "Microsoft's enterprise software adoption increases", source: "CIO.com", sentiment: 0.5, timeOffset: 24 }
-    ],
-    'GOOGL': [
-      { headline: "Google's AI research leads to breakthrough", source: "MIT Technology Review", sentiment: 0.8, timeOffset: 5 },
-      { headline: "Google faces antitrust lawsuit from DOJ", source: "The Verge", sentiment: -0.6, timeOffset: 12 },
-      { headline: "Google's cloud business gains market share", source: "TechCrunch", sentiment: 0.7, timeOffset: 20 }
-    ],
-    'AMZN': [
-      { headline: "Amazon's e-commerce sales exceed expectations", source: "Retail Dive", sentiment: 0.7, timeOffset: 6 },
-      { headline: "Amazon's AWS revenue continues strong growth", source: "CRN", sentiment: 0.8, timeOffset: 14 },
-      { headline: "Amazon expands logistics network", source: "Supply Chain Dive", sentiment: 0.6, timeOffset: 22 }
-    ]
-  };
-
-  // Get news for this symbol
-  const stockNews = majorStockNews[cleanSymbol];
-  if (!stockNews) {
-    // Generic news for unknown symbols
-    return [
-      {
-        time: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-        source: "Market Data",
-        headline: `${cleanSymbol} shows active trading with increased volume`,
-        sentiment_score: 0.1,
-        novelty: "Market Activity",
-        relevance: "0.7"
-      },
-      {
-        time: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
-        source: "Financial News",
-        headline: `${cleanSymbol} price movement reflects market sentiment`,
-        sentiment_score: 0.0,
-        novelty: "Market Analysis",
-        relevance: "0.6"
-      }
-    ];
-  }
-
-  // Convert to NewsItem format with realistic timestamps
-  return stockNews.map(news => ({
-    time: new Date(Date.now() - news.timeOffset * 60 * 60 * 1000).toISOString(),
-    source: news.source,
-    headline: news.headline,
-    sentiment_score: news.sentiment,
-    novelty: "Market News",
-    relevance: "0.8"
-  }));
-}
-
 // Remove duplicate news items
 function removeDuplicateNews(newsItems: NewsItem[]): NewsItem[] {
   const seen = new Set<string>();
   return newsItems.filter(item => {
-    const key = `${item.headline.toLowerCase().slice(0, 50)}-${item.source}`;
+    const key =
+      item.url && item.url.startsWith("http")
+        ? item.url
+        : `${item.headline.toLowerCase().slice(0, 50)}-${item.source}`;
     if (seen.has(key)) {
       return false;
     }
@@ -2572,6 +2582,7 @@ async function generateEnhancedGeminiAnalysis(
   newsData: NewsItem[],
   investment: number,
   horizons: number[],
+  focusTimeframe: string | undefined,
   userContext?: {
     riskTolerance?: string;
     tradingStyle?: string;
@@ -2594,6 +2605,8 @@ async function generateEnhancedGeminiAnalysis(
     console.log('Gemini API key not found, falling back to ensemble prediction');
     throw new Error('Gemini API key not found');
   }
+
+  const horizonLabels = horizons.map(horizonMinutesToLabel);
 
   // Create enhanced prompt with all context
   const prompt = `You are a world-class institutional quantitative analyst with 20+ years of experience at top hedge funds. You combine technical analysis, fundamental research, market psychology, statistical modeling, and contrarian thinking to generate highly accurate predictions.
@@ -2704,6 +2717,8 @@ ${spyCorrelation ? `- Correlation Coefficient: ${(spyCorrelation.coefficient * 1
           '⚠️ BETA risk - will amplify market moves' :
           '✓ Moderate market sensitivity'}` : '- Correlation data not available'}
 
+USER CHART / FOCUS TIMEFRAME (weight your narrative and risk framing; still emit all horizons below): ${focusTimeframe || 'not specified — infer from data'}
+
 INVESTMENT CONTEXT:
 - Position Size: $${investment}
 ${userContext?.riskTolerance ? `- Risk Tolerance: ${userContext.riskTolerance.toUpperCase()}` : ''}
@@ -2765,7 +2780,12 @@ PASS 6 - FINAL SYNTHESIS:
 33. Give clear, actionable reasoning that a professional trader would respect
 34. If signals are mixed or weak, recommend HOLD - don't force a trade
 
-Generate forecasts for horizons: ${horizons.map(h => h < 1440 ? `${h}m` : `${h / 1440}d`).join(', ')}
+MULTI-HORIZON OUTPUT (minutes for reference: ${horizons.join(', ')}):
+- Emit EXACTLY ${horizons.length} objects in "forecasts", in the same order.
+- Each "horizon" string must match EXACTLY, in order: ${horizonLabels.join(' → ')}
+- "probabilities" use decimals 0–1 and must sum to 1.0 per row.
+- Each row MUST differ: distinct expected_return_bp and distinct probability triples (no copy-pasted identical forecasts across horizons).
+- Reflect real asymmetry: up ≠ down unless data is genuinely symmetric; use trend, momentum, mean-reversion, volume, and news skew.
 
 ⚠️ CRITICAL REQUIREMENTS:
 - Your analysis must be PROFESSIONAL-GRADE, not generic
@@ -2778,9 +2798,10 @@ Respond with a valid JSON object matching this exact schema:
 {
   "symbol": "${symbol}",
   "as_of": "${new Date().toISOString()}",
+  "executive_rationale": "3–6 sentences: clear bias, top evidence, main risk, and which horizon drives the trade plan.",
   "forecasts": [
     {
-      "horizon": "15m",
+      "horizon": "${horizonLabels[0] || '1h'}",
       "direction": "up|down|sideways",
       "probabilities": {"up": 0.4, "down": 0.3, "sideways": 0.3},
       "expected_return_bp": 25,
@@ -2812,10 +2833,10 @@ Respond with a valid JSON object matching this exact schema:
     "worst_case": -3.1
   },
   "deep_analysis": {
-    "bullish_case": "Detailed explanation of why price could go UP (3-5 specific reasons with data)",
-    "bearish_case": "Detailed explanation of why price could go DOWN (3-5 specific reasons with data)",
-    "contrarian_view": "What are traders missing? What could surprise the market?",
-    "conviction_rationale": "Why this recommendation over alternatives? What makes you confident?",
+    "bullish_case": "Minimum 2 full sentences on upside drivers with concrete data (levels, RSI, volume, news)",
+    "bearish_case": "Minimum 2 full sentences on downside risks with concrete data",
+    "contrarian_view": "Minimum 2 sentences: what the crowd may be missing",
+    "conviction_rationale": "Minimum 3 sentences tying signal to evidence and invalidation",
     "invalidation_triggers": ["Specific events that would prove this analysis wrong"],
     "risk_reward_ratio": 2.5,
     "success_probability": 65
@@ -2925,23 +2946,27 @@ function generateEnsemblePrediction(
       volumePriceScore * weights.volumePrice +
       sentimentScore * weights.sentiment;
 
-    // Determine direction and confidence
     let direction: "up" | "down" | "sideways" = "sideways";
     let confidence = 50;
-
-    if (combinedScore > 0.3) {
-      direction = "up";
-      confidence = Math.min(95, 50 + Math.abs(combinedScore) * 100);
-    } else if (combinedScore < -0.3) {
-      direction = "down";
-      confidence = Math.min(95, 50 + Math.abs(combinedScore) * 100);
-    }
 
     // Calculate expected returns based on volatility and momentum
     const volatilityMultiplier = technicalContext.volatilityRegime === 'high' ? 1.5 :
       technicalContext.volatilityRegime === 'elevated' ? 1.2 : 1.0;
 
-    const baseReturn = Math.abs(combinedScore) * 100; // Base return in basis points
+    const horizonScale = 0.88 + (Math.log(1 + horizon) / Math.log(10081)) * 0.32;
+    const scoreForHorizon = Math.max(-1, Math.min(1, combinedScore * horizonScale));
+    if (scoreForHorizon > 0.3) {
+      direction = "up";
+      confidence = Math.min(95, 50 + Math.abs(scoreForHorizon) * 100);
+    } else if (scoreForHorizon < -0.3) {
+      direction = "down";
+      confidence = Math.min(95, 50 + Math.abs(scoreForHorizon) * 100);
+    } else {
+      direction = "sideways";
+      confidence = Math.max(35, Math.min(70, 50 + Math.abs(scoreForHorizon) * 40));
+    }
+
+    const baseReturn = Math.abs(scoreForHorizon) * 100; // Base return in basis points
     const expectedReturn = baseReturn * volatilityMultiplier;
 
     // Risk assessment
@@ -2951,14 +2976,36 @@ function generateEnsemblePrediction(
     if (technicalContext.volumeConfirmation === 0) riskFlags.push('low_volume_confirmation');
     if (technicalContext.trendStrength < 0.2 && technicalContext.trendStrength > -0.2) riskFlags.push('weak_trend');
 
+    const c = confidence / 100;
+    const rem = 1 - c;
+    const t = Math.max(-1, Math.min(1, technicalContext.trendStrength));
+    const m = Math.max(-1, Math.min(1, technicalContext.momentum * 5));
+    const bullWeight = clampProb01(0.5 + t * 0.35 + m * 0.28);
+    let upP: number;
+    let downP: number;
+    let sideP: number;
+    if (direction === "up") {
+      upP = c;
+      downP = rem * (1 - bullWeight);
+      sideP = rem * bullWeight;
+    } else if (direction === "down") {
+      upP = rem * bullWeight;
+      downP = c;
+      sideP = rem * (1 - bullWeight);
+    } else {
+      upP = rem * bullWeight;
+      downP = rem * (1 - bullWeight);
+      sideP = c;
+    }
+    const pSum = upP + downP + sideP;
+    upP /= pSum;
+    downP /= pSum;
+    sideP /= pSum;
+
     return {
-      horizon: horizon < 1440 ? `${horizon}m` : `${horizon / 1440}d`,
+      horizon: horizonMinutesToLabel(horizon),
       direction,
-      probabilities: {
-        up: direction === 'up' ? confidence / 100 : (1 - confidence / 100) / 2,
-        down: direction === 'down' ? confidence / 100 : (1 - confidence / 100) / 2,
-        sideways: direction === 'sideways' ? confidence / 100 : (1 - confidence / 100) / 2
-      },
+      probabilities: { up: upP, down: downP, sideways: sideP },
       expected_return_bp: Math.round(expectedReturn),
       expected_range_bp: {
         p10: Math.round(-expectedReturn * 1.5),
@@ -2986,6 +3033,62 @@ function generateEnsemblePrediction(
       notes: generatePositioningNotes(technicalContext, forecasts[0])
     }
   };
+}
+
+function sanitizeAndCalibrateForecast(
+  forecast: GeminiForecast,
+  horizons: number[],
+  technicalContext: TechnicalContext,
+  newsData: NewsItem[],
+  providerIntelligence: ProviderIntelligence | null,
+  symbol: string,
+  stockData: StockData,
+): void {
+  if (!forecast.forecasts) forecast.forecasts = [];
+  const newsSent = averageNewsSentiment(newsData);
+  const piSkew = providerNewsSkew(providerIntelligence);
+
+  while (forecast.forecasts.length < horizons.length) {
+    const h = horizons[forecast.forecasts.length];
+    const patch = generateEnsemblePrediction(symbol, stockData, technicalContext, newsData, [h]);
+    forecast.forecasts.push(patch.forecasts[0]);
+  }
+  if (forecast.forecasts.length > horizons.length) {
+    forecast.forecasts = forecast.forecasts.slice(0, horizons.length);
+  }
+
+  for (let i = 0; i < horizons.length; i++) {
+    const row = forecast.forecasts[i];
+    const h = horizons[i];
+    row.horizon = horizonMinutesToLabel(h);
+    const calibrated = calibrateDecimalProbsForHorizon(
+      row.probabilities || { up: 0.33, down: 0.33, sideways: 0.34 },
+      technicalContext,
+      newsSent,
+      piSkew,
+      h,
+      i,
+    );
+    row.probabilities = calibrated;
+    row.direction = forecastDirectionFromProbs(calibrated);
+  }
+}
+
+function buildPublicRationale(forecast: GeminiForecast): string {
+  const ext = (forecast as { executive_rationale?: string }).executive_rationale?.trim();
+  const da = forecast.deep_analysis;
+  const pg = forecast.positioning_guidance;
+  const chunks: string[] = [];
+  if (ext && ext.length > 40) chunks.push(ext);
+  if (da?.conviction_rationale?.trim()) chunks.push(da.conviction_rationale.trim());
+  if (da?.contrarian_view?.trim()) chunks.push(`Contrarian angle: ${da.contrarian_view.trim()}`);
+  if (pg?.notes?.trim()) chunks.push(pg.notes.trim());
+  const merged = chunks.join(" ").replace(/\s+/g, " ").trim();
+  if (merged.length >= 140) return merged;
+  if (da?.bullish_case?.trim() && da?.bearish_case?.trim()) {
+    return `${da.bullish_case.trim()} ${da.bearish_case.trim()}`.replace(/\s+/g, " ").trim();
+  }
+  return merged.length > 20 ? merged : (pg?.notes || "Analysis blends price action, volume, cross-asset data, and news flow for this symbol.");
 }
 
 // Helper functions for ensemble prediction
@@ -3183,24 +3286,27 @@ function generateEnhancedEnsemblePrediction(
       volumePriceScore * model.modelWeights.volumePrice +
       sentimentScore * model.modelWeights.sentiment;
 
-    // Apply confidence calibration
-    let confidence = 50 + Math.abs(combinedScore) * 50;
-    confidence = confidence * model.confidenceCalibration.scaling + model.confidenceCalibration.bias;
-    confidence = Math.max(10, Math.min(95, confidence));
-
-    // Determine direction
-    let direction: "up" | "down" | "sideways" = "sideways";
-    if (combinedScore > 0.3) {
-      direction = "up";
-    } else if (combinedScore < -0.3) {
-      direction = "down";
-    }
-
-    // Enhanced return calculation with market regime awareness
     const volatilityMultiplier = technicalContext.volatilityRegime === 'high' ? 1.5 :
       technicalContext.volatilityRegime === 'elevated' ? 1.2 : 1.0;
 
-    const baseReturn = Math.abs(combinedScore) * 100;
+    const horizonScale = 0.88 + (Math.log(1 + horizon) / Math.log(10081)) * 0.32;
+    const scoreForHorizon = Math.max(-1, Math.min(1, combinedScore * horizonScale));
+
+    let direction: "up" | "down" | "sideways" = "sideways";
+    if (scoreForHorizon > 0.3) {
+      direction = "up";
+    } else if (scoreForHorizon < -0.3) {
+      direction = "down";
+    }
+
+    let confidence = 50 + Math.abs(scoreForHorizon) * 50;
+    if (direction === "sideways") {
+      confidence = Math.max(35, Math.min(70, 50 + Math.abs(scoreForHorizon) * 35));
+    }
+    confidence = confidence * model.confidenceCalibration.scaling + model.confidenceCalibration.bias;
+    confidence = Math.max(10, Math.min(95, confidence));
+
+    const baseReturn = Math.abs(scoreForHorizon) * 100;
     const expectedReturn = baseReturn * volatilityMultiplier;
 
     // Enhanced risk assessment
@@ -3214,14 +3320,36 @@ function generateEnhancedEnsemblePrediction(
     if (technicalContext.volatilityRegime === 'extreme') riskFlags.push('extreme_volatility_regime');
     if (technicalContext.patterns.includes('bb_squeeze')) riskFlags.push('volatility_breakout_imminent');
 
+    const c = confidence / 100;
+    const rem = 1 - c;
+    const t = Math.max(-1, Math.min(1, technicalContext.trendStrength));
+    const m = Math.max(-1, Math.min(1, technicalContext.momentum * 5));
+    const bullWeight = clampProb01(0.5 + t * 0.35 + m * 0.28);
+    let upP: number;
+    let downP: number;
+    let sideP: number;
+    if (direction === "up") {
+      upP = c;
+      downP = rem * (1 - bullWeight);
+      sideP = rem * bullWeight;
+    } else if (direction === "down") {
+      upP = rem * bullWeight;
+      downP = c;
+      sideP = rem * (1 - bullWeight);
+    } else {
+      upP = rem * bullWeight;
+      downP = rem * (1 - bullWeight);
+      sideP = c;
+    }
+    const pSum = upP + downP + sideP;
+    upP /= pSum;
+    downP /= pSum;
+    sideP /= pSum;
+
     return {
-      horizon: horizon < 1440 ? `${horizon}m` : `${horizon / 1440}d`,
+      horizon: horizonMinutesToLabel(horizon),
       direction,
-      probabilities: {
-        up: direction === 'up' ? confidence / 100 : (1 - confidence / 100) / 2,
-        down: direction === 'down' ? confidence / 100 : (1 - confidence / 100) / 2,
-        sideways: direction === 'sideways' ? confidence / 100 : (1 - confidence / 100) / 2
-      },
+      probabilities: { up: upP, down: downP, sideways: sideP },
       expected_return_bp: Math.round(expectedReturn),
       expected_range_bp: {
         p10: Math.round(-expectedReturn * 1.5),
@@ -3845,7 +3973,8 @@ serve(async (req) => {
       symbol,
       investment,
       timeframe,
-      horizons = [15, 30, 60, 1440],
+      focusTimeframe,
+      horizons = [60, 240, 1440, 10080],
       riskTolerance,
       tradingStyle,
       investmentGoal,
@@ -4016,6 +4145,7 @@ serve(async (req) => {
         newsData,
         investment,
         horizons,
+        focusTimeframe ?? timeframe,
         userContext,
         {
           fullYear: fullYearData,
@@ -4093,6 +4223,16 @@ serve(async (req) => {
         updatePipelineStep(pipeline, 'ai_prediction', 'completed', 'Statistical ensemble prediction generated');
       }
     }
+
+    sanitizeAndCalibrateForecast(
+      geminiForecast,
+      horizons,
+      technicalContext,
+      newsData,
+      providerIntelligence,
+      symbol,
+      stockData,
+    );
 
     updatePipelineStep(pipeline, 'multi_horizon_forecast', 'completed',
       `${geminiForecast.forecasts.length} horizons analyzed (${predictionSource})`);
@@ -4219,7 +4359,7 @@ serve(async (req) => {
       },
       risks: geminiForecast?.forecasts?.[0]?.risk_flags || [],
       opportunities: geminiForecast?.forecasts?.[0]?.key_drivers || [],
-      rationale: geminiForecast?.positioning_guidance?.notes || "Enhanced multi-horizon analysis completed",
+      rationale: buildPublicRationale(geminiForecast),
       // New enhanced fields for decision making
       positionSize: {
         shares: sharesQuantity,

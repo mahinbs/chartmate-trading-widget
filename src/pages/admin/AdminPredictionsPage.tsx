@@ -35,20 +35,6 @@ interface BoardRow {
 
 const TIMEFRAMES = ["15m", "30m", "1h", "4h", "1d", "1w"];
 
-function getTimeframeMinutes(tf: string): number {
-  const match = tf.match(/^(\d+)([mhd]|w)$/);
-  if (!match) return 60;
-  const [, value, unit] = match;
-  const num = parseInt(value, 10);
-  switch (unit) {
-    case "m": return num;
-    case "h": return num * 60;
-    case "d": return num * 1440;
-    case "w": return num * 10080;
-    default: return 60;
-  }
-}
-
 const PIPELINE_STEPS = [
   { icon: Search,     label: "Fetching Market Data",       desc: "Real-time price, volume, change data" },
   { icon: BarChart3,  label: "Historical Analysis",         desc: "Full-year candles, fundamentals, earnings" },
@@ -128,7 +114,8 @@ export default function AdminPredictionsPage() {
           symbol: row.symbol,
           investment: inv,
           timeframe: tf,
-          horizons: [1440, 240, 1440, 10080],
+          focusTimeframe: tf,
+          horizons: [60, 240, 1440, 10080],
           riskTolerance: "medium",
           tradingStyle: "swing_trading",
           investmentGoal: "growth",
@@ -221,14 +208,14 @@ export default function AdminPredictionsPage() {
 
     try {
       const apiSymbol = rawSymbol.includes(":") ? rawSymbol.split(":")[1] : rawSymbol;
-      const primaryHorizon = getTimeframeMinutes(timeframe);
       // Identical request to PredictPage.handlePredict — same pipeline, same prompt, same user context
       const { data, error } = await supabase.functions.invoke("predict-movement", {
         body: {
           symbol: apiSymbol,
           investment: Number(investment),
           timeframe,
-          horizons: [primaryHorizon, 240, 1440, 10080],
+          focusTimeframe: timeframe,
+          horizons: [60, 240, 1440, 10080],
           ...DEFAULT_PROFILE,
         },
       });

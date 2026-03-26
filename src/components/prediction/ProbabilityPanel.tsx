@@ -1,11 +1,7 @@
 import { useMemo } from "react";
+import { formatKeyDriver } from "@/lib/display-utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import {
   TrendingUp,
   TrendingDown,
@@ -15,8 +11,10 @@ import {
   Clock,
   Activity,
   RefreshCw,
-  Eye,
 } from "lucide-react";
+import { CardInfoTooltip } from "@/components/ui/card-info-tooltip";
+import { HELP } from "@/lib/analysis-ui-help";
+import { buildExpandedReasoning, softenPunctuation } from "@/lib/expand-analysis-narrative";
 
 /* ─────────────────────────────── types ─────────────────────────────── */
 
@@ -42,6 +40,8 @@ interface GeminiForecast {
   deep_analysis?: {
     bullish_case?: string;
     bearish_case?: string;
+    conviction_rationale?: string;
+    contrarian_view?: string;
     success_probability?: number;
     risk_reward_ratio?: number;
   };
@@ -198,50 +198,6 @@ function deriveReasoning(
   return `Market in consolidation — no strong directional edge (${confidence}% signal confidence). Probability split across all three scenarios.`;
 }
 
-/** Eye icon + hover tooltip explaining a panel section (animated via TooltipContent). */
-function SectionInfoHint({ description }: { description: string }) {
-  return (
-    <Tooltip delayDuration={180}>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          className="inline-flex shrink-0 rounded-md p-0.5 text-zinc-500 transition-all duration-200 hover:text-primary hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
-          aria-label="About this section"
-        >
-          <Eye className="h-3.5 w-3.5" strokeWidth={2.25} />
-        </button>
-      </TooltipTrigger>
-      <TooltipContent
-        side="top"
-        className="max-w-[min(20rem,calc(100vw-2rem))] border-white/10 bg-zinc-900/95 text-zinc-200 text-xs leading-relaxed px-3 py-2.5 shadow-xl backdrop-blur-md duration-200"
-      >
-        {description}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
-const PROBABILITY_SECTION_HELP = {
-  panel:
-    "Combines AI-derived probabilities with technical context for this symbol. All figures are model outputs for research — not financial advice or a recommendation to trade.",
-  direction:
-    "Shows how the model splits odds between up, sideways, and down over the forecast window. Arc gauges and bars match the same totals; the note below summarizes the main drivers.",
-  confidence:
-    "Overall strength of the AI read on this market, plus supporting tags (trend, momentum, volatility risk) derived from the same analysis pipeline.",
-  scenarios:
-    "Splits the directional totals into finer outcomes (e.g. strong vs moderate up) so you can see how probability is distributed inside each broad direction.",
-  pressureMap:
-    "A visual map of bearish ↔ neutral ↔ bullish pressure. The pin tracks upward probability along the strip; bars below echo the same three-way split.",
-  priceLevels:
-    "Estimated relevance of nearby resistance and support zones. When level data exists, bars reflect modeled odds; otherwise placeholders mirror the directional mix.",
-  timeline:
-    "Upward probability at successive time horizons from the forecast. Use it to see whether the outlook strengthens or fades as the window lengthens.",
-  pressureMeter:
-    "Modeled buyer vs seller pressure as a split view. The note compares both sides and may include extra positioning context from the AI when available.",
-  volume:
-    "Real volume context: 24h size, average activity, a high/normal/low profile read, and whether volume aligns with the directional lean.",
-} as const;
-
 /* ─────────────────────────────── main component ─────────────────────── */
 
 /** Auto-convert decimal probabilities (0–1) → percentage (0–100) */
@@ -322,6 +278,11 @@ export function ProbabilityPanel({
       ? Math.round((upPct / (upPct + downPct)) * 100)
       : 50;
 
+    // Break 50/50 when up≈down: use model expected move (bp) + momentum score
+    const retBp = primaryForecast?.expected_return_bp ?? 0;
+    bp = clamp(Math.round(bp + Math.max(-20, Math.min(20, retBp / 260))));
+    bp = clamp(Math.round(bp + (momentumScore - 5) * 3.2));
+
     // Action-signal bias — confidence above 50% pulls the needle
     const sig  = actionSignal?.action;
     const conf = clamp(actionSignal?.confidence ?? 50);
@@ -333,11 +294,11 @@ export function ProbabilityPanel({
 
     // Volume confirmation nudge (−1 to +1 scale → −8 to +8 pts)
     if (volumeData?.volumeConfirmation != null) {
-      bp = clamp(Math.round(bp + volumeData.volumeConfirmation * 8));
+      bp = clamp(Math.round(bp + volumeData.volumeConfirmation * 10));
     }
 
     return bp;
-  }, [upPct, downPct, actionSignal, volumeData]);
+  }, [upPct, downPct, actionSignal, volumeData, primaryForecast?.expected_return_bp, momentumScore]);
   const sellerPressure = 100 - buyerPressure;
 
   /* Price targets from support/resistance */
@@ -373,12 +334,39 @@ export function ProbabilityPanel({
 
   /* Why directions section - reasoning text */
   const primaryDirection = primaryForecast?.direction ?? "sideways";
-  const reasoning = deriveReasoning(
+  const reasoning = useMemo(() => {
+    const expanded = softenPunctuation(
+      buildExpandedReasoning({
+        rationale: geminiForecast.positioning_guidance?.notes,
+        positioningNotes: geminiForecast.positioning_guidance?.notes,
+        keyDrivers: primaryForecast?.key_drivers,
+        technicalFactors: undefined,
+        convictionRationale: deep?.conviction_rationale,
+        bullishCase: deep?.bullish_case,
+        bearishCase: deep?.bearish_case,
+        contrarianView: deep?.contrarian_view,
+        volumeProfile: volumeData?.volumeProfile ?? undefined,
+        symbol,
+      })
+    );
+    const base = deriveReasoning(
+      primaryDirection,
+      aiConfidence,
+      primaryForecast?.key_drivers,
+      deep
+    );
+    if (expanded.replace(/\s/g, "").length >= 220) return expanded;
+    const merged = `${expanded} ${base}`.replace(/\s+/g, " ").trim();
+    return merged.length > expanded.length ? merged : expanded || base;
+  }, [
     primaryDirection,
     aiConfidence,
     primaryForecast?.key_drivers,
-    deep
-  );
+    deep,
+    geminiForecast.positioning_guidance?.notes,
+    volumeData?.volumeProfile,
+    symbol,
+  ]);
 
   return (
     <div className="space-y-4">
@@ -391,10 +379,10 @@ export function ProbabilityPanel({
               <h2 className="text-lg font-bold text-white tracking-tight">
                 AI Probability Analysis
               </h2>
-              <SectionInfoHint description={PROBABILITY_SECTION_HELP.panel} />
+              <CardInfoTooltip text={HELP.probabilityPanel} className="text-zinc-500" />
             </div>
             <p className="text-xs text-zinc-500">
-              Market intelligence based on technical + quantitative signals — not a recommendation
+              Market intelligence from technical and quantitative signals; interpret with your own risk rules
             </p>
           </div>
         </div>
@@ -422,12 +410,12 @@ export function ProbabilityPanel({
 
         {/* 1. Directional Probability Gauge — single card, three directions */}
         <Card className="glass-panel border-white/10 bg-zinc-900/50">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold flex flex-wrap items-center gap-2 text-zinc-200">
+          <CardHeader className="pb-3 flex flex-row items-start justify-between space-y-0 gap-2">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-zinc-200">
               <TrendingUp className="h-4 w-4 shrink-0 text-emerald-400" />
               Market Direction Probability
-              <SectionInfoHint description={PROBABILITY_SECTION_HELP.direction} />
             </CardTitle>
+            <CardInfoTooltip text={HELP.marketDirection} className="text-zinc-500" />
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Three gauges in one row: up / sideways / down */}
@@ -462,12 +450,12 @@ export function ProbabilityPanel({
 
         {/* 2. AI Confidence Score */}
         <Card className="glass-panel border-white/10 bg-zinc-900/50">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold flex flex-wrap items-center gap-2 text-zinc-200">
+          <CardHeader className="pb-3 flex flex-row items-start justify-between space-y-0 gap-2">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-zinc-200">
               <Brain className="h-4 w-4 shrink-0 text-primary" />
               AI Market Confidence
-              <SectionInfoHint description={PROBABILITY_SECTION_HELP.confidence} />
             </CardTitle>
+            <CardInfoTooltip text={HELP.aiConfidence} className="text-zinc-500" />
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between">
@@ -528,12 +516,12 @@ export function ProbabilityPanel({
 
         {/* 3. Scenario Probability — sub-breakdown of direction totals above */}
         <Card className="glass-panel border-white/10 bg-zinc-900/50">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold flex flex-wrap items-center gap-2 text-zinc-200">
+          <CardHeader className="pb-3 flex flex-row items-start justify-between space-y-0 gap-2">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-zinc-200">
               <Activity className="h-4 w-4 shrink-0 text-indigo-400" />
               Next Move Scenarios
-              <SectionInfoHint description={PROBABILITY_SECTION_HELP.scenarios} />
             </CardTitle>
+            <CardInfoTooltip text={HELP.nextMoveScenarios} className="text-zinc-500" />
           </CardHeader>
           <CardContent className="space-y-3">
             {/* Note: Upward scenarios sum to total upward %; Downward = total downward % */}
@@ -581,12 +569,12 @@ export function ProbabilityPanel({
 
         {/* 4. Heat Map — Bullish / Neutral / Bearish */}
         <Card className="glass-panel border-white/10 bg-zinc-900/50">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold flex flex-wrap items-center gap-2 text-zinc-200">
+          <CardHeader className="pb-3 flex flex-row items-start justify-between space-y-0 gap-2">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-zinc-200">
               <Flame className="h-4 w-4 shrink-0 text-orange-400" />
               Market Pressure Map
-              <SectionInfoHint description={PROBABILITY_SECTION_HELP.pressureMap} />
             </CardTitle>
+            <CardInfoTooltip text={HELP.pressureMap} className="text-zinc-500" />
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Visual gradient heat strip */}
@@ -597,11 +585,11 @@ export function ProbabilityPanel({
                   background: `linear-gradient(to right, #ef4444, #6b7280, #10b981)`,
                 }}
               />
-              {/* Indicator pin */}
+              {/* Net directional bias: bearish ← → bullish (not raw up% alone) */}
               <div
                 className="absolute top-0 h-full w-1 bg-white rounded-full shadow-lg"
                 style={{
-                  left: `${clamp(upPct)}%`,
+                  left: `${clamp(50 + (upPct - downPct) / 2)}%`,
                   transform: "translateX(-50%)",
                   transition: "left 0.7s ease",
                 }}
@@ -649,12 +637,12 @@ export function ProbabilityPanel({
 
         {/* 5. Price Target Probability */}
         <Card className="glass-panel border-white/10 bg-zinc-900/50">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold flex flex-wrap items-center gap-2 text-zinc-200">
+          <CardHeader className="pb-3 flex flex-row items-start justify-between space-y-0 gap-2">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-zinc-200">
               <Target className="h-4 w-4 shrink-0 text-amber-400" />
               Price Level Probabilities
-              <SectionInfoHint description={PROBABILITY_SECTION_HELP.priceLevels} />
             </CardTitle>
+            <CardInfoTooltip text={HELP.priceLevels} className="text-zinc-500" />
           </CardHeader>
           <CardContent className="space-y-3">
             {priceTargets.length > 0 ? (
@@ -708,12 +696,12 @@ export function ProbabilityPanel({
 
         {/* 6. Probability Timeline */}
         <Card className="glass-panel border-white/10 bg-zinc-900/50">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold flex flex-wrap items-center gap-2 text-zinc-200">
+          <CardHeader className="pb-3 flex flex-row items-start justify-between space-y-0 gap-2">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-zinc-200">
               <Clock className="h-4 w-4 shrink-0 text-sky-400" />
               Probability Timeline
-              <SectionInfoHint description={PROBABILITY_SECTION_HELP.timeline} />
             </CardTitle>
+            <CardInfoTooltip text={HELP.probTimeline} className="text-zinc-500" />
           </CardHeader>
           <CardContent className="space-y-3">
             {timeline.length > 0 ? (
@@ -773,12 +761,12 @@ export function ProbabilityPanel({
 
         {/* 7. Market Pressure Meter (Buyer vs Seller) */}
         <Card className="glass-panel border-white/10 bg-zinc-900/50">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold flex flex-wrap items-center gap-2 text-zinc-200">
+          <CardHeader className="pb-3 flex flex-row items-start justify-between space-y-0 gap-2">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-zinc-200">
               <Activity className="h-4 w-4 shrink-0 text-violet-400" />
               Market Pressure Meter
-              <SectionInfoHint description={PROBABILITY_SECTION_HELP.pressureMeter} />
             </CardTitle>
+            <CardInfoTooltip text={HELP.pressureMeter} className="text-zinc-500" />
           </CardHeader>
           <CardContent className="space-y-5">
             {/* Split bar */}
@@ -834,25 +822,48 @@ export function ProbabilityPanel({
               ))}
             </div>
 
-            {/* Bias note / neutral warning */}
-            <p className="text-[11px] leading-relaxed border-t border-white/5 pt-2">
-              {Math.abs(buyerPressure - 50) <= 5 ? (
-                <span className="text-amber-500 font-medium">
-                  ⚖ Market is evenly contested — no dominant pressure. Wait for a volume confirmation or trend break before entering.
-                </span>
+            {/* Bias note: explicit BUY/SELL only when meter pegs ~100% */}
+            <div className="text-[11px] leading-relaxed border-t border-white/5 pt-2 space-y-2">
+              {buyerPressure >= 99 ? (
+                <div className="space-y-1">
+                  <p className="text-emerald-400 font-semibold tracking-wide">BUY</p>
+                  <p className="text-zinc-300">
+                    Meter is pegged buyer side ({buyerPressure}% buyer vs {sellerPressure}% seller). Every blended input
+                    in this widget (direction odds, momentum nudge, volume tilt, action bias) is stacked long. That is the
+                    strongest reading here. It is still not a profit guarantee: keep your own stops, leverage, and headline
+                    risk in mind.
+                  </p>
+                </div>
+              ) : sellerPressure >= 99 ? (
+                <div className="space-y-1">
+                  <p className="text-red-400 font-semibold tracking-wide">SELL</p>
+                  <p className="text-zinc-300">
+                    Meter is pegged seller side ({sellerPressure}% seller vs {buyerPressure}% buyer). The same blend is
+                    stacked short. Treat it as strong pressure in the model, not a guaranteed outcome.
+                  </p>
+                </div>
+              ) : Math.abs(buyerPressure - 50) <= 5 ? (
+                <p className="text-amber-500 font-medium">
+                  Market is evenly contested: no dominant pressure in this blend. Wait for volume confirmation or a clean
+                  break before leaning hard either way.
+                </p>
               ) : buyerPressure > 50 ? (
-                <span className="text-emerald-500">
-                  🟢 Buyer pressure dominates ({buyerPressure}% vs {sellerPressure}%). Momentum favours upside.
-                </span>
+                <p className="text-emerald-500">
+                  Buyer pressure leads ({buyerPressure}% vs {sellerPressure}%). Momentum in this panel favours upside, but
+                  the meter is not pegged max, so we do not label BUY here.
+                </p>
               ) : (
-                <span className="text-red-500">
-                  🔴 Seller pressure dominates ({sellerPressure}% vs {buyerPressure}%). Downside pressure is building.
-                </span>
+                <p className="text-red-500">
+                  Seller pressure leads ({sellerPressure}% vs {buyerPressure}%). Downside lean in this blend, but the meter
+                  is not pegged max, so we do not label SELL here.
+                </p>
               )}
-              {geminiForecast.positioning_guidance?.notes && (
-                <span className="text-zinc-500 ml-1">— {geminiForecast.positioning_guidance.notes}</span>
-              )}
-            </p>
+              {geminiForecast.positioning_guidance?.notes?.trim() ? (
+                <p className="text-zinc-500 pt-1 border-t border-white/5">
+                  {geminiForecast.positioning_guidance.notes.trim()}
+                </p>
+              ) : null}
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -860,12 +871,12 @@ export function ProbabilityPanel({
       {/* Volume Intelligence Strip */}
       {volumeData && (volumeData.volume24h || volumeData.volumeProfile) && (
         <Card className="glass-panel border-white/10 bg-zinc-900/50">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold flex flex-wrap items-center gap-2 text-zinc-200">
+          <CardHeader className="pb-3 flex flex-row items-start justify-between space-y-0 gap-2">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-zinc-200">
               <Activity className="h-4 w-4 shrink-0 text-cyan-400" />
               Volume Intelligence
-              <SectionInfoHint description={PROBABILITY_SECTION_HELP.volume} />
             </CardTitle>
+            <CardInfoTooltip text={HELP.volumeIntel} className="text-zinc-500" />
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

@@ -1,5 +1,11 @@
 // Time utilities for prediction timeline and formatting
 
+/** Pipeline steps often omit timing; avoid showing misleading “0ms”. */
+export function formatPipelineDuration(milliseconds: number | undefined | null): string {
+  if (milliseconds == null || milliseconds <= 0) return "—";
+  return formatDuration(milliseconds);
+}
+
 export function formatDuration(milliseconds: number): string {
   if (milliseconds < 1000) {
     return `${milliseconds}ms`;

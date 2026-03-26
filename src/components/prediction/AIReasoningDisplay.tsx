@@ -15,9 +15,12 @@ import {
   Sparkles,
 } from "lucide-react";
 import { formatTechnicalFactor, formatKeyDriver } from "@/lib/display-utils";
+import { buildExpandedReasoning, softenPunctuation } from "@/lib/expand-analysis-narrative";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { useState, type ReactNode } from "react";
+import { useState, useMemo, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { CardInfoTooltip } from "@/components/ui/card-info-tooltip";
+import { HELP } from "@/lib/analysis-ui-help";
 
 interface DeepAnalysis {
   bullish_case?: string;
@@ -43,9 +46,12 @@ interface AIReasoningDisplayProps {
   technicalFactors?: string[];
   fundamentalFactors?: string[];
   keyDrivers?: string[];
+  riskFlags?: string[];
   oneLineSummary?: string;
   deepAnalysis?: DeepAnalysis;
   marketContext?: MarketContext;
+  positioningNotes?: string | null;
+  volumeProfile?: string | null;
 }
 
 const tileClass =
@@ -69,31 +75,51 @@ function SectionLabel({
 }
 
 export function AIReasoningDisplay({
-  symbol: _symbol,
+  symbol,
   action,
   confidence,
   technicalFactors = [],
   fundamentalFactors = [],
   keyDrivers = [],
+  riskFlags = [],
   oneLineSummary,
   deepAnalysis,
   marketContext,
+  positioningNotes,
+  volumeProfile,
 }: AIReasoningDisplayProps) {
   const [showBullBear, setShowBullBear] = useState(true);
   const [showMarketContext, setShowMarketContext] = useState(true);
 
-  const generateOneLiner = () => {
-    if (oneLineSummary) return oneLineSummary;
-
-    const primaryDriver = keyDrivers[0]
-      ? formatKeyDriver(keyDrivers[0])
-      : technicalFactors[0]
-        ? formatTechnicalFactor(technicalFactors[0])
-        : "favorable market conditions";
-    const confidenceLevel = confidence >= 80 ? "strong" : confidence >= 60 ? "moderate" : "weak";
-
-    return `${action} signal generated with ${confidenceLevel} confidence due to ${primaryDriver.toLowerCase()}.`;
-  };
+  const narrativeSummary = useMemo(() => {
+    const expanded = buildExpandedReasoning({
+      rationale: oneLineSummary,
+      positioningNotes: positioningNotes ?? undefined,
+      keyDrivers,
+      riskFlags,
+      patterns: undefined,
+      technicalFactors,
+      convictionRationale: deepAnalysis?.conviction_rationale,
+      bullishCase: deepAnalysis?.bullish_case,
+      bearishCase: deepAnalysis?.bearish_case,
+      contrarianView: deepAnalysis?.contrarian_view,
+      volumeProfile: volumeProfile ?? undefined,
+      symbol,
+    });
+    return softenPunctuation(expanded);
+  }, [
+    oneLineSummary,
+    positioningNotes,
+    deepAnalysis?.conviction_rationale,
+    deepAnalysis?.contrarian_view,
+    deepAnalysis?.bullish_case,
+    deepAnalysis?.bearish_case,
+    keyDrivers,
+    riskFlags,
+    technicalFactors,
+    volumeProfile,
+    symbol,
+  ]);
 
   const actionStyles =
     action === "BUY"
@@ -102,12 +128,12 @@ export function AIReasoningDisplay({
         ? "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300"
         : "border-primary/40 bg-primary/10 text-primary";
 
-  const confidenceExpl =
+  const agreementExpl =
     confidence >= 80
-      ? `High confidence — multiple strong signals align with historical patterns; model indicates about ${confidence}% consistency in similar conditions.`
+      ? `The ensemble lines up fairly tightly on this window: about ${confidence}% internal agreement. That still does not guarantee price follows the lean; it means inputs were less contradictory than usual.`
       : confidence >= 60
-        ? `Moderate confidence — several supportive indicators, with some mixed signals. Estimated strength around ${confidence}%.`
-        : `Lower confidence — mixed or weak signals and unclear conditions. About ${confidence}% — consider waiting for a clearer setup.`;
+        ? `Signals partially agree: about ${confidence}% agreement inside the model. Expect some conflict between momentum, mean reversion, and headline tone until the next sessions print clearer structure.`
+        : `Inputs diverge: only about ${confidence}% model agreement, so the picture is noisy. Treat the narrative as provisional and refresh after new candles or material news.`;
 
   const hasMarketContext = marketContext && Object.values(marketContext).some(Boolean);
 
@@ -123,7 +149,7 @@ export function AIReasoningDisplay({
             <div>
               <h3 className="font-semibold text-base tracking-tight text-foreground">AI reasoning</h3>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                How the model explains this outlook — informational only, not advice.
+                How the model explains this outlook; informational only, not advice.
               </p>
             </div>
           </div>
@@ -137,6 +163,7 @@ export function AIReasoningDisplay({
             >
               {confidence}% confidence
             </Badge>
+            <CardInfoTooltip text={HELP.aiReasoningEngine} className="text-muted-foreground" />
           </div>
         </div>
 
@@ -145,7 +172,9 @@ export function AIReasoningDisplay({
           <Sparkles className="h-4 w-4 text-primary" />
           <AlertDescription>
             <p className="font-semibold text-sm mb-1.5 text-foreground">At a glance</p>
-            <p className="text-sm leading-relaxed text-muted-foreground">{generateOneLiner()}</p>
+            <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-line">
+              {narrativeSummary}
+            </p>
           </AlertDescription>
         </Alert>
 
@@ -181,6 +210,20 @@ export function AIReasoningDisplay({
           </div>
         )}
 
+        {riskFlags.length > 0 && (
+          <div className={tileClass}>
+            <SectionLabel icon={AlertTriangle}>Risk flags</SectionLabel>
+            <ul className="space-y-1.5">
+              {riskFlags.slice(0, 8).map((flag, idx) => (
+                <li key={idx} className="text-xs text-muted-foreground flex gap-2 leading-relaxed">
+                  <span className="text-destructive font-bold leading-none mt-0.5">·</span>
+                  <span>{flag}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {fundamentalFactors.length > 0 && (
           <div className={tileClass}>
             <SectionLabel icon={TrendingUp}>Fundamental factors</SectionLabel>
@@ -198,10 +241,9 @@ export function AIReasoningDisplay({
           </div>
         )}
 
-        {/* Confidence explainer — legal-strip style from disclaimer */}
         <div className="p-4 bg-muted/50 rounded-lg border border-primary/15 text-xs space-y-2">
-          <p className="font-semibold text-sm text-foreground">Model confidence</p>
-          <p className="text-muted-foreground leading-relaxed">{confidenceExpl}</p>
+          <p className="font-semibold text-sm text-foreground">Model agreement (not profit odds)</p>
+          <p className="text-muted-foreground leading-relaxed">{agreementExpl}</p>
         </div>
 
         {deepAnalysis && (
@@ -359,7 +401,7 @@ export function AIReasoningDisplay({
         )}
 
         <p className="text-center text-xs text-muted-foreground pt-2 border-t border-primary/15">
-          AI-generated analysis for research — verify with your own judgment and risk tolerance
+          AI-generated analysis for research, verify with your own judgment and risk tolerance
         </p>
       </CardContent>
     </Card>
