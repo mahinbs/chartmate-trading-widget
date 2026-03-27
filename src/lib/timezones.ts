@@ -8,7 +8,12 @@ import {
   parseNotifyTimeForDigest,
 } from "../../supabase/functions/_shared/digestClock.ts";
 
-export { formatDigestClockNowLine, getDigestClockContext, normalizeTimezoneForDigest as normalizeTimezoneId };
+export {
+  formatDigestClockNowLine,
+  getDigestClockContext,
+  normalizeTimezoneForDigest as normalizeTimezoneId,
+  parseNotifyTimeForDigest,
+};
 
 /** All IANA zones the browser exposes (~400+). Falls back to a short list if unsupported. */
 export function getAllTimeZoneIdentifiers(): string[] {

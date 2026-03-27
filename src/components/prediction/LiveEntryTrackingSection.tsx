@@ -113,17 +113,6 @@ function getTomorrowDateKeyInTz(tz: string): string {
   return formatDateKeyInTz(new Date(now.getTime() + 36 * 3600000), tz);
 }
 
-async function maybeRequestBrowserNotification() {
-  try {
-    if (typeof window === "undefined" || !("Notification" in window)) return;
-    if (Notification.permission === "default") {
-      await Notification.requestPermission();
-    }
-  } catch {
-    /* ignore */
-  }
-}
-
 const DAY_LABELS: { bit: number; label: string }[] = [
   { bit: 0, label: "Sun" },
   { bit: 1, label: "Mon" },
@@ -379,7 +368,6 @@ export function LiveEntryTrackingSection({
         });
         return;
       }
-      await maybeRequestBrowserNotification();
     }
 
     if (currentRow) {
@@ -387,7 +375,11 @@ export function LiveEntryTrackingSection({
       try {
         const { error } = await (supabase as any)
           .from("live_entry_trackers")
-          .update({ enabled: on })
+          .update({
+            enabled: on,
+            // Allow a digest to run again today after re-enable (otherwise last_digest_on blocks).
+            ...(on ? { last_digest_on: null } : {}),
+          })
           .eq("id", currentRow.id);
         if (error) throw error;
         await load();
@@ -428,7 +420,6 @@ export function LiveEntryTrackingSection({
         });
         if (error) throw error;
         await load();
-        await maybeRequestBrowserNotification();
         toast({
           title: "Alerts on",
           description: `Default: every day at 09:30 (${tz}). Adjust time and schedule below.`,

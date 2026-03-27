@@ -1,6 +1,10 @@
 import { Badge } from "@/components/ui/badge"
 import { TrendingUp, TrendingDown, Minus } from "lucide-react"
-import { formatCurrency, formatPercentage } from "@/lib/display-utils"
+import {
+  formatCurrency,
+  formatPercentage,
+  fractionDigitsToShowNonZero,
+} from "@/lib/display-utils"
 import { cn } from "@/lib/utils"
 
 interface SummaryHeaderProps {
@@ -12,6 +16,14 @@ interface SummaryHeaderProps {
   confidence?: number
   /** `flat`: no inner panel — use beside actions in a parent grid (e.g. prediction cards). */
   variant?: "panel" | "flat"
+  /** Decimal places for displayed prices (spot and absolute $ change). Default 2. */
+  priceDecimals?: number
+  /** Decimal places for the % next to price change (e.g. expected move on list cards). Default 1. */
+  changePercentDecimals?: number
+  /** Decimal places for confidence %. Default 1. */
+  confidenceDecimals?: number
+  /** Fiat symbol for prices (investment / list cards use saved analysis currency). */
+  currency?: "INR" | "USD"
 }
 
 export function SummaryHeader({
@@ -22,7 +34,16 @@ export function SummaryHeader({
   recommendation,
   confidence,
   variant = "panel",
+  priceDecimals = 2,
+  changePercentDecimals = 1,
+  confidenceDecimals = 1,
+  currency = "USD",
 }: SummaryHeaderProps) {
+  const changeAmountDecimals = fractionDigitsToShowNonZero(
+    Math.abs(change),
+    priceDecimals,
+  )
+
   const getChangeIcon = () => {
     if (changePercent > 0) return <TrendingUp className="h-4 w-4" />
     if (changePercent < 0) return <TrendingDown className="h-4 w-4" />
@@ -56,15 +77,15 @@ export function SummaryHeader({
         </div>
         <div className="flex w-full flex-wrap items-baseline gap-x-3 gap-y-1.5 sm:gap-x-4">
           <span className="text-base sm:text-lg font-semibold tabular-nums text-foreground">
-            {formatCurrency(currentPrice, 2)}
+            {formatCurrency(currentPrice, priceDecimals, false, currency)}
           </span>
           <div
             className={cn("flex items-center gap-1 text-sm tabular-nums", getChangeColor())}
           >
             {getChangeIcon()}
             <span>
-              {formatCurrency(Math.abs(change), 2)} (
-              {formatPercentage(Math.abs(changePercent), 1, false)})
+              {formatCurrency(Math.abs(change), changeAmountDecimals, false, currency)} (
+              {formatPercentage(Math.abs(changePercent), changePercentDecimals, false)})
             </span>
           </div>
           {confidence != null && !Number.isNaN(confidence) ? (
@@ -73,7 +94,7 @@ export function SummaryHeader({
                 Confidence
               </span>
               <span className="text-sm sm:text-base font-semibold tabular-nums text-foreground">
-                {formatPercentage(confidence, 1, false)}
+                {formatPercentage(confidence, confidenceDecimals, false)}
               </span>
             </div>
           ) : null}
@@ -88,11 +109,11 @@ export function SummaryHeader({
         <div>
           <h2 className="text-xl sm:text-2xl font-bold">{symbol}</h2>
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1">
-            <span className="text-base sm:text-lg font-semibold">{formatCurrency(currentPrice, 2)}</span>
+            <span className="text-base sm:text-lg font-semibold">{formatCurrency(currentPrice, priceDecimals, false, currency)}</span>
             <div className={`flex items-center gap-1 ${getChangeColor()}`}>
               {getChangeIcon()}
               <span className="text-sm">
-                {formatCurrency(Math.abs(change), 2)} ({formatPercentage(Math.abs(changePercent), 1, false)})
+                {formatCurrency(Math.abs(change), changeAmountDecimals, false, currency)} ({formatPercentage(Math.abs(changePercent), changePercentDecimals, false)})
               </span>
             </div>
           </div>
@@ -108,7 +129,7 @@ export function SummaryHeader({
         {confidence != null && !Number.isNaN(confidence) ? (
           <div className="text-right">
             <p className="text-xs text-muted-foreground">Confidence</p>
-            <p className="text-base sm:text-lg font-semibold">{formatPercentage(confidence, 1, false)}</p>
+            <p className="text-base sm:text-lg font-semibold">{formatPercentage(confidence, confidenceDecimals, false)}</p>
           </div>
         ) : null}
       </div>

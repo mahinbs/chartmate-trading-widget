@@ -10,7 +10,8 @@
  *   symbol: string,
  *   strategies: string[],  // e.g. ["trend_following","mean_reversion"]
  *   action?: "BUY" | "SELL",
- *   days?: number,         // lookback days (default 365, max 730)
+ *   days?: number,         // OHLCV lookback days (default 365, max 730; min 60 for stable indicators on daily)
+ *   maxSignalAgeDays?: number, // if set, drop detected signals whose bar time is older than this many days (before scoring)
  *   postAnalysis?: {       // optional context from post-prediction
  *     result?: string;
  *     actualChangePercent?: number;
@@ -18,7 +19,7 @@
  *   }
  * }
  *
- * Returns: { signals: [...], yahooSymbol?: string, lookbackDaysUsed?: number, predictedCount: 0 (no projected entries) }
+ * Returns: { signals: [...], interval, dataIsIntraday, isIntraday, customSelectionDailyOnly (skipped intraday fetch), ... }
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -797,10 +798,10 @@ function evaluateCondition(cond: AlgoCondition, idx: number, ctx: ConditionEvalC
     const lhsPrev = resolveIndicatorValue(lhsId, cond.period, idx - 1, ctx);
     if (lhsPrev == null || rhsValPrev == null) return false;
     if (tier <= 0) {
-      return op === "crosses_above"
-        ? lhsPrev <= rhsValPrev && lhs > rhsValNow
-        : lhsPrev >= rhsValPrev && lhs < rhsValNow;
-    }
+    return op === "crosses_above"
+      ? lhsPrev <= rhsValPrev && lhs > rhsValNow
+      : lhsPrev >= rhsValPrev && lhs < rhsValNow;
+  }
     const sNow = slackForNumericCompare(lhsId, rhsValNow, tier);
     const sPrev = slackForNumericCompare(lhsId, rhsValPrev, tier);
     return op === "crosses_above"
@@ -1134,6 +1135,25 @@ function filterRawSignalsByCustomSchedule(
   });
 }
 
+/** Keep only signals whose bar is within the last `maxAgeDays` (wall-clock), for user-selected result window. */
+function filterRawByMaxSignalAge(raw: RawSignal[], maxAgeDays: number, nowMs: number): RawSignal[] {
+  if (!Number.isFinite(maxAgeDays) || maxAgeDays <= 0 || raw.length === 0) return raw;
+  const cutoffMs = nowMs - maxAgeDays * 86400000;
+  return raw.filter((s) => {
+    const tsMs =
+      s.entryTimestamp != null
+        ? Number(s.entryTimestamp)
+        : s.entryTime
+        ? new Date(String(s.entryTime)).getTime()
+        : NaN;
+    if (Number.isFinite(tsMs)) return tsMs >= cutoffMs;
+    const ed = String(s.entryDate ?? "").trim();
+    if (!ed) return true;
+    const d = Date.parse(`${ed}T23:59:59.999Z`);
+    return Number.isFinite(d) && d >= cutoffMs;
+  });
+}
+
 function inferEntrySubtype(cfg: EntryConditionsConfig): "indicator_based" | "time_based" | "hybrid" {
   const s = String(cfg.strategySubtype ?? "").toLowerCase().trim();
   if (s === "time_based" || s === "hybrid" || s === "indicator_based") {
@@ -1300,18 +1320,18 @@ function customEntryConditionsMatchAt(
     }
     return timeOk && indOk;
   }
-  const hasVisual = Array.isArray(entryCfg.groups) && entryCfg.groups.length > 0;
-  const hasRaw = typeof entryCfg.rawExpression === "string" && entryCfg.rawExpression.trim().length > 0;
+    const hasVisual = Array.isArray(entryCfg.groups) && entryCfg.groups.length > 0;
+    const hasRaw = typeof entryCfg.rawExpression === "string" && entryCfg.rawExpression.trim().length > 0;
   if (!hasVisual && !hasRaw) return false;
   return entryCfg.mode === "raw"
-    ? evaluateRawExpression(String(entryCfg.rawExpression ?? ""), idx, ctx)
-    : evaluateConditionGroups(
-      Array.isArray(entryCfg.groups) ? entryCfg.groups : [],
-      String(entryCfg.groupLogic ?? "AND").toUpperCase() === "OR" ? "OR" : "AND",
-      idx,
-      ctx,
-    );
-}
+      ? evaluateRawExpression(String(entryCfg.rawExpression ?? ""), idx, ctx)
+      : evaluateConditionGroups(
+        Array.isArray(entryCfg.groups) ? entryCfg.groups : [],
+        String(entryCfg.groupLogic ?? "AND").toUpperCase() === "OR" ? "OR" : "AND",
+        idx,
+        ctx,
+      );
+  }
 
 type CustomStrategyScanFields = {
   id: string;
@@ -1525,13 +1545,13 @@ function detectCustomEntrySignals(
         const lastTs = timestamps[ei];
         const d = new Date(lastTs * 1000);
         entries.push({
-          strategyId: cs.id,
-          strategyLabel: cs.name,
+    strategyId: cs.id,
+    strategyLabel: cs.name,
           entryIndex: ei,
-          entryDate: d.toISOString().slice(0, 10),
-          entryTime: d.toISOString(),
-          entryTimestamp: lastTs * 1000,
-          side,
+    entryDate: d.toISOString().slice(0, 10),
+    entryTime: d.toISOString(),
+    entryTimestamp: lastTs * 1000,
+    side,
           priceAtEntry: c[ei],
           isLive: ei === n - 1,
           conditionAudit,
@@ -2033,7 +2053,7 @@ function heuristicMergeRow(raw: RawSignal, ind: RealIndicators | null): MergedAi
   }
 
   score = Math.max(14, Math.min(93, Math.round(score)));
-  const verdict = score >= 69 ? "confirm" : score <= 37 ? "reject" : "review";
+  const verdict = score >= 69 ? "confirm" : score <= 37 ? "reject" : "mixed";
   const whyThisScore = reasons.join(" ");
   const entryExitRuleSummary = raw.side === "BUY"
     ? `Strategy rule produced a long (BUY) candidate for “${raw.strategyLabel}”.`
@@ -2043,8 +2063,8 @@ function heuristicMergeRow(raw: RawSignal, ind: RealIndicators | null): MergedAi
     : "";
   const rejectionDetail = verdict === "reject"
     ? `Rejected on rule-based read: ${whyThisScore}`
-    : verdict === "review"
-    ? `Review bucket — mixed evidence: ${whyThisScore}`
+    : verdict === "mixed"
+    ? `Mixed evidence — not a clean confirm: ${whyThisScore}`
     : "";
   const rationale = `${whyThisScore} Composite → ${score}/100 (${verdict}).`;
   const confirmationDetail = verdict === "confirm"
@@ -2134,12 +2154,10 @@ function mergeAiScoresIntoRaw(
       : Math.round(0.52 * aiScore + 0.48 * h.probabilityScore);
     const probabilityScore = Math.max(14, Math.min(93, blended));
 
-    const verdictOk = aiVerdict === "confirm" || aiVerdict === "reject" || aiVerdict === "review";
-    const verdict = aiVague
-      ? h.verdict
-      : verdictOk
-      ? aiVerdict
-      : h.verdict;
+    const verdictOk =
+      aiVerdict === "confirm" || aiVerdict === "reject" || aiVerdict === "mixed" || aiVerdict === "review";
+    const verdictRaw = aiVague ? h.verdict : verdictOk ? aiVerdict : h.verdict;
+    const verdict = verdictRaw === "review" ? "mixed" : verdictRaw;
 
     const entryExitRuleSummary = aiEntry || h.entryExitRuleSummary;
     const whyThisScore = whyThisScoreAligned(aiWhy || h.whyThisScore, probabilityScore);
@@ -2148,7 +2166,7 @@ function mergeAiScoresIntoRaw(
     if (verdict === "reject" && !rejectionDetail) {
       rejectionDetail = `Rejected: ${whyThisScore}`;
     }
-    if (verdict === "review" && !rejectionDetail) {
+    if (verdict === "mixed" && !rejectionDetail) {
       rejectionDetail = `Neither clean accept nor hard reject: ${whyThisScore}`;
     }
     if (verdict === "confirm") {
@@ -2181,7 +2199,10 @@ function mergeAiScoresIntoRaw(
       whyThisScore,
       scoreSource: aiVague ? "heuristic+gemini" : "gemini+heuristic",
     };
-  });
+  }).map((row) => ({
+    ...row,
+    verdict: String(row.verdict).toLowerCase() === "review" ? "mixed" : row.verdict,
+  }));
 }
 
 /**
@@ -2338,19 +2359,19 @@ When savedCustomStrategy is present, it is the user’s full saved strategy reco
 Return ONLY a JSON array (no markdown), SAME LENGTH AND SAME ORDER as input. Each object MUST include:
 { "strategyId": string, "entryDate": string, "side": string,
   "probabilityScore": number (0-100; spread scores when setups differ — avoid giving every row 50),
-  "verdict": "confirm" | "reject" | "review",
+  "verdict": "confirm" | "reject" | "mixed",
   "rationale": string (2-4 sentences; cite RSI/MACD/BB or say explicitly if missing),
   "entryExitRuleSummary": string (one sentence: what the strategy rule implies for this bar),
   "whyThisScore": string (indicator + context only; do NOT write a different numeric score here — the server blends your probabilityScore with rules; if you mention a score it must equal probabilityScore),
   "liveViability": string (empty "" if not live; if live, why it could work OR what breaks it),
-  "rejectionDetail": string (if verdict is reject or review: 2-3 sentences why not a clean confirm, cite indicators; if confirm: ""),
-  "confirmationDetail": string (if verdict is confirm: 2-3 sentences why this setup passes — cite RSI/MACD/BB/bar context and rule alignment; if reject or review: "") }
+  "rejectionDetail": string (if verdict is reject or mixed: 2-3 sentences why not a clean confirm, cite indicators; if confirm: ""),
+  "confirmationDetail": string (if verdict is confirm: 2-3 sentences why this setup passes — cite RSI/MACD/BB/bar context and rule alignment; if reject or mixed: "") }
 
 Scoring guide:
 - BUY: higher if oversold RSI, price near lower BB, MACD not bearish; lower if overbought or stale without reset.
 - SELL: higher if overbought RSI, price near upper BB, MACD not bullish; lower if washed-out RSI.
 - Live signals: mention immediacy and gap/news risk.
-- If evidence is mixed, use verdict "review" and explain the conflict in rejectionDetail.`;
+- If evidence is mixed, use verdict "mixed" and explain the conflict in rejectionDetail.`;
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
   const res = await fetch(url, {
@@ -2438,6 +2459,11 @@ Deno.serve(async (req: Request) => {
     const scanActions: Array<"BUY" | "SELL"> =
       actionParam === "BUY" ? ["BUY"] : actionParam === "SELL" ? ["SELL"] : ["BUY", "SELL"];
     const days = Math.min(730, Math.max(60, Number(body.days) || 365));
+    const maxSignalAgeDaysRaw = Number(body.maxSignalAgeDays);
+    const maxSignalAgeDays =
+      Number.isFinite(maxSignalAgeDaysRaw) && maxSignalAgeDaysRaw > 0
+        ? Math.min(730, Math.max(1, Math.floor(maxSignalAgeDaysRaw)))
+        : 0;
     const intradayInterval = String(body.intradayInterval ?? "5m");
     const intradayLookbackMinutes = Math.min(7 * 24 * 60, Math.max(60, Number(body.intradayLookbackMinutes) || (5 * 24 * 60)));
     const postAnalysis = body.postAnalysis as {
@@ -2480,6 +2506,15 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: "strategies or customStrategies required" }), { status: 400, headers });
     }
 
+    /**
+     * If the user selected one or more custom strategies and every one is explicitly daily
+     * (`isIntraday === false`), skip TwelveData / Yahoo intraday and run detection on daily OHLCV only.
+     * Built-in-only scans, or any custom with `isIntraday === true` or omitted, keep intraday-first fetch.
+     */
+    const customSelectionDailyOnly =
+      customStrategies.length > 0 &&
+      customStrategies.every((cs) => cs.isIntraday === false);
+
     const yahooSymbol = normalizeToYahooSymbol(symbol);
     const assetType = detectAssetType(yahooSymbol);
     const isIndian = yahooSymbol.endsWith(".NS") || yahooSymbol.endsWith(".BO");
@@ -2495,29 +2530,36 @@ Deno.serve(async (req: Request) => {
     let dataSource = "yahoo";
 
     // ── Multi-source candle pipeline: TwelveData → Yahoo intraday → Yahoo daily → Alpha Vantage ──
-    // 1) TwelveData intraday (primary for US/crypto/forex)
-    if (!isIndian) {
-      const tdResult = await fetchTwelveDataCandles(yahooSymbol, assetType, intradayInterval, 500);
-      if (tdResult && tdResult.c.length >= 10) {
-        t = tdResult.t; c = tdResult.c; h = tdResult.h; l = tdResult.l;
-        usedInterval = intradayInterval; dataSource = "twelvedata";
-        console.log(`Candles: TwelveData ${intradayInterval} (${c.length} bars) for ${yahooSymbol}`);
+    // When all selected customs are daily-only, skip sub-daily fetches so entry/exit match saved strategy mode.
+    if (!customSelectionDailyOnly) {
+      // 1) TwelveData intraday (primary for US/crypto/forex)
+      if (!isIndian) {
+        const tdResult = await fetchTwelveDataCandles(yahooSymbol, assetType, intradayInterval, 500);
+        if (tdResult && tdResult.c.length >= 10) {
+          t = tdResult.t; c = tdResult.c; h = tdResult.h; l = tdResult.l;
+          usedInterval = intradayInterval; dataSource = "twelvedata";
+          console.log(`Candles: TwelveData ${intradayInterval} (${c.length} bars) for ${yahooSymbol}`);
+        }
       }
-    }
 
-    // 2) Yahoo Finance intraday (primary for Indian stocks, fallback for others)
-    if (!c.length) {
-      const seq = [intradayInterval, "15m", "60m"];
-      for (const interval of seq) {
-        try {
-          const r = await fetchYahooChart({ yahooSymbol, period1: period1Intraday, period2, interval });
-          if (r.c.length >= 10) {
-            t = r.t; c = r.c; h = r.h; l = r.l; usedInterval = r.interval;
-            dataSource = "yahoo"; console.log(`Candles: Yahoo ${interval} (${c.length} bars)`);
-            break;
-          }
-        } catch { /* try next */ }
+      // 2) Yahoo Finance intraday (primary for Indian stocks, fallback for others)
+      if (!c.length) {
+        const seq = [intradayInterval, "15m", "60m"];
+        for (const interval of seq) {
+          try {
+            const r = await fetchYahooChart({ yahooSymbol, period1: period1Intraday, period2, interval });
+            if (r.c.length >= 10) {
+              t = r.t; c = r.c; h = r.h; l = r.l; usedInterval = r.interval;
+              dataSource = "yahoo"; console.log(`Candles: Yahoo ${interval} (${c.length} bars)`);
+              break;
+            }
+          } catch { /* try next */ }
+        }
       }
+    } else {
+      console.log(
+        `[strategy-entry-signals] Daily-only custom selection — skipping intraday fetch for ${yahooSymbol}`,
+      );
     }
 
     // 3) Yahoo Finance daily
@@ -2551,6 +2593,8 @@ Deno.serve(async (req: Request) => {
     const allRaw: RawSignal[] = [];
     const realtimeMode = usedInterval !== "1d";
     const barMinutesApprox = intervalLabelToBarMinutes(usedInterval);
+    /** One full bar length in ms — clients use this for live badge expiry (5m chart → 5m window, 1d → 24h). */
+    const liveWindowMs = Math.max(60_000, barMinutesApprox * 60 * 1000);
 
     // 1) Historical signal detection for built-in strategies
     const validIds = strategies
@@ -2592,19 +2636,19 @@ Deno.serve(async (req: Request) => {
       if (hasCustomConditions(cs)) {
         const fromCustom = detectCustomEntrySignals(
           csScan,
-          t,
-          c,
-          h,
-          l,
-          dataSource,
-          realIndicators.source,
+        t,
+        c,
+        h,
+        l,
+        dataSource,
+        realIndicators.source,
           realIndicators,
-          scanActions,
-          scanTimeZone,
+        scanActions,
+        scanTimeZone,
           maxPerStrategy,
           realtimeMode,
           barMinutesApprox,
-        );
+      );
         allRaw.push(...fromCustom);
         if (fromCustom.length > 0) continue;
       }
@@ -2729,13 +2773,20 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Dedup: only add live signals that aren't already in allRaw (same strategy+side+candle)
-    const existingKeys = new Set(allRaw.map((s) => `${s.strategyId}|${s.side}|${s.entryIndex}`));
+    // Dedup: merge live flags onto existing rows (historical detectEntries often shares strategy|side|entryIndex
+    // with evaluateRecentCandles but omits isLive — without merge, Live badge never appears on those cards).
+    const liveKey = (s: RawSignal) => `${s.strategyId}|${s.side}|${s.entryIndex}`;
+    const existingKeys = new Set(allRaw.map((s) => liveKey(s)));
     for (const ls of liveSignals) {
-      const key = `${ls.strategyId}|${ls.side}|${ls.entryIndex}`;
+      const key = liveKey(ls);
       if (!existingKeys.has(key)) {
         allRaw.push(ls);
         existingKeys.add(key);
+        continue;
+      }
+      const idx = allRaw.findIndex((s) => liveKey(s) === key);
+      if (idx >= 0 && ls.isLive) {
+        allRaw[idx] = { ...allRaw[idx], isLive: true };
       }
     }
 
@@ -2756,8 +2807,13 @@ Deno.serve(async (req: Request) => {
 
     // No projected/upcoming “entries” — only live + historical detections.
 
+    const nowMsScan = Date.now();
+    let pipelineRaw = maxSignalAgeDays > 0
+      ? filterRawByMaxSignalAge(allRawFiltered, maxSignalAgeDays, nowMsScan)
+      : allRawFiltered;
+
     // Sort: live first, then more recent bars, then by index.
-    allRawFiltered.sort((a, b) => {
+    pipelineRaw.sort((a, b) => {
       const aPri = a.isLive ? 2 : 1;
       const bPri = b.isLive ? 2 : 1;
       if (aPri !== bPri) return bPri - aPri;
@@ -2766,9 +2822,10 @@ Deno.serve(async (req: Request) => {
       if (ta !== tb) return tb - ta;
       return b.entryIndex - a.entryIndex;
     });
-    const capped = allRawFiltered.slice(0, 80);
+    const capped = pipelineRaw.slice(0, 80);
     const scored = await scoreWithGemini(symbol, yahooSymbol, c[c.length - 1] ?? 0, capped, realIndicators, postAnalysis);
     const scanEvaluatedAt = new Date().toISOString();
+    const scanEvaluatedAtMs = Date.parse(scanEvaluatedAt);
 
     const merged = capped.map((rawSig, i) => {
       const ai = scored[i];
@@ -2789,7 +2846,7 @@ Deno.serve(async (req: Request) => {
         side: rawSig.side,
         priceAtEntry: rawSig.priceAtEntry,
         probabilityScore: ai?.probabilityScore ?? 54,
-        verdict: ai?.verdict ?? "review",
+        verdict: String(ai?.verdict ?? "mixed").toLowerCase() === "review" ? "mixed" : (ai?.verdict ?? "mixed"),
         rationale: ai?.rationale ?? "",
         entryExitRuleSummary: ai?.entryExitRuleSummary ?? "",
         whyThisScore: ai?.whyThisScore ?? "",
@@ -2799,6 +2856,11 @@ Deno.serve(async (req: Request) => {
         scoreSource: ai?.scoreSource ?? "heuristic",
         isLive: rawSig.isLive ?? false,
         isPredicted: false,
+        /** UI-only: full `liveWindowMs` after results arrive (does not change bar time/price). */
+        liveUiExpiresAtMs:
+          (rawSig.isLive ?? false) && Number.isFinite(scanEvaluatedAtMs)
+            ? scanEvaluatedAtMs + liveWindowMs
+            : null,
         marketData: rawSig.marketData ?? null,
         scanEvaluatedAt,
         ohlcvPipeline: dataSource,
@@ -2837,7 +2899,7 @@ Deno.serve(async (req: Request) => {
         indicator_source: realIndicators.source,
         interval: usedInterval,
         signal_count: merged.length,
-        live_count: liveSignals.length,
+        live_count: merged.filter((x) => x.isLive).length,
         predicted_count: 0,
         signals: merged,
       })
@@ -2847,6 +2909,9 @@ Deno.serve(async (req: Request) => {
       console.error("Failed saving strategy scan history:", historyErr.message);
     }
 
+    const dataIsIntraday = usedInterval !== "1d";
+    const isIntraday = dataIsIntraday;
+
     return new Response(
       JSON.stringify({
         signals: merged,
@@ -2854,12 +2919,17 @@ Deno.serve(async (req: Request) => {
         yahooSymbol,
         barCount: c.length,
         interval: usedInterval,
-        isIntraday: usedInterval !== "1d",
-        liveCount: liveSignals.length,
+        barMinutesApprox,
+        liveWindowMs,
+        dataIsIntraday,
+        isIntraday,
+        customSelectionDailyOnly,
+        liveCount: merged.filter((x) => x.isLive).length,
         predictedCount: 0,
         assetType,
         predictionWindowMinutes: 0,
         lookbackDaysUsed: days,
+        resultWindowDays: maxSignalAgeDays > 0 ? maxSignalAgeDays : null,
         dataSource,
         indicatorSource: realIndicators.source,
       }),

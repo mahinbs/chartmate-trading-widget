@@ -141,6 +141,26 @@ export function formatCurrency(
 }
 
 /**
+ * Pick fraction digits so a positive amount does not format as all zeros at the minimum precision
+ * (e.g. EUR/USD spot change ~0.00046 with min 3 → use 4+).
+ */
+export function fractionDigitsToShowNonZero(
+  absValue: number,
+  minimumFractionDigits: number,
+  maximumFractionDigits = 8,
+): number {
+  if (!Number.isFinite(absValue) || absValue <= 0) {
+    return minimumFractionDigits;
+  }
+  for (let d = minimumFractionDigits; d <= maximumFractionDigits; d++) {
+    if (Number(absValue.toFixed(d)) > 0) {
+      return d;
+    }
+  }
+  return maximumFractionDigits;
+}
+
+/**
  * Format percentage
  */
 export function formatPercentage(value: number, decimals: number = 2, includeSign: boolean = true): string {
