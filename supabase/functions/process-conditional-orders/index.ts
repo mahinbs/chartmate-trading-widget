@@ -67,7 +67,7 @@ Deno.serve(async (req: Request) => {
 
       const { data: pending, error: fetchErr } = await supabase
         .from("pending_conditional_orders")
-        .select("id, user_id, strategy_id, symbol, exchange, action, quantity, product, paper_strategy_type, created_at, expires_at")
+        .select("id, user_id, strategy_id, symbol, exchange, action, quantity, product, paper_strategy_type, created_at, expires_at, deploy_overrides")
         .eq("status", "pending")
         .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
         .order("created_at", { ascending: true })

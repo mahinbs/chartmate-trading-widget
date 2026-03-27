@@ -5,6 +5,16 @@
 // deno-lint-ignore no-explicit-any
 type SupabaseLike = any;
 
+export type DeployOverrides = {
+  start_time?: string;
+  end_time?: string;
+  squareoff_time?: string;
+  clock_entry_time?: string;
+  clock_exit_time?: string;
+  /** false = entry only, no automated exits for this deployment scan */
+  use_auto_exit?: boolean;
+};
+
 export type PendingConditionalRow = {
   id: string;
   user_id: string;
@@ -15,9 +25,70 @@ export type PendingConditionalRow = {
   quantity: number;
   product: string;
   paper_strategy_type: string;
+  deploy_overrides?: Record<string, unknown> | null;
 };
 
 export type TryExecuteResult = "fired" | "not_matched" | "cooldown" | "cancelled" | "error";
+
+function cloneJson<T>(v: T): T {
+  try {
+    return JSON.parse(JSON.stringify(v)) as T;
+  } catch {
+    return v;
+  }
+}
+
+/** Merge deploy-time session/clock/auto-exit into a copy of the strategy row for live scans (does not persist). */
+export function applyDeployOverridesToStrategyRow(
+  strategy: Record<string, unknown>,
+  overrides: unknown,
+): Record<string, unknown> {
+  const o = overrides && typeof overrides === "object" ? overrides as DeployOverrides : {};
+  const out = { ...strategy };
+
+  if (o.start_time !== undefined && String(o.start_time).trim()) {
+    out.start_time = String(o.start_time).trim();
+  }
+  if (o.end_time !== undefined && String(o.end_time).trim()) {
+    out.end_time = String(o.end_time).trim();
+  }
+  if (o.squareoff_time !== undefined && String(o.squareoff_time).trim()) {
+    out.squareoff_time = String(o.squareoff_time).trim();
+  }
+
+  const entryRaw = strategy.entry_conditions;
+  if (o.clock_entry_time !== undefined && String(o.clock_entry_time).trim()) {
+    const ent = entryRaw && typeof entryRaw === "object"
+      ? cloneJson(entryRaw) as Record<string, unknown>
+      : {};
+    ent.clockEntryTime = String(o.clock_entry_time).trim();
+    out.entry_conditions = ent;
+  }
+
+  const exitRaw = strategy.exit_conditions;
+  const useAuto = o.use_auto_exit;
+
+  if (useAuto === false) {
+    out.exit_conditions = { autoExitEnabled: false };
+    out.stop_loss_pct = null;
+    out.take_profit_pct = null;
+  } else {
+    const base = exitRaw && typeof exitRaw === "object"
+      ? cloneJson(exitRaw) as Record<string, unknown>
+      : {};
+    if (useAuto === true) {
+      base.autoExitEnabled = true;
+    }
+    if (o.clock_exit_time !== undefined && String(o.clock_exit_time).trim()) {
+      base.clockExitTime = String(o.clock_exit_time).trim();
+    }
+    if (useAuto === true || o.clock_exit_time !== undefined) {
+      out.exit_conditions = Object.keys(base).length ? base : exitRaw;
+    }
+  }
+
+  return out;
+}
 
 export async function tryExecutePendingRow(
   supabase: SupabaseLike,
@@ -35,7 +106,7 @@ export async function tryExecutePendingRow(
   const { data: strategy, error: stratErr } = await supabase
     .from("user_strategies")
     .select(
-      "id, name, trading_mode, is_intraday, stop_loss_pct, take_profit_pct, paper_strategy_type, symbols, market_type, entry_conditions, exit_conditions, position_config, risk_config, chart_config, execution_days",
+      "id, name, trading_mode, is_intraday, stop_loss_pct, take_profit_pct, paper_strategy_type, symbols, market_type, entry_conditions, exit_conditions, position_config, risk_config, chart_config, execution_days, start_time, end_time, squareoff_time, risk_per_trade_pct, description",
     )
     .eq("id", row.strategy_id)
     .single();
@@ -47,6 +118,8 @@ export async function tryExecutePendingRow(
     }).eq("id", row.id);
     return "cancelled";
   }
+
+  const merged = applyDeployOverridesToStrategyRow(strategy as Record<string, unknown>, row.deploy_overrides);
 
   const dedupeKey = `${row.strategy_id}|${row.symbol}|${row.action}`;
   const lastLocalFire = localFireGuard.get(dedupeKey) ?? 0;
@@ -87,24 +160,24 @@ export async function tryExecutePendingRow(
       intradayLookbackMinutes: 5 * 24 * 60,
       customStrategies: [{
         id: customId,
-        name: strategy.name,
-        baseType: String((strategy as any).paper_strategy_type ?? "trend_following"),
-        tradingMode: String((strategy as any).trading_mode ?? "BOTH"),
-        stopLossPct: Number((strategy as any).stop_loss_pct ?? 2),
-        takeProfitPct: Number((strategy as any).take_profit_pct ?? 4),
-        isIntraday: Boolean((strategy as any).is_intraday ?? true),
-        entryConditions: (strategy as any).entry_conditions ?? null,
-        exitConditions: (strategy as any).exit_conditions ?? null,
-        positionConfig: (strategy as any).position_config ?? null,
-        riskConfig: (strategy as any).risk_config ?? null,
-        chartConfig: (strategy as any).chart_config ?? null,
-        executionDays: Array.isArray((strategy as any).execution_days) ? (strategy as any).execution_days : [],
-        marketType: String((strategy as any).market_type ?? "stocks"),
-        startTime: (strategy as any).start_time != null ? String((strategy as any).start_time) : undefined,
-        endTime: (strategy as any).end_time != null ? String((strategy as any).end_time) : undefined,
-        squareoffTime: (strategy as any).squareoff_time != null ? String((strategy as any).squareoff_time) : undefined,
-        riskPerTradePct: (strategy as any).risk_per_trade_pct != null ? Number((strategy as any).risk_per_trade_pct) : undefined,
-        description: (strategy as any).description != null ? String((strategy as any).description) : undefined,
+        name: merged.name,
+        baseType: String(merged.paper_strategy_type ?? "trend_following"),
+        tradingMode: String(merged.trading_mode ?? "BOTH"),
+        stopLossPct: merged.stop_loss_pct != null ? Number(merged.stop_loss_pct) : null,
+        takeProfitPct: merged.take_profit_pct != null ? Number(merged.take_profit_pct) : null,
+        isIntraday: Boolean(merged.is_intraday ?? true),
+        entryConditions: merged.entry_conditions ?? null,
+        exitConditions: merged.exit_conditions ?? null,
+        positionConfig: merged.position_config ?? null,
+        riskConfig: merged.risk_config ?? null,
+        chartConfig: merged.chart_config ?? null,
+        executionDays: Array.isArray(merged.execution_days) ? merged.execution_days : [],
+        marketType: String(merged.market_type ?? "stocks"),
+        startTime: merged.start_time != null ? String(merged.start_time) : undefined,
+        endTime: merged.end_time != null ? String(merged.end_time) : undefined,
+        squareoffTime: merged.squareoff_time != null ? String(merged.squareoff_time) : undefined,
+        riskPerTradePct: merged.risk_per_trade_pct != null ? Number(merged.risk_per_trade_pct) : undefined,
+        description: merged.description != null ? String(merged.description) : undefined,
       }],
     }),
   });
@@ -145,7 +218,11 @@ export async function tryExecutePendingRow(
     : {};
   const resolvedExchange = String(positionConfig.exchange ?? row.exchange ?? "NSE").toUpperCase();
   const resolvedProduct = String(positionConfig.orderProduct ?? row.product ?? "MIS").toUpperCase();
-  const resolvedQty = Number(positionConfig.quantity ?? row.quantity ?? 1);
+  const rowQty = Number(row.quantity);
+  const pcQty = Number(positionConfig.quantity);
+  const resolvedQty = Number.isFinite(rowQty) && rowQty > 0
+    ? rowQty
+    : (Number.isFinite(pcQty) && pcQty > 0 ? pcQty : 1);
   const resolvedPriceType = String(
     (positionConfig.orderType === "LIMIT" ? "LIMIT" : (positionConfig.orderType === "STOP" || positionConfig.orderType === "STOP_LIMIT") ? "SL" : "MARKET"),
   ).toUpperCase();

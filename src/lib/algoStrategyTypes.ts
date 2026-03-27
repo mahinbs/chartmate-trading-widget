@@ -53,14 +53,17 @@ export type EntryConditions = {
 };
 
 export type ExitConditions = {
-  takeProfitPct: number;
-  stopLossPct: number;
-  trailingStop: boolean;
-  trailingStopPct: number;
-  indicatorGroups: ConditionGroup[];
-  timeBasedExit: boolean;
-  exitAfterMinutes: number;
-  /** Explicit wall-clock exit (e.g. Algorooms-style “exit at 1:01 PM”) — HH:MM */
+  /** When false, strategy has no automated exits — user manages exits manually (SL/TP/time rules ignored for scans). */
+  autoExitEnabled?: boolean;
+  /** Omitted or ≤0 = not used in scans */
+  takeProfitPct?: number;
+  stopLossPct?: number;
+  trailingStop?: boolean;
+  trailingStopPct?: number;
+  indicatorGroups?: ConditionGroup[];
+  timeBasedExit?: boolean;
+  exitAfterMinutes?: number;
+  /** Wall-clock exit — HH:MM; omit if unused */
   clockExitTime?: string;
 };
 

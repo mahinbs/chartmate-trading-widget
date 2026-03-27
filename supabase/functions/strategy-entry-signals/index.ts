@@ -1376,6 +1376,40 @@ function customPayloadToScanFields(cs: {
   };
 }
 
+/** User chose manual exits only — no SL/TP/time/clock exit in scan simulation. */
+function exitAutoDisabled(exitConditions: Record<string, unknown> | null | undefined): boolean {
+  if (!exitConditions || typeof exitConditions !== "object") return false;
+  return (exitConditions as { autoExitEnabled?: boolean }).autoExitEnabled === false;
+}
+
+function resolvedSlTpMaxHoldForCustom(
+  cs: CustomStrategyScanFields,
+  realtimeMode: boolean,
+  barMinutesApprox: number,
+  defaultHold: number,
+): { slPct: number; tpPct: number; maxHold: number } {
+  if (exitAutoDisabled(cs.exitConditions)) {
+    return { slPct: 0, tpPct: 0, maxHold: realtimeMode ? 0 : 1 };
+  }
+  const ex = cs.exitConditions;
+  const hasTimeExit = ex && typeof ex === "object" &&
+    (ex as { timeBasedExit?: boolean }).timeBasedExit === true &&
+    typeof (ex as { exitAfterMinutes?: number }).exitAfterMinutes === "number" &&
+    Number((ex as { exitAfterMinutes?: number }).exitAfterMinutes) > 0;
+
+  let maxHold = maxHoldBarsFromSavedExit(cs.exitConditions ?? null, realtimeMode, barMinutesApprox, defaultHold);
+  const slPct = Number.isFinite(cs.stopLossPct as number) && (cs.stopLossPct as number) > 0
+    ? Number(cs.stopLossPct)
+    : 0;
+  const tpPct = Number.isFinite(cs.takeProfitPct as number) && (cs.takeProfitPct as number) > 0
+    ? Number(cs.takeProfitPct)
+    : 0;
+  if (slPct <= 0 && tpPct <= 0 && !hasTimeExit) {
+    maxHold = realtimeMode ? 0 : 1;
+  }
+  return { slPct, tpPct, maxHold };
+}
+
 /**
  * Walk history using only the user's entryConditions (no baseType substitution).
  * Entry bar convention matches detectEntries: intraday = same bar; daily = next bar after the match.
@@ -1430,13 +1464,7 @@ function detectCustomEntrySignals(
   if (!actions.length) return [];
 
   const defaultHold = realtimeMode ? 3 : 10;
-  const maxHold = maxHoldBarsFromSavedExit(cs.exitConditions ?? null, realtimeMode, barMinutesApprox, defaultHold);
-  const slPct = Number.isFinite(cs.stopLossPct as number) && (cs.stopLossPct as number) > 0
-    ? Number(cs.stopLossPct)
-    : 2;
-  const tpPct = Number.isFinite(cs.takeProfitPct as number) && (cs.takeProfitPct as number) > 0
-    ? Number(cs.takeProfitPct)
-    : 4;
+  const { slPct, tpPct, maxHold } = resolvedSlTpMaxHoldForCustom(cs, realtimeMode, barMinutesApprox, defaultHold);
   const meta = buildCustomScanMeta({
     stopLossPct: slPct,
     takeProfitPct: tpPct,
@@ -1477,8 +1505,8 @@ function detectCustomEntrySignals(
           const ratio = c[i] / entryPrice;
           const slM = side === "BUY" ? 1 - slPct / 100 : 1 + slPct / 100;
           const tpM = side === "BUY" ? 1 + tpPct / 100 : 1 - tpPct / 100;
-          const hitSl = side === "BUY" ? ratio <= slM : ratio >= slM;
-          const hitTp = side === "BUY" ? ratio >= tpM : ratio <= tpM;
+          const hitSl = slPct > 0 && (side === "BUY" ? ratio <= slM : ratio >= slM);
+          const hitTp = tpPct > 0 && (side === "BUY" ? ratio >= tpM : ratio <= tpM);
           if (hitSl || hitTp || hold >= maxHold) inTrade = false;
           continue;
         }
@@ -1543,6 +1571,7 @@ function clockExitSignalsIfMatched(
   requestedActions: Array<"BUY" | "SELL">,
   scanTimeZone: string,
 ): RawSignal[] {
+  if (exitAutoDisabled(cs.exitConditions)) return [];
   const ex = cs.exitConditions && typeof cs.exitConditions === "object"
     ? (cs.exitConditions as { clockExitTime?: string }).clockExitTime
     : undefined;
@@ -1589,12 +1618,14 @@ function clockExitSignalsIfMatched(
       clockExitTime: exStr,
     },
   };
-  const slPct = Number.isFinite(cs.stopLossPct as number) && (cs.stopLossPct as number) > 0
+  const slPct = exitAutoDisabled(cs.exitConditions) ? 0
+    : Number.isFinite(cs.stopLossPct as number) && (cs.stopLossPct as number) > 0
     ? Number(cs.stopLossPct)
-    : 2;
-  const tpPct = Number.isFinite(cs.takeProfitPct as number) && (cs.takeProfitPct as number) > 0
+    : 0;
+  const tpPct = exitAutoDisabled(cs.exitConditions) ? 0
+    : Number.isFinite(cs.takeProfitPct as number) && (cs.takeProfitPct as number) > 0
     ? Number(cs.takeProfitPct)
-    : 4;
+    : 0;
   const exitMeta = buildCustomScanMeta({
     stopLossPct: slPct,
     takeProfitPct: tpPct,
@@ -1697,8 +1728,8 @@ function detectEntries(
     if (inTrade) {
       hold++;
       const ratio = c[i] / entryPrice;
-      const hitSl = action === "BUY" ? ratio <= slM : ratio >= slM;
-      const hitTp = action === "BUY" ? ratio >= tpM : ratio <= tpM;
+      const hitSl = slPct > 0 && (action === "BUY" ? ratio <= slM : ratio >= slM);
+      const hitTp = tpPct > 0 && (action === "BUY" ? ratio >= tpM : ratio <= tpM);
       if (hitSl || hitTp || hold >= maxHold) inTrade = false;
       continue;
     }
@@ -2421,8 +2452,8 @@ Deno.serve(async (req: Request) => {
       name: string;
       baseType: string;
       tradingMode: string;
-      stopLossPct: number;
-      takeProfitPct: number;
+      stopLossPct?: number | null;
+      takeProfitPct?: number | null;
       isIntraday?: boolean;
       entryConditions?: EntryConditionsConfig | null;
       exitConditions?: Record<string, unknown> | null;
@@ -2582,10 +2613,25 @@ Deno.serve(async (req: Request) => {
         cs.tradingMode === "LONG" ? ["BUY"]
           : cs.tradingMode === "SHORT" ? ["SELL"]
           : ["BUY", "SELL"];
-      const slPct = Number.isFinite(cs.stopLossPct) && cs.stopLossPct > 0 ? cs.stopLossPct : 2;
-      const tpPct = Number.isFinite(cs.takeProfitPct) && cs.takeProfitPct > 0 ? cs.takeProfitPct : 4;
       const defaultHold = realtimeMode ? 3 : 10;
-      const maxHoldCustom = maxHoldBarsFromSavedExit(cs.exitConditions ?? null, realtimeMode, barMinutesApprox, defaultHold);
+      const exOff = exitAutoDisabled(cs.exitConditions ?? null);
+      const slPct = exOff ? 0 : Number.isFinite(cs.stopLossPct as number) && Number(cs.stopLossPct) > 0
+        ? Number(cs.stopLossPct)
+        : 0;
+      const tpPct = exOff ? 0 : Number.isFinite(cs.takeProfitPct as number) && Number(cs.takeProfitPct) > 0
+        ? Number(cs.takeProfitPct)
+        : 0;
+      const exC = cs.exitConditions;
+      const hasTimeT = !exOff && exC && typeof exC === "object" &&
+        (exC as { timeBasedExit?: boolean }).timeBasedExit === true &&
+        typeof (exC as { exitAfterMinutes?: number }).exitAfterMinutes === "number" &&
+        Number((exC as { exitAfterMinutes?: number }).exitAfterMinutes) > 0;
+      let maxHoldCustom = exOff
+        ? (realtimeMode ? 0 : 1)
+        : maxHoldBarsFromSavedExit(cs.exitConditions ?? null, realtimeMode, barMinutesApprox, defaultHold);
+      if (!exOff && slPct <= 0 && tpPct <= 0 && !hasTimeT) {
+        maxHoldCustom = realtimeMode ? 0 : 1;
+      }
       for (const action of csActions) {
         const templateMeta = buildCustomScanMeta({
           stopLossPct: slPct,
@@ -2651,8 +2697,13 @@ Deno.serve(async (req: Request) => {
         ls.strategyLabel = customLabelMap[csId];
         const ccfg = customStrategies.find((c) => String(c.id) === csId);
         if (ccfg) {
-          const slPct = Number.isFinite(ccfg.stopLossPct) && ccfg.stopLossPct > 0 ? ccfg.stopLossPct : 2;
-          const tpPct = Number.isFinite(ccfg.takeProfitPct) && ccfg.takeProfitPct > 0 ? ccfg.takeProfitPct : 4;
+          const exOffL = exitAutoDisabled(ccfg.exitConditions ?? null);
+          const slPct = exOffL ? 0 : Number.isFinite(ccfg.stopLossPct as number) && Number(ccfg.stopLossPct) > 0
+            ? Number(ccfg.stopLossPct)
+            : 0;
+          const tpPct = exOffL ? 0 : Number.isFinite(ccfg.takeProfitPct as number) && Number(ccfg.takeProfitPct) > 0
+            ? Number(ccfg.takeProfitPct)
+            : 0;
           const lm = buildCustomScanMeta({
             stopLossPct: slPct,
             takeProfitPct: tpPct,

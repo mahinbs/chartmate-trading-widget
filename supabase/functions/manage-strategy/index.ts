@@ -73,17 +73,32 @@ Deno.serve(async (req: Request) => {
       const endTime      = (body.end_time as string)      ?? "15:15";
       const squareoff    = (body.squareoff_time as string) ?? "15:15";
       const riskPct      = Number(body.risk_per_trade_pct ?? 1.0);
-      const slPct        = Number(body.stop_loss_pct       ?? 2.0);
-      const tpPct        = Number(body.take_profit_pct     ?? 4.0);
-      const symbols      = (body.symbols as unknown[])    ?? [];
+      const symbols      = Array.isArray(body.symbols) ? (body.symbols as unknown[]) : [];
       const paperStrategyType = ((body.paper_strategy_type as string) ?? "").trim() || null;
       const marketType = ((body.market_type as string) ?? "stocks").trim().toLowerCase();
       const entryConditions = (body.entry_conditions && typeof body.entry_conditions === "object")
         ? body.entry_conditions
         : {};
-      const exitConditions = (body.exit_conditions && typeof body.exit_conditions === "object")
-        ? body.exit_conditions
+      const exitRaw = body.exit_conditions;
+      const exitConditions = exitRaw === null
+        ? null
+        : (exitRaw && typeof exitRaw === "object")
+        ? exitRaw
         : {};
+      const autoExitOff = exitConditions && typeof exitConditions === "object" &&
+        (exitConditions as { autoExitEnabled?: boolean }).autoExitEnabled === false;
+      const slIn = body.stop_loss_pct;
+      const tpIn = body.take_profit_pct;
+      const slPct = autoExitOff
+        ? null
+        : slIn === null || slIn === undefined
+        ? null
+        : Number(slIn);
+      const tpPct = autoExitOff
+        ? null
+        : tpIn === null || tpIn === undefined
+        ? null
+        : Number(tpIn);
       const positionConfig = (body.position_config && typeof body.position_config === "object")
         ? body.position_config
         : {};
@@ -131,8 +146,8 @@ Deno.serve(async (req: Request) => {
             start_time:    startTime,
             end_time:      endTime,
             squareoff_time: squareoff,
-            stop_loss_pct: slPct,
-            take_profit_pct: tpPct,
+            stop_loss_pct: slPct ?? null,
+            take_profit_pct: tpPct ?? null,
             symbols,
           }),
         });
@@ -194,6 +209,25 @@ Deno.serve(async (req: Request) => {
         return new Response(JSON.stringify({ error: "strategy_id is required" }), { status: 400, headers });
       }
 
+      const { data: currentRow } = await supabase
+        .from("user_strategies")
+        .select("is_active")
+        .eq("id", strategyId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (!currentRow) {
+        return new Response(JSON.stringify({ error: "Strategy not found" }), { status: 404, headers });
+      }
+      if ((currentRow as { is_active?: boolean }).is_active === true) {
+        return new Response(
+          JSON.stringify({
+            error: "Cannot edit a live strategy. Deactivate it first, then edit.",
+            error_code: "STRATEGY_LIVE_LOCKED",
+          }),
+          { status: 409, headers },
+        );
+      }
+
       const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
       if (body.name           !== undefined) updates.name             = body.name;
       if (body.description    !== undefined) updates.description      = body.description;
@@ -203,13 +237,20 @@ Deno.serve(async (req: Request) => {
       if (body.end_time       !== undefined) updates.end_time         = body.end_time;
       if (body.squareoff_time !== undefined) updates.squareoff_time   = body.squareoff_time;
       if (body.risk_per_trade_pct !== undefined) updates.risk_per_trade_pct = Number(body.risk_per_trade_pct);
-      if (body.stop_loss_pct  !== undefined) updates.stop_loss_pct   = Number(body.stop_loss_pct);
-      if (body.take_profit_pct !== undefined) updates.take_profit_pct = Number(body.take_profit_pct);
+      if (body.stop_loss_pct !== undefined) {
+        updates.stop_loss_pct = body.stop_loss_pct === null ? null : Number(body.stop_loss_pct);
+      }
+      if (body.take_profit_pct !== undefined) {
+        updates.take_profit_pct = body.take_profit_pct === null ? null : Number(body.take_profit_pct);
+      }
       if (body.symbols        !== undefined) updates.symbols          = body.symbols;
       if (body.paper_strategy_type !== undefined) updates.paper_strategy_type = ((body.paper_strategy_type as string) ?? "").trim() || null;
       if (body.market_type    !== undefined) updates.market_type      = String(body.market_type).trim().toLowerCase();
       if (body.entry_conditions !== undefined && body.entry_conditions && typeof body.entry_conditions === "object") updates.entry_conditions = body.entry_conditions;
-      if (body.exit_conditions !== undefined && body.exit_conditions && typeof body.exit_conditions === "object") updates.exit_conditions = body.exit_conditions;
+      if (body.exit_conditions !== undefined) {
+        if (body.exit_conditions === null) updates.exit_conditions = null;
+        else if (typeof body.exit_conditions === "object") updates.exit_conditions = body.exit_conditions;
+      }
       if (body.position_config !== undefined && body.position_config && typeof body.position_config === "object") updates.position_config = body.position_config;
       if (body.risk_config !== undefined && body.risk_config && typeof body.risk_config === "object") updates.risk_config = body.risk_config;
       if (body.chart_config !== undefined && body.chart_config && typeof body.chart_config === "object") updates.chart_config = body.chart_config;
