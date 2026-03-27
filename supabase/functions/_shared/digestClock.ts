@@ -63,13 +63,16 @@ export function parseNotifyTimeForDigest(s: string): { h: number; m: number } {
 }
 
 /**
- * True when local "minutes since midnight" is within [0, 8) minutes after the scheduled time.
- * Matches cron every ~5 min: alarm at 10:41 fires when server runs between 10:41 and 10:48 local.
+ * True when local "minutes since midnight" is within [0, N) minutes after the scheduled time.
+ * Wide enough for cron every 5m to still catch the alarm (e.g. 10:41 alarm + tick at 10:45).
+ * With * * * * * (every minute) this still fires in the first minute after the chosen time.
  */
+const DIGEST_FIRE_WINDOW_MIN = 16;
+
 export function isInDigestFireWindow(nowMin: number, scheduledMin: number): boolean {
   let diff = nowMin - scheduledMin;
   if (diff < 0) diff += 1440;
-  return diff >= 0 && diff < 8;
+  return diff >= 0 && diff < DIGEST_FIRE_WINDOW_MIN;
 }
 
 /** Readable line for UI — proves same clock the digest uses. */

@@ -240,11 +240,10 @@ function EntryPointNotificationsSheetPanel({ userId, state }: PanelProps) {
                   const symbol = typeof a.symbol === "string" ? a.symbol : "";
                   if (historyId || symbol) {
                     const qp = new URLSearchParams();
-                    qp.set("tab", "scanner");
                     if (symbol) qp.set("symbol", symbol);
                     if (historyId) qp.set("historyId", historyId);
                     setOpen(false);
-                    navigate(`/trading-dashboard?${qp.toString()}`);
+                    navigate(`/ai-trading-analysis?${qp.toString()}`);
                   }
                 }}
                 className={cn(

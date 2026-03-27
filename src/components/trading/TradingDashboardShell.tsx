@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import BrokerSyncSection from "@/components/trading/BrokerSyncSection";
 import { EntryPointNotificationsHeaderButton } from "@/components/EntryPointNotificationsBell";
+import { ScheduledDigestClientTrigger } from "@/components/ScheduledDigestClientTrigger";
 
 // ── Market status (IST) — shared by algo trading pages ─────────────────────────
 
@@ -144,6 +145,7 @@ export function TradingDashboardShell({ broker, children, pageTitle }: TradingDa
 
   return (
     <div className="min-h-screen bg-black text-zinc-100">
+      <ScheduledDigestClientTrigger />
       <header className="sticky top-0 z-50 border-b border-zinc-800 bg-black/90 backdrop-blur-xl">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">

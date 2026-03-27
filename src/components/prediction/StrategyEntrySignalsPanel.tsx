@@ -2,7 +2,7 @@
  * Post-analysis: multi-strategy library entry & exit scan + AI probability / verdict.
  * Scans BOTH BUY (entry) and SELL (exit) simultaneously so users can see all opportunities.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +19,7 @@ import {
 import { STRATEGIES } from "@/components/trading/StrategySelectionDialog";
 import { Loader2, Sparkles, Target, History, ChevronLeft, ChevronRight, Clock3, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -44,6 +45,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { LiveEntryTrackingSection } from "@/components/prediction/LiveEntryTrackingSection";
+import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 
 export interface PostAnalysisContext {
   result?: string;
@@ -91,6 +94,8 @@ type SignalRow = {
   } | null;
   /** Server time when this row was scored (same for all signals in one scan). */
   scanEvaluatedAt?: string;
+  /** When set (live rows), live badge/countdown uses this instead of entry time + liveWindow (scan latency no longer eats the window). */
+  liveUiExpiresAtMs?: number | null;
   ohlcvPipeline?: string;
   indicatorPipeline?: string;
   /** follow_through | adverse_first | mixed | pending | unknown */
@@ -157,6 +162,133 @@ const DAY_LABELS: { bit: number; label: string }[] = [
   { bit: 5, label: "Fri" },
   { bit: 6, label: "Sat" },
 ];
+
+const TIMEFRAME_PRESET_DAYS: Record<string, number> = {
+  "1d": 1,
+  "7d": 7,
+  "30d": 30,
+  "90d": 90,
+  "180d": 180,
+  "365d": 365,
+  "730d": 730,
+};
+
+function clampInt(n: number, lo: number, hi: number) {
+  return Math.min(hi, Math.max(lo, Math.floor(n)));
+}
+
+function scanProgressStageLabel(p: number): string {
+  if (p >= 100) return "Done — showing results";
+  if (p < 20) return "Fetching OHLCV & computing indicators…";
+  if (p < 45) return "Running entry/exit rules on each bar…";
+  if (p < 78) return "AI (Gemini) scoring & blending with rule engine…";
+  return "Merging outcomes & building signal cards…";
+}
+
+function formatDurationShort(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "0s";
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const h = Math.floor(m / 60);
+  if (h > 0) return `${h}h ${m % 60}m`;
+  if (m > 0) return `${m}m ${s % 60}s`;
+  return `${s}s`;
+}
+
+function verdictUiLabel(verdict: string): string {
+  const v = String(verdict || "").toLowerCase();
+  if (v === "mixed" || v === "review") return "Mixed signal";
+  if (v === "confirm") return "Confirm";
+  if (v === "reject") return "Reject";
+  return verdict;
+}
+
+function isMixedVerdict(v: string): boolean {
+  const x = String(v || "").toLowerCase();
+  return x === "mixed" || x === "review";
+}
+
+function entryBarMs(row: SignalRow): number | null {
+  if (row.entryTimestamp != null && Number.isFinite(Number(row.entryTimestamp))) {
+    return Number(row.entryTimestamp);
+  }
+  if (row.entryTime) {
+    const t = new Date(row.entryTime).getTime();
+    return Number.isFinite(t) ? t : null;
+  }
+  const d = Date.parse(`${row.entryDate}T12:00:00.000Z`);
+  return Number.isFinite(d) ? d : null;
+}
+
+/** Mirrors `intervalLabelToBarMinutes` in strategy-entry-signals (fallback when API omits liveWindowMs). */
+function intervalLabelToBarMinutesClient(interval: string): number {
+  const s = String(interval).trim().toLowerCase();
+  const m = /^(\d+)\s*m$/.exec(s);
+  if (m) return Math.max(1, Number(m[1]));
+  if (s === "1h" || s === "60m") return 60;
+  if (s.endsWith("d") || s === "1d") return 24 * 60;
+  return 5;
+}
+
+/** Live badge window = one chart bar from scan (server sends ms; else derive from interval). */
+function resolveLiveWindowMs(serverMs: number | null | undefined, interval: string | null | undefined): number {
+  if (typeof serverMs === "number" && Number.isFinite(serverMs) && serverMs >= 60_000) {
+    return Math.min(serverMs, 7 * 24 * 60 * 60 * 1000);
+  }
+  const mins = interval ? intervalLabelToBarMinutesClient(interval) : 5;
+  return Math.max(60_000, mins * 60 * 1000);
+}
+
+function applyRowLiveWindow(row: SignalRow, nowMs: number, liveWindowMs: number): SignalRow {
+  const uiExp = row.liveUiExpiresAtMs;
+  if (typeof uiExp === "number" && Number.isFinite(uiExp)) {
+    return {
+      ...row,
+      isPredicted: false,
+      isLive: row.isLive ? nowMs <= uiExp : false,
+    };
+  }
+  const ts = row.entryTimestamp
+    ? Number(row.entryTimestamp)
+    : row.entryTime
+    ? new Date(row.entryTime).getTime()
+    : NaN;
+  if (!Number.isFinite(ts)) {
+    return { ...row, isPredicted: false };
+  }
+  const isFuture = ts > nowMs;
+  return {
+    ...row,
+    isPredicted: false,
+    isLive: row.isLive ? !isFuture && nowMs - ts <= liveWindowMs : false,
+  };
+}
+
+/** 12-hour times for scanner cards (not minute-truncated — uses full Date when formatting). */
+const SCAN_DATETIME_OPTS: Intl.DateTimeFormatOptions = {
+  year: "numeric",
+  month: "short",
+  day: "2-digit",
+  hour: "numeric",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: true,
+};
+
+function LiveOnAirBadge() {
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full border border-teal-400/45 bg-gradient-to-r from-teal-950/90 via-cyan-950/80 to-teal-950/90 px-2.5 py-1 shadow-[0_0_14px_rgba(45,212,191,0.22)] ring-1 ring-teal-500/20"
+      aria-label="Live signal on latest bar"
+    >
+      <span className="relative flex h-2 w-2 shrink-0" aria-hidden>
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+        <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)]" />
+      </span>
+      <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-teal-50">Live</span>
+    </span>
+  );
+}
 
 function fmtNum(n: number, d = 2) {
   if (!Number.isFinite(n)) return "—";
@@ -344,6 +476,8 @@ function CustomStrategySavedPlanBlock({ meta }: { meta: Record<string, unknown> 
 function SignalAnalysisCard(props: {
   row: SignalRow;
   todayKey: string;
+  nowMs: number;
+  liveWindowMs: number;
   formatEntry: (row: SignalRow) => string;
   formatEntryWithZone: (row: SignalRow) => string;
   formatMarketData: (row: SignalRow) => string;
@@ -355,6 +489,8 @@ function SignalAnalysisCard(props: {
   const {
     row,
     todayKey,
+    nowMs,
+    liveWindowMs,
     formatEntry,
     formatEntryWithZone,
     formatMarketData,
@@ -364,6 +500,25 @@ function SignalAnalysisCard(props: {
     compactZone,
   } = props;
   const isPast = !row.isLive && row.entryDate !== todayKey;
+  const barMs = entryBarMs(row);
+  const uiExp =
+    typeof row.liveUiExpiresAtMs === "number" && Number.isFinite(row.liveUiExpiresAtMs)
+      ? row.liveUiExpiresAtMs
+      : null;
+  const liveRemainingMs =
+    row.isLive && uiExp != null
+      ? Math.max(0, uiExp - nowMs)
+      : row.isLive && barMs != null
+      ? Math.max(0, liveWindowMs - (nowMs - barMs))
+      : null;
+  const liveElapsedMs =
+    row.isLive && liveRemainingMs != null
+      ? uiExp != null
+        ? Math.max(0, liveWindowMs - liveRemainingMs)
+        : barMs != null
+        ? Math.max(0, nowMs - barMs)
+        : null
+      : null;
   const pointUi = row.customStrategyMeta ? resolveScannerPointPresentation(row) : null;
   const slTpHint =
     row.customStrategyMeta && typeof row.customStrategyMeta === "object"
@@ -384,11 +539,7 @@ function SignalAnalysisCard(props: {
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
-            {row.isLive ? (
-              <span className="text-[10px] font-bold uppercase tracking-wider bg-teal-500/35 text-teal-200 rounded px-2 py-0.5">
-                Live
-              </span>
-            ) : null}
+            {row.isLive ? <LiveOnAirBadge /> : null}
             {isPast ? (
               <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Past</span>
             ) : null}
@@ -397,6 +548,45 @@ function SignalAnalysisCard(props: {
             ) : null}
             <h3 className="text-base font-semibold text-white leading-tight">{row.strategyLabel}</h3>
           </div>
+          {row.isLive && liveElapsedMs != null && liveRemainingMs != null ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="w-full max-w-full text-left rounded-md border border-transparent px-0 py-0.5 hover:border-teal-500/20 hover:bg-teal-500/5 transition-colors"
+                >
+                  <p className="text-[11px] text-zinc-400 leading-snug">
+                    <span className="text-zinc-500">Since signal bar: </span>
+                    <span className="font-mono text-teal-200/95 tabular-nums">{formatDurationShort(liveElapsedMs)}</span>
+                    <span className="text-zinc-500"> · </span>
+                    {liveRemainingMs > 0 ? (
+                      <span className="text-teal-300/95">
+                        {formatDurationShort(liveRemainingMs)} left of {formatDurationShort(liveWindowMs)} live window
+                      </span>
+                    ) : (
+                      <span className="text-zinc-500">Live window ended</span>
+                    )}
+                  </p>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-[280px] text-xs leading-relaxed">
+                {uiExp != null ? (
+                  <>
+                    This live window is one bar long and starts when the scan finished (so slow scoring doesn&apos;t
+                    shrink your time to act). Signal bar time and price are unchanged. Total window:{" "}
+                    <span className="font-medium">{formatDurationShort(liveWindowMs)}</span>.
+                  </>
+                ) : (
+                  <>
+                    Elapsed = your clock minus the signal bar&apos;s full timestamp. This card&apos;s live window is{" "}
+                    <span className="font-medium">{formatDurationShort(liveWindowMs)}</span> — one bar of the OHLCV
+                    interval used for this scan (<code className="text-[10px]">liveWindowMs</code> from the server when
+                    available).
+                  </>
+                )}
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
           {pointUi ? (
             <div className="space-y-1">
               <span
@@ -414,8 +604,8 @@ function SignalAnalysisCard(props: {
         <div className="text-right shrink-0">
           <p className="text-2xl font-bold tabular-nums text-teal-300">{row.probabilityScore}</p>
           <p className="text-[10px] text-zinc-500 uppercase tracking-wide">Score</p>
-          <Badge variant={verdictVariant(row.verdict)} className="mt-1.5 text-xs font-semibold capitalize">
-            {row.verdict}
+          <Badge variant={verdictVariant(row.verdict)} className="mt-1.5 text-xs font-semibold">
+            {verdictUiLabel(row.verdict)}
           </Badge>
         </div>
       </div>
@@ -444,14 +634,7 @@ function SignalAnalysisCard(props: {
         {row.scanEvaluatedAt ? (
           <p className="text-[11px] text-zinc-500">
             <span className="font-medium text-zinc-600">Scored at: </span>
-            {new Date(row.scanEvaluatedAt).toLocaleString([], {
-              year: "numeric",
-              month: "short",
-              day: "2-digit",
-              hour: "2-digit",
-              minute: "2-digit",
-              second: "2-digit",
-            })}
+            {new Date(row.scanEvaluatedAt).toLocaleString(undefined, SCAN_DATETIME_OPTS)}
           </p>
         ) : null}
         {row.ohlcvPipeline || row.indicatorPipeline ? (
@@ -551,7 +734,7 @@ function SignalAnalysisCard(props: {
         </div>
       ) : null}
 
-      {(row.verdict === "reject" || row.verdict === "review") && (row.rejectionDetail || row.rationale) ? (
+      {(row.verdict === "reject" || isMixedVerdict(row.verdict)) && (row.rejectionDetail || row.rationale) ? (
         <div
           className={`rounded-lg border p-3 space-y-1 ${
             row.verdict === "reject" ? "border-red-500/30 bg-red-950/20" : "border-amber-500/25 bg-amber-950/15"
@@ -562,7 +745,7 @@ function SignalAnalysisCard(props: {
               row.verdict === "reject" ? "text-red-300" : "text-amber-200/90"
             }`}
           >
-            {row.verdict === "reject" ? "Rejected — detail" : "Review — why not a hard confirm"}
+            {row.verdict === "reject" ? "Rejected — detail" : "Mixed signal — why not a full confirm"}
           </p>
           <p className="text-sm text-zinc-200 leading-relaxed">{row.rejectionDetail || row.rationale}</p>
         </div>
@@ -660,6 +843,7 @@ export function StrategyEntrySignalsPanel({
   initialHistoryId = null,
 }: StrategyEntrySignalsPanelProps) {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(["trend_following", "mean_reversion", "momentum"]),
   );
@@ -671,7 +855,16 @@ export function StrategyEntrySignalsPanel({
     indicatorSource?: string;
     assetType?: string;
     lookbackDaysUsed?: number;
+    resultWindowDays?: number | null;
+    interval?: string;
+    liveWindowMs?: number;
+    barMinutesApprox?: number;
+    dataIsIntraday?: boolean;
+    isIntraday?: boolean;
+    customSelectionDailyOnly?: boolean;
   } | null>(null);
+  const [timeframePreset, setTimeframePreset] = useState<string>("90d");
+  const [customWindowDays, setCustomWindowDays] = useState<string>("90");
   const [customStrategies, setCustomStrategies] = useState<CustomStrategy[]>([]);
   const [selectedCustom, setSelectedCustom] = useState<Set<string>>(new Set());
   const [nowMs, setNowMs] = useState(Date.now());
@@ -692,8 +885,26 @@ export function StrategyEntrySignalsPanel({
   const [existingSchedules, setExistingSchedules] = useState<ExistingScheduleRow[]>([]);
   const [schedulesLoading, setSchedulesLoading] = useState(false);
   const [deletingScheduleId, setDeletingScheduleId] = useState<string | null>(null);
+  const [scanProgress, setScanProgress] = useState(0);
+  const scanProgressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const todayKey = useMemo(() => new Date().toISOString().slice(0, 10), []);
+
+  const resultWindowDays = useMemo(() => {
+    if (timeframePreset === "custom") {
+      const n = parseInt(String(customWindowDays).trim(), 10);
+      return clampInt(Number.isFinite(n) ? n : 90, 1, 730);
+    }
+    return TIMEFRAME_PRESET_DAYS[timeframePreset] ?? 90;
+  }, [timeframePreset, customWindowDays]);
+
+  /** OHLCV fetch depth — engine needs ≥60 daily bars for stable indicators; can be wider than the results window. */
+  const fetchDays = useMemo(() => Math.min(730, Math.max(60, resultWindowDays)), [resultWindowDays]);
+
+  const intradayLookbackMinutes = useMemo(
+    () => Math.min(7 * 24 * 60, Math.max(60, resultWindowDays * 24 * 60)),
+    [resultWindowDays],
+  );
 
   // Fetch market status
   useEffect(() => {
@@ -742,10 +953,20 @@ export function StrategyEntrySignalsPanel({
     return () => { cancelled = true; };
   }, [toast]);
 
-  // Keep LIVE window fresh as time moves.
+  // Live cards: tick every second while results are open so the live timer stays accurate.
   useEffect(() => {
-    const id = setInterval(() => setNowMs(Date.now()), 30000);
+    const fast = signals.length > 0;
+    const id = setInterval(() => setNowMs(Date.now()), fast ? 1000 : 30000);
     return () => clearInterval(id);
+  }, [signals.length]);
+
+  useEffect(() => {
+    return () => {
+      if (scanProgressTimerRef.current != null) {
+        clearInterval(scanProgressTimerRef.current);
+        scanProgressTimerRef.current = null;
+      }
+    };
   }, []);
 
   const fetchHistoryList = useCallback(async (page = 1) => {
@@ -842,6 +1063,33 @@ export function StrategyEntrySignalsPanel({
     fetchHistoryList(1);
   }, [fetchHistoryList]);
 
+  /** When a scheduled digest finishes, `entry_point_alerts` includes `history_id` — refresh Past analyses without reload. */
+  useEffect(() => {
+    if (!user?.id) return;
+    const channel = supabase
+      .channel(`strategy_scan_history_on_digest_${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "entry_point_alerts",
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          const meta = (payload.new as { metadata?: { history_id?: unknown } })?.metadata;
+          const hid = meta?.history_id;
+          if (typeof hid === "string" && hid.length > 0) {
+            void fetchHistoryList(1);
+          }
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [user?.id, fetchHistoryList]);
+
   const marketNote = useMemo(() => {
     if (!marketStatus) return "Scans intraday candles (with daily fallback) for both entry & exit points.";
     const qt = (marketStatus?.quoteType ?? "").toString().toUpperCase();
@@ -873,9 +1121,11 @@ export function StrategyEntrySignalsPanel({
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
+      const uid = session.user.id;
       const { data, error } = await (supabase as any)
         .from("live_entry_trackers")
         .select("id,symbol,timezone,notify_time,enabled,schedule_mode,selected_strategies,selected_custom_strategy_ids,days_of_week,one_off_local_date,last_digest_on")
+        .eq("user_id", uid)
         .order("created_at", { ascending: true });
       if (error) throw error;
       setExistingSchedules((data as ExistingScheduleRow[]) ?? []);
@@ -962,8 +1212,8 @@ export function StrategyEntrySignalsPanel({
   }, [updateExistingSchedule]);
 
   useEffect(() => {
-    if (entryAlarmsOpen) void loadExistingSchedules();
-  }, [entryAlarmsOpen, loadExistingSchedules]);
+    if (entryAlarmsOpen && scheduleTab === "existing") void loadExistingSchedules();
+  }, [entryAlarmsOpen, scheduleTab, loadExistingSchedules]);
   const selectAllBuiltIn = () => setSelected(new Set(STRATEGIES.map((s) => s.value)));
   const clearBuiltIn = () => setSelected(new Set());
   const selectAllCustom = () => setSelectedCustom(new Set(customStrategies.map((cs) => cs.id)));
@@ -984,8 +1234,17 @@ export function StrategyEntrySignalsPanel({
       return;
     }
 
+    if (scanProgressTimerRef.current != null) {
+      clearInterval(scanProgressTimerRef.current);
+      scanProgressTimerRef.current = null;
+    }
     setLoading(true);
     setSignals([]);
+    setScanProgress(6);
+    scanProgressTimerRef.current = setInterval(() => {
+      setScanProgress((prev) => Math.min(94, prev + 1.2 + Math.random() * 3.5));
+    }, 400);
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Sign in required");
@@ -1021,10 +1280,11 @@ export function StrategyEntrySignalsPanel({
           strategies: Array.from(selected),
           customStrategies: customConfigs,
           action: "BOTH",
-          days: 365,
+          days: fetchDays,
+          maxSignalAgeDays: resultWindowDays,
           preferIntraday: true,
           intradayInterval: "5m",
-          intradayLookbackMinutes: 5 * 24 * 60,
+          intradayLookbackMinutes,
           postAnalysis: postAnalysis?.result
             ? {
                 result: postAnalysis.result,
@@ -1041,12 +1301,31 @@ export function StrategyEntrySignalsPanel({
       if (err) throw new Error(String(err));
 
       const list = Array.isArray((data as any)?.signals) ? (data as any).signals as SignalRow[] : [];
+      if (scanProgressTimerRef.current != null) {
+        clearInterval(scanProgressTimerRef.current);
+        scanProgressTimerRef.current = null;
+      }
+      setScanProgress(100);
       setSignals(list);
       setScanMeta({
         dataSource: (data as any)?.dataSource,
         indicatorSource: (data as any)?.indicatorSource,
         assetType: (data as any)?.assetType,
         lookbackDaysUsed: typeof (data as any)?.lookbackDaysUsed === "number" ? (data as any).lookbackDaysUsed : undefined,
+        resultWindowDays:
+          typeof (data as any)?.resultWindowDays === "number"
+            ? (data as any).resultWindowDays
+            : resultWindowDays,
+        interval: typeof (data as any)?.interval === "string" ? (data as any).interval : undefined,
+        liveWindowMs: typeof (data as any)?.liveWindowMs === "number" ? (data as any).liveWindowMs : undefined,
+        barMinutesApprox:
+          typeof (data as any)?.barMinutesApprox === "number" ? (data as any).barMinutesApprox : undefined,
+        dataIsIntraday: typeof (data as any)?.dataIsIntraday === "boolean" ? (data as any).dataIsIntraday : undefined,
+        isIntraday: typeof (data as any)?.isIntraday === "boolean" ? (data as any).isIntraday : undefined,
+        customSelectionDailyOnly:
+          typeof (data as any)?.customSelectionDailyOnly === "boolean"
+            ? (data as any).customSelectionDailyOnly
+            : undefined,
       });
 
       const live = list.filter((s) => s.isLive);
@@ -1072,7 +1351,13 @@ export function StrategyEntrySignalsPanel({
         });
       }
       fetchHistoryList(1);
+      await new Promise((r) => setTimeout(r, 420));
     } catch (e: unknown) {
+      if (scanProgressTimerRef.current != null) {
+        clearInterval(scanProgressTimerRef.current);
+        scanProgressTimerRef.current = null;
+      }
+      setScanProgress(0);
       toast({
         title: "Scan failed",
         description: e instanceof Error ? e.message : "Unknown error",
@@ -1080,8 +1365,22 @@ export function StrategyEntrySignalsPanel({
       });
     } finally {
       setLoading(false);
+      setScanProgress(0);
     }
-  }, [symbol, selected, selectedCustom, customStrategies, postAnalysis, requirePostAnalysis, toast, todayKey, fetchHistoryList]);
+  }, [
+    symbol,
+    selected,
+    selectedCustom,
+    customStrategies,
+    postAnalysis,
+    requirePostAnalysis,
+    toast,
+    todayKey,
+    fetchHistoryList,
+    fetchDays,
+    resultWindowDays,
+    intradayLookbackMinutes,
+  ]);
 
   const verdictVariant = (v: string) => {
     if (v === "confirm") return "default" as const;
@@ -1100,26 +1399,27 @@ export function StrategyEntrySignalsPanel({
       : "text-muted-foreground";
 
   const formatEntry = (row: SignalRow) => {
-    const iso = row.entryTime || (row.entryTimestamp ? new Date(row.entryTimestamp).toISOString() : "");
+    if (row.entryTimestamp != null && Number.isFinite(Number(row.entryTimestamp))) {
+      return new Date(Number(row.entryTimestamp)).toLocaleString(undefined, SCAN_DATETIME_OPTS);
+    }
+    const iso = row.entryTime || "";
     if (!iso) return row.entryDate;
     const dt = new Date(iso);
+    if (Number.isNaN(dt.getTime())) return row.entryDate;
     if (row.entryTime && row.entryTime.length <= 10) return row.entryTime;
-    return dt.toLocaleString([], {
-      year: "numeric", month: "short", day: "2-digit",
-      hour: "2-digit", minute: "2-digit", second: "2-digit",
-      hour12: false,
-    });
+    return dt.toLocaleString(undefined, SCAN_DATETIME_OPTS);
   };
 
   const formatEntryWithZone = (row: SignalRow) => {
-    const iso = row.entryTime || (row.entryTimestamp ? new Date(row.entryTimestamp).toISOString() : "");
+    if (row.entryTimestamp != null && Number.isFinite(Number(row.entryTimestamp))) {
+      const dt = new Date(Number(row.entryTimestamp));
+      return `${dt.toLocaleString(undefined, SCAN_DATETIME_OPTS)} (${Intl.DateTimeFormat().resolvedOptions().timeZone})`;
+    }
+    const iso = row.entryTime || "";
     if (!iso) return row.entryDate;
     const dt = new Date(iso);
-    return `${dt.toLocaleString([], {
-      year: "numeric", month: "short", day: "2-digit",
-      hour: "2-digit", minute: "2-digit", second: "2-digit",
-      hour12: false,
-    })} (${Intl.DateTimeFormat().resolvedOptions().timeZone})`;
+    if (Number.isNaN(dt.getTime())) return row.entryDate;
+    return `${dt.toLocaleString(undefined, SCAN_DATETIME_OPTS)} (${Intl.DateTimeFormat().resolvedOptions().timeZone})`;
   };
 
   const formatMarketData = (row: SignalRow) => {
@@ -1132,26 +1432,26 @@ export function StrategyEntrySignalsPanel({
     return `${rsi} · ${sma} · ${h20} · ${l20}`;
   };
 
-  const applyDynamicStatus = useCallback((row: SignalRow): SignalRow => {
-    const ts = row.entryTimestamp
-      ? Number(row.entryTimestamp)
-      : row.entryTime
-      ? new Date(row.entryTime).getTime()
-      : NaN;
-    if (!Number.isFinite(ts)) return row;
-    const fifteenMin = 15 * 60 * 1000;
-    const isFuture = ts > nowMs;
-    return {
-      ...row,
-      isPredicted: false,
-      isLive: row.isLive ? !isFuture && nowMs - ts <= fifteenMin : false,
-    };
-  }, [nowMs]);
-
-  const visibleSignals = useMemo(
-    () => signals.map(applyDynamicStatus).filter((s) => !s.isPredicted),
-    [signals, applyDynamicStatus],
+  const liveWindowMsMain = useMemo(
+    () => resolveLiveWindowMs(scanMeta?.liveWindowMs, scanMeta?.interval ?? null),
+    [scanMeta?.liveWindowMs, scanMeta?.interval],
   );
+
+  const liveWindowMsHistory = useMemo(
+    () => resolveLiveWindowMs(undefined, historyDetail?.interval ?? null),
+    [historyDetail?.interval],
+  );
+
+  const visibleSignals = useMemo(() => {
+    const w = liveWindowMsMain;
+    const mapped = signals.map((row) => applyRowLiveWindow(row, nowMs, w)).filter((s) => !s.isPredicted);
+    return mapped.sort((a, b) => {
+      if (a.isLive !== b.isLive) return a.isLive ? -1 : 1;
+      const ta = entryBarMs(a) ?? 0;
+      const tb = entryBarMs(b) ?? 0;
+      return tb - ta;
+    });
+  }, [signals, nowMs, liveWindowMsMain]);
 
   useEffect(() => {
     setMainResultsPage(1);
@@ -1178,13 +1478,12 @@ export function StrategyEntrySignalsPanel({
     };
   }, [visibleSignals, todayKey]);
 
-  const historySignals = useMemo(
-    () =>
-      (historyDetail?.signals ?? [])
-        .filter((s) => !s.isPredicted)
-        .map(applyDynamicStatus),
-    [historyDetail, applyDynamicStatus],
-  );
+  const historySignals = useMemo(() => {
+    const w = liveWindowMsHistory;
+    return (historyDetail?.signals ?? [])
+      .filter((s) => !s.isPredicted)
+      .map((row) => applyRowLiveWindow(row, nowMs, w));
+  }, [historyDetail, nowMs, liveWindowMsHistory]);
   const historySignalTotalPages = Math.max(1, Math.ceil(historySignals.length / DETAIL_SIGNALS_PAGE_SIZE));
   const effectiveHistorySignalPage = Math.min(historySignalPage, historySignalTotalPages);
   const pagedHistorySignals = useMemo(() => {
@@ -1205,11 +1504,15 @@ export function StrategyEntrySignalsPanel({
               Symbol: <span className="text-white/90 font-mono font-medium">{symbol}</span>
             </p>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              We scan up to ~1 year of daily context (and intraday when available), detect{" "}
+              Pick a <span className="text-zinc-300 font-medium">results window</span> below (how far back entry/exit
+              points may appear — up to now). We fetch enough history for indicators, then only keep signals inside
+              that window. On intraday data when available we detect{" "}
               <span className="text-emerald-400 font-medium">entry (BUY)</span> and{" "}
-              <span className="text-red-400 font-medium">exit (SELL)</span> candidates, then score each with
-              structured rules plus Gemini — with explicit reasons for confirm, review, and reject.
-              No projected &quot;upcoming&quot; entries.
+              <span className="text-red-400 font-medium">exit (SELL)</span>, score with rules + Gemini —{" "}
+              <span className="text-zinc-300">confirm</span>, <span className="text-zinc-300">mixed signal</span>, or{" "}
+              <span className="text-zinc-300">reject</span>. Live cards use a clock; the live tag clears after{" "}
+              <span className="text-zinc-300">one chart bar</span> from the signal time (e.g. 5m feed → 5m window, daily →
+              24h), matching the scan interval. No projected &quot;upcoming&quot; entries.
               {postAnalysis?.result ? " Your post-analysis outcome is included as extra context." : ""}
             </p>
             {marketNote ? <p className="text-xs text-muted-foreground mt-1">{marketNote}</p> : null}
@@ -1217,8 +1520,33 @@ export function StrategyEntrySignalsPanel({
               <p className="text-[11px] text-zinc-500 mt-1">
                 Data: <span className="text-zinc-400">{scanMeta.dataSource ?? "yahoo"}</span>
                 {" · "}Indicators: <span className="text-zinc-400">{scanMeta.indicatorSource ?? "computed"}</span>
-                {" · "}Lookback:{" "}
-                <span className="text-zinc-400">{scanMeta.lookbackDaysUsed != null ? `${scanMeta.lookbackDaysUsed}d` : "365d default"}</span>
+                {" · "}Data lookback:{" "}
+                <span className="text-zinc-400">{scanMeta.lookbackDaysUsed != null ? `${scanMeta.lookbackDaysUsed}d` : "—"}</span>
+                {scanMeta.resultWindowDays != null ? (
+                  <>
+                    {" · "}Results window:{" "}
+                    <span className="text-zinc-400">{scanMeta.resultWindowDays}d</span>
+                  </>
+                ) : null}
+                {scanMeta.interval ? (
+                  <>
+                    {" · "}Chart: <span className="text-zinc-400 font-mono">{scanMeta.interval}</span>
+                  </>
+                ) : null}
+                {scanMeta.customSelectionDailyOnly ? (
+                  <>
+                    {" · "}
+                    <span className="text-zinc-500">Customs:</span>{" "}
+                    <span className="text-zinc-400">all daily — daily OHLCV only</span>
+                  </>
+                ) : scanMeta.isIntraday != null ? (
+                  <>
+                    {" · "}Intraday scan:{" "}
+                    <span className="text-zinc-400">{scanMeta.isIntraday ? "yes" : "no"}</span>
+                  </>
+                ) : null}
+                {" · "}Live window:{" "}
+                <span className="text-zinc-400">{formatDurationShort(liveWindowMsMain)}</span>
                 {" · "}AI: <span className="text-teal-400">Gemini + rule blend</span>
               </p>
             )}
@@ -1248,8 +1576,26 @@ export function StrategyEntrySignalsPanel({
         <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto border-l border-zinc-800 bg-zinc-950 p-4 pt-10">
           <SheetHeader className="mb-3">
             <SheetTitle className="text-zinc-100">Schedule</SheetTitle>
-            <SheetDescription className="text-zinc-400">
-              Create a schedule for this symbol, or manage old schedules.
+            <SheetDescription className="text-zinc-400 space-y-2">
+              <span className="block">
+                Turn on <span className="text-zinc-300">entry point alarms</span> for{" "}
+                <span className="font-mono text-teal-200/90">{symbol.trim().toUpperCase() || "this symbol"}</span> at a
+                daily wall time. When due, the backend runs the same scanner as &quot;Run strategy entry scan&quot;,
+                saves a row in <span className="text-zinc-300">Past analyses</span>, and adds one in-app item to the{" "}
+                <span className="text-zinc-300">bell</span> (no browser push). Open the bell to jump to the snapshot (
+                <span className="text-zinc-500">live counts in the message</span>).{" "}
+                <span className="text-zinc-500">
+                  Keep this Live Trading area open for best alignment: the app triggers the digest at your chosen minute
+                  via Supabase Realtime; cron still runs if the tab is closed.
+                </span>
+              </span>
+              <span className="block text-[11px] text-zinc-500 leading-snug">
+                Requires the hosted job <code className="text-[10px]">entry-point-daily-digest</code> on a short cron (e.g.
+                every minute) and <code className="text-[10px]">ENTRY_DIGEST_SECRET</code> set on Edge Functions — see{" "}
+                <code className="text-[10px]">supabase/functions/entry-point-daily-digest/README.md</code>. This is
+                separate from the built-in &quot;Time Scheduled&quot; strategy checkbox (clock-based signals inside a
+                manual scan).
+              </span>
             </SheetDescription>
           </SheetHeader>
 
@@ -1387,6 +1733,47 @@ export function StrategyEntrySignalsPanel({
       </Sheet>
 
       <CardContent className="space-y-4">
+        <div className="rounded-lg border border-cyan-500/25 bg-cyan-950/20 p-3 space-y-2">
+          <p className="text-[11px] font-semibold text-cyan-300">Results time window</p>
+          <p className="text-[10px] text-zinc-500 leading-snug">
+            Only entry/exit points from the last <span className="text-zinc-400">{resultWindowDays} days</span> through
+            now are returned. Data fetch uses at least 60 days when needed for indicators.
+          </p>
+          <div className="flex flex-col sm:flex-row sm:items-end gap-2">
+            <div className="flex-1 min-w-0 space-y-1">
+              <p className="text-[10px] uppercase tracking-wide text-zinc-500">Preset</p>
+              <Select value={timeframePreset} onValueChange={setTimeframePreset}>
+                <SelectTrigger className="h-9 text-xs bg-black/40 border-zinc-700">
+                  <SelectValue placeholder="Window" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1d">Last 1 day</SelectItem>
+                  <SelectItem value="7d">Last 7 days</SelectItem>
+                  <SelectItem value="30d">Last 1 month (~30d)</SelectItem>
+                  <SelectItem value="90d">Last 3 months (~90d)</SelectItem>
+                  <SelectItem value="180d">Last 6 months (~180d)</SelectItem>
+                  <SelectItem value="365d">Last 1 year</SelectItem>
+                  <SelectItem value="730d">Last 2 years</SelectItem>
+                  <SelectItem value="custom">Custom (days)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {timeframePreset === "custom" ? (
+              <div className="w-full sm:w-32 space-y-1">
+                <p className="text-[10px] uppercase tracking-wide text-zinc-500">Days (1–730)</p>
+                <Input
+                  type="number"
+                  min={1}
+                  max={730}
+                  value={customWindowDays}
+                  onChange={(e) => setCustomWindowDays(e.target.value)}
+                  className="h-9 text-xs bg-black/40 border-zinc-700"
+                />
+              </div>
+            ) : null}
+          </div>
+        </div>
+
         <div className="rounded-lg border border-teal-500/20 bg-teal-500/5 p-3 space-y-2">
           <p className="text-[11px] font-semibold text-teal-300">Select strategies for this scan</p>
           <p className="text-[10px] text-zinc-400">
@@ -1502,6 +1889,32 @@ export function StrategyEntrySignalsPanel({
           Run strategy entry scan
         </Button>
 
+        {loading ? (
+          <div
+            className="rounded-lg border border-teal-500/30 bg-teal-950/15 p-4 space-y-2"
+            role="status"
+            aria-live="polite"
+            aria-busy="true"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+              <span className="text-teal-100/95 font-medium leading-snug">
+                {scanProgressStageLabel(scanProgress)}
+              </span>
+              <span className="tabular-nums text-zinc-500 shrink-0">{Math.min(100, Math.round(scanProgress))}%</span>
+            </div>
+            <Progress
+              value={Math.min(100, scanProgress)}
+              className="h-2.5 bg-zinc-800/90 [&>div]:bg-gradient-to-r [&>div]:from-teal-500 [&>div]:to-cyan-400"
+            />
+            <p className="text-[10px] text-zinc-500 leading-relaxed">
+              Progress moves while the edge function runs (one request: candles → detection → Gemini). It is not a byte-accurate
+              download meter; when it hits 100%, results below are the fresh scan.{" "}
+              <span className="text-zinc-400">Live</span> appears on cards when the latest bar still matches and is inside the
+              live time window for that chart interval.
+            </p>
+          </div>
+        ) : null}
+
         {/* Results — detailed cards */}
         {visibleSignals.length > 0 && (
           <div className="space-y-3">
@@ -1519,6 +1932,8 @@ export function StrategyEntrySignalsPanel({
                   key={`${row.strategyId}-${row.entryDate}-${row.side}-${effectiveMainPage}-${i}`}
                   row={row}
                   todayKey={todayKey}
+                  nowMs={nowMs}
+                  liveWindowMs={liveWindowMsMain}
                   formatEntry={formatEntry}
                   formatEntryWithZone={formatEntryWithZone}
                   formatMarketData={formatMarketData}
@@ -1600,7 +2015,8 @@ export function StrategyEntrySignalsPanel({
                   >
                     <p className="text-sm font-semibold text-white font-mono tracking-tight">{item.symbol}</p>
                     <p className="text-sm text-zinc-400 font-medium leading-snug">
-                      {new Date(item.scan_completed_at).toLocaleString()} · {item.signal_count} signals ·{" "}
+                      {new Date(item.scan_completed_at).toLocaleString(undefined, SCAN_DATETIME_OPTS)} ·{" "}
+                      {item.signal_count} signals ·{" "}
                       <span className="text-teal-400/90">live {item.live_count}</span>
                       {" · "}
                       <span className="text-zinc-500">past {Math.max(0, item.signal_count - item.live_count)}</span>
@@ -1668,7 +2084,9 @@ export function StrategyEntrySignalsPanel({
                 ) : (
                   <div className="flex h-full min-h-0 flex-col gap-3">
                     <p className="shrink-0 text-xs text-muted-foreground">
-                      {historyDetail.symbol} · {new Date(historyDetail.scan_completed_at).toLocaleString()} · Data {historyDetail.data_source ?? "n/a"} · Indicators {historyDetail.indicator_source ?? "n/a"}
+                      {historyDetail.symbol} ·{" "}
+                      {new Date(historyDetail.scan_completed_at).toLocaleString(undefined, SCAN_DATETIME_OPTS)} · Data{" "}
+                      {historyDetail.data_source ?? "n/a"} · Indicators {historyDetail.indicator_source ?? "n/a"}
                     </p>
 
                     <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded-lg border border-white/10 bg-black/20 p-3">
@@ -1678,6 +2096,8 @@ export function StrategyEntrySignalsPanel({
                             key={`${row.strategyId}-${row.entryDate}-${row.side}-${effectiveHistorySignalPage}-${i}`}
                             row={row}
                             todayKey={todayKey}
+                            nowMs={nowMs}
+                            liveWindowMs={liveWindowMsHistory}
                             formatEntry={formatEntry}
                             formatEntryWithZone={formatEntryWithZone}
                             formatMarketData={formatMarketData}
@@ -1740,7 +2160,8 @@ export function StrategyEntrySignalsPanel({
                     <p>
                       Permanently remove the saved snapshot for{" "}
                       <span className="font-mono text-zinc-200">{historyDeleteTarget.symbol}</span> from{" "}
-                      {new Date(historyDeleteTarget.scan_completed_at).toLocaleString()}. This cannot be undone.
+                      {new Date(historyDeleteTarget.scan_completed_at).toLocaleString(undefined, SCAN_DATETIME_OPTS)}.
+                      This cannot be undone.
                     </p>
                   ) : null}
                 </div>

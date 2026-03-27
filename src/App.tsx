@@ -56,8 +56,6 @@ import NewsDetailPage from "./pages/NewsDetailPage";
 import TickChart from "./pages/TickChart";
 import PricingPage from "./pages/PricingPage";
 import { PredictionChatbot } from "./components/PredictionChatbot";
-import { EntryDigestToastBridge } from "./components/EntryDigestToastBridge";
-import { EntryPointNotificationsBell } from "./components/EntryPointNotificationsBell";
 import { useAuth } from "./hooks/useAuth";
 import { useLocation } from "react-router-dom";
 import { AlgoToolsDashboardLayout } from "./components/layout/AlgoToolsDashboardLayout";
