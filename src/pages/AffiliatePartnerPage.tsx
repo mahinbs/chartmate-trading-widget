@@ -17,8 +17,8 @@ import {
   FaUsers,
 } from "react-icons/fa";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 
 const fadeUp: Variants = {
   hidden: { opacity: 0, y: 30 },
@@ -44,9 +44,86 @@ function formatUsd(n: number): string {
   }).format(n);
 }
 
+function AffiliateCalculatorSlider({
+  id,
+  label,
+  value,
+  onChange,
+  step,
+  min,
+  max,
+  decimals = 0,
+}: {
+  id: string;
+  label: string;
+  value: number;
+  onChange: (n: number) => void;
+  step: number;
+  min: number;
+  max: number;
+  decimals?: number;
+}) {
+  const clampFix = (n: number) => {
+    const clamped = Math.min(max, Math.max(min, n));
+    return decimals > 0
+      ? Math.round(clamped * 10 ** decimals) / 10 ** decimals
+      : Math.round(clamped);
+  };
+
+  const safe = Number.isFinite(value) ? clampFix(value) : min;
+
+  const display =
+    decimals > 0 ? `${safe.toFixed(decimals)}%` : safe.toLocaleString("en-US");
+
+  /** Visible track + draggable thumb (no left-to-right “fill” bar). */
+  const rangeClass = cn(
+    "h-12 w-full cursor-grab touch-manipulation bg-transparent active:cursor-grabbing",
+    "appearance-none focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 rounded-lg",
+    /* WebKit track */
+    "[&::-webkit-slider-runnable-track]:h-2 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-zinc-700",
+    /* WebKit thumb — pointer knob */
+    "[&::-webkit-slider-thumb]:-mt-2 [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:appearance-none",
+    "[&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:bg-teal-400",
+    "[&::-webkit-slider-thumb]:shadow-[0_2px_12px_rgba(45,212,191,0.45)]",
+    /* Firefox track + thumb */
+    "[&::-moz-range-track]:h-2 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-zinc-700",
+    "[&::-moz-range-thumb]:h-6 [&::-moz-range-thumb]:w-6 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white",
+    "[&::-moz-range-thumb]:bg-teal-400 [&::-moz-range-thumb]:shadow-[0_2px_12px_rgba(45,212,191,0.45)] [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:border-solid"
+  );
+
+  return (
+    <div className="space-y-3 w-full">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <Label htmlFor={id} className="text-zinc-400">
+          {label}
+        </Label>
+        <span className="tabular-nums text-lg font-semibold text-teal-400" aria-live="polite">
+          {display}
+        </span>
+      </div>
+      <div className="rounded-xl border border-zinc-800 bg-zinc-950/80 px-4 pt-3 pb-1 focus-within:border-teal-500/50 focus-within:ring-2 focus-within:ring-teal-500/25">
+        <input
+          id={id}
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={safe}
+          onChange={(e) => onChange(clampFix(Number(e.target.value)))}
+          aria-valuemin={min}
+          aria-valuemax={max}
+          aria-valuenow={safe}
+          aria-valuetext={display}
+          className={rangeClass}
+        />
+      </div>
+    </div>
+  );
+}
+
 const AffiliatePartnerPage = () => {
   const [squares, setSquares] = useState<{ top: number; left: number }[]>([]);
-  const [audienceSize, setAudienceSize] = useState(1000);
+  const [audienceSize, setAudienceSize] = useState(100);
   const [conversionPct, setConversionPct] = useState(2);
 
   useEffect(() => {
@@ -203,6 +280,69 @@ const AffiliatePartnerPage = () => {
               </motion.div>
             ))}
           </div>
+        </div>
+      </motion.section>+
+
+      
+      {/* Revenue calculator */}
+      <motion.section
+        initial="hidden"
+        whileInView="visible"
+        viewport={{ once: true, margin: "-100px" }}
+        variants={staggerContainer}
+        className="py-20 bg-black border-b border-zinc-900"
+      >
+        <div className="container mx-auto px-4 max-w-3xl">
+          <motion.h2 variants={fadeUp} className="text-3xl md:text-4xl font-black text-white text-center mb-2">
+            Estimate your earnings
+          </motion.h2>
+          <motion.p variants={fadeUp} className="text-zinc-500 text-center text-sm mb-10">
+            Simple scenario—adjust numbers to match your reach.
+          </motion.p>
+          <motion.div
+            variants={fadeUp}
+            className="rounded-3xl border border-zinc-800 bg-zinc-950/80 p-8 space-y-6"
+          >
+            <div className="flex md:flex-row flex-col gap-10 w-full">
+            <AffiliateCalculatorSlider
+              id="aff-audience"
+              label="Monthly visitors / audience size"
+              value={audienceSize}
+              onChange={setAudienceSize}
+              step={50}
+              min={0}
+              max={200_000}              
+            />
+            <AffiliateCalculatorSlider
+              id="aff-conv"
+              label="Conversion rate (%)"
+              value={conversionPct}
+              onChange={setConversionPct}
+              step={0.1}
+              min={0}
+              max={100}
+              decimals={1}
+            />
+            </div>
+            <div className="flex justify-between text-sm text-zinc-500 pt-2 border-t border-zinc-800">
+              <span>Product price</span>
+              <span className="text-zinc-200 font-medium">${PRODUCT_PRICE_USD}/yr</span>
+            </div>
+            <div className="flex justify-between text-sm text-zinc-500">
+              <span>Your commission</span>
+              <span className="text-emerald-400 font-medium">30%</span>
+            </div>
+            <div className="rounded-2xl bg-teal-500/10 border border-teal-500/20 p-6 space-y-3">
+              <div className="flex justify-between items-baseline gap-4">
+                <span className="text-zinc-400 text-sm">Estimated monthly revenue</span>
+                <span className="text-2xl font-black text-teal-400 tabular-nums">{formatUsd(monthlyRev)}</span>
+              </div>
+              <div className="flex justify-between items-baseline gap-4">
+                <span className="text-zinc-400 text-sm">Estimated yearly revenue</span>
+                <span className="text-xl font-bold text-white tabular-nums">{formatUsd(yearlyRev)}</span>
+              </div>
+            </div>
+          </motion.div>
         </div>
       </motion.section>
 
@@ -472,73 +612,6 @@ const AffiliatePartnerPage = () => {
         </div>
       </motion.section>
 
-      {/* Revenue calculator */}
-      <motion.section
-        initial="hidden"
-        whileInView="visible"
-        viewport={{ once: true, margin: "-100px" }}
-        variants={staggerContainer}
-        className="py-20 bg-black border-b border-zinc-900"
-      >
-        <div className="container mx-auto px-4 max-w-lg">
-          <motion.h2 variants={fadeUp} className="text-3xl md:text-4xl font-black text-white text-center mb-2">
-            Estimate your earnings
-          </motion.h2>
-          <motion.p variants={fadeUp} className="text-zinc-500 text-center text-sm mb-10">
-            Simple scenario—adjust numbers to match your reach.
-          </motion.p>
-          <motion.div
-            variants={fadeUp}
-            className="rounded-3xl border border-zinc-800 bg-zinc-950/80 p-8 space-y-6"
-          >
-            <div className="space-y-2">
-              <Label htmlFor="aff-audience" className="text-zinc-400">
-                Monthly visitors / audience size
-              </Label>
-              <Input
-                id="aff-audience"
-                type="number"
-                min={0}
-                value={audienceSize}
-                onChange={(e) => setAudienceSize(Number(e.target.value))}
-                className="bg-black border-zinc-700 text-white text-lg h-11"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="aff-conv" className="text-zinc-400">
-                Conversion rate (%)
-              </Label>
-              <Input
-                id="aff-conv"
-                type="number"
-                min={0}
-                step={0.1}
-                value={conversionPct}
-                onChange={(e) => setConversionPct(Number(e.target.value))}
-                className="bg-black border-zinc-700 text-white text-lg h-11"
-              />
-            </div>
-            <div className="flex justify-between text-sm text-zinc-500 pt-2 border-t border-zinc-800">
-              <span>Product price</span>
-              <span className="text-zinc-200 font-medium">${PRODUCT_PRICE_USD}/yr</span>
-            </div>
-            <div className="flex justify-between text-sm text-zinc-500">
-              <span>Your commission</span>
-              <span className="text-emerald-400 font-medium">30%</span>
-            </div>
-            <div className="rounded-2xl bg-teal-500/10 border border-teal-500/20 p-6 space-y-3">
-              <div className="flex justify-between items-baseline gap-4">
-                <span className="text-zinc-400 text-sm">Estimated monthly revenue</span>
-                <span className="text-2xl font-black text-teal-400 tabular-nums">{formatUsd(monthlyRev)}</span>
-              </div>
-              <div className="flex justify-between items-baseline gap-4">
-                <span className="text-zinc-400 text-sm">Estimated yearly revenue</span>
-                <span className="text-xl font-bold text-white tabular-nums">{formatUsd(yearlyRev)}</span>
-              </div>
-            </div>
-          </motion.div>
-        </div>
-      </motion.section>
 
       {/* Strong CTA */}
       <motion.section
