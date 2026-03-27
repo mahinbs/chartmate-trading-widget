@@ -224,7 +224,7 @@ function mixU32(n: number): number {
 }
 
 /** Inclusive max synthetic joins on a single calendar day (min is 0). */
-const MAX_JOINS_PER_PUBLIC_SUB_DAY = 5;
+const MAX_JOINS_PER_PUBLIC_SUB_DAY = 10;
 
 const JOIN_DATE_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -244,38 +244,48 @@ function addCalendarDays(y: number, m: number, d: number, delta: number): { y: n
   return { y: x.getUTCFullYear(), m: x.getUTCMonth() + 1, d: x.getUTCDate() };
 }
 
+type PublicSubscriberJoinMeta = {
+  /** Calendar days before “today” in the viewer timezone. */
+  daysBeforeToday: number;
+};
+
+const DEFAULT_PUBLIC_SUB_JOIN_META: PublicSubscriberJoinMeta = { daysBeforeToday: 0 };
+
 /**
- * For each subscriber list index (0 = newest), calendar days before “today” in {@link timeZone}.
- * Each day gets a random count in [0, {@link MAX_JOINS_PER_PUBLIC_SUB_DAY}] (deterministic from {@link stableSeed}).
+ * For each list index (0 = newest), walks calendar days. Each day independently picks how many joined:
+ * a uniform random integer in [0, {@link MAX_JOINS_PER_PUBLIC_SUB_DAY}] (so today might be 3, yesterday 7, etc.).
+ * Recomputed when the subscriber list passed from the page’s `useMemo` dependency changes.
  */
-function buildPublicSubscriberDayOffsets(count: number, stableSeed: number): number[] {
-  const out: number[] = new Array(count);
+function buildPublicSubscriberJoinMeta(count: number): PublicSubscriberJoinMeta[] {
+  const out: PublicSubscriberJoinMeta[] = new Array(count);
   let day = 0;
   let i = 0;
-  const maxIterations = count + count * 12 + 500;
-  let iter = 0;
-  while (i < count && iter < maxIterations) {
-    iter += 1;
-    const k = Math.floor(det01(stableSeed + day * 12582917) * (MAX_JOINS_PER_PUBLIC_SUB_DAY + 1));
+  const maxDayGuard = count * 25 + 800;
+
+  while (i < count && day < maxDayGuard) {
+    const k = Math.floor(Math.random() * (MAX_JOINS_PER_PUBLIC_SUB_DAY + 1));
     const place = Math.min(k, count - i);
     for (let j = 0; j < place; j += 1) {
-      out[i] = day;
+      out[i] = { daysBeforeToday: day };
       i += 1;
     }
     day += 1;
   }
-  while (i < count) {
-    out[i] = day;
-    i += 1;
-    day += 1;
+
+  if (i < count) {
+    while (i < count) {
+      out[i] = { daysBeforeToday: day };
+      i += 1;
+    }
   }
+
   return out;
 }
 
-/** Date only (no time); {@link daysBeforeToday} is 0 for “today” in {@link timeZone}. */
-function formatPublicSubscriberJoinedDate(daysBeforeToday: number, timeZone: string): string {
+/** Date only (no clock time, no per-day index). */
+function formatPublicSubscriberJoinedDate(meta: PublicSubscriberJoinMeta, timeZone: string): string {
   const today = getYmdInTimeZone(Date.now(), timeZone);
-  const t = addCalendarDays(today.y, today.m, today.d, -daysBeforeToday);
+  const t = addCalendarDays(today.y, today.m, today.d, -meta.daysBeforeToday);
   return `${JOIN_DATE_MONTHS[t.m - 1]} ${t.d}, ${t.y}`;
 }
 
@@ -750,11 +760,10 @@ export default function PublicDashboardPage({ embedInAdmin = false }: PublicDash
 
   const displaySubscribers = useMemo(() => buildPublicSubscriberView(subscribers), [subscribers]);
 
-  const subscriberJoinedDayOffsets = useMemo(() => {
+  const subscriberJoinMeta = useMemo(() => {
     const n = subscribers.length;
     if (n === 0) return [];
-    const stableSeed = subscribers.reduce((acc, s) => acc + parseRowSeed(s.id), 7919);
-    return buildPublicSubscriberDayOffsets(n, stableSeed);
+    return buildPublicSubscriberJoinMeta(n);
   }, [subscribers]);
 
   const subscriberNamesLower = useMemo(
@@ -983,7 +992,7 @@ export default function PublicDashboardPage({ embedInAdmin = false }: PublicDash
                               const globalIdx = (subPage - 1) * SUB_PAGE_SIZE + idx + 1;
                               const listIndex = (subPage - 1) * SUB_PAGE_SIZE + idx;
                               const joinedDate = formatPublicSubscriberJoinedDate(
-                                subscriberJoinedDayOffsets[listIndex] ?? 0,
+                                subscriberJoinMeta[listIndex] ?? DEFAULT_PUBLIC_SUB_JOIN_META,
                                 tz,
                               );
                               const maskedRef = s.payment_id
@@ -1492,7 +1501,7 @@ export default function PublicDashboardPage({ embedInAdmin = false }: PublicDash
                         }));
                       })().map((item, i) => {
                         const timeLabel = item.isReal && displaySubscribers[i]
-                          ? formatPublicSubscriberJoinedDate(subscriberJoinedDayOffsets[i] ?? 0, tz)
+                          ? formatPublicSubscriberJoinedDate(subscriberJoinMeta[i] ?? DEFAULT_PUBLIC_SUB_JOIN_META, tz)
                           : ['2m ago', '15m ago', '1h ago', '2h ago'][i];
                         return (
                           <div key={i} className="flex flex-col gap-0.5 text-sm border-b border-zinc-800/50 last:border-0 pb-3 last:pb-0">
