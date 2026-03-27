@@ -46,6 +46,8 @@ import RegisterPage from "./pages/RegisterPage";
 import AIPobabilityEnginePage from "./pages/AIPobabilityEnginePage";
 import AffiliatePartnerPage from "./pages/AffiliatePartnerPage";
 import TradingDashboardPage from "./pages/TradingDashboardPage";
+import TradingAiAnalysisPage from "./pages/TradingAiAnalysisPage";
+import TradingBacktestPage from "./pages/TradingBacktestPage";
 import WlCheckoutPage from "./pages/WlCheckoutPage";
 import AlgoOnboardingPage from "./pages/AlgoOnboardingPage";
 import StrategiesPage from "./pages/StrategiesPage";
@@ -97,6 +99,7 @@ function isLoggedInAppPath(pathname: string): boolean {
   if (pathname === "/auth/change-password") return true;
   if (pathname.startsWith("/predictions")) return true;
   if (pathname.startsWith("/trade/")) return true;
+  if (pathname.startsWith("/trading-dashboard")) return true;
   if (pathname.startsWith("/wl-checkout/")) return true;
   if (/^\/wl\/[^/]+\/dashboard/.test(pathname)) return true;
 
@@ -107,7 +110,6 @@ function isLoggedInAppPath(pathname: string): boolean {
     "/active-trades",
     "/news",
     "/strategies",
-    "/trading-dashboard",
     "/broker-callback",
     "/affiliate/dashboard",
     "/algo-setup",
@@ -158,6 +160,22 @@ const App = () => (
               <Route path="/pricing" element={<PricingPage />} />
               <Route path="/ai-probability-engine" element={<AIPobabilityEnginePage />} />
               <Route path="/affiliate-partner" element={<AffiliatePartnerPage />} />
+              <Route
+                path="/ai-trading-analysis"
+                element={
+                  <ProtectedRoute>
+                    <TradingAiAnalysisPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/backtest"
+                element={
+                  <ProtectedRoute>
+                    <TradingBacktestPage />
+                  </ProtectedRoute>
+                }
+              />
               <Route
                 path="/trading-dashboard"
                 element={

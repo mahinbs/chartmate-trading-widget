@@ -354,7 +354,6 @@ function SymbolSearchInput({ value, onChange, onSelect }: {
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-zinc-100 text-xs">{r.symbol}</span>
-                  <span className="text-[10px] text-zinc-500">{r.full_symbol?.endsWith(".BO") ? "BSE" : "NSE"}</span>
                 </div>
                 {r.description && <div className="text-[10px] text-zinc-500 truncate">{r.description}</div>}
               </div>

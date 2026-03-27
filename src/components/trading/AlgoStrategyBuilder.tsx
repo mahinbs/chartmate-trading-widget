@@ -1338,7 +1338,7 @@ export default function AlgoStrategyBuilder({ open, onOpenChange, existing, onSa
         </div>
 
         {/* ─── Footer ─────────────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between px-5 py-3 border-t border-zinc-800 shrink-0 bg-zinc-950">
+        <div className="flex items-center justify-start px-5 py-3 border-t border-zinc-800 shrink-0 bg-zinc-950 gap-10">
           <p className="text-xs text-zinc-600">Step {step + 1} of {STEPS.length} — {STEPS[step].title}</p>
           <div className="flex items-center gap-3">
             <Button type="button" variant="outline" className="h-9 px-4 border-zinc-700 text-zinc-200"

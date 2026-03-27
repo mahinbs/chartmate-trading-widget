@@ -12,6 +12,7 @@ import {
   Menu,
   Newspaper,
   ShieldCheck,
+  Target,
   User,
 } from "lucide-react";
 import logo from "@/assets/logo.png";
@@ -61,7 +62,7 @@ function useDashboardNavLinks(): DashboardNavLink[] {
       to: "/predictions",
       label: "Past Analyses",
       icon: Activity,
-      iconOpacity: "opacity-50",
+      iconOpacity: "",
     },
     {
       to: "/active-trades?tab=completed",
@@ -77,14 +78,26 @@ function useDashboardNavLinks(): DashboardNavLink[] {
         to: "/trading-dashboard",
         label: "Algo Trade",
         icon: Bot,
-        iconColor: "text-primary opacity-80",
+        iconColor: "",
+      });
+      links.push({
+        to: "/ai-trading-analysis",
+        label: "AI Trading Analysis",
+        icon: Target,
+        iconColor: "",
+      });
+      links.push({
+        to: "/backtest",
+        label: "Backtesting",
+        icon: LineChart,
+        iconColor: "",
       });
     } else {
       links.push({
         to: "/algo-setup",
         label: "Algo Trade",
         icon: Bot,
-        iconColor: "text-primary opacity-80",
+        iconColor: "",
       });
     }
   } else {
@@ -92,7 +105,7 @@ function useDashboardNavLinks(): DashboardNavLink[] {
       to: "/pricing",
       label: "Algo Trade",
       icon: Bot,
-      iconColor: "text-primary opacity-80",
+      iconColor: "",
     });
   }
 

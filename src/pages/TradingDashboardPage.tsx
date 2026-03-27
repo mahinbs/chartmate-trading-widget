@@ -1,16 +1,15 @@
 /**
  * TradingDashboardPage — /trading-dashboard
  *
- * Two-column layout:
- *  Left  (60%): BrokerSyncSection + Live Portfolio card
- *  Right (40%): Sticky Place Order panel + Strategies panel
+ * Portfolio + Statement. AI Trading Analysis and Backtesting live on dedicated routes
+ * (see TradingAiAnalysisPage, TradingBacktestPage) and sidebar links.
  */
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import React, { useState, useEffect } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
-  ArrowLeft, Send, Loader2, Info, Zap, Copy, RefreshCw,
-  TrendingUp, TrendingDown, Search, ChevronDown, Plus,
+  Send, Loader2, Info, Zap, Copy, RefreshCw,
+  TrendingUp, TrendingDown, ChevronDown, Plus,
   Trash2, ToggleLeft, ToggleRight, Webhook, BookOpen,
   AlertTriangle, CheckCircle2, ExternalLink, Clock, ChevronRight, LineChart, ScrollText, Target,
   ShieldCheck,
@@ -28,16 +27,13 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import BrokerSyncSection from "@/components/trading/BrokerSyncSection";
 import BrokerPortfolioCard from "@/components/trading/BrokerPortfolioCard";
-import PlaceOrderPanel from "@/components/trading/PlaceOrderPanel";
-import BacktestingSection from "@/components/trading/BacktestingSection";
 import StatementSection from "@/components/trading/StatementSection";
 import { StrategyEntrySignalsPanel } from "@/components/prediction/StrategyEntrySignalsPanel";
-import { EntryPointNotificationsHeaderButton } from "@/components/EntryPointNotificationsBell";
 import AlgoStrategyBuilder from "@/components/trading/AlgoStrategyBuilder";
+import { TradingDashboardAccessGate } from "@/components/trading/TradingDashboardAccessGate";
+import { TradingDashboardShell } from "@/components/trading/TradingDashboardShell";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const EXCHANGES = [
@@ -80,141 +76,6 @@ const QUICK_PICKS: Record<string, { symbol: string; label: string }[]> = {
     { symbol: "FINNIFTY",  label: "FINNIFTY" },
   ],
 };
-
-// ── Market Status ─────────────────────────────────────────────────────────────
-// NSE/BSE regular hours in IST (UTC+5:30)
-// Pre-market:   09:00 – 09:15
-// Market open:  09:15 – 15:30
-// Post-market:  15:30 – 16:00  (AMO accepted)
-// Closed:       otherwise / weekends
-
-type MarketSession = "pre_market" | "open" | "post_market" | "closed" | "weekend";
-
-interface MarketStatus {
-  session: MarketSession;
-  label: string;
-  sublabel: string;
-  color: string;          // tailwind text color
-  bg: string;             // tailwind bg/border
-  dot: string;            // dot bg color
-  opensIn?: string;       // "opens in Xh Ym"
-  closesIn?: string;      // "closes in Xh Ym"
-}
-
-function getISTNow(): { h: number; m: number; day: number } {
-  // day: 0=Sun,1=Mon…6=Sat
-  const now = new Date();
-  // IST = UTC + 5h 30m
-  const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
-  const ist = new Date(utcMs + 5.5 * 3600000);
-  return { h: ist.getHours(), m: ist.getMinutes(), day: ist.getDay() };
-}
-
-function toMinutes(h: number, m: number) { return h * 60 + m; }
-
-function fmtDuration(mins: number): string {
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  if (h > 0 && m > 0) return `${h}h ${m}m`;
-  if (h > 0) return `${h}h`;
-  return `${m}m`;
-}
-
-function computeMarketStatus(): MarketStatus {
-  const { h, m, day } = getISTNow();
-  const now = toMinutes(h, m);
-
-  const PRE_START  = toMinutes(9,  0);
-  const MKT_START  = toMinutes(9, 15);
-  const MKT_END    = toMinutes(15, 30);
-  const POST_END   = toMinutes(16,  0);
-
-  const isWeekend = day === 0 || day === 6;
-
-  if (isWeekend) {
-    // Next Monday open = Mon 09:15
-    const daysToMon = day === 6 ? 2 : 1;
-    return {
-      session: "weekend",
-      label: "Market Closed",
-      sublabel: `Weekend — opens Mon 9:15 AM IST`,
-      color: "text-zinc-400",
-      bg: "bg-zinc-800/40 border-zinc-700/40",
-      dot: "bg-zinc-500",
-    };
-  }
-
-  if (now < PRE_START) {
-    const opensIn = fmtDuration(MKT_START - now);
-    return {
-      session: "closed",
-      label: "Market Closed",
-      sublabel: `Pre-market starts 9:00 AM IST`,
-      color: "text-zinc-400",
-      bg: "bg-zinc-800/40 border-zinc-700/40",
-      dot: "bg-zinc-500",
-      opensIn,
-    };
-  }
-
-  if (now >= PRE_START && now < MKT_START) {
-    const opensIn = fmtDuration(MKT_START - now);
-    return {
-      session: "pre_market",
-      label: "Pre-Market",
-      sublabel: `Call auction — regular session in ${opensIn}`,
-      color: "text-amber-400",
-      bg: "bg-amber-500/10 border-amber-500/20",
-      dot: "bg-amber-400",
-      opensIn,
-    };
-  }
-
-  if (now >= MKT_START && now < MKT_END) {
-    const closesIn = fmtDuration(MKT_END - now);
-    return {
-      session: "open",
-      label: "Market Open",
-      sublabel: `NSE/BSE live — closes in ${closesIn} (3:30 PM IST)`,
-      color: "text-green-400",
-      bg: "bg-green-500/10 border-green-500/20",
-      dot: "bg-green-400",
-      closesIn,
-    };
-  }
-
-  if (now >= MKT_END && now < POST_END) {
-    return {
-      session: "post_market",
-      label: "After-Market (AMO)",
-      sublabel: "Orders queued & executed at next open",
-      color: "text-blue-400",
-      bg: "bg-blue-500/10 border-blue-500/20",
-      dot: "bg-blue-400",
-    };
-  }
-
-  return {
-    session: "closed",
-    label: "Market Closed",
-    sublabel: "Opens 9:00 AM IST (Mon–Fri)",
-    color: "text-zinc-400",
-    bg: "bg-zinc-800/40 border-zinc-700/40",
-    dot: "bg-zinc-500",
-  };
-}
-
-function useMarketStatus(): MarketStatus {
-  const [status, setStatus] = useState<MarketStatus>(computeMarketStatus);
-
-  useEffect(() => {
-    // Recompute every 30 seconds
-    const id = setInterval(() => setStatus(computeMarketStatus()), 30000);
-    return () => clearInterval(id);
-  }, []);
-
-  return status;
-}
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface OrderForm {
@@ -777,308 +638,70 @@ function StrategiesPanel({ broker }: { broker: string }) {
 }
 
 // ── LiveDashboard ──────────────────────────────────────────────────────────────
-type ScannerSearchResult = {
-  symbol: string;
-  description: string;
-  full_symbol: string;
-  exchange: string;
-  type: string;
-};
-
-const SCANNER_QUICK_PICKS = [
-  { symbol: "RELIANCE.NS", label: "Reliance" },
-  { symbol: "TCS.NS",      label: "TCS" },
-  { symbol: "HDFCBANK.NS", label: "HDFC Bank" },
-  { symbol: "INFY.NS",     label: "Infosys" },
-  { symbol: "AAPL",        label: "Apple" },
-  { symbol: "BTC-USD",     label: "Bitcoin" },
-];
-
 function LiveDashboard({ broker }: { broker: string }) {
   const location = useLocation();
-  const [portfolioKey, setPortfolioKey] = useState(0);
-  const market = useMarketStatus();
-  const brokerLabel = broker.charAt(0).toUpperCase() + broker.slice(1);
-  const [activeTab, setActiveTab] = useState<"portfolio" | "scanner" | "backtest" | "statement">("portfolio");
-  const [scannerSymbol, setScannerSymbol] = useState("");
-  const [scannerInput, setScannerInput] = useState("");
-  const [scannerResults, setScannerResults] = useState<ScannerSearchResult[]>([]);
-  const [scannerSearching, setScannerSearching] = useState(false);
-  const [scannerDropdownOpen, setScannerDropdownOpen] = useState(false);
-  const scannerDebounceRef = useRef<ReturnType<typeof setTimeout>>();
-  const scannerContainerRef = useRef<HTMLDivElement>(null);
-
-  const scannerSearch = useCallback(async (q: string) => {
-    if (q.length < 2) { setScannerResults([]); setScannerDropdownOpen(false); return; }
-    setScannerSearching(true);
-    try {
-      const res = await supabase.functions.invoke("search-symbols", { body: { q } });
-      const data: ScannerSearchResult[] = (res.data as any[]) ?? [];
-      setScannerResults(data.slice(0, 10));
-      if (data.length > 0) setScannerDropdownOpen(true);
-    } catch { /* silent */ } finally { setScannerSearching(false); }
-  }, []);
-
-  const handleScannerInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const v = e.target.value.toUpperCase();
-    setScannerInput(v);
-    clearTimeout(scannerDebounceRef.current);
-    scannerDebounceRef.current = setTimeout(() => scannerSearch(v), 300);
-  };
-
-  const handleScannerSelect = (sym: string) => {
-    setScannerSymbol(sym);
-    setScannerInput(sym);
-    setScannerDropdownOpen(false);
-    setScannerResults([]);
-  };
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (scannerContainerRef.current && !scannerContainerRef.current.contains(e.target as Node))
-        setScannerDropdownOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  const historyIdFromQuery = new URLSearchParams(location.search).get("historyId");
+  const navigate = useNavigate();
+  const [portfolioKey] = useState(0);
+  const [activeTab, setActiveTab] = useState<"portfolio" | "statement">("portfolio");
 
   useEffect(() => {
     const qp = new URLSearchParams(location.search);
     const tab = qp.get("tab");
-    if (tab === "portfolio" || tab === "scanner" || tab === "backtest" || tab === "statement") {
+    if (tab === "ai-trading-analysis") {
+      qp.delete("tab");
+      const rest = qp.toString();
+      navigate(`/ai-trading-analysis${rest ? `?${rest}` : ""}`, { replace: true });
+      return;
+    }
+    if (tab === "backtest") {
+      qp.delete("tab");
+      const rest = qp.toString();
+      navigate(`/backtest${rest ? `?${rest}` : ""}`, { replace: true });
+      return;
+    }
+    if (tab === "portfolio" || tab === "statement") {
       setActiveTab(tab);
     }
-    const sym = qp.get("symbol");
-    if (sym && sym.trim()) {
-      const s = sym.trim().toUpperCase();
-      setScannerSymbol(s);
-      setScannerInput(s);
-    }
-  }, [location.search]);
+  }, [location.search, navigate]);
 
   return (
-    <div className="min-h-screen bg-black text-zinc-100">
-      {/* ── Header ── */}
-      <header className="sticky top-0 z-50 border-b border-zinc-800 bg-black/90 backdrop-blur-xl">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <a href="/home" className="text-zinc-500 hover:text-zinc-300 transition-colors">
-              <ArrowLeft className="h-4 w-4" />
-            </a>
-          <div>
-              <h1 className="text-base font-bold text-white tracking-tight">Live Trading Dashboard</h1>
-              <p className="text-[11px] text-zinc-500">Powered by {brokerLabel} via OpenAlgo</p>
-          </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {/* Market status chip */}
-            <span className={`hidden sm:flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border ${market.bg} ${market.color}`}>
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${market.dot} ${market.session === "open" ? "animate-pulse" : ""}`} />
-              {market.label}
-            </span>
-            {/* Broker chip */}
-            <span className="flex items-center gap-1.5 text-xs text-teal-400 bg-teal-500/10 border border-teal-500/20 px-3 py-1.5 rounded-full">
-              <span className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse" />
-              {brokerLabel} Connected
-                  </span>
-            <EntryPointNotificationsHeaderButton />
-          </div>
+    <TradingDashboardShell broker={broker}>
+      <div className="grid grid-cols-1 gap-5 items-start">
+        <div className="min-w-0">
+          <Tabs
+            value={activeTab}
+            onValueChange={(v) => setActiveTab(v as "portfolio" | "statement")}
+            className="w-full"
+          >
+            <TabsList className="grid w-full grid-cols-2 bg-zinc-900 border border-zinc-800 h-auto gap-1 p-1 mb-3">
+              <TabsTrigger value="portfolio" className="data-[state=active]:bg-teal-500/20 data-[state=active]:text-teal-300 text-xs sm:text-sm">
+                <BookOpen className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+                Portfolio
+              </TabsTrigger>
+              <TabsTrigger value="statement" className="data-[state=active]:bg-teal-500/20 data-[state=active]:text-teal-300 text-xs sm:text-sm">
+                <ScrollText className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+                Statement
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="portfolio" className="pt-0">
+              <BrokerPortfolioCard key={portfolioKey} broker={broker} />
+            </TabsContent>
+
+            <TabsContent value="statement" className="pt-0">
+              <StatementSection />
+            </TabsContent>
+          </Tabs>
         </div>
-      </header>
-
-      <main className="container mx-auto px-4 py-5">
-        {/* Broker Sync bar — full width */}
-        <div className="mb-5">
-          <BrokerSyncSection broker={broker} />
-          </div>
-
-        {/* Two-column grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-1 gap-5 items-start">
-
-          {/* ── Left: Portfolio ── */}
-          <div className="min-w-0">
-            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "portfolio" | "scanner" | "backtest" | "statement")} className="w-full">
-              <TabsList className="grid w-full grid-cols-4 bg-zinc-900 border border-zinc-800 h-auto gap-1 p-1 mb-3">
-                <TabsTrigger value="portfolio" className="data-[state=active]:bg-teal-500/20 data-[state=active]:text-teal-300 text-xs sm:text-sm">
-                  <BookOpen className="h-3.5 w-3.5 mr-1.5 shrink-0" />
-                  Portfolio
-                </TabsTrigger>
-                <TabsTrigger value="scanner" className="data-[state=active]:bg-teal-500/20 data-[state=active]:text-teal-300 text-xs sm:text-sm">
-                  <Target className="h-3.5 w-3.5 mr-1.5 shrink-0" />
-                  Scanner
-                </TabsTrigger>
-                <TabsTrigger value="backtest" className="data-[state=active]:bg-teal-500/20 data-[state=active]:text-teal-300 text-xs sm:text-sm">
-                  <LineChart className="h-3.5 w-3.5 mr-1.5 shrink-0" />
-                  Backtesting
-                </TabsTrigger>
-                <TabsTrigger value="statement" className="data-[state=active]:bg-teal-500/20 data-[state=active]:text-teal-300 text-xs sm:text-sm">
-                  <ScrollText className="h-3.5 w-3.5 mr-1.5 shrink-0" />
-                  Statement
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="portfolio" className="pt-0">
-                <BrokerPortfolioCard key={portfolioKey} broker={broker} />
-              </TabsContent>
-
-              <TabsContent value="scanner" className="pt-0 space-y-4">
-                {/* Symbol search with autocomplete */}
-                <Card className="border-zinc-800 bg-zinc-900/50">
-                  <CardContent className="p-4 space-y-3">
-                    <Label className="text-xs text-zinc-400">Search stock / symbol</Label>
-                    <div ref={scannerContainerRef} className="relative">
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-500 pointer-events-none" />
-                        <Input
-                          placeholder="Search… RELIANCE, TCS, AAPL, BTC"
-                          value={scannerInput}
-                          onChange={handleScannerInputChange}
-                          onFocus={() => scannerResults.length > 0 && setScannerDropdownOpen(true)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              handleScannerSelect(scannerInput.trim());
-                              e.currentTarget.blur();
-                            }
-                          }}
-                          className="pl-9 pr-9 bg-black/40 border-zinc-700 text-white font-mono uppercase placeholder:text-zinc-600"
-                        />
-                        {scannerSearching && (
-                          <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-zinc-500" />
-                        )}
-                      </div>
-
-                      {/* Autocomplete dropdown */}
-                      {scannerDropdownOpen && scannerResults.length > 0 && (
-                        <div className="absolute top-full left-0 right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl z-50 overflow-hidden max-h-64 overflow-y-auto">
-                          {scannerResults.map((item, i) => (
-                            <button
-                              key={i}
-                              className="w-full flex items-center justify-between px-3 py-2 hover:bg-zinc-800 text-left transition-colors border-b border-zinc-800 last:border-0"
-                              onMouseDown={() => handleScannerSelect(item.full_symbol || item.symbol)}
-                            >
-                              <div className="min-w-0">
-                                <span className="font-mono text-white text-sm font-semibold">{item.symbol}</span>
-                                <p className="text-[11px] text-zinc-500 truncate">{item.description}</p>
-                              </div>
-                              <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                                <span className="text-[10px] text-teal-400 bg-teal-500/10 border border-teal-500/20 px-1.5 py-0.5 rounded">
-                                  {item.exchange}
-                                </span>
-                                <span className="text-[10px] text-zinc-500">{item.type}</span>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Quick picks */}
-                    <div className="flex flex-wrap gap-1.5">
-                      {SCANNER_QUICK_PICKS.map((qp) => (
-                        <button
-                          key={qp.symbol}
-                          onClick={() => handleScannerSelect(qp.symbol)}
-                          className={`text-[10px] px-2.5 py-1 rounded-full border transition-colors ${
-                            scannerSymbol === qp.symbol
-                              ? "bg-teal-500/20 border-teal-500/40 text-teal-300"
-                              : "bg-zinc-800/50 border-zinc-700 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
-                          }`}
-                        >
-                          {qp.label}
-                        </button>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Scanner results */}
-                {scannerSymbol.trim() ? (
-                  <StrategyEntrySignalsPanel symbol={scannerSymbol.trim()} initialHistoryId={historyIdFromQuery} />
-                ) : (
-                  <Card className="border-zinc-800 bg-zinc-900/30">
-                    <CardContent className="p-8 text-center">
-                      <Target className="h-8 w-8 text-zinc-600 mx-auto mb-3" />
-                      <p className="text-sm text-zinc-400">Search a stock above to scan entry & exit points</p>
-                      <p className="text-xs text-zinc-600 mt-1">
-                        Select strategies, run the scan, and see AI-scored BUY/SELL signals with LIVE recommendations
-                      </p>
-                    </CardContent>
-                  </Card>
-                )}
-              </TabsContent>
-
-              <TabsContent value="backtest" className="pt-0">
-                <BacktestingSection />
-              </TabsContent>
-
-              <TabsContent value="statement" className="pt-0">
-                <StatementSection />
-              </TabsContent>
-            </Tabs>
-                </div>
-              </div>
-      </main>
-    </div>
+      </div>
+    </TradingDashboardShell>
   );
 }
 
-// ── Access gate ────────────────────────────────────────────────────────────────
-interface ProvisionStatus {
-  provisioned: boolean;
-  broker: string | null;
-  loading: boolean;
-}
-
 export default function TradingDashboardPage() {
-  const { user, loading: authLoading } = useAuth();
-  const [status, setStatus] = useState<ProvisionStatus>({ provisioned: false, broker: null, loading: true });
-
-  useEffect(() => {
-    if (!user?.id) return;
-    (async () => {
-      const { data: sub } = await supabase
-        .from("user_subscriptions")
-        .select("status")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      const isPaid = sub?.status === "active" || sub?.status === "trialing";
-      if (!isPaid) { setStatus({ provisioned: false, broker: null, loading: false }); return; }
-
-      const { data: onboarding } = await (supabase as any)
-        .from("algo_onboarding")
-        .select("status")
-        .eq("user_id", user.id)
-        .maybeSingle();
-      const isProvisioned = onboarding?.status === "provisioned" || onboarding?.status === "active";
-
-      const { data: integration } = await (supabase as any)
-        .from("user_trading_integration")
-        .select("is_active, broker")
-        .eq("user_id", user.id)
-        .eq("is_active", true)
-        .maybeSingle();
-
-      setStatus({
-        provisioned: !!isProvisioned,
-        broker: integration?.broker ?? null,
-        loading: false,
-      });
-    })();
-  }, [user?.id]);
-
-  if (authLoading || status.loading) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-teal-500" />
-      </div>
-    );
-  }
-
-  if (!user) return <Navigate to="/auth?redirect=/trading-dashboard" replace />;
-  if (!status.provisioned) return <Navigate to="/algo-setup" replace />;
-
-  return <LiveDashboard broker={status.broker ?? "zerodha"} />;
+  return (
+    <TradingDashboardAccessGate>
+      {(ctx) => <LiveDashboard broker={ctx.broker} />}
+    </TradingDashboardAccessGate>
+  );
 }
