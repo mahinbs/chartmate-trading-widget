@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, TrendingUp, TrendingDown, Users, BarChart3, Activity, Calendar, Globe, ChevronLeft, ChevronRight, DollarSign, Target, Zap, Clock } from "lucide-react";
+import { ArrowLeft, TrendingUp, TrendingDown, Users, BarChart3, Activity, Calendar, Globe, ChevronLeft, ChevronRight, DollarSign, Target, Zap, Clock, Link2, Layers } from "lucide-react";
 import { Link } from "react-router-dom";
 import {
   AreaChart,
@@ -22,7 +22,7 @@ import {
   PieChart,
   Pie,
 } from "recharts";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PublicDailyPerformanceChart } from "@/components/public-dashboard/PublicDailyPerformanceChart";
 
 interface Subscriber {
@@ -31,6 +31,304 @@ interface Subscriber {
   country: string;
   payment_id: string | null;
   subscribed_at: string;
+}
+
+/** Person names used in metric-detail dialogs — excluded from generated affiliate names */
+const RESERVED_DEMO_PERSON_NAMES = new Set([
+  "Carlos Mendes",
+  "Ahmed Hassan",
+  "Luca Romano",
+  "Sarah Chen",
+  "Ethan Walker",
+  "Arjun Mehta",
+  "Sofia Martinez",
+]);
+
+/** Demo affiliates for the public (dummy) dashboard — not loaded from the API */
+interface DashboardAffiliate {
+  id: string;
+  name: string;
+  trackingId: string;
+  userCount: number;
+  profitShare: string;
+  payout: string;
+}
+
+interface DashboardWhitelabel {
+  id: string;
+  name: string;
+  userCount: number;
+  profitShare: string;
+  payout: string;
+}
+
+type PartnerPayoutDialogTarget =
+  | { kind: "affiliate"; row: DashboardAffiliate }
+  | { kind: "whitelabel"; row: DashboardWhitelabel };
+
+const AFFILIATE_TABLE_PAGE_SIZE = 10;
+const WHITELABEL_TABLE_PAGE_SIZE = 10;
+
+/** Demo revenue assumption per user; payout = users × this × share (e.g. 80 × 0.30 = $24 per user at 30%). */
+const PAYOUT_BASE_PER_USER_USD = 80;
+const AFFILIATE_PROFIT_SHARE = 0.3;
+const WHITELABEL_PROFIT_SHARE = 0.7;
+
+const INDIAN_FIRST = [
+  "Priya", "Ananya", "Rohan", "Vikram", "Kavya", "Aditya", "Ishaan", "Neha", "Rajeev", "Deepa",
+  "Sanjay", "Meera", "Krishna", "Pooja", "Suresh", "Divya", "Manish", "Sunita", "Arnav", "Kiran",
+  "Lakshmi", "Harish", "Anjali", "Vinod", "Shreya", "Gaurav", "Nikhil", "Swati", "Amit",
+  "Tanvi", "Karthik", "Radha", "Devendra", "Sneha", "Yash", "Payal", "Rakesh", "Nandini", "Bhavya",
+  "Pranav", "Ira", "Harsh", "Aarti", "Vivek", "Keerthi", "Ashwin", "Mitali", "Sameer", "Trisha",
+];
+
+const INDIAN_LAST = [
+  "Sharma", "Verma", "Patel", "Reddy", "Nair", "Iyer", "Kapoor", "Malhotra", "Agarwal", "Bansal",
+  "Chopra", "Das", "Menon", "Pillai", "Rao", "Singh", "Tiwari", "Joshi", "Gupta", "Kulkarni",
+  "Shah", "Desai", "Nayak", "Bhatt", "Khan", "Choudhury", "Mukherjee", "Ghosh", "Pandey", "Yadav",
+  "Jain", "Bose", "Saxena", "Srivastava", "Rangan", "Subramanian", "Krishnan", "Nambiar", "Thakur", "Varma",
+];
+
+const INTL_FIRST = [
+  "Oliver", "Emma", "Noah", "Sophia", "Liam", "Mia", "Jack", "Charlotte", "Henry", "Amelia",
+  "Mason", "Grace", "Logan", "Chloe", "Wyatt", "Ella", "Caleb", "Hannah",
+];
+
+const INTL_LAST = [
+  "Bennett", "Foster", "Hayes", "Coleman", "Reid", "Palmer", "West", "Bryant", "Vaughn", "Stone",
+  "Porter", "Mann", "Rowe", "Chase", "Blake", "Cross", "Ford", "Snow",
+];
+
+const WL_A = [
+  "Aurora", "Nimbus", "Cobalt", "Vertex", "Polaris", "Crescent", "Harbor", "Summit", "Granite", "Silverline",
+  "Ironwood", "Bluewave", "Northstar", "Oakridge", "Redstone", "Clearwater", "Blackfin", "Goldcrest", "Skyward", "Falcon",
+  "Ridge", "Pinnacle", "Horizon", "Meridian", "Titanium", "Zenith", "Cascade", "Echo", "Nova", "Quantum",
+  "Vector", "Prism", "Lattice", "Cipher", "Orbital", "Stellar", "Apex", "Stride", "Beacon", "Vanguard",
+  "Citadel", "Anchor", "Compass", "Keystone", "Latitude", "Argon", "Helix", "Matrix", "Flux", "Pulse",
+];
+
+const WL_B = [
+  "Markets", "Trading", "Capital", "Securities", "Analytics", "Advisory", "Partners", "Group", "Solutions", "Ventures",
+  "Holdings", "Desk", "Labs", "Digital", "Wealth", "Finance", "Global", "Connect", "Stream", "Works",
+];
+
+function formatUsd0(n: number): string {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
+}
+
+/** Deterministic unit float in [0, 1) — stable across runs for the same seed */
+function det01(seed: number): number {
+  const x = Math.sin(seed + 1) * 43758.5453123;
+  return x - Math.floor(x);
+}
+
+function payoutFromUserCountUsd(userCount: number, share: number): number {
+  return Math.round(userCount * PAYOUT_BASE_PER_USER_USD * share);
+}
+
+type MonthlyPayoutBreakdown = { monthLabel: string; amount: number };
+
+/** Jan → current month of this year; amounts are a split of YTD = annual payout × (months elapsed / 12), with deterministic jitter that preserves the total */
+function buildYtdMonthlyPayoutBreakdown(
+  userCount: number,
+  share: number,
+  stableSeed: number,
+): MonthlyPayoutBreakdown[] {
+  const now = new Date();
+  const y = now.getFullYear();
+  const endMonth = now.getMonth();
+  const monthsElapsed = endMonth + 1;
+  const annualPayout = userCount * PAYOUT_BASE_PER_USER_USD * share;
+  const ytdTarget = Math.round(annualPayout * (monthsElapsed / 12));
+  const weights: number[] = [];
+  for (let m = 0; m <= endMonth; m++) {
+    weights.push(0.88 + det01(stableSeed * 9973 + m * 31) * 0.24);
+  }
+  const wSum = weights.reduce((s, w) => s + w, 0);
+  const raw = weights.map((w) => (w / wSum) * ytdTarget);
+  const rounded = raw.map((x) => Math.floor(x));
+  let drift = ytdTarget - rounded.reduce((s, x) => s + x, 0);
+  for (let i = 0; drift > 0 && i < rounded.length; i++) {
+    const idx = (i + stableSeed) % rounded.length;
+    rounded[idx]! += 1;
+    drift -= 1;
+  }
+  return rounded.map((amount, m) => ({
+    monthLabel: new Date(y, m, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+    amount,
+  }));
+}
+
+function parseRowSeed(id: string): number {
+  const n = parseInt(id.replace(/\D/g, ""), 10);
+  if (Number.isFinite(n) && n > 0) return n;
+  return id.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
+}
+
+/** Fisher–Yates shuffle of [i,j] index pairs so we don't exhaust one first name before using others */
+function shuffleIndexPairs(pairs: [number, number][], seed: number): void {
+  for (let i = pairs.length - 1; i > 0; i--) {
+    const j = Math.floor(det01(seed + i * 12582917) * (i + 1));
+    const t = pairs[i]!;
+    pairs[i] = pairs[j]!;
+    pairs[j] = t;
+  }
+}
+
+function allIndexPairs(lenA: number, lenB: number): [number, number][] {
+  const pairs: [number, number][] = [];
+  for (let a = 0; a < lenA; a++) {
+    for (let b = 0; b < lenB; b++) pairs.push([a, b]);
+  }
+  return pairs;
+}
+
+const PAD_FIRST = [
+  "Elara", "Orin", "Sable", "Torin", "Maren", "Cael", "Isolde", "Ren", "Dara", "Juno",
+  "Kestrel", "Lior", "Niam", "Oisin", "Perrin", "Quinlan", "Riven", "Soren", "Tamsin", "Vesper",
+];
+
+const PAD_LAST = [
+  "Ashford", "Blackwood", "Carmine", "Draycott", "Ellerby", "Fairclough", "Gresham", "Hollis", "Ingram", "Kenshaw",
+  "Loxley", "Marchand", "Northcote", "Pemberton", "Quarrie", "Redmayne", "Stroud", "Trelawney", "Underhill", "Whitmore",
+];
+
+function collectIndianPersonNames(count: number, usedLower: Set<string>): string[] {
+  const pairs = allIndexPairs(INDIAN_FIRST.length, INDIAN_LAST.length);
+  shuffleIndexPairs(pairs, 314159265);
+  const out: string[] = [];
+  for (const [a, b] of pairs) {
+    if (out.length >= count) break;
+    const name = `${INDIAN_FIRST[a]} ${INDIAN_LAST[b]}`;
+    const low = name.toLowerCase();
+    if (usedLower.has(low)) continue;
+    usedLower.add(low);
+    out.push(name);
+  }
+  let pad = 0;
+  while (out.length < count) {
+    pad += 1;
+    const name = `${PAD_FIRST[pad % PAD_FIRST.length]} ${PAD_LAST[(pad * 7) % PAD_LAST.length]} ${pad + 600}`;
+    const low = name.toLowerCase();
+    if (usedLower.has(low)) continue;
+    usedLower.add(low);
+    out.push(name);
+  }
+  return out;
+}
+
+function collectIntlPersonNames(count: number, usedLower: Set<string>): string[] {
+  const pairs = allIndexPairs(INTL_FIRST.length, INTL_LAST.length);
+  shuffleIndexPairs(pairs, 271828182);
+  const out: string[] = [];
+  for (const [a, b] of pairs) {
+    if (out.length >= count) break;
+    const name = `${INTL_FIRST[a]} ${INTL_LAST[b]}`;
+    const low = name.toLowerCase();
+    if (usedLower.has(low)) continue;
+    usedLower.add(low);
+    out.push(name);
+  }
+  let pad = 0;
+  while (out.length < count) {
+    pad += 1;
+    const name = `Briony Vale ${pad + 340}`;
+    const low = name.toLowerCase();
+    if (usedLower.has(low)) continue;
+    usedLower.add(low);
+    out.push(name);
+  }
+  return out;
+}
+
+function buildDemoAffiliates(excludeLower: Set<string>): DashboardAffiliate[] {
+  const usedLower = new Set<string>(excludeLower);
+  for (const n of RESERVED_DEMO_PERSON_NAMES) usedLower.add(n.toLowerCase());
+  const indian = collectIndianPersonNames(160, usedLower);
+  const intl = collectIntlPersonNames(17, usedLower);
+  const names = [...indian, ...intl];
+  return names.map((name, idx) => {
+    const userCount = 220 + (idx * 104729 % 9200);
+    const payoutN = payoutFromUserCountUsd(userCount, AFFILIATE_PROFIT_SHARE);
+    return {
+      id: `af-${idx + 1}`,
+      name,
+      trackingId: `AFF-${(100000 + idx).toString(36).toUpperCase()}`,
+      userCount,
+      profitShare: "30%",
+      payout: formatUsd0(payoutN),
+    };
+  });
+}
+
+function buildDemoWhitelabels(excludeLower: Set<string>): DashboardWhitelabel[] {
+  const usedLower = new Set<string>(excludeLower);
+  for (const n of RESERVED_DEMO_PERSON_NAMES) usedLower.add(n.toLowerCase());
+  const pairs = allIndexPairs(WL_A.length, WL_B.length);
+  shuffleIndexPairs(pairs, 161803398);
+  const names: string[] = [];
+  for (const [a, b] of pairs) {
+    if (names.length >= 100) break;
+    const n = `${WL_A[a]} ${WL_B[b]}`;
+    const low = n.toLowerCase();
+    if (usedLower.has(low)) continue;
+    usedLower.add(low);
+    names.push(n);
+  }
+  let k = 0;
+  const WL_FALLBACK_A = ["Velum", "Crystalline", "Obsidian", "Copperfield", "Slatebridge", "Ironbark", "Mistral", "Zephyrine"];
+  const WL_FALLBACK_B = ["Systems", "Networks", "Exchange", "Clearing", "Outpost", "Interface", "Ledger", "Console"];
+  while (names.length < 100) {
+    k += 1;
+    const fb = `${WL_FALLBACK_A[k % WL_FALLBACK_A.length]} ${WL_FALLBACK_B[(k * 5) % WL_FALLBACK_B.length]} ${k + 880}`;
+    const low = fb.toLowerCase();
+    if (usedLower.has(low)) continue;
+    usedLower.add(low);
+    names.push(fb);
+  }
+  return names.map((name, idx) => {
+    const userCount = 180 + (idx * 97231 % 11500);
+    const payoutN = payoutFromUserCountUsd(userCount, WHITELABEL_PROFIT_SHARE);
+    return {
+      id: `WL-${String(idx + 1).padStart(4, "0")}`,
+      name,
+      userCount,
+      profitShare: "70%",
+      payout: formatUsd0(payoutN),
+    };
+  });
+}
+
+function TablePaginationBar(props: {
+  page: number;
+  pageSize: number;
+  total: number;
+  onPageChange: (p: number) => void;
+}) {
+  const { page, pageSize, total, onPageChange } = props;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
+  return (
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between px-4 py-3 border-t border-border/30">
+      <p className="text-xs text-muted-foreground">
+        {total === 0 ? "No rows" : `Showing ${from}–${to} of ${total}`}
+      </p>
+      {totalPages > 1 && (
+        <div className="flex items-center gap-1">
+          <Button variant="outline" size="icon" className="h-7 w-7" disabled={page === 1} onClick={() => onPageChange(page - 1)}>
+            <ChevronLeft className="h-3 w-3" />
+          </Button>
+          <span className="text-xs px-2 tabular-nums">
+            {page} / {totalPages}
+          </span>
+          <Button variant="outline" size="icon" className="h-7 w-7" disabled={page === totalPages} onClick={() => onPageChange(page + 1)}>
+            <ChevronRight className="h-3 w-3" />
+          </Button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 interface Metric {
@@ -264,6 +562,29 @@ export default function PublicDashboardPage({ embedInAdmin = false }: PublicDash
 
   const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
   const [subPage, setSubPage] = useState(1);
+  const [affPage, setAffPage] = useState(1);
+  const [wlPage, setWlPage] = useState(1);
+
+  const subscriberNamesLower = useMemo(
+    () => new Set(subscribers.map((s) => s.name.trim().toLowerCase()).filter(Boolean)),
+    [subscribers]
+  );
+
+  const affiliateRows = useMemo(
+    () => buildDemoAffiliates(subscriberNamesLower),
+    [subscriberNamesLower]
+  );
+
+  const whitelabelExcludeLower = useMemo(() => {
+    const s = new Set(subscriberNamesLower);
+    for (const a of affiliateRows) s.add(a.name.toLowerCase());
+    return s;
+  }, [subscriberNamesLower, affiliateRows]);
+
+  const whitelabelRows = useMemo(
+    () => buildDemoWhitelabels(whitelabelExcludeLower),
+    [whitelabelExcludeLower]
+  );
 
   useEffect(() => {
     const load = async () => {
@@ -296,6 +617,27 @@ export default function PublicDashboardPage({ embedInAdmin = false }: PublicDash
   );
 
   const [selectedMetric, setSelectedMetric] = useState<Metric | null>(null);
+  const [payoutDialog, setPayoutDialog] = useState<PartnerPayoutDialogTarget | null>(null);
+
+  const payoutDialogBreakdown = useMemo(() => {
+    if (!payoutDialog) return null;
+    const share =
+      payoutDialog.kind === "affiliate" ? AFFILIATE_PROFIT_SHARE : WHITELABEL_PROFIT_SHARE;
+    const seed = parseRowSeed(payoutDialog.row.id);
+    const months = buildYtdMonthlyPayoutBreakdown(payoutDialog.row.userCount, share, seed);
+    const total = months.reduce((s, r) => s + r.amount, 0);
+    const chartData = months.map((row) => {
+      const monthWord = row.monthLabel.replace(/\s+\d{4}$/, "").trim();
+      const shortMonth =
+        monthWord.length <= 4 ? monthWord : `${monthWord.slice(0, 3)}`;
+      return {
+        month: shortMonth,
+        fullMonth: row.monthLabel,
+        amount: row.amount,
+      };
+    });
+    return { months, total, chartData };
+  }, [payoutDialog]);
 
   return (
     <div className={embedInAdmin ? "min-h-0 bg-background -mx-4 px-4 sm:-mx-6 sm:px-6" : "min-h-screen bg-background"}>
@@ -506,9 +848,259 @@ export default function PublicDashboardPage({ embedInAdmin = false }: PublicDash
               );
             })()}
 
+            {/* ── Affiliates (dummy data for showcase dashboard) ── */}
+            <div>
+              <h2 className="text-base font-semibold mb-4 flex items-center gap-2">
+                <Link2 className="h-4 w-4 text-primary" />
+                Affiliates
+                <Badge variant="outline" className="text-[10px] ml-1">{affiliateRows.length} partners</Badge>
+              </h2>
+              <Card className="border-violet-500/25 bg-violet-500/[0.03]">
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border/50 bg-muted/30">
+                          <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">#</th>
+                          <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">Affiliate name</th>
+                          <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">Tracking ID</th>
+                          <th className="text-right px-4 py-3 font-medium text-muted-foreground text-xs">Users</th>
+                          <th className="text-right px-4 py-3 font-medium text-muted-foreground text-xs">Profit share</th>
+                          <th className="text-right px-4 py-3 font-medium text-muted-foreground text-xs">Payout</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {affiliateRows
+                          .slice(
+                            (affPage - 1) * AFFILIATE_TABLE_PAGE_SIZE,
+                            affPage * AFFILIATE_TABLE_PAGE_SIZE
+                          )
+                          .map((a, idx) => {
+                            const globalIdx = (affPage - 1) * AFFILIATE_TABLE_PAGE_SIZE + idx + 1;
+                            return (
+                              <tr
+                                key={a.id}
+                                role="button"
+                                tabIndex={0}
+                                className="border-b border-border/30 hover:bg-muted/20 transition-colors cursor-pointer"
+                                onClick={() => setPayoutDialog({ kind: "affiliate", row: a })}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" || e.key === " ") {
+                                    e.preventDefault();
+                                    setPayoutDialog({ kind: "affiliate", row: a });
+                                  }
+                                }}
+                              >
+                                <td className="px-4 py-3 text-muted-foreground text-xs">{globalIdx}</td>
+                                <td className="px-4 py-3 font-medium">{a.name}</td>
+                                <td className="px-4 py-3">
+                                  <code className="text-xs bg-muted/40 px-1.5 py-0.5 rounded font-mono">{a.trackingId}</code>
+                                </td>
+                                <td className="px-4 py-3 text-right tabular-nums">{a.userCount.toLocaleString()}</td>
+                                <td className="px-4 py-3 text-right font-medium text-violet-600 dark:text-violet-400 tabular-nums">
+                                  {a.profitShare}
+                                </td>
+                                <td className="px-4 py-3 text-right tabular-nums font-medium">{a.payout}</td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <TablePaginationBar
+                    page={affPage}
+                    pageSize={AFFILIATE_TABLE_PAGE_SIZE}
+                    total={affiliateRows.length}
+                    onPageChange={setAffPage}
+                  />
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* ── White label (dummy data) ── */}
+            <div>
+              <h2 className="text-base font-semibold mb-4 flex items-center gap-2">
+                <Layers className="h-4 w-4 text-primary" />
+                White label
+                <Badge variant="outline" className="text-[10px] ml-1">{whitelabelRows.length} tenants</Badge>
+              </h2>
+              <Card className="border-sky-500/25 bg-sky-500/[0.03]">
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border/50 bg-muted/30">
+                          <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">ID</th>
+                          <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">Name</th>
+                          <th className="text-right px-4 py-3 font-medium text-muted-foreground text-xs">Users</th>
+                          <th className="text-right px-4 py-3 font-medium text-muted-foreground text-xs">Profit share</th>
+                          <th className="text-right px-4 py-3 font-medium text-muted-foreground text-xs">Payout</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {whitelabelRows
+                          .slice(
+                            (wlPage - 1) * WHITELABEL_TABLE_PAGE_SIZE,
+                            wlPage * WHITELABEL_TABLE_PAGE_SIZE
+                          )
+                          .map((w) => (
+                            <tr
+                              key={w.id}
+                              role="button"
+                              tabIndex={0}
+                              className="border-b border-border/30 hover:bg-muted/20 transition-colors cursor-pointer"
+                              onClick={() => setPayoutDialog({ kind: "whitelabel", row: w })}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  setPayoutDialog({ kind: "whitelabel", row: w });
+                                }
+                              }}
+                            >
+                              <td className="px-4 py-3">
+                                <code className="text-xs bg-muted/40 px-1.5 py-0.5 rounded font-mono">{w.id}</code>
+                              </td>
+                              <td className="px-4 py-3 font-medium">{w.name}</td>
+                              <td className="px-4 py-3 text-right tabular-nums">{w.userCount.toLocaleString()}</td>
+                              <td className="px-4 py-3 text-right font-medium text-sky-600 dark:text-sky-400 tabular-nums">
+                                {w.profitShare}
+                              </td>
+                              <td className="px-4 py-3 text-right tabular-nums font-medium">{w.payout}</td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <TablePaginationBar
+                    page={wlPage}
+                    pageSize={WHITELABEL_TABLE_PAGE_SIZE}
+                    total={whitelabelRows.length}
+                    onPageChange={setWlPage}
+                  />
+                </CardContent>
+              </Card>
+            </div>
+
           </>
         )}
       </div>
+
+      {/* ── Affiliate / white label YTD payout dialog ── */}
+      <Dialog open={payoutDialog !== null} onOpenChange={(open) => !open && setPayoutDialog(null)}>
+        <DialogContent className="max-w-lg sm:max-w-xl">
+          {payoutDialog && payoutDialogBreakdown && (
+            <>
+              <DialogHeader>
+                <DialogTitle>
+                  {payoutDialog.kind === "affiliate" ? "Affiliate payouts (YTD)" : "White label payouts (YTD)"}
+                </DialogTitle>
+                <DialogDescription>
+                  <div className="space-y-2 text-left text-sm text-muted-foreground">
+                    <p>
+                      {payoutDialog.kind === "affiliate" ? (
+                        <>
+                          <span className="font-medium text-foreground">{payoutDialog.row.name}</span>
+                          <span> · </span>
+                          <code className="rounded bg-muted px-1 py-0.5 text-xs">{payoutDialog.row.trackingId}</code>
+                          {/* <span className="block mt-1 text-xs">
+                            {payoutDialog.row.userCount.toLocaleString()} users · payout = users × $
+                            {PAYOUT_BASE_PER_USER_USD} × 30% ={" "}
+                            <span className="font-medium text-foreground">{payoutDialog.row.payout}</span>
+                          </span> */}
+                        </>
+                      ) : (
+                        <>
+                          <span className="font-medium text-foreground">{payoutDialog.row.name}</span>
+                          <span> · </span>
+                          <code className="rounded bg-muted px-1 py-0.5 text-xs">{payoutDialog.row.id}</code>
+                          {/* <span className="block mt-1 text-xs">
+                            {payoutDialog.row.userCount.toLocaleString()} users · payout = users × $
+                            {PAYOUT_BASE_PER_USER_USD} × 70% ={" "}
+                            <span className="font-medium text-foreground">{payoutDialog.row.payout}</span>
+                          </span> */}
+                        </>
+                      )}
+                    </p>
+                    {/* <p className="text-xs">
+                      Monthly payouts from January through the current month. YTD total matches users × $
+                      {PAYOUT_BASE_PER_USER_USD} × {payoutDialog.kind === "affiliate" ? "30%" : "70%"} × (months
+                      elapsed ÷ 12); the dashboard column is the full-year amount at this user count.
+                    </p> */}
+                  </div>
+                </DialogDescription>
+              </DialogHeader>
+              <div className="rounded-lg border bg-muted/20 px-2 pt-4 pb-2">
+                <p className="mb-2 text-center text-xs font-medium text-muted-foreground">Payout by month</p>
+                <div className="h-[280px] w-full min-w-0">
+                  <ResponsiveContainer width="100%" height="100%">
+                    {(() => {
+                      const lineColor =
+                        payoutDialog.kind === "affiliate"
+                          ? "hsl(var(--primary))"
+                          : "hsl(199 89% 48%)";
+                      return (
+                        <LineChart
+                          data={payoutDialogBreakdown.chartData}
+                          margin={{ top: 12, right: 12, left: 4, bottom: 4 }}
+                        >
+                          <CartesianGrid
+                            strokeDasharray="3 3"
+                            stroke="hsl(var(--border))"
+                            strokeOpacity={0.6}
+                            vertical={false}
+                          />
+                          <XAxis
+                            dataKey="month"
+                            tick={{ fontSize: 11 }}
+                            tickLine={false}
+                            axisLine={false}
+                            className="text-muted-foreground"
+                          />
+                          <YAxis
+                            tick={{ fontSize: 11 }}
+                            tickLine={false}
+                            axisLine={false}
+                            className="text-muted-foreground"
+                            tickFormatter={(v) =>
+                              v >= 1000 ? `$${(v / 1000).toFixed(v % 1000 === 0 ? 0 : 1)}k` : `$${v}`
+                            }
+                            width={48}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              background: "hsl(var(--card))",
+                              border: "1px solid hsl(var(--border))",
+                              borderRadius: "8px",
+                              fontSize: 12,
+                            }}
+                            formatter={(value: number) => [formatUsd0(value), "Payout"]}
+                            labelFormatter={(_, payload) =>
+                              payload?.[0]?.payload?.fullMonth ?? ""
+                            }
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="amount"
+                            name="Payout"
+                            stroke={lineColor}
+                            strokeWidth={2.5}
+                            dot={{ r: 4, fill: "hsl(var(--background))", stroke: lineColor, strokeWidth: 2 }}
+                            activeDot={{ r: 6, fill: lineColor, stroke: "hsl(var(--background))", strokeWidth: 2 }}
+                          />
+                        </LineChart>
+                      );
+                    })()}
+                  </ResponsiveContainer>
+                </div>
+              </div>
+              <p className="text-sm font-semibold flex justify-between gap-2 border-t pt-3">
+                <span>Total (Jan → {new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })})</span>
+                <span className="tabular-nums">{formatUsd0(payoutDialogBreakdown.total)}</span>
+              </p>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* ── Metric Details Dialog ── */}
       <Dialog open={!!selectedMetric} onOpenChange={(open) => !open && setSelectedMetric(null)}>

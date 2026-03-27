@@ -57,14 +57,28 @@ function useDashboardNavLinks(): DashboardNavLink[] {
   const links: DashboardNavLink[] = [
     { to: "/home", label: "Dashboard", icon: LayoutDashboard },
     { to: "/predict", label: "New Analysis", icon: LineChart },
-    { to: "/predictions", label: "Past Analyses", icon: Activity, iconOpacity: "opacity-50" },
-    { to: "/active-trades?tab=completed", label: "Paper Trade Performance", icon: BarChart3 },
+    {
+      to: "/predictions",
+      label: "Past Analyses",
+      icon: Activity,
+      iconOpacity: "opacity-50",
+    },
+    {
+      to: "/active-trades?tab=completed",
+      label: "Paper Trade Performance",
+      icon: BarChart3,
+    },
     { to: "/news", label: "News Feed", icon: Newspaper },
   ];
 
   if (isPremium) {
     if (isAlgoProvisioned) {
-      links.push({ to: "/trading-dashboard", label: "Algo Trade", icon: Activity });
+      links.push({
+        to: "/trading-dashboard",
+        label: "Algo Trade",
+        icon: Bot,
+        iconColor: "text-primary opacity-80",
+      });
     } else {
       links.push({
         to: "/algo-setup",
@@ -141,7 +155,11 @@ export function DashboardSidebar({
         )}
       >
         <div className="p-4 flex items-center justify-center mb-2 mt-2">
-          <img src={logo} alt="ChartMate" className="w-[5rem] object-contain opacity-90" />
+          <img
+            src={logo}
+            alt="ChartMate"
+            className="w-[5rem] object-contain opacity-90"
+          />
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 pb-2 space-y-6 scrollbar-hide bg-gradient-to-br from-transparent via-transparent to-primary/20">
@@ -152,7 +170,11 @@ export function DashboardSidebar({
             <div className="space-y-2">
               {links.map((link) => {
                 const Icon = link.icon;
-                const isActive = isDashboardNavActive(link.to, pathname, search);
+                const isActive = isDashboardNavActive(
+                  link.to,
+                  pathname,
+                  search,
+                );
                 if (isActive) {
                   return (
                     <Link
@@ -170,7 +192,13 @@ export function DashboardSidebar({
                     to={link.to}
                     className="flex items-center gap-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:text-foreground hover:bg-sidebar-primary/5 transition-all text-sm font-medium border-l-[3px] border-transparent ml-[1px]"
                   >
-                    <Icon className={cn("h-4 w-4", link.iconColor, link.iconOpacity)} />{" "}
+                    <Icon
+                      className={cn(
+                        "h-4 w-4",
+                        link.iconColor,
+                        link.iconOpacity,
+                      )}
+                    />{" "}
                     {link.label}
                   </Link>
                 );
