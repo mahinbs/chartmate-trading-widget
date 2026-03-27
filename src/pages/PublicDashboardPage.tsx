@@ -80,6 +80,9 @@ const INDIAN_FIRST = [
   "Lakshmi", "Harish", "Anjali", "Vinod", "Shreya", "Gaurav", "Nikhil", "Swati", "Amit",
   "Tanvi", "Karthik", "Radha", "Devendra", "Sneha", "Yash", "Payal", "Rakesh", "Nandini", "Bhavya",
   "Pranav", "Ira", "Harsh", "Aarti", "Vivek", "Keerthi", "Ashwin", "Mitali", "Sameer", "Trisha",
+  "Ritika", "Siddharth", "Ishani", "Varun", "Nisha", "Rahul", "Simran", "Kunal", "Tanya", "Abhishek",
+  "Juhi", "Manav", "Ekta", "Rishabh", "Pallavi", "Naveen", "Sonal", "Tarun", "Richa", "Vishal",
+  "Megha", "Akash", "Sakshi", "Rohit", "Komal", "Nitin", "Preeti", "Saurabh", "Ankita", "Hemant",
 ];
 
 const INDIAN_LAST = [
@@ -87,6 +90,37 @@ const INDIAN_LAST = [
   "Chopra", "Das", "Menon", "Pillai", "Rao", "Singh", "Tiwari", "Joshi", "Gupta", "Kulkarni",
   "Shah", "Desai", "Nayak", "Bhatt", "Khan", "Choudhury", "Mukherjee", "Ghosh", "Pandey", "Yadav",
   "Jain", "Bose", "Saxena", "Srivastava", "Rangan", "Subramanian", "Krishnan", "Nambiar", "Thakur", "Varma",
+  "Kaur", "Gill", "Bedi", "Randhawa", "Brar", "Bassi", "Anand", "Sinha", "Mishra", "Tripathi",
+  "Dwivedi", "Nigam", "Aggarwal", "Goel", "Arora", "Seth", "Dhillon", "Cheema", "Sodhi", "Bhalla",
+];
+
+/**
+ * Names for the public "Recent Members" table only — disjoint from {@link INDIAN_FIRST} / {@link INDIAN_LAST}
+ * so ~90% can read as Indian without reusing the affiliate name grids.
+ */
+const SUBSCRIBER_TABLE_FIRST = [
+  "Aarav", "Diya", "Kabir", "Ishita", "Vivaan", "Anika", "Reyansh", "Myra", "Arjun", "Kiara",
+  "Dhruv", "Saanvi", "Rudra", "Tara", "Vihaan", "Ahana", "Shaurya", "Mira", "Advik", "Zara",
+  "Riya", "Vedant", "Navya", "Yuvraj", "Pari", "Ishan", "Avni", "Kian", "Laksh", "Darsh",
+  "Aadhya", "Ritu", "Dev", "Siya", "Om", "Kyra", "Neil", "Mihir", "Tia", "Eshan",
+  "Miraya", "Ayaan", "Vansh", "Jiya", "Naina", "Rishika", "Tejas", "Ivana", "Rehan", "Saanjh",
+  "Vanya", "Krishiv", "Mahika", "Reeva", "Atharv", "Inaya", "Shaan", "Myesh", "Viha", "Aradhya",
+  "Rian", "Samaira", "Yashvi", "Vedika", "Iraja", "Nirvaan", "Zoya", "Pranay", "Tisha", "Kairav",
+  "Anvika", "Rudransh", "Siyaana", "Hridya", "Ojas", "Pihu", "Reyanshi", "Vedansh", "Aarvi", "Nysa",
+  "Shivansh", "Trishaana", "Uvika", "Yuvaan", "Zaraan", "Eshani", "Kavyansh", "Lavanya", "Mishka", "Nirali",
+  "Oorja", "Parthiv", "Ranya", "Sarisha", "Tanishq", "Ujjwal", "Vritika", "Yashika", "Ziva", "Ahaan",
+];
+
+const SUBSCRIBER_TABLE_LAST = [
+  "Bhattacharya", "Banerjee", "Chatterjee", "Dutta", "Sen", "Ghoshal", "Mukhopadhyay", "Chakraborty",
+  "Hegde", "Shetty", "Kamat", "Deshmukh", "Patwardhan", "Bhatia", "Chadha", "Grover",
+  "Khanna", "Malik", "Sethi", "Talwar", "Wadhwa", "Ahluwalia", "Bajaj", "Dhingra",
+  "Khurana", "Luthra", "Mehra", "Oberoi", "Suri", "Tandon", "Vohra", "Walia",
+  "Kaul", "Bakshi", "Ranjan", "Bhonsle", "Karmarkar", "Laghate", "Modak", "Phadke", "Rane", "Sawant",
+  "Talgeri", "Upadhyay", "Vyas", "Wagle", "Zaveri", "Apte", "Barve", "Chitnis", "Deodhar", "Fadnavis",
+  "Gokhale", "Hegdekar", "Inamdar", "Joglekar", "Kale", "Lokhande", "Mujumdar", "Nadkarni", "Oak", "Pai",
+  "Ranade", "Sabnis", "Thacker", "Ukidwe", "Vaidya", "Welingkar", "Yajnik", "Zope", "Athavale", "Bhave",
+  "Chaudhari", "Dani", "Ekbote", "Fadke", "Gadgil", "Haldankar", "Indulkar", "Jaisinghani", "Kibe", "Lele",
 ];
 
 const INTL_FIRST = [
@@ -98,6 +132,19 @@ const INTL_LAST = [
   "Bennett", "Foster", "Hayes", "Coleman", "Reid", "Palmer", "West", "Bryant", "Vaughn", "Stone",
   "Porter", "Mann", "Rowe", "Chase", "Blake", "Cross", "Ford", "Snow",
 ];
+
+const INTL_COUNTRIES_FOR_SUBSCRIBER_VIEW = [
+  "United States",
+  "United Kingdom",
+  "United Arab Emirates",
+  "Singapore",
+  "Australia",
+  "Canada",
+  "Germany",
+  "Japan",
+  "France",
+  "Netherlands",
+] as const;
 
 const WL_A = [
   "Aurora", "Nimbus", "Cobalt", "Vertex", "Polaris", "Crescent", "Harbor", "Summit", "Granite", "Silverline",
@@ -163,6 +210,112 @@ function parseRowSeed(id: string): number {
   const n = parseInt(id.replace(/\D/g, ""), 10);
   if (Number.isFinite(n) && n > 0) return n;
   return id.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
+}
+
+/** 32-bit mix — spreads hashed subscriber ids for name-pair picking. */
+function mixU32(n: number): number {
+  let x = n >>> 0;
+  x ^= x << 13;
+  x >>>= 0;
+  x ^= x >>> 17;
+  x >>>= 0;
+  x ^= x << 5;
+  return x >>> 0;
+}
+
+/**
+ * Minutes in the past for list position `listIndex` (0 = newest). Same progression for every row so
+ * “Joined” reads oldest → newest down the table.
+ */
+function subscriberMinutesAgoFromListIndex(listIndex: number): number {
+  let acc = 2 + det01(90210) * 8;
+  for (let j = 0; j < listIndex; j++) {
+    acc += 4 + det01(999983 + j * 7919 + 13) * 38;
+  }
+  return Math.min(Math.floor(acc), 48 * 60 - 1);
+}
+
+/**
+ * Public dashboard subscriber rows: ~90% India via {@link SUBSCRIBER_TABLE_FIRST}/{@link SUBSCRIBER_TABLE_LAST}
+ * (not {@link INDIAN_FIRST}/{@link INDIAN_LAST}); rest intl. IDs/payment refs stay from the API.
+ * Full names are unique within the list (probe + numeric suffix fallback).
+ */
+function buildPublicSubscriberView(raw: Subscriber[]): Subscriber[] {
+  const used = new Set<string>();
+  const fLen = SUBSCRIBER_TABLE_FIRST.length;
+  const lLen = SUBSCRIBER_TABLE_LAST.length;
+  const inPairs = fLen * lLen;
+  const iFL = INTL_FIRST.length;
+  const iLL = INTL_LAST.length;
+  const intlPairs = iFL * iLL;
+
+  return raw.map((s, i) => {
+    const seed = parseRowSeed(s.id);
+    const indian = det01(seed + 514229) < 0.9;
+
+    if (indian) {
+      let h = mixU32(seed ^ (i * 0x9e3779b1));
+      for (let probe = 0; probe < inPairs; probe++) {
+        const idx = ((h + probe * 48623) >>> 0) % inPairs;
+        const li = idx % lLen;
+        const fi = Math.floor(idx / lLen);
+        const name = `${SUBSCRIBER_TABLE_FIRST[fi]} ${SUBSCRIBER_TABLE_LAST[li]}`;
+        const low = name.toLowerCase();
+        if (!used.has(low)) {
+          used.add(low);
+          return { ...s, name, country: "India" };
+        }
+      }
+      let suffix = 1;
+      let fb = `${SUBSCRIBER_TABLE_FIRST[seed % fLen]} ${SUBSCRIBER_TABLE_LAST[(seed + i) % lLen]} ${suffix}`;
+      while (used.has(fb.toLowerCase())) {
+        suffix += 1;
+        fb = `${SUBSCRIBER_TABLE_FIRST[seed % fLen]} ${SUBSCRIBER_TABLE_LAST[(seed + i + suffix) % lLen]} ${suffix}`;
+      }
+      used.add(fb.toLowerCase());
+      return { ...s, name: fb, country: "India" };
+    }
+
+    let h = mixU32(seed ^ 0xdeadbeef ^ (i * 2654435769));
+    for (let probe = 0; probe < intlPairs; probe++) {
+      const idx = ((h + probe * 7919) >>> 0) % intlPairs;
+      const li = idx % iLL;
+      const fi = Math.floor(idx / iLL);
+      const name = `${INTL_FIRST[fi]} ${INTL_LAST[li]}`;
+      const low = name.toLowerCase();
+      if (!used.has(low)) {
+        used.add(low);
+        const ci = (mixU32(h + probe) + i) % INTL_COUNTRIES_FOR_SUBSCRIBER_VIEW.length;
+        return { ...s, name, country: INTL_COUNTRIES_FOR_SUBSCRIBER_VIEW[ci] };
+      }
+    }
+    let suffix = 1;
+    let fbName = `${INTL_FIRST[seed % iFL]} ${INTL_LAST[(seed + i) % iLL]} ${suffix}`;
+    while (used.has(fbName.toLowerCase())) {
+      suffix += 1;
+      fbName = `${INTL_FIRST[seed % iFL]} ${INTL_LAST[(seed + i + suffix) % iLL]} ${suffix}`;
+    }
+    used.add(fbName.toLowerCase());
+    const ci = (seed + i) % INTL_COUNTRIES_FOR_SUBSCRIBER_VIEW.length;
+    return { ...s, name: fbName, country: INTL_COUNTRIES_FOR_SUBSCRIBER_VIEW[ci] };
+  });
+}
+
+function formatPublicJoinedLabel(nowMs: number, listIndex: number, timeZone: string): string {
+  const minAgo = subscriberMinutesAgoFromListIndex(listIndex);
+  const d = new Date(nowMs - minAgo * 60000);
+  const diffMin = Math.floor((nowMs - d.getTime()) / 60000);
+  if (diffMin < 1) return "Just now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return `${diffH}h ago`;
+  return d.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone,
+  });
 }
 
 /** Fisher–Yates shuffle of [i,j] index pairs so we don't exhaust one first name before using others */
@@ -567,10 +720,19 @@ export default function PublicDashboardPage({ embedInAdmin = false }: PublicDash
   const [subPage, setSubPage] = useState(1);
   const [affPage, setAffPage] = useState(1);
   const [wlPage, setWlPage] = useState(1);
+  /** Ticks so “Joined” / purchase times stay relative to the current moment. */
+  const [subscriberViewNow, setSubscriberViewNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const t = window.setInterval(() => setSubscriberViewNow(Date.now()), 30_000);
+    return () => window.clearInterval(t);
+  }, []);
+
+  const displaySubscribers = useMemo(() => buildPublicSubscriberView(subscribers), [subscribers]);
 
   const subscriberNamesLower = useMemo(
-    () => new Set(subscribers.map((s) => s.name.trim().toLowerCase()).filter(Boolean)),
-    [subscribers]
+    () => new Set(displaySubscribers.map((s) => s.name.trim().toLowerCase()).filter(Boolean)),
+    [displaySubscribers]
   );
 
   const affiliateRows = useMemo(
@@ -692,7 +854,7 @@ export default function PublicDashboardPage({ embedInAdmin = false }: PublicDash
         {!loading && metrics.length > 0 && (
           <>
             {/* ── Hero stat row ── */}
-            <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+            <div className="grid gap-4 grid-cols-2 md:grid-cols-3">
               {metrics.map((m) => {
                 const colors = accentColors(m.key);
                 return (
@@ -766,15 +928,15 @@ export default function PublicDashboardPage({ embedInAdmin = false }: PublicDash
             <PublicDailyPerformanceChart metrics={metrics} timeZone={tz} />
 
             {/* ── Recent Subscribers ── */}
-            {subscribers.length > 0 && (() => {
-              const totalPages = Math.ceil(subscribers.length / SUB_PAGE_SIZE);
-              const pageSlice = subscribers.slice((subPage - 1) * SUB_PAGE_SIZE, subPage * SUB_PAGE_SIZE);
+            {displaySubscribers.length > 0 && (() => {
+              const totalPages = Math.ceil(displaySubscribers.length / SUB_PAGE_SIZE);
+              const pageSlice = displaySubscribers.slice((subPage - 1) * SUB_PAGE_SIZE, subPage * SUB_PAGE_SIZE);
               return (
                 <div>
                   <h2 className="text-base font-semibold mb-4 flex items-center gap-2">
                     <Globe className="h-4 w-4 text-primary" />
                     Recent Members
-                    <Badge variant="outline" className="text-[10px] ml-1">{subscribers.length} total</Badge>
+                    <Badge variant="outline" className="text-[10px] ml-1">{displaySubscribers.length} total</Badge>
                   </h2>
                   <Card className="border-border/50">
                     <CardContent className="p-0">
@@ -792,9 +954,8 @@ export default function PublicDashboardPage({ embedInAdmin = false }: PublicDash
                           <tbody>
                             {pageSlice.map((s, idx) => {
                               const globalIdx = (subPage - 1) * SUB_PAGE_SIZE + idx + 1;
-                              const joinedDate = new Date(s.subscribed_at).toLocaleDateString("en-US", {
-                                month: "short", day: "numeric", year: "numeric", timeZone: tz,
-                              });
+                              const listIndex = (subPage - 1) * SUB_PAGE_SIZE + idx;
+                              const joinedDate = formatPublicJoinedLabel(subscriberViewNow, listIndex, tz);
                               const maskedRef = s.payment_id
                                 ? s.payment_id.length > 8
                                   ? `${s.payment_id.slice(0, 6)}••••`
@@ -832,7 +993,7 @@ export default function PublicDashboardPage({ embedInAdmin = false }: PublicDash
                       {totalPages > 1 && (
                         <div className="flex items-center justify-between px-4 py-3 border-t border-border/30">
                           <p className="text-xs text-muted-foreground">
-                            Showing {(subPage - 1) * SUB_PAGE_SIZE + 1}–{Math.min(subPage * SUB_PAGE_SIZE, subscribers.length)} of {subscribers.length}
+                            Showing {(subPage - 1) * SUB_PAGE_SIZE + 1}–{Math.min(subPage * SUB_PAGE_SIZE, displaySubscribers.length)} of {displaySubscribers.length}
                           </p>
                           <div className="flex items-center gap-1">
                             <Button variant="outline" size="icon" className="h-7 w-7" disabled={subPage === 1} onClick={() => setSubPage(p => p - 1)}>
@@ -1292,7 +1453,7 @@ export default function PublicDashboardPage({ embedInAdmin = false }: PublicDash
                       {(() => {
                         const licenseTypes = ['Pro License', 'Basic License', 'Pro License', 'Institutional License'];
                         const actions = ['purchased', 'purchased', 'upgraded to', 'purchased'];
-                        const realNames = subscribers.slice(0, 2).map((s) => s.name);
+                        const realNames = displaySubscribers.slice(0, 2).map((s) => s.name);
                         const fallbacks = ['Carlos Mendes', 'Ahmed Hassan', 'Luca Romano', 'Sarah Chen'];
                         return Array.from({ length: 4 }, (_, i) => ({
                           name: realNames[i] ?? fallbacks[i],
@@ -1300,9 +1461,8 @@ export default function PublicDashboardPage({ embedInAdmin = false }: PublicDash
                           isReal: i < realNames.length,
                         }));
                       })().map((item, i) => {
-                        const diffMs = [2 * 60000, 15 * 60000, 60 * 60000, 2 * 3600000][i];
-                        const timeLabel = item.isReal
-                          ? new Date(subscribers[i]?.subscribed_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+                        const timeLabel = item.isReal && displaySubscribers[i]
+                          ? formatPublicJoinedLabel(subscriberViewNow, i, tz)
                           : ['2m ago', '15m ago', '1h ago', '2h ago'][i];
                         return (
                           <div key={i} className="flex flex-col gap-0.5 text-sm border-b border-zinc-800/50 last:border-0 pb-3 last:pb-0">
@@ -1435,8 +1595,8 @@ export default function PublicDashboardPage({ embedInAdmin = false }: PublicDash
                       {(() => {
                         const liveActions = ['executing trade', 'viewing strategy', 'placing order', 'reviewing signals', 'analyzing charts', 'checking portfolio'];
                         const fallbacks = ['Ethan Walker', 'Arjun Mehta', 'Sofia Martinez', 'Luca Romano'];
-                        const pool = subscribers.length > 0
-                          ? subscribers.slice(0, Math.max(4, subscribers.length)).map((s, i) => ({
+                        const pool = displaySubscribers.length > 0
+                          ? displaySubscribers.slice(0, Math.max(4, displaySubscribers.length)).map((s, i) => ({
                               name: s.name,
                               action: liveActions[i % liveActions.length],
                               isReal: true,
