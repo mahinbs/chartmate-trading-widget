@@ -294,6 +294,8 @@ type RawSignal = {
     dataSource?: string;
     indicatorSource?: string;
   };
+  /** Saved custom-strategy fields (session, risk, exits, sizing) for filters + model context */
+  customScanMeta?: Record<string, unknown>;
 };
 
 type AssetType = "crypto" | "forex" | "stock";
@@ -442,6 +444,33 @@ const STRATEGY_LABELS: Record<string, string> = {
   pairs_trading: "Pairs Trading",
 };
 
+/**
+ * Map saved `paper_strategy_type` to a detector id. Unknown labels fall back so custom scans
+ * are never silently skipped.
+ */
+function normalizeCustomBaseType(raw: unknown): string {
+  let s = String(raw ?? "trend_following").toLowerCase().trim().replace(/\s+/g, "_");
+  if (STRATEGY_LABELS[s]) return s;
+  const compact = s.replace(/_/g, "");
+  const aliases: Record<string, string> = {
+    trendfollowing: "trend_following",
+    meanreversion: "mean_reversion",
+    breakoutbreakdown: "breakout_breakdown",
+    swingtrading: "swing_trading",
+    rangetrading: "range_trading",
+    newsbased: "news_based",
+    optionsbuying: "options_buying",
+    optionsselling: "options_selling",
+    pairstrading: "pairs_trading",
+    timescheduled: "time_scheduled",
+    momentum: "momentum",
+    scalping: "scalping",
+  };
+  if (aliases[compact]) return aliases[compact];
+  console.warn(`[strategy-entry-signals] Unknown custom baseType "${String(raw).slice(0, 120)}", using trend_following`);
+  return "trend_following";
+}
+
 /** Check whether a strategy fires at candle index `i`. Relaxed thresholds for intraday. */
 function checkSignal(
   strategy: string,
@@ -553,6 +582,11 @@ type ConditionEvalCtx = {
   timestamps?: number[];
   /** IANA zone for wall-clock rules (IST for Indian symbols, UTC otherwise) */
   timeZone?: string;
+  /**
+   * 0 = exact saved rules; 1–2 = mild / wider slack on numeric compares, crosses, and clock gates
+   * (same strategy definition; scanner retries when strict tier finds nothing).
+   */
+  ruleRelaxation?: number;
 };
 
 function parseHHMM(hhmm: string): { h: number; m: number } | null {
@@ -593,6 +627,36 @@ function evaluateClockMatch(tsSec: number | undefined, hhmm: string, timeZone: s
   return wc.h === target.h && wc.m === target.m;
 }
 
+/** Shortest same-calendar-day distance between two wall-clock times, in minutes. */
+function minuteDistanceOnSameDay(
+  wc: { h: number; m: number },
+  target: { h: number; m: number },
+): number {
+  const a = wc.h * 60 + wc.m;
+  const b = target.h * 60 + target.m;
+  const d = Math.abs(a - b);
+  return Math.min(d, 24 * 60 - d);
+}
+
+/** Tier 0 = exact minute; 1 = ±2 min; 2 = ±5 min (same target time, looser bar match). */
+function evaluateClockMatchRelaxable(
+  tsSec: number | undefined,
+  hhmm: string,
+  timeZone: string,
+  relaxationTier: number,
+): boolean {
+  const tier = Math.max(0, Math.min(2, Math.floor(relaxationTier || 0)));
+  if (tier <= 0) return evaluateClockMatch(tsSec, hhmm, timeZone);
+  if (tsSec == null) return false;
+  const target = parseHHMM(hhmm);
+  if (!target) return false;
+  const wc = wallClockHM(tsSec, timeZone);
+  if (!wc) return false;
+  if (wc.h === target.h && wc.m === target.m) return true;
+  const windowMin = tier === 1 ? 2 : 5;
+  return minuteDistanceOnSameDay(wc, target) <= windowMin;
+}
+
 function stripTimeIsCalls(raw: string): string {
   return String(raw ?? "")
     .replace(/TIME_IS\s*\([^)]*\)/gi, " ")
@@ -601,6 +665,36 @@ function stripTimeIsCalls(raw: string): string {
     .replace(/^\s*(AND|OR)\s+/i, "")
     .replace(/\s+(AND|OR)\s*$/i, "")
     .trim();
+}
+
+/**
+ * Same idea as the app’s `entryConditionsConfigured`: need a real rule (or valid clock for time/hybrid).
+ * Empty `groups: [{ conditions: [] }]` must NOT count — otherwise we only run custom detection (never fires)
+ * and skip the base-type template entirely → 0 signals forever.
+ */
+function entryConditionsAreUsableForScan(cfg: EntryConditionsConfig | null | undefined): boolean {
+  if (!cfg || typeof cfg !== "object") return false;
+  const st = String(cfg.strategySubtype ?? "").toLowerCase();
+  if (st === "time_based") {
+    const hhmm =
+      String(cfg.clockEntryTime ?? "").trim() ||
+      parseTimeFromRawExpression(String(cfg.rawExpression ?? "")) ||
+      "";
+    return Boolean(hhmm);
+  }
+  if (st === "hybrid") {
+    const hhmm = String(cfg.clockEntryTime ?? "").trim();
+    if (!hhmm) return false;
+    if (cfg.mode === "raw") {
+      return stripTimeIsCalls(String(cfg.rawExpression ?? "")).trim().length > 0;
+    }
+    const groups = Array.isArray(cfg.groups) ? cfg.groups : [];
+    return groups.some((g) => Array.isArray(g?.conditions) && g.conditions.length > 0);
+  }
+  const groups = Array.isArray(cfg.groups) ? cfg.groups : [];
+  const hasVisual = groups.some((g) => Array.isArray(g?.conditions) && g.conditions.length > 0);
+  const hasRaw = typeof cfg.rawExpression === "string" && cfg.rawExpression.trim().length > 0;
+  return hasVisual || hasRaw;
 }
 
 function getSeriesValue(series: number[], idx: number): number | null {
@@ -653,7 +747,36 @@ function compareByOp(left: number, right: number, opRaw: string): boolean {
   return false;
 }
 
+function slackForNumericCompare(lhsId: string, rhs: number, relaxationTier: number): number {
+  const tier = Math.max(0, Math.min(2, Math.floor(relaxationTier || 0)));
+  if (tier <= 0) return 0;
+  const id = String(lhsId ?? "").toUpperCase();
+  const rsiLike = id === "RSI" || id.includes("RSI");
+  if (rsiLike) return tier === 1 ? 6 : 12;
+  const pct = tier === 1 ? 0.004 : 0.012;
+  return Math.max(1e-9, Math.abs(rhs) * pct);
+}
+
+function compareByOpRelaxed(
+  left: number,
+  right: number,
+  opRaw: string,
+  lhsId: string,
+  relaxationTier: number,
+): boolean {
+  const op = String(opRaw ?? "").toLowerCase().trim();
+  const s = slackForNumericCompare(lhsId, right, relaxationTier);
+  if (s <= 0) return compareByOp(left, right, opRaw);
+  if (op === "less_than") return left < right + s;
+  if (op === "greater_than") return left > right - s;
+  if (op === "equals") return Math.abs(left - right) <= 1e-6 + s;
+  if (op === "less_than_or_equal") return left <= right + s;
+  if (op === "greater_than_or_equal") return left >= right - s;
+  return compareByOp(left, right, opRaw);
+}
+
 function evaluateCondition(cond: AlgoCondition, idx: number, ctx: ConditionEvalCtx): boolean {
+  const tier = Math.max(0, Math.min(2, Math.floor(ctx.ruleRelaxation ?? 0)));
   const lhsId = String(cond.indicator ?? "");
   const op = String(cond.op ?? "equals");
   const lhs = resolveIndicatorValue(lhsId, cond.period, idx, ctx);
@@ -673,11 +796,18 @@ function evaluateCondition(cond: AlgoCondition, idx: number, ctx: ConditionEvalC
   if (op === "crosses_above" || op === "crosses_below") {
     const lhsPrev = resolveIndicatorValue(lhsId, cond.period, idx - 1, ctx);
     if (lhsPrev == null || rhsValPrev == null) return false;
+    if (tier <= 0) {
+      return op === "crosses_above"
+        ? lhsPrev <= rhsValPrev && lhs > rhsValNow
+        : lhsPrev >= rhsValPrev && lhs < rhsValNow;
+    }
+    const sNow = slackForNumericCompare(lhsId, rhsValNow, tier);
+    const sPrev = slackForNumericCompare(lhsId, rhsValPrev, tier);
     return op === "crosses_above"
-      ? lhsPrev <= rhsValPrev && lhs > rhsValNow
-      : lhsPrev >= rhsValPrev && lhs < rhsValNow;
+      ? lhsPrev <= rhsValPrev + sPrev && lhs > rhsValNow - sNow
+      : lhsPrev >= rhsValPrev - sPrev && lhs < rhsValNow + sNow;
   }
-  return compareByOp(lhs, rhsValNow, op);
+  return tier > 0 ? compareByOpRelaxed(lhs, rhsValNow, op, lhsId, tier) : compareByOp(lhs, rhsValNow, op);
 }
 
 function fmtCondNum(n: number): string {
@@ -803,7 +933,7 @@ function evaluateRawExpression(expression: string, idx: number, ctx: ConditionEv
   if (onlyTime && ctx.timestamps && idx >= 0) {
     const ts = ctx.timestamps[idx];
     const hhmm = `${Number(onlyTime[1])}:${onlyTime[2].padStart(2, "0")}`;
-    return evaluateClockMatch(ts, hhmm, tz);
+    return evaluateClockMatchRelaxable(ts, hhmm, tz, ctx.ruleRelaxation ?? 0);
   }
   let expr = raw.toUpperCase();
   const replaceIndicator = (rx: RegExp, resolver: (m: RegExpExecArray) => number | null) => {
@@ -836,6 +966,172 @@ function evaluateRawExpression(expression: string, idx: number, ctx: ConditionEv
   } catch {
     return false;
   }
+}
+
+/** Chart interval label → approximate bar length in minutes (for time-based exit → max-hold bars). */
+function intervalLabelToBarMinutes(interval: string): number {
+  const s = String(interval).trim().toLowerCase();
+  const m = /^(\d+)\s*m$/.exec(s);
+  if (m) return Math.max(1, Number(m[1]));
+  if (s === "1h" || s === "60m") return 60;
+  if (s.endsWith("d") || s === "1d") return 24 * 60;
+  return 5;
+}
+
+function parseHmToMinutes(clock: string): number | null {
+  const t = String(clock ?? "").trim();
+  const m = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(t);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(min) || h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+
+function minutesSinceMidnightInZone(tsSec: number, timeZone: string): number | null {
+  try {
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).formatToParts(new Date(tsSec * 1000));
+    const h = parts.find((p) => p.type === "hour")?.value;
+    const m = parts.find((p) => p.type === "minute")?.value;
+    if (h == null || m == null) return null;
+    return parseInt(h, 10) * 60 + parseInt(m, 10);
+  } catch {
+    return null;
+  }
+}
+
+/** Algo builder: 0=Sun … 6=Sat */
+function weekdayInTimeZone(tsSec: number, timeZone: string): number {
+  try {
+    const w = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      weekday: "short",
+    }).format(new Date(tsSec * 1000));
+    const map: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    return map[w] ?? new Date(tsSec * 1000).getUTCDay();
+  } catch {
+    return new Date(tsSec * 1000).getUTCDay();
+  }
+}
+
+/**
+ * Respect saved execution_days and session window (start_time / end_time in strategy TZ).
+ * Empty execution_days → no weekday filter. Missing times → no intraday window filter.
+ */
+function barAllowedByCustomSchedule(
+  tsSec: number,
+  executionDays: number[] | undefined,
+  startTime: string | undefined,
+  endTime: string | undefined,
+  timeZone: string,
+): boolean {
+  if (Array.isArray(executionDays) && executionDays.length > 0) {
+    const wd = weekdayInTimeZone(tsSec, timeZone);
+    if (!executionDays.includes(wd)) return false;
+  }
+  const sm = startTime ? parseHmToMinutes(startTime) : null;
+  const em = endTime ? parseHmToMinutes(endTime) : null;
+  if (sm != null && em != null) {
+    const nowM = minutesSinceMidnightInZone(tsSec, timeZone);
+    if (nowM == null) return true;
+    if (sm <= em) {
+      if (nowM < sm || nowM > em) return false;
+    } else {
+      if (nowM < sm && nowM > em) return false;
+    }
+  }
+  return true;
+}
+
+function maxHoldBarsFromSavedExit(
+  exitConditions: Record<string, unknown> | null | undefined,
+  realtimeMode: boolean,
+  barMinutesApprox: number,
+  defaultBars: number,
+): number {
+  if (!exitConditions || typeof exitConditions !== "object") return defaultBars;
+  const e = exitConditions as { timeBasedExit?: boolean; exitAfterMinutes?: number };
+  if (e.timeBasedExit !== true || typeof e.exitAfterMinutes !== "number" || e.exitAfterMinutes <= 0) {
+    return defaultBars;
+  }
+  const mins = e.exitAfterMinutes;
+  if (realtimeMode) {
+    const bm = Math.max(1, barMinutesApprox);
+    return Math.max(1, Math.min(500, Math.ceil(mins / bm)));
+  }
+  return Math.max(1, Math.min(365, Math.ceil(mins / (60 * 24))));
+}
+
+function buildCustomScanMeta(args: {
+  stopLossPct: number;
+  takeProfitPct: number;
+  tradingMode?: string;
+  executionDays?: number[];
+  startTime?: string;
+  endTime?: string;
+  squareoffTime?: string;
+  riskPerTradePct?: number;
+  marketType?: string;
+  isIntraday?: boolean;
+  description?: string;
+  exitConditions?: Record<string, unknown> | null;
+  positionConfig?: Record<string, unknown> | null;
+  riskConfig?: Record<string, unknown> | null;
+  chartConfig?: Record<string, unknown> | null;
+}): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    stopLossPct: args.stopLossPct,
+    takeProfitPct: args.takeProfitPct,
+    tradingMode: args.tradingMode != null ? String(args.tradingMode).toUpperCase() : null,
+    executionDays: args.executionDays ?? [],
+    sessionStart: args.startTime ?? null,
+    sessionEnd: args.endTime ?? null,
+    squareoffTime: args.squareoffTime ?? null,
+    riskPerTradePct: args.riskPerTradePct ?? null,
+    marketType: args.marketType ?? null,
+    isIntraday: args.isIntraday ?? null,
+    description: args.description ? String(args.description).slice(0, 500) : null,
+    exitConditions: args.exitConditions ?? null,
+    positionConfig: args.positionConfig ?? null,
+    riskConfig: args.riskConfig ?? null,
+    chartConfig: args.chartConfig ?? null,
+  };
+  return out;
+}
+
+/**
+ * Applies execution_days + session only to bars that actually fired from **custom rule evaluation**
+ * (custom_time | custom_raw | custom_visual | custom_hybrid). Template / template-fallback rows have no
+ * such audit — otherwise strict schedule would strip every fallback bar and scans stay empty.
+ */
+function filterRawSignalsByCustomSchedule(
+  signals: RawSignal[],
+  configs: Array<{
+    id: string;
+    executionDays?: number[];
+    startTime?: string;
+    endTime?: string;
+  }>,
+  tz: string,
+  strictScheduleIds: Set<string>,
+): RawSignal[] {
+  const customRuleKinds = new Set(["custom_time", "custom_raw", "custom_visual", "custom_hybrid"]);
+  const byId = new Map(configs.map((c) => [String(c.id), c]));
+  return signals.filter((s) => {
+    const cfg = byId.get(s.strategyId);
+    if (!cfg) return true;
+    if (!strictScheduleIds.has(s.strategyId)) return true;
+    const kind = s.conditionAudit?.kind;
+    if (!kind || !customRuleKinds.has(kind)) return true;
+    const ts = s.entryTimestamp != null ? Math.floor(Number(s.entryTimestamp) / 1000) : NaN;
+    if (!Number.isFinite(ts)) return true;
+    return barAllowedByCustomSchedule(ts, cfg.executionDays, cfg.startTime, cfg.endTime, tz);
+  });
 }
 
 function inferEntrySubtype(cfg: EntryConditionsConfig): "indicator_based" | "time_based" | "hybrid" {
@@ -871,7 +1167,9 @@ function buildCustomStrategyConditionAudit(
       String(entryCfg.clockEntryTime ?? "").trim() ||
       parseTimeFromRawExpression(String(entryCfg.rawExpression ?? "")) ||
       "";
-    const ok = hhmm ? evaluateClockMatch(timestamps[idx], hhmm, scanTimeZone) : false;
+    const ok = hhmm
+      ? evaluateClockMatchRelaxable(timestamps[idx], hhmm, scanTimeZone, ctx.ruleRelaxation ?? 0)
+      : false;
     const wc = wallClockHM(timestamps[idx], scanTimeZone);
     const lines: ConditionAuditLine[] = [
       {
@@ -884,7 +1182,9 @@ function buildCustomStrategyConditionAudit(
 
   if (subtype === "hybrid") {
     const hhmm = String(entryCfg.clockEntryTime ?? "").trim();
-    const timeOk = hhmm ? evaluateClockMatch(timestamps[idx], hhmm, scanTimeZone) : false;
+    const timeOk = hhmm
+      ? evaluateClockMatchRelaxable(timestamps[idx], hhmm, scanTimeZone, ctx.ruleRelaxation ?? 0)
+      : false;
     const wc = wallClockHM(timestamps[idx], scanTimeZone);
     const lines: ConditionAuditLine[] = [
       {
@@ -940,13 +1240,152 @@ function buildCustomStrategyConditionAudit(
   return { kind: "custom_visual", overallMatch: ok, lines: inner, snapshot: baseSnap };
 }
 
-function customEntrySignalIfMatched(
-  cs: {
-    id: string;
-    name: string;
-    tradingMode: string;
-    entryConditions?: EntryConditionsConfig | null;
-  },
+function customEntryConfigRunnable(
+  entryCfg: EntryConditionsConfig,
+  subtype: "indicator_based" | "time_based" | "hybrid",
+): boolean {
+  if (subtype === "time_based") {
+    const hhmm =
+      String(entryCfg.clockEntryTime ?? "").trim() ||
+      parseTimeFromRawExpression(String(entryCfg.rawExpression ?? "")) ||
+      "";
+    return Boolean(hhmm);
+  }
+  if (subtype === "hybrid") {
+    const hhmm = String(entryCfg.clockEntryTime ?? "").trim();
+    if (!hhmm) return false;
+    if (entryCfg.mode === "raw") {
+      return stripTimeIsCalls(String(entryCfg.rawExpression ?? "")).trim().length > 0;
+    }
+    return Array.isArray(entryCfg.groups) && entryCfg.groups.length > 0;
+  }
+  const hasVisual = Array.isArray(entryCfg.groups) && entryCfg.groups.length > 0;
+  const hasRaw = typeof entryCfg.rawExpression === "string" && entryCfg.rawExpression.trim().length > 0;
+  return hasVisual || hasRaw;
+}
+
+/** Evaluate the user's stored entryConditions at bar idx (config is read as-is). */
+function customEntryConditionsMatchAt(
+  entryCfg: EntryConditionsConfig,
+  subtype: "indicator_based" | "time_based" | "hybrid",
+  idx: number,
+  ctx: ConditionEvalCtx,
+  timestamps: number[],
+  scanTimeZone: string,
+): boolean {
+  if (subtype === "time_based") {
+    const hhmm =
+      String(entryCfg.clockEntryTime ?? "").trim() ||
+      parseTimeFromRawExpression(String(entryCfg.rawExpression ?? "")) ||
+      "";
+    if (!hhmm) return false;
+    return evaluateClockMatchRelaxable(timestamps[idx], hhmm, scanTimeZone, ctx.ruleRelaxation ?? 0);
+  }
+  if (subtype === "hybrid") {
+    const hhmm = String(entryCfg.clockEntryTime ?? "").trim();
+    const timeOk = hhmm
+      ? evaluateClockMatchRelaxable(timestamps[idx], hhmm, scanTimeZone, ctx.ruleRelaxation ?? 0)
+      : false;
+    let indOk = false;
+    if (entryCfg.mode === "raw") {
+      const indExpr = stripTimeIsCalls(String(entryCfg.rawExpression ?? ""));
+      indOk = indExpr.length > 0 ? evaluateRawExpression(indExpr, idx, ctx) : false;
+    } else {
+      indOk = evaluateConditionGroups(
+        Array.isArray(entryCfg.groups) ? entryCfg.groups : [],
+        String(entryCfg.groupLogic ?? "AND").toUpperCase() === "OR" ? "OR" : "AND",
+        idx,
+        ctx,
+      );
+    }
+    return timeOk && indOk;
+  }
+  const hasVisual = Array.isArray(entryCfg.groups) && entryCfg.groups.length > 0;
+  const hasRaw = typeof entryCfg.rawExpression === "string" && entryCfg.rawExpression.trim().length > 0;
+  if (!hasVisual && !hasRaw) return false;
+  return entryCfg.mode === "raw"
+    ? evaluateRawExpression(String(entryCfg.rawExpression ?? ""), idx, ctx)
+    : evaluateConditionGroups(
+      Array.isArray(entryCfg.groups) ? entryCfg.groups : [],
+      String(entryCfg.groupLogic ?? "AND").toUpperCase() === "OR" ? "OR" : "AND",
+      idx,
+      ctx,
+    );
+}
+
+type CustomStrategyScanFields = {
+  id: string;
+  name: string;
+  tradingMode: string;
+  entryConditions?: EntryConditionsConfig | null;
+  executionDays?: number[];
+  startTime?: string;
+  endTime?: string;
+  squareoffTime?: string;
+  stopLossPct?: number;
+  takeProfitPct?: number;
+  riskPerTradePct?: number;
+  exitConditions?: Record<string, unknown> | null;
+  positionConfig?: Record<string, unknown> | null;
+  riskConfig?: Record<string, unknown> | null;
+  chartConfig?: Record<string, unknown> | null;
+  marketType?: string;
+  isIntraday?: boolean;
+  description?: string;
+};
+
+function customPayloadToScanFields(cs: {
+  id: string;
+  name: string;
+  tradingMode: string;
+  entryConditions?: EntryConditionsConfig | null;
+  executionDays?: number[];
+  startTime?: string;
+  endTime?: string;
+  squareoffTime?: string;
+  stopLossPct?: number;
+  takeProfitPct?: number;
+  riskPerTradePct?: number;
+  exitConditions?: Record<string, unknown> | null;
+  positionConfig?: Record<string, unknown> | null;
+  riskConfig?: Record<string, unknown> | null;
+  chartConfig?: Record<string, unknown> | null;
+  marketType?: string;
+  isIntraday?: boolean;
+  description?: string;
+}): CustomStrategyScanFields {
+  return {
+    id: String(cs.id),
+    name: cs.name,
+    tradingMode: String(cs.tradingMode ?? "BOTH"),
+    entryConditions: cs.entryConditions ?? null,
+    executionDays: cs.executionDays,
+    startTime: cs.startTime,
+    endTime: cs.endTime,
+    squareoffTime: cs.squareoffTime,
+    stopLossPct: cs.stopLossPct,
+    takeProfitPct: cs.takeProfitPct,
+    riskPerTradePct: cs.riskPerTradePct,
+    exitConditions: cs.exitConditions ?? null,
+    positionConfig: cs.positionConfig ?? null,
+    riskConfig: cs.riskConfig ?? null,
+    chartConfig: cs.chartConfig ?? null,
+    marketType: cs.marketType,
+    isIntraday: cs.isIntraday,
+    description: cs.description,
+  };
+}
+
+/**
+ * Walk history using only the user's entryConditions (no baseType substitution).
+ * Entry bar convention matches detectEntries: intraday = same bar; daily = next bar after the match.
+ * Applies saved execution_days, session window, SL/TP, and time-based exit max-hold like the strategy record.
+ *
+ * Retries with ruleRelaxation 1 then 2 when tier 0 finds no signals (wider numeric/cross slack; clock ±2/±5 min).
+ * Raw-only indicator expressions are not numerically relaxed — only tier 0 runs for that shape.
+ */
+function detectCustomEntrySignals(
+  cs: CustomStrategyScanFields,
   timestamps: number[],
   c: number[],
   h: number[],
@@ -956,13 +1395,18 @@ function customEntrySignalIfMatched(
   realIndicators: RealIndicators,
   requestedActions: Array<"BUY" | "SELL">,
   scanTimeZone: string,
+  maxSignals: number,
+  realtimeMode: boolean,
+  barMinutesApprox: number,
 ): RawSignal[] {
   const entryCfg = cs.entryConditions;
   if (!entryCfg || typeof entryCfg !== "object") return [];
-  const idx = c.length - 1;
-  if (idx < 20) return [];
 
   const subtype = inferEntrySubtype(entryCfg);
+  if (!customEntryConfigRunnable(entryCfg, subtype)) return [];
+
+  const n = c.length;
+  if (n < 21) return [];
 
   const ctx: ConditionEvalCtx = {
     c,
@@ -976,83 +1420,120 @@ function customEntrySignalIfMatched(
     timeZone: scanTimeZone,
   };
 
-  let match = false;
-
-  if (subtype === "time_based") {
-    const hhmm =
-      String(entryCfg.clockEntryTime ?? "").trim() ||
-      parseTimeFromRawExpression(String(entryCfg.rawExpression ?? "")) ||
-      "";
-    if (!hhmm) return [];
-    match = evaluateClockMatch(timestamps[idx], hhmm, scanTimeZone);
-  } else if (subtype === "hybrid") {
-    const hhmm = String(entryCfg.clockEntryTime ?? "").trim();
-    const timeOk = hhmm ? evaluateClockMatch(timestamps[idx], hhmm, scanTimeZone) : false;
-    let indOk = false;
-    if (entryCfg.mode === "raw") {
-      const indExpr = stripTimeIsCalls(String(entryCfg.rawExpression ?? ""));
-      indOk = indExpr.length > 0 ? evaluateRawExpression(indExpr, idx, ctx) : false;
-    } else {
-      indOk = evaluateConditionGroups(
-        Array.isArray(entryCfg.groups) ? entryCfg.groups : [],
-        String(entryCfg.groupLogic ?? "AND").toUpperCase() === "OR" ? "OR" : "AND",
-        idx,
-        ctx,
-      );
-    }
-    match = timeOk && indOk;
-  } else {
-    const hasVisual = Array.isArray(entryCfg.groups) && entryCfg.groups.length > 0;
-    const hasRaw = typeof entryCfg.rawExpression === "string" && entryCfg.rawExpression.trim().length > 0;
-    if (!hasVisual && !hasRaw) return [];
-    match = entryCfg.mode === "raw"
-      ? evaluateRawExpression(String(entryCfg.rawExpression ?? ""), idx, ctx)
-      : evaluateConditionGroups(
-        Array.isArray(entryCfg.groups) ? entryCfg.groups : [],
-        String(entryCfg.groupLogic ?? "AND").toUpperCase() === "OR" ? "OR" : "AND",
-        idx,
-        ctx,
-      );
-  }
-  if (!match) return [];
-
-  const conditionAudit = buildCustomStrategyConditionAudit(subtype, entryCfg, idx, ctx, timestamps, scanTimeZone);
-
-  const lastTs = timestamps[idx];
-  const d = new Date(lastTs * 1000);
-  const allowed: Array<"BUY" | "SELL"> = cs.tradingMode === "LONG"
+  const tm = String(cs.tradingMode ?? "BOTH").toUpperCase();
+  const allowed: Array<"BUY" | "SELL"> = tm === "LONG"
     ? ["BUY"]
-    : cs.tradingMode === "SHORT"
+    : tm === "SHORT"
     ? ["SELL"]
     : ["BUY", "SELL"];
   const actions = requestedActions.filter((a) => allowed.includes(a));
   if (!actions.length) return [];
 
+  const defaultHold = realtimeMode ? 3 : 10;
+  const maxHold = maxHoldBarsFromSavedExit(cs.exitConditions ?? null, realtimeMode, barMinutesApprox, defaultHold);
+  const slPct = Number.isFinite(cs.stopLossPct as number) && (cs.stopLossPct as number) > 0
+    ? Number(cs.stopLossPct)
+    : 2;
+  const tpPct = Number.isFinite(cs.takeProfitPct as number) && (cs.takeProfitPct as number) > 0
+    ? Number(cs.takeProfitPct)
+    : 4;
+  const meta = buildCustomScanMeta({
+    stopLossPct: slPct,
+    takeProfitPct: tpPct,
+    tradingMode: tm,
+    executionDays: cs.executionDays,
+    startTime: cs.startTime,
+    endTime: cs.endTime,
+    squareoffTime: cs.squareoffTime,
+    riskPerTradePct: cs.riskPerTradePct,
+    marketType: cs.marketType,
+    isIntraday: cs.isIntraday,
+    description: cs.description,
+    exitConditions: cs.exitConditions ?? null,
+    positionConfig: cs.positionConfig ?? null,
+    riskConfig: cs.riskConfig ?? null,
+    chartConfig: cs.chartConfig ?? null,
+  });
+
   const sma20 = sma(c, 20);
   const r = rsi(c, 14);
-  return actions.map((side) => ({
-    strategyId: cs.id,
-    strategyLabel: cs.name,
-    entryIndex: idx,
-    entryDate: d.toISOString().slice(0, 10),
-    entryTime: d.toISOString(),
-    entryTimestamp: lastTs * 1000,
-    side,
-    priceAtEntry: c[idx],
-    isLive: true,
-    conditionAudit,
-    marketData: mkMarketData(idx, c, h, l, r, sma20, dataSource, indicatorSource),
-  }));
+
+  const rawIndicatorOnly = subtype === "indicator_based" && entryCfg.mode === "raw";
+  const relaxationTiers = rawIndicatorOnly ? [0] : [0, 1, 2];
+
+  const collectAtRelaxationTier = (relaxationTier: number): RawSignal[] => {
+    ctx.ruleRelaxation = relaxationTier;
+    const out: RawSignal[] = [];
+
+    for (const side of actions) {
+      const entries: RawSignal[] = [];
+      let inTrade = false;
+      let entryPrice = 0;
+      let hold = 0;
+
+      for (let i = 20; i < n; i++) {
+        if (inTrade) {
+          hold++;
+          const ratio = c[i] / entryPrice;
+          const slM = side === "BUY" ? 1 - slPct / 100 : 1 + slPct / 100;
+          const tpM = side === "BUY" ? 1 + tpPct / 100 : 1 - tpPct / 100;
+          const hitSl = side === "BUY" ? ratio <= slM : ratio >= slM;
+          const hitTp = side === "BUY" ? ratio >= tpM : ratio <= tpM;
+          if (hitSl || hitTp || hold >= maxHold) inTrade = false;
+          continue;
+        }
+
+        if (!customEntryConditionsMatchAt(entryCfg, subtype, i, ctx, timestamps, scanTimeZone)) continue;
+
+        const ei = realtimeMode ? i : i + 1;
+        if (ei >= n) continue;
+
+        const entryTs = timestamps[ei];
+        if (!barAllowedByCustomSchedule(entryTs, cs.executionDays, cs.startTime, cs.endTime, scanTimeZone)) {
+          continue;
+        }
+
+        const conditionAudit = buildCustomStrategyConditionAudit(subtype, entryCfg, i, ctx, timestamps, scanTimeZone);
+        const lastTs = timestamps[ei];
+        const d = new Date(lastTs * 1000);
+        entries.push({
+          strategyId: cs.id,
+          strategyLabel: cs.name,
+          entryIndex: ei,
+          entryDate: d.toISOString().slice(0, 10),
+          entryTime: d.toISOString(),
+          entryTimestamp: lastTs * 1000,
+          side,
+          priceAtEntry: c[ei],
+          isLive: ei === n - 1,
+          conditionAudit,
+          marketData: mkMarketData(ei, c, h, l, r, sma20, dataSource, indicatorSource),
+          customScanMeta: {
+            ...meta,
+            signalSide: side,
+            ...(relaxationTier > 0 ? { ruleRelaxationTier: relaxationTier } : {}),
+          },
+        });
+        inTrade = true;
+        entryPrice = c[ei];
+        hold = 0;
+      }
+      out.push(...entries.slice(-maxSignals));
+    }
+
+    return out;
+  };
+
+  for (const t of relaxationTiers) {
+    const got = collectAtRelaxationTier(t);
+    if (got.length > 0) return got;
+  }
+  return [];
 }
 
 /** Scheduled wall-clock exit (e.g. exit at 13:01) — opposite side to open position intent */
 function clockExitSignalsIfMatched(
-  cs: {
-    id: string;
-    name: string;
-    tradingMode: string;
-    exitConditions?: Record<string, unknown> | null;
-  },
+  cs: CustomStrategyScanFields,
   timestamps: number[],
   c: number[],
   h: number[],
@@ -1069,6 +1550,9 @@ function clockExitSignalsIfMatched(
   const idx = c.length - 1;
   if (idx < 20) return [];
   if (!evaluateClockMatch(timestamps[idx], String(ex).trim(), scanTimeZone)) return [];
+  if (!barAllowedByCustomSchedule(timestamps[idx], cs.executionDays, cs.startTime, cs.endTime, scanTimeZone)) {
+    return [];
+  }
 
   const tm = String(cs.tradingMode ?? "LONG").toUpperCase();
   const exitSide: "BUY" | "SELL" | null = tm === "LONG"
@@ -1105,6 +1589,31 @@ function clockExitSignalsIfMatched(
       clockExitTime: exStr,
     },
   };
+  const slPct = Number.isFinite(cs.stopLossPct as number) && (cs.stopLossPct as number) > 0
+    ? Number(cs.stopLossPct)
+    : 2;
+  const tpPct = Number.isFinite(cs.takeProfitPct as number) && (cs.takeProfitPct as number) > 0
+    ? Number(cs.takeProfitPct)
+    : 4;
+  const exitMeta = buildCustomScanMeta({
+    stopLossPct: slPct,
+    takeProfitPct: tpPct,
+    tradingMode: String(cs.tradingMode ?? "LONG").toUpperCase(),
+    executionDays: cs.executionDays,
+    startTime: cs.startTime,
+    endTime: cs.endTime,
+    squareoffTime: cs.squareoffTime,
+    riskPerTradePct: cs.riskPerTradePct,
+    marketType: cs.marketType,
+    isIntraday: cs.isIntraday,
+    description: cs.description,
+    exitConditions: cs.exitConditions ?? null,
+    positionConfig: cs.positionConfig ?? null,
+    riskConfig: cs.riskConfig ?? null,
+    chartConfig: cs.chartConfig ?? null,
+  });
+  exitMeta.signalKind = "scheduled_clock_exit";
+  exitMeta.signalSide = exitSide;
   return [{
     strategyId: cs.id,
     strategyLabel: `${cs.name} (time exit)`,
@@ -1117,6 +1626,7 @@ function clockExitSignalsIfMatched(
     isLive: true,
     conditionAudit,
     marketData: mkMarketData(idx, c, h, l, r, sma20, dataSource, indicatorSource),
+    customScanMeta: exitMeta,
   }];
 }
 
@@ -1145,6 +1655,14 @@ function mkMarketData(
   };
 }
 
+type DetectEntriesOverrides = {
+  slPct?: number;
+  tpPct?: number;
+  maxHoldBars?: number;
+  allowEntryAtTs?: (tsSec: number) => boolean;
+  customScanMeta?: Record<string, unknown>;
+};
+
 function detectEntries(
   strategy: string,
   c: number[],
@@ -1156,6 +1674,7 @@ function detectEntries(
   useRealtimeEntry = false,
   dataSource = "unknown",
   indicatorSource = "computed",
+  overrides?: DetectEntriesOverrides,
 ): RawSignal[] {
   const n = c.length;
   if (n < 25) return [];
@@ -1163,10 +1682,9 @@ function detectEntries(
   const r = rsi(c, 14);
   const entries: RawSignal[] = [];
   let inTrade = false;
-  const slPct = 2;
-  const tpPct = 4;
-  // Shorter lockout for intraday — 3 candles (15 min) vs 10 for daily
-  const maxHold = useRealtimeEntry ? 3 : 10;
+  const slPct = overrides?.slPct ?? 2;
+  const tpPct = overrides?.tpPct ?? 4;
+  const maxHold = overrides?.maxHoldBars ?? (useRealtimeEntry ? 3 : 10);
   const slM = action === "BUY" ? 1 - slPct / 100 : 1 + slPct / 100;
   const tpM = action === "BUY" ? 1 + tpPct / 100 : 1 - tpPct / 100;
   let entryPrice = 0;
@@ -1190,6 +1708,7 @@ function detectEntries(
     if (signal && entries.length < maxSignals) {
       const ei = useRealtimeEntry ? i : i + 1;
       if (ei >= n) continue;
+      if (overrides?.allowEntryAtTs && !overrides.allowEntryAtTs(timestamps[ei])) continue;
       const d = new Date(timestamps[ei] * 1000);
       entries.push({
         strategyId: strategy,
@@ -1201,6 +1720,7 @@ function detectEntries(
         side: action,
         priceAtEntry: c[ei],
         marketData: mkMarketData(ei, c, h, l, r, sma20, dataSource, indicatorSource),
+        ...(overrides?.customScanMeta ? { customScanMeta: overrides.customScanMeta } : {}),
       });
       inTrade = true;
       entryPrice = c[ei];
@@ -1354,6 +1874,8 @@ type MergedAiRow = {
   entryExitRuleSummary: string;
   liveViability: string;
   rejectionDetail: string;
+  /** Populated when verdict is confirm — why the model + rules accepted the setup */
+  confirmationDetail: string;
   whyThisScore: string;
   scoreSource: string;
 };
@@ -1494,6 +2016,9 @@ function heuristicMergeRow(raw: RawSignal, ind: RealIndicators | null): MergedAi
     ? `Review bucket — mixed evidence: ${whyThisScore}`
     : "";
   const rationale = `${whyThisScore} Composite → ${score}/100 (${verdict}).`;
+  const confirmationDetail = verdict === "confirm"
+    ? stripStaleScoreClaims(`Rule-based confirm: ${whyThisScore}`, score)
+    : "";
 
   return {
     probabilityScore: score,
@@ -1502,6 +2027,7 @@ function heuristicMergeRow(raw: RawSignal, ind: RealIndicators | null): MergedAi
     entryExitRuleSummary,
     liveViability,
     rejectionDetail,
+    confirmationDetail,
     whyThisScore,
     scoreSource: "heuristic",
   };
@@ -1536,7 +2062,7 @@ function mergeAiScoresIntoRaw(
       const extra = parsed === null
         ? " Gemini pass failed or empty — showing rule-based breakdown only."
         : " No matching AI row — showing rule-based breakdown only.";
-      return {
+    return {
         ...h,
         rationale: h.rationale + extra,
         scoreSource: "heuristic",
@@ -1552,16 +2078,21 @@ function mergeAiScoresIntoRaw(
     const aiEntry = strField(r.entryExitRuleSummary);
     const aiLive = strField(r.liveViability);
     const aiReject = strField(r.rejectionDetail);
+    const aiConfirm = strField(r.confirmationDetail);
     const aiWhy = strField(r.whyThisScore);
 
     if (aiScore === null) {
       const fs = h.probabilityScore;
+      const confirmText = h.verdict === "confirm"
+        ? stripStaleScoreClaims(aiConfirm || h.confirmationDetail, fs)
+        : "";
       return {
         ...h,
         whyThisScore: whyThisScoreAligned(aiWhy || h.whyThisScore, fs),
         rationale:
           `${stripStaleScoreClaims((aiRationale || h.rationale) + " (AI omitted numeric score; rule-based score used.)", fs)} Same blended score as the headline: ${fs}/100.`,
         rejectionDetail: stripStaleScoreClaims(h.rejectionDetail, fs),
+        confirmationDetail: confirmText,
         scoreSource: "heuristic",
       };
     }
@@ -1590,9 +2121,18 @@ function mergeAiScoresIntoRaw(
       rejectionDetail = `Neither clean accept nor hard reject: ${whyThisScore}`;
     }
     if (verdict === "confirm") {
-      rejectionDetail = rejectionDetail || "";
+      rejectionDetail = "";
     }
     rejectionDetail = stripStaleScoreClaims(rejectionDetail, probabilityScore);
+
+    let confirmationDetail = "";
+    if (verdict === "confirm") {
+      confirmationDetail = stripStaleScoreClaims(
+        aiConfirm ||
+          `Model: ${stripStaleScoreClaims(aiRationale || "Read supports a confirm at this bar.", probabilityScore)} Rule stack: ${stripStaleScoreClaims(h.whyThisScore, probabilityScore)}`,
+        probabilityScore,
+      );
+    }
 
     const rationaleCore = aiVague
       ? `${h.whyThisScore} Model returned a neutral score with thin text; prioritizing structured rule read.`
@@ -1606,6 +2146,7 @@ function mergeAiScoresIntoRaw(
       entryExitRuleSummary,
       liveViability,
       rejectionDetail,
+      confirmationDetail,
       whyThisScore,
       scoreSource: aiVague ? "heuristic+gemini" : "gemini+heuristic",
     };
@@ -1757,9 +2298,11 @@ ${JSON.stringify(raw.map((x) => ({
     marketData: x.marketData ?? null,
     customConditionKind: x.conditionAudit?.kind ?? null,
     customConditionTrace: conditionTraceForPrompt(x),
+    savedCustomStrategy: x.customScanMeta ?? null,
   })))}
 
 When customConditionTrace is present, the signal already satisfied that rule stack on this bar — your score and verdict must agree with those PASS lines (do not contradict the documented checks).
+When savedCustomStrategy is present, it is the user’s full saved strategy record (session window, execution weekdays, SL/TP %, exit rules JSON, position sizing, risk limits, chart settings). Weight verdicts and rationale against those constraints (e.g. do not treat as high conviction if outside their session or if exit/risk rules imply tight risk).
 
 Return ONLY a JSON array (no markdown), SAME LENGTH AND SAME ORDER as input. Each object MUST include:
 { "strategyId": string, "entryDate": string, "side": string,
@@ -1769,7 +2312,8 @@ Return ONLY a JSON array (no markdown), SAME LENGTH AND SAME ORDER as input. Eac
   "entryExitRuleSummary": string (one sentence: what the strategy rule implies for this bar),
   "whyThisScore": string (indicator + context only; do NOT write a different numeric score here — the server blends your probabilityScore with rules; if you mention a score it must equal probabilityScore),
   "liveViability": string (empty "" if not live; if live, why it could work OR what breaks it),
-  "rejectionDetail": string (if verdict is reject or review: why not a clean confirm; if confirm: short risk caveat or "") }
+  "rejectionDetail": string (if verdict is reject or review: 2-3 sentences why not a clean confirm, cite indicators; if confirm: ""),
+  "confirmationDetail": string (if verdict is confirm: 2-3 sentences why this setup passes — cite RSI/MACD/BB/bar context and rule alignment; if reject or review: "") }
 
 Scoring guide:
 - BUY: higher if oversold RSI, price near lower BB, MACD not bearish; lower if overbought or stale without reset.
@@ -1887,6 +2431,12 @@ Deno.serve(async (req: Request) => {
       chartConfig?: Record<string, unknown> | null;
       executionDays?: number[];
       marketType?: string;
+      /** Session window (same as DB start_time / end_time) */
+      startTime?: string;
+      endTime?: string;
+      squareoffTime?: string;
+      riskPerTradePct?: number;
+      description?: string;
     };
     const customStrategies = Array.isArray(body.customStrategies)
       ? (body.customStrategies as CustomStrategyConfig[])
@@ -1969,6 +2519,7 @@ Deno.serve(async (req: Request) => {
     const maxPerStrategy = 4;
     const allRaw: RawSignal[] = [];
     const realtimeMode = usedInterval !== "1d";
+    const barMinutesApprox = intervalLabelToBarMinutes(usedInterval);
 
     // 1) Historical signal detection for built-in strategies
     const validIds = strategies
@@ -1981,50 +2532,23 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // 1b) Custom user-created strategies:
-    //     - if entry_conditions are configured, evaluate those directly on the latest candle
-    //     - otherwise fall back to baseType detection logic.
+    // 1b) Custom strategies:
+    //     - Usable entry_conditions → full-series custom detection first.
+    //     - If that matches nothing (or no usable conditions) → paper_strategy_type template (trend_following, …).
     const customLabelMap: Record<string, string> = {};
-    const hasCustomConditions = (cs: CustomStrategyConfig): boolean => {
-      const cfg = cs.entryConditions;
-      if (!cfg || typeof cfg !== "object") return false;
-      const st = String((cfg as EntryConditionsConfig).strategySubtype ?? "").toLowerCase();
-      if (st === "time_based" || st === "hybrid") return true;
-      const hasVisual = Array.isArray(cfg.groups) && cfg.groups.length > 0;
-      const hasRaw = typeof cfg.rawExpression === "string" && cfg.rawExpression.trim().length > 0;
-      return hasVisual || hasRaw;
-    };
+    /** Custom ids that use base-type live radar (no custom bar matches, or no usable custom rules). */
+    const customTemplateLiveRelabelIds = new Set<string>();
+    const hasCustomConditions = (cs: CustomStrategyConfig): boolean =>
+      entryConditionsAreUsableForScan(cs.entryConditions ?? null);
     for (const cs of customStrategies) {
-      const baseType = String(cs.baseType ?? "trend_following").toLowerCase().trim();
-      if (!STRATEGY_LABELS[baseType]) continue;
+      const baseType = normalizeCustomBaseType(cs.baseType);
       const csId = String(cs.id);
       customLabelMap[csId] = cs.name;
       // Register label for custom strategy so it shows its name, not the base type
       STRATEGY_LABELS[csId] = cs.name;
-      const conditionalSignals = customEntrySignalIfMatched(
-        {
-          id: csId,
-          name: cs.name,
-          tradingMode: String(cs.tradingMode ?? "BOTH").toUpperCase(),
-          entryConditions: cs.entryConditions ?? null,
-        },
-        t,
-        c,
-        h,
-        l,
-        dataSource,
-        realIndicators.source,
-        realIndicators,
-        scanActions,
-        scanTimeZone,
-      );
-      const scheduledExitSignals = clockExitSignalsIfMatched(
-        {
-          id: csId,
-          name: cs.name,
-          tradingMode: String(cs.tradingMode ?? "BOTH"),
-          exitConditions: cs.exitConditions ?? null,
-        },
+      const csScan = customPayloadToScanFields({ ...cs, id: csId, name: cs.name, tradingMode: String(cs.tradingMode ?? "BOTH") });
+      allRaw.push(...clockExitSignalsIfMatched(
+        csScan,
         t,
         c,
         h,
@@ -2033,21 +2557,73 @@ Deno.serve(async (req: Request) => {
         realIndicators.source,
         scanActions,
         scanTimeZone,
-      );
-      if (conditionalSignals.length > 0) {
-        allRaw.push(...conditionalSignals);
+      ));
+      if (hasCustomConditions(cs)) {
+        const fromCustom = detectCustomEntrySignals(
+          csScan,
+          t,
+          c,
+          h,
+          l,
+          dataSource,
+          realIndicators.source,
+          realIndicators,
+          scanActions,
+          scanTimeZone,
+          maxPerStrategy,
+          realtimeMode,
+          barMinutesApprox,
+        );
+        allRaw.push(...fromCustom);
+        if (fromCustom.length > 0) continue;
       }
-      allRaw.push(...scheduledExitSignals);
-      if (conditionalSignals.length > 0) {
-        continue;
-      }
+      customTemplateLiveRelabelIds.add(csId);
       const csActions: Array<"BUY" | "SELL"> =
         cs.tradingMode === "LONG" ? ["BUY"]
           : cs.tradingMode === "SHORT" ? ["SELL"]
           : ["BUY", "SELL"];
+      const slPct = Number.isFinite(cs.stopLossPct) && cs.stopLossPct > 0 ? cs.stopLossPct : 2;
+      const tpPct = Number.isFinite(cs.takeProfitPct) && cs.takeProfitPct > 0 ? cs.takeProfitPct : 4;
+      const defaultHold = realtimeMode ? 3 : 10;
+      const maxHoldCustom = maxHoldBarsFromSavedExit(cs.exitConditions ?? null, realtimeMode, barMinutesApprox, defaultHold);
       for (const action of csActions) {
-        // detectEntries uses the baseType logic but we override the strategyId & label
-        const sigs = detectEntries(baseType, c, h, l, t, action, maxPerStrategy, realtimeMode, dataSource, realIndicators.source);
+        const templateMeta = buildCustomScanMeta({
+          stopLossPct: slPct,
+          takeProfitPct: tpPct,
+          tradingMode: String(cs.tradingMode ?? "BOTH"),
+          executionDays: cs.executionDays,
+          startTime: cs.startTime,
+          endTime: cs.endTime,
+          squareoffTime: cs.squareoffTime,
+          riskPerTradePct: cs.riskPerTradePct,
+          marketType: cs.marketType,
+          isIntraday: cs.isIntraday,
+          description: cs.description,
+          exitConditions: cs.exitConditions ?? null,
+          positionConfig: cs.positionConfig ?? null,
+          riskConfig: cs.riskConfig ?? null,
+          chartConfig: cs.chartConfig ?? null,
+        });
+        templateMeta.baseTypeTemplate = baseType;
+        templateMeta.signalSide = action;
+        const sigs = detectEntries(
+          baseType,
+          c,
+          h,
+          l,
+          t,
+          action,
+          maxPerStrategy,
+          realtimeMode,
+          dataSource,
+          realIndicators.source,
+          {
+            slPct,
+            tpPct,
+            maxHoldBars: maxHoldCustom,
+            customScanMeta: templateMeta,
+          },
+        );
         for (const sig of sigs) {
           sig.strategyId = csId;
           sig.strategyLabel = cs.name;
@@ -2060,20 +2636,45 @@ Deno.serve(async (req: Request) => {
     const allScanIds = [...validIds];
     const customBaseMap: Record<string, string> = {};
     for (const cs of customStrategies) {
-      if (hasCustomConditions(cs)) continue;
       const csId = String(cs.id);
-      const baseType = String(cs.baseType ?? "trend_following").toLowerCase().trim();
-      if (!STRATEGY_LABELS[baseType] && baseType !== csId) continue;
-      allScanIds.push(baseType); // evaluate the base type, then relabel
+      if (!customTemplateLiveRelabelIds.has(csId)) continue;
+      const baseType = normalizeCustomBaseType(cs.baseType);
+      allScanIds.push(baseType);
       customBaseMap[baseType] = customBaseMap[baseType] || csId;
     }
     const liveSignals = evaluateRecentCandles(allScanIds, c, h, l, t, scanActions, dataSource, realIndicators.source);
-    // Relabel live signals from custom strategy base types
+    // Relabel live signals from custom strategy base types + attach saved sizing/session/risk for scoring
     for (const ls of liveSignals) {
       const csId = customBaseMap[ls.strategyId];
       if (csId && customLabelMap[csId]) {
         ls.strategyId = csId;
         ls.strategyLabel = customLabelMap[csId];
+        const ccfg = customStrategies.find((c) => String(c.id) === csId);
+        if (ccfg) {
+          const slPct = Number.isFinite(ccfg.stopLossPct) && ccfg.stopLossPct > 0 ? ccfg.stopLossPct : 2;
+          const tpPct = Number.isFinite(ccfg.takeProfitPct) && ccfg.takeProfitPct > 0 ? ccfg.takeProfitPct : 4;
+          const lm = buildCustomScanMeta({
+            stopLossPct: slPct,
+            takeProfitPct: tpPct,
+            tradingMode: String(ccfg.tradingMode ?? "BOTH"),
+            executionDays: ccfg.executionDays,
+            startTime: ccfg.startTime,
+            endTime: ccfg.endTime,
+            squareoffTime: ccfg.squareoffTime,
+            riskPerTradePct: ccfg.riskPerTradePct,
+            marketType: ccfg.marketType,
+            isIntraday: ccfg.isIntraday,
+            description: ccfg.description,
+            exitConditions: ccfg.exitConditions ?? null,
+            positionConfig: ccfg.positionConfig ?? null,
+            riskConfig: ccfg.riskConfig ?? null,
+            chartConfig: ccfg.chartConfig ?? null,
+          });
+          lm.baseTypeTemplate = String(ccfg.baseType ?? "trend_following").toLowerCase().trim();
+          lm.liveRelabeledFromBuiltin = true;
+          lm.signalSide = ls.side;
+          ls.customScanMeta = lm;
+        }
       }
     }
 
@@ -2087,10 +2688,25 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    const scanFieldsForFilter = customStrategies.map((c) =>
+      customPayloadToScanFields({ ...c, id: String(c.id), name: c.name, tradingMode: String(c.tradingMode ?? "BOTH") })
+    );
+    const strictScheduleCustomIds = new Set(
+      customStrategies
+        .filter((c) => entryConditionsAreUsableForScan(c.entryConditions ?? null))
+        .map((c) => String(c.id)),
+    );
+    const allRawFiltered = filterRawSignalsByCustomSchedule(
+      allRaw,
+      scanFieldsForFilter,
+      scanTimeZone,
+      strictScheduleCustomIds,
+    );
+
     // No projected/upcoming “entries” — only live + historical detections.
 
     // Sort: live first, then more recent bars, then by index.
-    allRaw.sort((a, b) => {
+    allRawFiltered.sort((a, b) => {
       const aPri = a.isLive ? 2 : 1;
       const bPri = b.isLive ? 2 : 1;
       if (aPri !== bPri) return bPri - aPri;
@@ -2099,7 +2715,7 @@ Deno.serve(async (req: Request) => {
       if (ta !== tb) return tb - ta;
       return b.entryIndex - a.entryIndex;
     });
-    const capped = allRaw.slice(0, 80);
+    const capped = allRawFiltered.slice(0, 80);
     const scored = await scoreWithGemini(symbol, yahooSymbol, c[c.length - 1] ?? 0, capped, realIndicators, postAnalysis);
     const scanEvaluatedAt = new Date().toISOString();
 
@@ -2128,6 +2744,7 @@ Deno.serve(async (req: Request) => {
         whyThisScore: ai?.whyThisScore ?? "",
         liveViability: ai?.liveViability ?? "",
         rejectionDetail: ai?.rejectionDetail ?? "",
+        confirmationDetail: ai?.confirmationDetail ?? "",
         scoreSource: ai?.scoreSource ?? "heuristic",
         isLive: rawSig.isLive ?? false,
         isPredicted: false,
@@ -2141,6 +2758,7 @@ Deno.serve(async (req: Request) => {
         forwardMaxFavorablePct: fwd.forwardMaxFavorablePct,
         forwardMaxAdversePct: fwd.forwardMaxAdversePct,
         conditionAudit: rawSig.conditionAudit ?? null,
+        customStrategyMeta: rawSig.customScanMeta ?? null,
       };
     });
 

@@ -214,6 +214,11 @@ Deno.serve(async (req: Request) => {
             chartConfig: strategyObj.chart_config ?? null,
             executionDays: Array.isArray(strategyObj.execution_days) ? strategyObj.execution_days : [],
             marketType: String(strategyObj.market_type ?? "stocks"),
+            startTime: strategyObj.start_time != null ? String(strategyObj.start_time) : undefined,
+            endTime: strategyObj.end_time != null ? String(strategyObj.end_time) : undefined,
+            squareoffTime: strategyObj.squareoff_time != null ? String(strategyObj.squareoff_time) : undefined,
+            riskPerTradePct: strategyObj.risk_per_trade_pct != null ? Number(strategyObj.risk_per_trade_pct) : undefined,
+            description: strategyObj.description != null ? String(strategyObj.description) : undefined,
           }],
         }),
       });

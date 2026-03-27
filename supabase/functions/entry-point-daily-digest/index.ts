@@ -135,7 +135,7 @@ Deno.serve(async (req: Request) => {
       if (customIds.length > 0) {
         const { data: customRows } = await supabase
           .from("user_strategies")
-          .select("id,name,trading_mode,stop_loss_pct,take_profit_pct,is_intraday,paper_strategy_type,entry_conditions,exit_conditions,position_config,risk_config,chart_config,execution_days,market_type")
+          .select("id,name,description,trading_mode,stop_loss_pct,take_profit_pct,is_intraday,paper_strategy_type,entry_conditions,exit_conditions,position_config,risk_config,chart_config,execution_days,market_type,start_time,end_time,squareoff_time,risk_per_trade_pct")
           .eq("user_id", row.user_id)
           .in("id", customIds);
         customStrategiesPayload = ((customRows ?? []) as Array<Record<string, unknown>>).map((cs) => ({
@@ -153,6 +153,11 @@ Deno.serve(async (req: Request) => {
           chartConfig: (cs.chart_config && typeof cs.chart_config === "object") ? cs.chart_config : null,
           executionDays: Array.isArray(cs.execution_days) ? cs.execution_days : [],
           marketType: String(cs.market_type ?? "stocks"),
+          startTime: cs.start_time != null ? String(cs.start_time) : undefined,
+          endTime: cs.end_time != null ? String(cs.end_time) : undefined,
+          squareoffTime: cs.squareoff_time != null ? String(cs.squareoff_time) : undefined,
+          riskPerTradePct: cs.risk_per_trade_pct != null ? Number(cs.risk_per_trade_pct) : undefined,
+          description: cs.description != null ? String(cs.description) : undefined,
         }));
       }
 

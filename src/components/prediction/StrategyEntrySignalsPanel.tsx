@@ -75,6 +75,9 @@ type SignalRow = {
   whyThisScore?: string;
   liveViability?: string;
   rejectionDetail?: string;
+  confirmationDetail?: string;
+  /** Echo of saved custom strategy fields passed through the scanner (session, SL/TP, risk, etc.) */
+  customStrategyMeta?: Record<string, unknown> | null;
   scoreSource?: string;
   isLive?: boolean;
   isPredicted?: boolean;
@@ -125,6 +128,10 @@ type CustomStrategy = {
   chart_config?: Record<string, unknown> | null;
   execution_days?: number[] | null;
   market_type?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
+  squareoff_time?: string | null;
+  risk_per_trade_pct?: number | null;
 };
 
 type ExistingScheduleRow = {
@@ -151,6 +158,189 @@ const DAY_LABELS: { bit: number; label: string }[] = [
   { bit: 6, label: "Sat" },
 ];
 
+function fmtNum(n: number, d = 2) {
+  if (!Number.isFinite(n)) return "—";
+  return n.toFixed(d);
+}
+
+/** Uses saved custom meta (tradingMode, signalSide) so BUY/SELL map to entry vs exit correctly. */
+function resolveScannerPointPresentation(row: SignalRow): {
+  badgeText: string;
+  badgeClass: string;
+  detailLine: string;
+  timeLabel: string;
+  priceLabel: string;
+} {
+  const meta = row.customStrategyMeta;
+  const tm = String(meta?.tradingMode ?? "").toUpperCase();
+  const side = String(row.side).toUpperCase();
+  const isClock =
+    meta?.signalKind === "scheduled_clock_exit" ||
+    String(row.strategyLabel).toLowerCase().includes("(time exit)");
+
+  if (isClock) {
+    return {
+      badgeText: "Exit — scheduled time",
+      badgeClass: "bg-amber-500/25 text-amber-200 border border-amber-500/35",
+      detailLine:
+        tm === "SHORT"
+          ? "Cover / flatten short at this bar per your clock exit rule."
+          : "Sell / flatten long at this bar per your clock exit rule.",
+      timeLabel: "Exit time (bar)",
+      priceLabel: "Exit price (bar close)",
+    };
+  }
+
+  if (tm === "SHORT") {
+    if (side === "SELL") {
+      return {
+        badgeText: "Entry — short",
+        badgeClass: "bg-rose-500/20 text-rose-200 border border-rose-500/35",
+        detailLine: "Open or add to a short position at this price.",
+        timeLabel: "Entry time",
+        priceLabel: "Entry price",
+      };
+    }
+    if (side === "BUY") {
+      return {
+        badgeText: "Exit — cover short",
+        badgeClass: "bg-sky-500/20 text-sky-200 border border-sky-500/35",
+        detailLine: "Buy to cover / exit a short per your rules.",
+        timeLabel: "Exit time",
+        priceLabel: "Exit price",
+      };
+    }
+  }
+
+  if (tm === "LONG") {
+    if (side === "BUY") {
+      return {
+        badgeText: "Entry — long",
+        badgeClass: "bg-emerald-500/20 text-emerald-200 border border-emerald-500/35",
+        detailLine: "Open or add to a long position at this price.",
+        timeLabel: "Entry time",
+        priceLabel: "Entry price",
+      };
+    }
+    if (side === "SELL") {
+      return {
+        badgeText: "Exit — close long",
+        badgeClass: "bg-amber-500/20 text-amber-200 border border-amber-500/35",
+        detailLine: "Sell / reduce long exposure at this price.",
+        timeLabel: "Exit time",
+        priceLabel: "Exit price",
+      };
+    }
+  }
+
+  if (side === "BUY") {
+    return {
+      badgeText: "BUY at this bar",
+      badgeClass: "bg-emerald-500/15 text-emerald-300/95 border border-emerald-500/25",
+      detailLine:
+        "Strategy allows both directions — treat as a long entry unless your playbook uses this as another leg.",
+      timeLabel: "Signal time",
+      priceLabel: "Price at bar",
+    };
+  }
+  return {
+    badgeText: "SELL at this bar",
+    badgeClass: "bg-red-500/15 text-red-300/95 border border-red-500/25",
+    detailLine:
+      "Strategy allows both directions — may be long exit or short entry depending on how you trade this setup.",
+    timeLabel: "Signal time",
+    priceLabel: "Price at bar",
+  };
+}
+
+function savedPlanSlTpLine(row: SignalRow, meta: Record<string, unknown>): string | null {
+  const slPct = Number(meta.stopLossPct);
+  const tpPct = Number(meta.takeProfitPct);
+  const p = row.priceAtEntry;
+  if (!Number.isFinite(p) || !Number.isFinite(slPct) || !Number.isFinite(tpPct)) return null;
+  const tm = String(meta.tradingMode ?? "").toUpperCase();
+  const side = String(row.side).toUpperCase();
+  const isClock = meta.signalKind === "scheduled_clock_exit";
+  if (isClock) return null;
+
+  if (tm === "LONG" && side === "BUY") {
+    return `Saved plan: stop ≈ ${fmtNum(p * (1 - slPct / 100))} (−${slPct}%) · target ≈ ${fmtNum(p * (1 + tpPct / 100))} (+${tpPct}%) from this entry.`;
+  }
+  if (tm === "SHORT" && side === "SELL") {
+    return `Saved plan: stop ≈ ${fmtNum(p * (1 + slPct / 100))} (+${slPct}%) · target ≈ ${fmtNum(p * (1 - tpPct / 100))} (−${tpPct}%) from this entry.`;
+  }
+  if (tm === "BOTH" && side === "BUY") {
+    return `If trading long from this BUY: stop ≈ ${fmtNum(p * (1 - slPct / 100))} (−${slPct}%) · target ≈ ${fmtNum(p * (1 + tpPct / 100))} (+${tpPct}%).`;
+  }
+  if (tm === "BOTH" && side === "SELL") {
+    return `If trading short from this SELL: stop ≈ ${fmtNum(p * (1 + slPct / 100))} (+${slPct}%) · target ≈ ${fmtNum(p * (1 - tpPct / 100))} (−${tpPct}%).`;
+  }
+  return null;
+}
+
+function CustomStrategySavedPlanBlock({ meta }: { meta: Record<string, unknown> }) {
+  const days = Array.isArray(meta.executionDays) ? (meta.executionDays as unknown[]).filter((x) => typeof x === "number") : [];
+  const dayStr =
+    days.length > 0
+      ? days.map((d) => DAY_LABELS.find((x) => x.bit === d)?.label ?? String(d)).join(", ")
+      : null;
+  const ex = meta.exitConditions && typeof meta.exitConditions === "object" ? (meta.exitConditions as Record<string, unknown>) : null;
+  const pos = meta.positionConfig && typeof meta.positionConfig === "object" ? (meta.positionConfig as Record<string, unknown>) : null;
+  const risk = meta.riskConfig && typeof meta.riskConfig === "object" ? (meta.riskConfig as Record<string, unknown>) : null;
+  const chart = meta.chartConfig && typeof meta.chartConfig === "object" ? (meta.chartConfig as Record<string, unknown>) : null;
+
+  const rows: Array<{ k: string; v: string }> = [];
+  if (meta.tradingMode != null) rows.push({ k: "Direction", v: String(meta.tradingMode) });
+  if (meta.marketType != null) rows.push({ k: "Market type", v: String(meta.marketType) });
+  if (meta.isIntraday != null) rows.push({ k: "Intraday", v: meta.isIntraday ? "Yes" : "No" });
+  if (meta.stopLossPct != null) rows.push({ k: "Stop loss (saved)", v: `${meta.stopLossPct}%` });
+  if (meta.takeProfitPct != null) rows.push({ k: "Take profit (saved)", v: `${meta.takeProfitPct}%` });
+  if (meta.riskPerTradePct != null) rows.push({ k: "Risk / trade (saved)", v: `${meta.riskPerTradePct}%` });
+  if (meta.sessionStart != null && meta.sessionEnd != null) {
+    rows.push({ k: "Session window", v: `${meta.sessionStart} – ${meta.sessionEnd}` });
+  }
+  if (meta.squareoffTime != null) rows.push({ k: "Square-off", v: String(meta.squareoffTime) });
+  if (dayStr) rows.push({ k: "Execution days", v: dayStr });
+  if (ex?.clockExitTime) rows.push({ k: "Clock exit", v: String(ex.clockExitTime) });
+  if (ex?.timeBasedExit === true && typeof ex.exitAfterMinutes === "number") {
+    rows.push({ k: "Time-based exit", v: `After ${ex.exitAfterMinutes} min` });
+  }
+  if (ex?.trailingStop === true) {
+    const tpct = ex.trailingStopPct != null ? String(ex.trailingStopPct) : "?";
+    rows.push({ k: "Trailing stop", v: `${tpct}%` });
+  }
+  if (pos?.orderType != null) rows.push({ k: "Order type", v: String(pos.orderType) });
+  if (pos?.sizingMode != null) rows.push({ k: "Sizing", v: String(pos.sizingMode) });
+  if (pos?.capitalPct != null) rows.push({ k: "Capital %", v: String(pos.capitalPct) });
+  if (risk?.maxOpenPositions != null) rows.push({ k: "Max open positions", v: String(risk.maxOpenPositions) });
+  if (risk?.maxDailyLossPct != null) rows.push({ k: "Max daily loss %", v: String(risk.maxDailyLossPct) });
+  if (chart?.interval != null) rows.push({ k: "Chart interval", v: String(chart.interval) });
+  if (chart?.chartType != null) rows.push({ k: "Chart type", v: String(chart.chartType) });
+  if (meta.description != null && String(meta.description).trim()) {
+    const note = String(meta.description);
+    rows.push({ k: "Notes", v: note.length > 280 ? `${note.slice(0, 280)}…` : note });
+  }
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border border-cyan-500/30 bg-cyan-950/15 p-3 space-y-2">
+      <p className="text-xs font-bold uppercase tracking-wide text-cyan-300/95">Saved strategy (this scan)</p>
+      <p className="text-[11px] text-zinc-500 leading-snug">
+        Values below are from your custom strategy record — use them together with the signal time and price above.
+      </p>
+      <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1.5 text-[12px]">
+        {rows.map((r) => (
+          <div key={r.k} className="min-w-0">
+            <dt className="text-zinc-500 font-medium">{r.k}</dt>
+            <dd className="text-zinc-200 font-mono break-words">{r.v}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
 function SignalAnalysisCard(props: {
   row: SignalRow;
   todayKey: string;
@@ -174,6 +364,11 @@ function SignalAnalysisCard(props: {
     compactZone,
   } = props;
   const isPast = !row.isLive && row.entryDate !== todayKey;
+  const pointUi = row.customStrategyMeta ? resolveScannerPointPresentation(row) : null;
+  const slTpHint =
+    row.customStrategyMeta && typeof row.customStrategyMeta === "object"
+      ? savedPlanSlTpLine(row, row.customStrategyMeta)
+      : null;
   return (
     <div
       className={`rounded-xl border p-4 space-y-3 ${
@@ -202,7 +397,19 @@ function SignalAnalysisCard(props: {
             ) : null}
             <h3 className="text-base font-semibold text-white leading-tight">{row.strategyLabel}</h3>
           </div>
-          <p className={`text-sm font-medium ${sideClass(row.side)}`}>{sideLabel(row.side)}</p>
+          {pointUi ? (
+            <div className="space-y-1">
+              <span
+                className={`text-[10px] font-bold uppercase tracking-wider rounded px-2 py-0.5 inline-block ${pointUi.badgeClass}`}
+              >
+                {pointUi.badgeText}
+              </span>
+              <p className="text-xs text-zinc-400 leading-snug">{pointUi.detailLine}</p>
+              <p className={`text-sm font-medium ${sideClass(row.side)}`}>{sideLabel(row.side)}</p>
+            </div>
+          ) : (
+            <p className={`text-sm font-medium ${sideClass(row.side)}`}>{sideLabel(row.side)}</p>
+          )}
         </div>
         <div className="text-right shrink-0">
           <p className="text-2xl font-bold tabular-nums text-teal-300">{row.probabilityScore}</p>
@@ -215,13 +422,16 @@ function SignalAnalysisCard(props: {
 
       <div className="grid gap-1 text-sm text-zinc-300">
         <p>
-          <span className="text-zinc-500 font-medium">When: </span>
+          <span className="text-zinc-500 font-medium">{pointUi ? `${pointUi.timeLabel}: ` : "When: "}</span>
           <span className="font-mono text-zinc-200">{compactZone ? formatEntry(row) : formatEntryWithZone(row)}</span>
         </p>
         <p>
-          <span className="text-zinc-500 font-medium">Price: </span>
+          <span className="text-zinc-500 font-medium">{pointUi ? `${pointUi.priceLabel}: ` : "Price: "}</span>
           <span className="font-mono text-white">{row.priceAtEntry?.toFixed?.(2) ?? row.priceAtEntry}</span>
         </p>
+        {slTpHint ? (
+          <p className="text-[11px] text-cyan-200/90 leading-snug border-l-2 border-cyan-500/40 pl-2">{slTpHint}</p>
+        ) : null}
         <p className="text-xs text-zinc-400 leading-relaxed">
           <span className="text-zinc-500 font-medium">Bar context: </span>
           {formatMarketData(row)}
@@ -252,6 +462,10 @@ function SignalAnalysisCard(props: {
           </p>
         ) : null}
       </div>
+
+      {row.customStrategyMeta && typeof row.customStrategyMeta === "object" ? (
+        <CustomStrategySavedPlanBlock meta={row.customStrategyMeta} />
+      ) : null}
 
       {row.simpleOutcomeLabel &&
       row.simpleOutcomeLabel !== "pending" &&
@@ -355,9 +569,19 @@ function SignalAnalysisCard(props: {
       ) : null}
 
       {row.verdict === "confirm" ? (
-        <p className="text-xs text-zinc-500 leading-relaxed">
-          Confirmed setups still carry gap, liquidity, and news risk — use position sizing and stops.
-        </p>
+        <div className="rounded-lg border border-emerald-500/35 bg-emerald-950/20 p-3 space-y-1">
+          {row.confirmationDetail?.trim() || row.whyThisScore ? (
+            <>
+              <p className="text-xs font-bold uppercase tracking-wide text-emerald-300">Why confirmed</p>
+              <p className="text-sm text-emerald-50/95 leading-relaxed">
+                {row.confirmationDetail?.trim() || row.whyThisScore}
+              </p>
+            </>
+          ) : null}
+          <p className="text-[11px] text-zinc-500 leading-relaxed">
+            Gap, liquidity, and headline risk still apply — size positions and use stops.
+          </p>
+        </div>
       ) : null}
     </div>
   );
@@ -784,6 +1008,11 @@ export function StrategyEntrySignalsPanel({
           chartConfig: cs.chart_config ?? null,
           executionDays: Array.isArray(cs.execution_days) ? cs.execution_days : [],
           marketType: cs.market_type ?? "stocks",
+          startTime: cs.start_time ?? undefined,
+          endTime: cs.end_time ?? undefined,
+          squareoffTime: cs.squareoff_time ?? undefined,
+          riskPerTradePct: cs.risk_per_trade_pct ?? undefined,
+          description: cs.description ?? undefined,
         }));
 
       const { data, error } = await supabase.functions.invoke("strategy-entry-signals", {
@@ -825,7 +1054,13 @@ export function StrategyEntrySignalsPanel({
       const historical = list.filter((s) => !s.isLive && s.entryDate !== todayKey).length;
 
       if (!list.length) {
-        toast({ title: "No signals found", description: "Try selecting more strategies or check the symbol." });
+        const onlyCustom = selected.size === 0 && selectedCustom.size > 0;
+        toast({
+          title: "No signals found",
+          description: onlyCustom
+            ? "No bars matched your custom entry logic on this lookback (rules too strict, session/day filter, or quiet tape)."
+            : "Try selecting more strategies or check the symbol.",
+        });
       } else {
         const parts: string[] = [];
         if (live.length) parts.push(`${live.length} live`);

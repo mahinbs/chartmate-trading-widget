@@ -100,6 +100,11 @@ export async function tryExecutePendingRow(
         chartConfig: (strategy as any).chart_config ?? null,
         executionDays: Array.isArray((strategy as any).execution_days) ? (strategy as any).execution_days : [],
         marketType: String((strategy as any).market_type ?? "stocks"),
+        startTime: (strategy as any).start_time != null ? String((strategy as any).start_time) : undefined,
+        endTime: (strategy as any).end_time != null ? String((strategy as any).end_time) : undefined,
+        squareoffTime: (strategy as any).squareoff_time != null ? String((strategy as any).squareoff_time) : undefined,
+        riskPerTradePct: (strategy as any).risk_per_trade_pct != null ? Number((strategy as any).risk_per_trade_pct) : undefined,
+        description: (strategy as any).description != null ? String((strategy as any).description) : undefined,
       }],
     }),
   });
