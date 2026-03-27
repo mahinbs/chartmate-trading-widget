@@ -223,16 +223,60 @@ function mixU32(n: number): number {
   return x >>> 0;
 }
 
+/** Inclusive max synthetic joins on a single calendar day (min is 0). */
+const MAX_JOINS_PER_PUBLIC_SUB_DAY = 5;
+
+const JOIN_DATE_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function getYmdInTimeZone(ms: number, timeZone: string): { y: number; m: number; d: number } {
+  const s = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(ms);
+  const [y, m, d] = s.split("-").map((x) => parseInt(x, 10));
+  return { y, m, d };
+}
+
+function addCalendarDays(y: number, m: number, d: number, delta: number): { y: number; m: number; d: number } {
+  const x = new Date(Date.UTC(y, m - 1, d + delta));
+  return { y: x.getUTCFullYear(), m: x.getUTCMonth() + 1, d: x.getUTCDate() };
+}
+
 /**
- * Minutes in the past for list position `listIndex` (0 = newest). Same progression for every row so
- * “Joined” reads oldest → newest down the table.
+ * For each subscriber list index (0 = newest), calendar days before “today” in {@link timeZone}.
+ * Each day gets a random count in [0, {@link MAX_JOINS_PER_PUBLIC_SUB_DAY}] (deterministic from {@link stableSeed}).
  */
-function subscriberMinutesAgoFromListIndex(listIndex: number): number {
-  let acc = 2 + det01(90210) * 8;
-  for (let j = 0; j < listIndex; j++) {
-    acc += 4 + det01(999983 + j * 7919 + 13) * 38;
+function buildPublicSubscriberDayOffsets(count: number, stableSeed: number): number[] {
+  const out: number[] = new Array(count);
+  let day = 0;
+  let i = 0;
+  const maxIterations = count + count * 12 + 500;
+  let iter = 0;
+  while (i < count && iter < maxIterations) {
+    iter += 1;
+    const k = Math.floor(det01(stableSeed + day * 12582917) * (MAX_JOINS_PER_PUBLIC_SUB_DAY + 1));
+    const place = Math.min(k, count - i);
+    for (let j = 0; j < place; j += 1) {
+      out[i] = day;
+      i += 1;
+    }
+    day += 1;
   }
-  return Math.min(Math.floor(acc), 48 * 60 - 1);
+  while (i < count) {
+    out[i] = day;
+    i += 1;
+    day += 1;
+  }
+  return out;
+}
+
+/** Date only (no time); {@link daysBeforeToday} is 0 for “today” in {@link timeZone}. */
+function formatPublicSubscriberJoinedDate(daysBeforeToday: number, timeZone: string): string {
+  const today = getYmdInTimeZone(Date.now(), timeZone);
+  const t = addCalendarDays(today.y, today.m, today.d, -daysBeforeToday);
+  return `${JOIN_DATE_MONTHS[t.m - 1]} ${t.d}, ${t.y}`;
 }
 
 /**
@@ -298,23 +342,6 @@ function buildPublicSubscriberView(raw: Subscriber[]): Subscriber[] {
     used.add(fbName.toLowerCase());
     const ci = (seed + i) % INTL_COUNTRIES_FOR_SUBSCRIBER_VIEW.length;
     return { ...s, name: fbName, country: INTL_COUNTRIES_FOR_SUBSCRIBER_VIEW[ci] };
-  });
-}
-
-function formatPublicJoinedLabel(nowMs: number, listIndex: number, timeZone: string): string {
-  const minAgo = subscriberMinutesAgoFromListIndex(listIndex);
-  const d = new Date(nowMs - minAgo * 60000);
-  const diffMin = Math.floor((nowMs - d.getTime()) / 60000);
-  if (diffMin < 1) return "Just now";
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffH = Math.floor(diffMin / 60);
-  if (diffH < 24) return `${diffH}h ago`;
-  return d.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZone,
   });
 }
 
@@ -720,15 +747,15 @@ export default function PublicDashboardPage({ embedInAdmin = false }: PublicDash
   const [subPage, setSubPage] = useState(1);
   const [affPage, setAffPage] = useState(1);
   const [wlPage, setWlPage] = useState(1);
-  /** Ticks so “Joined” / purchase times stay relative to the current moment. */
-  const [subscriberViewNow, setSubscriberViewNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    const t = window.setInterval(() => setSubscriberViewNow(Date.now()), 30_000);
-    return () => window.clearInterval(t);
-  }, []);
 
   const displaySubscribers = useMemo(() => buildPublicSubscriberView(subscribers), [subscribers]);
+
+  const subscriberJoinedDayOffsets = useMemo(() => {
+    const n = subscribers.length;
+    if (n === 0) return [];
+    const stableSeed = subscribers.reduce((acc, s) => acc + parseRowSeed(s.id), 7919);
+    return buildPublicSubscriberDayOffsets(n, stableSeed);
+  }, [subscribers]);
 
   const subscriberNamesLower = useMemo(
     () => new Set(displaySubscribers.map((s) => s.name.trim().toLowerCase()).filter(Boolean)),
@@ -955,7 +982,10 @@ export default function PublicDashboardPage({ embedInAdmin = false }: PublicDash
                             {pageSlice.map((s, idx) => {
                               const globalIdx = (subPage - 1) * SUB_PAGE_SIZE + idx + 1;
                               const listIndex = (subPage - 1) * SUB_PAGE_SIZE + idx;
-                              const joinedDate = formatPublicJoinedLabel(subscriberViewNow, listIndex, tz);
+                              const joinedDate = formatPublicSubscriberJoinedDate(
+                                subscriberJoinedDayOffsets[listIndex] ?? 0,
+                                tz,
+                              );
                               const maskedRef = s.payment_id
                                 ? s.payment_id.length > 8
                                   ? `${s.payment_id.slice(0, 6)}••••`
@@ -1462,7 +1492,7 @@ export default function PublicDashboardPage({ embedInAdmin = false }: PublicDash
                         }));
                       })().map((item, i) => {
                         const timeLabel = item.isReal && displaySubscribers[i]
-                          ? formatPublicJoinedLabel(subscriberViewNow, i, tz)
+                          ? formatPublicSubscriberJoinedDate(subscriberJoinedDayOffsets[i] ?? 0, tz)
                           : ['2m ago', '15m ago', '1h ago', '2h ago'][i];
                         return (
                           <div key={i} className="flex flex-col gap-0.5 text-sm border-b border-zinc-800/50 last:border-0 pb-3 last:pb-0">
