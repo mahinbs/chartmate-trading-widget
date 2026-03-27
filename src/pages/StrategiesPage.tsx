@@ -180,7 +180,6 @@ export default function StrategiesPage() {
 
   const handleCreate = async () => {
     if (!form.name.trim()) { toast.error("Strategy name is required"); return; }
-    if (form.symbols.some((s) => !s.symbol.trim())) { toast.error("All symbol rows must have a symbol name"); return; }
 
     setCreating(true);
     try {

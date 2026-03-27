@@ -274,6 +274,10 @@ function StrategiesPanel({ broker }: { broker: string }) {
   };
 
   const openEditBuilder = (strategy: Strategy) => {
+    if (strategy.is_active) {
+      toast.error("Deactivate this strategy before editing.");
+      return;
+    }
     setEditingStrategy(strategy);
     setBuilderOpen(true);
   };
@@ -364,8 +368,9 @@ function StrategiesPanel({ broker }: { broker: string }) {
 
                     <button
                       onClick={() => openEditBuilder(s)}
-                      className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold border border-zinc-700 text-zinc-500 hover:border-purple-500/40 hover:text-purple-300 transition-all"
-                      title="Edit strategy builder configuration"
+                      disabled={s.is_active}
+                      className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold border border-zinc-700 text-zinc-500 hover:border-purple-500/40 hover:text-purple-300 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-zinc-700 disabled:hover:text-zinc-500"
+                      title={s.is_active ? "Deactivate strategy to edit" : "Edit strategy builder configuration"}
                     >
                       <LineChart className="h-3 w-3" />
                       Edit

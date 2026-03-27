@@ -1,17 +1,16 @@
 /**
  * AlgoStrategyBuilder — full-page multi-step algo strategy wizard.
  * Mirrors the Algorooms / Streak style of strategy creation:
- *  Step 1  Foundation    — name, strategy type, instrument, order type, direction
- *  Step 2  Instruments   — symbol, exchange, lot size, expiry, strike
- *  Step 3  Timing        — session hours, execution days, chart interval & type
- *  Step 4  Entry         — visual condition builder OR time-based entry OR raw expression
- *  Step 5  Exit          — TP%, SL%, trailing stop, indicator / time-based exit rules
- *  Step 6  Position      — order placement type, sizing, limit offset, scaling
- *  Step 7  Risk          — max risk/trade, max daily loss, max positions
+ *  Step 1  Foundation    — name, strategy type, instrument, F&O metadata, order type, direction (symbol & qty at live deploy only)
+ *  Step 2  Timing        — session hours, execution days, chart interval & type
+ *  Step 3  Entry         — visual condition builder OR time-based entry OR raw expression
+ *  Step 4  Exit          — TP%, SL%, trailing stop, indicator / time-based exit rules
+ *  Step 5  Position      — order placement type, sizing, limit offset, scaling
+ *  Step 6  Risk          — max risk/trade, max daily loss, max positions
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight, Loader2, Plus, Search, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ChevronRight, Loader2, Plus, Trash2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -32,7 +31,6 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import type {
@@ -53,14 +51,16 @@ type BuilderStrategy = {
   id: string;
   name: string;
   description?: string | null;
+  /** When true, strategy is live (active) — edits are blocked in UI and API. */
+  is_active?: boolean;
   trading_mode: string;
   is_intraday: boolean;
   start_time: string;
   end_time: string;
   squareoff_time: string;
   risk_per_trade_pct: number;
-  stop_loss_pct: number;
-  take_profit_pct: number;
+  stop_loss_pct: number | null;
+  take_profit_pct: number | null;
   symbols: string[];
   paper_strategy_type?: string | null;
   market_type?: string | null;
@@ -112,12 +112,14 @@ type BuilderForm = {
   entryTime: string;   // time_based + hybrid — clock entry (HH:MM)
   // Step 5
   exitClockTime: string; // wall-clock exit for time-based / hybrid (HH:MM)
+  clockExitEnabled: boolean;
   takeProfitPct: number;
   stopLossPct: number;
   trailingStop: boolean;
   trailingStopPct: number;
   timeBasedExit: boolean;
   exitAfterMinutes: number;
+  useExitIndicators: boolean;
   exitIndicatorGroups: ConditionGroup[];
   // Step 6
   orderType: PositionConfig["orderType"];
@@ -129,18 +131,19 @@ type BuilderForm = {
   maxDailyLossPct: number;
   maxOpenPositions: number;
   capitalAllocationPct: number;
+  /** When false, no automated exits — you flatten manually; SL/TP/time exits are not used in live scans. */
+  autoExitEnabled: boolean;
 };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const STEPS = [
-  { idx: 0, title: "Foundation",   sub: "Name, type & direction" },
-  { idx: 1, title: "Instruments",  sub: "Symbol, lot & expiry" },
-  { idx: 2, title: "Timing",       sub: "Session hours & chart" },
-  { idx: 3, title: "Entry",        sub: "When to enter a trade" },
-  { idx: 4, title: "Exit",         sub: "TP, SL & exit rules" },
-  { idx: 5, title: "Position",     sub: "Order type & sizing" },
-  { idx: 6, title: "Risk Rules",   sub: "Limits & capital" },
+  { idx: 0, title: "Foundation",   sub: "Name, type, market & direction" },
+  { idx: 1, title: "Timing",       sub: "Session hours & chart" },
+  { idx: 2, title: "Entry",        sub: "When to enter a trade" },
+  { idx: 3, title: "Exit",         sub: "All exit rules optional" },
+  { idx: 4, title: "Position",     sub: "Order type & sizing" },
+  { idx: 5, title: "Risk Rules",   sub: "Limits & capital" },
 ];
 
 const DAY_LABELS: Array<{ v: number; l: string }> = [
@@ -196,7 +199,7 @@ const DEFAULT_FORM: BuilderForm = {
   orderProduct: "MIS",
   direction: "LONG",
   symbol: "",
-  lotSize: 1,
+  lotSize: 0,
   expiryType: "weekly",
   strikeType: "ATM",
   startTime: "09:15",
@@ -213,13 +216,15 @@ const DEFAULT_FORM: BuilderForm = {
   },
   entryTime: "09:20",
   exitClockTime: "13:01",
-  takeProfitPct: 4,
-  stopLossPct: 2,
+  clockExitEnabled: false,
+  takeProfitPct: 0,
+  stopLossPct: 0,
   trailingStop: false,
   trailingStopPct: 1,
   timeBasedExit: false,
   exitAfterMinutes: 180,
-  exitIndicatorGroups: [makeGroup()],
+  useExitIndicators: false,
+  exitIndicatorGroups: [],
   orderType: "MARKET",
   sizingMode: "fixed_qty",
   capitalPct: 10,
@@ -228,10 +233,11 @@ const DEFAULT_FORM: BuilderForm = {
   maxDailyLossPct: 3,
   maxOpenPositions: 3,
   capitalAllocationPct: 30,
+  autoExitEnabled: true,
 };
 
 function fromExisting(e?: BuilderStrategy | null): BuilderForm {
-  if (!e) return { ...DEFAULT_FORM, entryConditions: { ...DEFAULT_FORM.entryConditions, groups: [makeGroup()] }, exitIndicatorGroups: [makeGroup()] };
+  if (!e) return { ...DEFAULT_FORM, entryConditions: { ...DEFAULT_FORM.entryConditions, groups: [makeGroup()] } };
   const ec = e.entry_conditions ?? DEFAULT_FORM.entryConditions;
   const xc = e.exit_conditions ?? null;
   const pc = e.position_config ?? null;
@@ -254,10 +260,15 @@ function fromExisting(e?: BuilderStrategy | null): BuilderForm {
     parseTimeFromSavedRaw(ec.rawExpression) ||
     "09:20";
 
-  const exitClockTime =
-    (xc && "clockExitTime" in xc && typeof (xc as ExitConditions).clockExitTime === "string" && (xc as ExitConditions).clockExitTime)
-      ? String((xc as ExitConditions).clockExitTime)
-      : e.squareoff_time ?? "15:15";
+  const savedClockExit =
+    xc && "clockExitTime" in xc && typeof (xc as ExitConditions).clockExitTime === "string"
+      ? String((xc as ExitConditions).clockExitTime).trim()
+      : "";
+  const exitClockTime = savedClockExit || String(e.squareoff_time ?? "15:15");
+  const clockExitEnabled = Boolean(savedClockExit);
+
+  const indGroups = Array.isArray(xc?.indicatorGroups) ? xc!.indicatorGroups! : [];
+  const useExitIndicators = indGroups.length > 0;
 
   return {
     name: e.name ?? "",
@@ -267,8 +278,14 @@ function fromExisting(e?: BuilderStrategy | null): BuilderForm {
     exchange: (pc as PositionConfig)?.exchange ?? "NSE",
     orderProduct: ((pc as PositionConfig)?.orderProduct as OrderProduct) ?? ((e.is_intraday ? "MIS" : "CNC") as OrderProduct),
     direction: e.trading_mode as Direction ?? "LONG",
-    symbol: Array.isArray(e.symbols) ? e.symbols[0] ?? "" : "",
-    lotSize: Number((pc as PositionConfig)?.quantity ?? 1),
+    symbol: (() => {
+      if (!Array.isArray(e.symbols) || e.symbols.length === 0) return "";
+      const x = e.symbols[0];
+      if (typeof x === "string") return x;
+      if (x && typeof x === "object" && "symbol" in x) return String((x as { symbol?: string }).symbol ?? "");
+      return "";
+    })(),
+    lotSize: Number((pc as PositionConfig)?.quantity ?? 0),
     expiryType: ((pc as PositionConfig)?.expiryType as ExpiryType) ?? "weekly",
     strikeType: ((pc as PositionConfig)?.strikeType as StrikeType) ?? "ATM",
     startTime: e.start_time ?? "09:15",
@@ -287,13 +304,23 @@ function fromExisting(e?: BuilderStrategy | null): BuilderForm {
     },
     entryTime,
     exitClockTime,
-    takeProfitPct: Number(xc?.takeProfitPct ?? e.take_profit_pct ?? 4),
-    stopLossPct: Number(xc?.stopLossPct ?? e.stop_loss_pct ?? 2),
+    clockExitEnabled,
+    takeProfitPct: Number(
+      xc?.takeProfitPct !== undefined && xc.takeProfitPct !== null
+        ? xc.takeProfitPct
+        : (e.take_profit_pct != null ? e.take_profit_pct : 0),
+    ),
+    stopLossPct: Number(
+      xc?.stopLossPct !== undefined && xc.stopLossPct !== null
+        ? xc.stopLossPct
+        : (e.stop_loss_pct != null ? e.stop_loss_pct : 0),
+    ),
     trailingStop: Boolean(xc?.trailingStop ?? false),
     trailingStopPct: Number(xc?.trailingStopPct ?? 1),
     timeBasedExit: Boolean(xc?.timeBasedExit ?? false),
     exitAfterMinutes: Number(xc?.exitAfterMinutes ?? 180),
-    exitIndicatorGroups: Array.isArray(xc?.indicatorGroups) && xc.indicatorGroups.length ? xc.indicatorGroups : [makeGroup()],
+    useExitIndicators,
+    exitIndicatorGroups: useExitIndicators && indGroups.length ? indGroups : [],
     orderType: (pc as PositionConfig)?.orderType ?? "MARKET",
     sizingMode: (pc as PositionConfig)?.sizingMode ?? "fixed_qty",
     capitalPct: Number((pc as PositionConfig)?.capitalPct ?? 10),
@@ -302,6 +329,7 @@ function fromExisting(e?: BuilderStrategy | null): BuilderForm {
     maxDailyLossPct: Number((rc as RiskConfig)?.maxDailyLossPct ?? 3),
     maxOpenPositions: Number((rc as RiskConfig)?.maxOpenPositions ?? 3),
     capitalAllocationPct: Number((rc as RiskConfig)?.capitalAllocationPct ?? 30),
+    autoExitEnabled: !(xc && typeof xc === "object" && (xc as ExitConditions).autoExitEnabled === false),
   };
 }
 
@@ -323,255 +351,6 @@ function Row({ children }: { children: React.ReactNode }) {
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest pt-2 pb-1 border-b border-zinc-800 mb-3">{children}</p>;
-}
-
-type SymbolSearchRow = {
-  symbol: string;
-  description: string;
-  full_symbol: string;
-  exchange: string;
-  type: string;
-};
-
-function parseSymbolList(csv: string): string[] {
-  return csv.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean);
-}
-
-function mergeSymbolList(csv: string, token: string): string {
-  const set = new Set(parseSymbolList(csv));
-  set.add(token.toUpperCase().trim());
-  return Array.from(set).join(", ");
-}
-
-/** Map Yahoo-style tickers to broker quote params (Zerodha / OpenAlgo) */
-function brokerQuotePair(token: string, preferredExchange: string): { symbol: string; exchange: string } {
-  const t = token.trim().toUpperCase();
-  if (t.endsWith(".NS")) return { symbol: t.replace(/\.NS$/i, ""), exchange: "NSE" };
-  if (t.endsWith(".BO")) return { symbol: t.replace(/\.BO$/i, ""), exchange: "BSE" };
-  if (["NFO", "BFO", "MCX", "CDS", "NCDEX"].includes(preferredExchange)) {
-    return { symbol: t, exchange: preferredExchange };
-  }
-  return { symbol: t, exchange: preferredExchange === "BSE" ? "BSE" : "NSE" };
-}
-
-function InstrumentSymbolPicker({
-  symbolCsv,
-  onSymbolCsvChange,
-  preferredExchange,
-  onExchangeSync,
-}: {
-  symbolCsv: string;
-  onSymbolCsvChange: (v: string) => void;
-  preferredExchange: string;
-  onExchangeSync: (ex: string) => void;
-}) {
-  const [brokerConnected, setBrokerConnected] = useState<boolean | null>(null);
-  const [draft, setDraft] = useState("");
-  const [results, setResults] = useState<SymbolSearchRow[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [open, setOpen] = useState(false);
-  const [verifying, setVerifying] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) {
-        if (!cancelled) setBrokerConnected(false);
-        return;
-      }
-      const { data } = await supabase
-        .from("user_trading_integration")
-        .select("is_active, openalgo_username")
-        .eq("user_id", session.user.id)
-        .eq("is_active", true)
-        .maybeSingle();
-      if (!cancelled) setBrokerConnected(Boolean((data as { openalgo_username?: string | null })?.openalgo_username));
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  const search = useCallback(async (q: string) => {
-    if (q.length < 2) {
-      setResults([]);
-      setOpen(false);
-      return;
-    }
-    setSearching(true);
-    try {
-      const res = await supabase.functions.invoke("search-symbols", { body: { q } });
-      const data: SymbolSearchRow[] = Array.isArray(res.data) ? (res.data as SymbolSearchRow[]) : [];
-      setResults(data.slice(0, 14));
-      setOpen(data.length > 0);
-    } catch {
-      setResults([]);
-      setOpen(false);
-    } finally {
-      setSearching(false);
-    }
-  }, []);
-
-  const addToken = (row: SymbolSearchRow) => {
-    const token = (row.full_symbol || row.symbol || "").trim();
-    if (!token) return;
-    onSymbolCsvChange(mergeSymbolList(symbolCsv, token));
-    if (row.full_symbol?.endsWith(".BO")) onExchangeSync("BSE");
-    else if (row.full_symbol?.endsWith(".NS")) onExchangeSync("NSE");
-    else if (row.exchange && /^[A-Z]{2,6}$/.test(String(row.exchange).toUpperCase())) {
-      onExchangeSync(String(row.exchange).toUpperCase());
-    }
-    setDraft("");
-    setOpen(false);
-    setResults([]);
-  };
-
-  const verifyWithBroker = async () => {
-    const list = parseSymbolList(symbolCsv);
-    if (list.length === 0) {
-      toast.error("Add at least one symbol to verify");
-      return;
-    }
-    if (!brokerConnected) {
-      toast.error("Connect your broker first — then you can verify tradingsymbols match your account.");
-      return;
-    }
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) {
-      toast.error("Sign in required");
-      return;
-    }
-    setVerifying(true);
-    try {
-      const symbols = list.map((t) => brokerQuotePair(t, preferredExchange));
-      const res = await supabase.functions.invoke("broker-data", {
-        body: { action: "multiquotes", symbols },
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
-      const payload = res.data as { success?: boolean; error?: string } | null;
-      const errMsg = payload?.error ?? (res.error as { message?: string } | null)?.message;
-      if (res.error || !payload?.success || errMsg) {
-        toast.error(String(errMsg ?? res.error?.message ?? "Broker could not quote these symbols — check tradingsymbol and exchange (NSE / NFO / MCX)."));
-        return;
-      }
-      toast.success("Broker returned quotes — symbols are reachable on this connection.");
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Broker verification failed");
-    } finally {
-      setVerifying(false);
-    }
-  };
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  const list = parseSymbolList(symbolCsv);
-
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        {brokerConnected === null ? (
-          <Badge variant="outline" className="text-zinc-500 border-zinc-700">Checking broker…</Badge>
-        ) : brokerConnected ? (
-          <Badge className="bg-emerald-600/20 text-emerald-200 border border-emerald-500/35">Broker connected — verify symbols before deploy</Badge>
-        ) : (
-          <Badge variant="outline" className="text-amber-200/95 border-amber-500/40 bg-amber-500/10">
-            Connect broker for live order routing — search uses the same market symbol index as the rest of the app
-          </Badge>
-        )}
-      </div>
-
-      <div ref={containerRef} className="relative">
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500 pointer-events-none" />
-          <Input
-            placeholder="Search: RELIANCE, NIFTY 50, BANKNIFTY, BTC-USD…"
-            value={draft}
-            onChange={(e) => {
-              const v = e.target.value;
-              setDraft(v);
-              if (debounceRef.current) clearTimeout(debounceRef.current);
-              debounceRef.current = setTimeout(() => search(v.trim()), 280);
-            }}
-            onFocus={() => results.length > 0 && setOpen(true)}
-            className="h-10 bg-zinc-900 border-zinc-700 text-sm pl-9 pr-9"
-          />
-          {searching && <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-zinc-500" />}
-        </div>
-        {open && results.length > 0 && (
-          <div className="absolute top-full left-0 right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl z-50 max-h-72 overflow-y-auto">
-            {results.map((item, i) => (
-              <button
-                key={`${item.full_symbol}-${i}`}
-                type="button"
-                className="w-full flex items-start justify-between gap-2 px-3 py-2 hover:bg-zinc-800 text-left border-b border-zinc-800 last:border-0"
-                onMouseDown={() => addToken(item)}
-              >
-                <div className="min-w-0">
-                  <span className="font-mono text-white text-sm font-semibold">{item.symbol}</span>
-                  <p className="text-[11px] text-zinc-500 line-clamp-2">{item.description}</p>
-                </div>
-                <span className="text-[10px] text-teal-400 shrink-0 uppercase">{item.type || "—"}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {list.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
-          {list.map((s) => (
-            <span
-              key={s}
-              className="inline-flex items-center gap-1 rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs font-mono text-zinc-200"
-            >
-              {s}
-              <button
-                type="button"
-                className="text-zinc-500 hover:text-red-400 px-0.5"
-                onClick={() => onSymbolCsvChange(list.filter((x) => x !== s).join(", "))}
-                aria-label={`Remove ${s}`}
-              >
-                ×
-              </button>
-            </span>
-          ))}
-          {brokerConnected && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs border-emerald-700/50 text-emerald-200"
-              disabled={verifying}
-              onClick={() => void verifyWithBroker()}
-            >
-              {verifying ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-              Verify with broker
-            </Button>
-          )}
-        </div>
-      )}
-
-      <div className="space-y-1.5">
-        <Label className="text-sm font-semibold text-zinc-300">Or paste / edit (comma-separated)</Label>
-        <Textarea
-          value={symbolCsv}
-          onChange={(e) => onSymbolCsvChange(e.target.value.toUpperCase())}
-          placeholder="Leave empty to pick symbol when you deploy. Or: RELIANCE.NS, TCS.NS, ^NSEI, BTC-USD"
-          className="min-h-[80px] bg-zinc-900 border-zinc-700 text-sm font-mono resize-y"
-        />
-        <p className="text-[11px] text-zinc-500 leading-relaxed">
-          Same symbol search as orders &amp; charts (Yahoo-backed). For Indian F&amp;O, type the exact <strong>tradingsymbol</strong> your broker uses (e.g. NIFTY25JANFUT) or verify after connecting. Exchange on the Foundation step should match (NSE / NFO / MCX).
-        </p>
-      </div>
-    </div>
-  );
 }
 
 function ChoiceGroup<T extends string>({
@@ -731,6 +510,7 @@ export default function AlgoStrategyBuilder({ open, onOpenChange, existing, onSa
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<BuilderForm>(DEFAULT_FORM);
   const isEdit = Boolean(existing?.id);
+  const isLiveLocked = Boolean(isEdit && existing?.is_active === true);
 
   useEffect(() => {
     if (!open) return;
@@ -741,12 +521,11 @@ export default function AlgoStrategyBuilder({ open, onOpenChange, existing, onSa
   const set = <K extends keyof BuilderForm>(k: K, v: BuilderForm[K]) =>
     setForm((p) => ({ ...p, [k]: v }));
 
-  const symbolCount = useMemo(
-    () => form.symbol.split(",").map(s => s.trim()).filter(Boolean).length,
-    [form.symbol],
-  );
-
   const save = async () => {
+    if (isLiveLocked) {
+      toast.error("Deactivate this strategy before editing.");
+      return;
+    }
     if (!form.name.trim()) { toast.error("Strategy name is required"); return; }
     setSaving(true);
     try {
@@ -774,22 +553,38 @@ export default function AlgoStrategyBuilder({ open, onOpenChange, existing, onSa
                 strategySubtype: "indicator_based",
               };
 
-      const exitPayload: ExitConditions = {
-        takeProfitPct: form.takeProfitPct,
-        stopLossPct: form.stopLossPct,
-        trailingStop: form.trailingStop,
-        trailingStopPct: form.trailingStopPct,
-        indicatorGroups: form.exitIndicatorGroups,
-        timeBasedExit: form.timeBasedExit,
-        exitAfterMinutes: form.exitAfterMinutes,
-        ...(form.strategyType === "time_based" || form.strategyType === "hybrid"
-          ? { clockExitTime: form.exitClockTime }
-          : {}),
-      };
+      const exitPayload: ExitConditions | null = form.autoExitEnabled
+        ? (() => {
+            const base: ExitConditions = { autoExitEnabled: true };
+            if (form.stopLossPct > 0) base.stopLossPct = form.stopLossPct;
+            if (form.takeProfitPct > 0) base.takeProfitPct = form.takeProfitPct;
+            base.trailingStop = Boolean(form.trailingStop && form.trailingStopPct > 0);
+            if (form.trailingStop && form.trailingStopPct > 0) base.trailingStopPct = form.trailingStopPct;
+            base.indicatorGroups = form.useExitIndicators ? form.exitIndicatorGroups : [];
+            if (form.timeBasedExit) {
+              base.timeBasedExit = true;
+              base.exitAfterMinutes = form.exitAfterMinutes;
+            }
+            if (
+              (form.strategyType === "time_based" || form.strategyType === "hybrid") &&
+              form.clockExitEnabled &&
+              form.exitClockTime.trim()
+            ) {
+              base.clockExitTime = form.exitClockTime.trim();
+            }
+            return base;
+          })()
+        : { autoExitEnabled: false };
 
       const paperType = mapPaperStrategyType(form.strategyType, form.orderProduct);
-      const sessionEnd = form.strategyType === "time_based" ? form.exitClockTime : form.endTime;
-      const sessionSq = form.strategyType === "time_based" ? form.exitClockTime : form.squareoffTime;
+      const sessionEnd =
+        form.strategyType === "time_based"
+          ? (form.clockExitEnabled && form.exitClockTime.trim() ? form.exitClockTime : form.endTime)
+          : form.endTime;
+      const sessionSq =
+        form.strategyType === "time_based"
+          ? (form.clockExitEnabled && form.exitClockTime.trim() ? form.exitClockTime : form.squareoffTime)
+          : form.squareoffTime;
 
       const body: Record<string, unknown> = {
         action: isEdit ? "update" : "create",
@@ -802,8 +597,8 @@ export default function AlgoStrategyBuilder({ open, onOpenChange, existing, onSa
         end_time: sessionEnd,
         squareoff_time: sessionSq,
         risk_per_trade_pct: form.maxRiskPerTradePct,
-        stop_loss_pct: form.stopLossPct,
-        take_profit_pct: form.takeProfitPct,
+        stop_loss_pct: form.autoExitEnabled && form.stopLossPct > 0 ? form.stopLossPct : null,
+        take_profit_pct: form.autoExitEnabled && form.takeProfitPct > 0 ? form.takeProfitPct : null,
         symbols: [...new Set(form.symbol.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean))],
         paper_strategy_type: paperType,
         market_type: form.instrumentType,
@@ -812,7 +607,7 @@ export default function AlgoStrategyBuilder({ open, onOpenChange, existing, onSa
         position_config: {
           orderType: form.orderType,
           sizingMode: form.sizingMode,
-          quantity: form.lotSize,
+          quantity: Math.max(0, form.lotSize),
           capitalPct: form.capitalPct,
           limitOffsetPct: form.limitOffsetPct,
           scaling: [],
@@ -836,8 +631,9 @@ export default function AlgoStrategyBuilder({ open, onOpenChange, existing, onSa
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
 
-      if (res.error || (res.data as { error?: string } | null)?.error) {
-        throw new Error((res.data as { error?: string } | null)?.error ?? res.error?.message ?? "Failed to save");
+      const errBody = res.data as { error?: string; error_code?: string } | null;
+      if (res.error || errBody?.error) {
+        throw new Error(errBody?.error ?? res.error?.message ?? "Failed to save");
       }
       toast.success(isEdit ? "Strategy updated" : "Strategy created");
       onOpenChange(false);
@@ -862,11 +658,17 @@ export default function AlgoStrategyBuilder({ open, onOpenChange, existing, onSa
             <DialogDescription className="text-sm text-zinc-500 mt-0.5">
               Build indicator or time-based logic with risk controls and execution settings.
             </DialogDescription>
+            {isLiveLocked && (
+              <p className="mt-2 text-xs font-medium text-amber-200/95 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+                This strategy is <span className="font-bold">live</span> (active). Deactivate it in your portfolio first, then you can edit rules and risk settings.
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2 text-xs text-zinc-500 mt-1">
             {STEPS.map((s, i) => (
-              <button key={s.idx} type="button" onClick={() => setStep(i)}
-                className={`flex items-center gap-1 transition-colors ${i === step ? "text-teal-300 font-semibold" : "text-zinc-600 hover:text-zinc-400"}`}>
+              <button key={s.idx} type="button" onClick={() => !isLiveLocked && setStep(i)}
+                disabled={isLiveLocked}
+                className={`flex items-center gap-1 transition-colors ${i === step ? "text-teal-300 font-semibold" : "text-zinc-600 hover:text-zinc-400"} ${isLiveLocked ? "opacity-50 cursor-not-allowed" : ""}`}>
                 <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
                   i < step ? "bg-teal-600 text-white" : i === step ? "bg-teal-500/20 border border-teal-500 text-teal-300" : "bg-zinc-800 text-zinc-500"
                 }`}>{i + 1}</span>
@@ -882,10 +684,11 @@ export default function AlgoStrategyBuilder({ open, onOpenChange, existing, onSa
           {/* Sidebar */}
           <div className="w-44 shrink-0 border-r border-zinc-800 bg-zinc-900/40 p-3 space-y-0.5 overflow-y-auto">
             {STEPS.map((s, i) => (
-              <button key={s.idx} type="button" onClick={() => setStep(i)}
+              <button key={s.idx} type="button" onClick={() => !isLiveLocked && setStep(i)}
+                disabled={isLiveLocked}
                 className={`w-full text-left rounded-lg px-3 py-2.5 transition-all ${
                   i === step ? "bg-teal-500/15 border border-teal-500/40 text-teal-300" : "text-zinc-400 hover:bg-zinc-800 border border-transparent"
-                }`}>
+                } ${isLiveLocked ? "opacity-50 cursor-not-allowed" : ""}`}>
                 <p className={`text-xs font-bold leading-tight ${i === step ? "" : ""}`}>{i + 1}. {s.title}</p>
                 <p className="text-[10px] text-zinc-600 leading-tight mt-0.5">{s.sub}</p>
               </button>
@@ -893,7 +696,7 @@ export default function AlgoStrategyBuilder({ open, onOpenChange, existing, onSa
           </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+          <div className={`flex-1 overflow-y-auto px-6 py-5 space-y-5 ${isLiveLocked ? "pointer-events-none opacity-55" : ""}`}>
 
             {/* ── Step 0: Foundation ─────────────────────────────────────── */}
             {step === 0 && (
@@ -975,52 +778,12 @@ export default function AlgoStrategyBuilder({ open, onOpenChange, existing, onSa
                   </Field>
                 </Row>
 
-                <SectionTitle>Transaction Direction</SectionTitle>
-                <Field label="Which way does this strategy trade?">
-                  <ChoiceGroup
-                    value={form.direction} onChange={v => set("direction", v)}
-                    options={[
-                      { v: "LONG",  l: "Long (Buy)",    sub: "Buy → expect price to rise" },
-                      { v: "SHORT", l: "Short (Sell)",  sub: "Sell → expect price to fall" },
-                      { v: "BOTH",  l: "Both",          sub: "Buy & Sell signals" },
-                    ]}
-                  />
-                </Field>
-              </>
-            )}
-
-            {/* ── Step 1: Instruments ─────────────────────────────────────── */}
-            {step === 1 && (
-              <>
-                <SectionTitle>Symbol selection</SectionTitle>
-                <Field
-                  label="Instruments"
-                  hint={
-                    symbolCount > 0
-                      ? `${symbolCount} symbol(s) — search picks validated market tickers; connect broker to verify against your account before deploy.`
-                      : "Optional — leave empty to choose symbol when you deploy / execute (same as typical algo platforms)."
-                  }
-                >
-                  <InstrumentSymbolPicker
-                    symbolCsv={form.symbol}
-                    onSymbolCsvChange={(v) => set("symbol", v)}
-                    preferredExchange={form.exchange}
-                    onExchangeSync={(ex) => set("exchange", ex)}
-                  />
-                </Field>
-
-                <SectionTitle>Position Sizing</SectionTitle>
-                <Row>
-                  <Field label="Lot Size / Quantity" hint="Number of lots (futures/options) or shares (equity)">
-                    <Input type="number" min="1" value={form.lotSize}
-                      onChange={e => set("lotSize", Number(e.target.value || 1))}
-                      className="h-10 bg-zinc-900 border-zinc-700 text-sm" />
-                  </Field>
-                </Row>
-
                 {(form.instrumentType === "futures" || form.instrumentType === "options") && (
                   <>
-                    <SectionTitle>Derivatives Settings</SectionTitle>
+                    <SectionTitle>Derivatives metadata</SectionTitle>
+                    <p className="text-xs text-zinc-500 -mt-2 mb-2 leading-relaxed">
+                      Exact tradingsymbol and quantity are chosen when you <strong className="text-zinc-400">deploy live</strong> (broker portfolio → Execute → Deploy).
+                    </p>
                     <Field label="Expiry Type">
                       <ChoiceGroup
                         value={form.expiryType} onChange={v => set("expiryType", v)}
@@ -1047,11 +810,23 @@ export default function AlgoStrategyBuilder({ open, onOpenChange, existing, onSa
                     )}
                   </>
                 )}
+
+                <SectionTitle>Transaction Direction</SectionTitle>
+                <Field label="Which way does this strategy trade?">
+                  <ChoiceGroup
+                    value={form.direction} onChange={v => set("direction", v)}
+                    options={[
+                      { v: "LONG",  l: "Long (Buy)",    sub: "Buy → expect price to rise" },
+                      { v: "SHORT", l: "Short (Sell)",  sub: "Sell → expect price to fall" },
+                      { v: "BOTH",  l: "Both",          sub: "Buy & Sell signals" },
+                    ]}
+                  />
+                </Field>
               </>
             )}
 
-            {/* ── Step 2: Timing ──────────────────────────────────────────── */}
-            {step === 2 && (
+            {/* ── Step 1: Timing ──────────────────────────────────────────── */}
+            {step === 1 && (
               <>
                 <SectionTitle>Session Hours (IST)</SectionTitle>
                 <Row>
@@ -1113,8 +888,8 @@ export default function AlgoStrategyBuilder({ open, onOpenChange, existing, onSa
               </>
             )}
 
-            {/* ── Step 3: Entry Conditions ────────────────────────────────── */}
-            {step === 3 && (
+            {/* ── Step 2: Entry Conditions ────────────────────────────────── */}
+            {step === 2 && (
               <>
                 <SectionTitle>Entry Conditions</SectionTitle>
 
@@ -1163,49 +938,105 @@ export default function AlgoStrategyBuilder({ open, onOpenChange, existing, onSa
               </>
             )}
 
-            {/* ── Step 4: Exit Conditions ─────────────────────────────────── */}
-            {step === 4 && (
+            {/* ── Step 3: Exit Conditions ─────────────────────────────────── */}
+            {step === 3 && (
               <>
+                <SectionTitle>Automated exit</SectionTitle>
+                <label className="flex items-center gap-3 cursor-pointer rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2.5">
+                  <Switch checked={form.autoExitEnabled} onCheckedChange={(v) => set("autoExitEnabled", v)} />
+                  <div>
+                    <p className="text-sm font-semibold text-zinc-200">Enable automated exits</p>
+                    <p className="text-[11px] text-zinc-500 mt-0.5">Turn off if you only want entry signals and will take profit / stop loss manually.</p>
+                  </div>
+                </label>
+                {!form.autoExitEnabled && (
+                  <p className="text-xs text-amber-200/90 border border-amber-500/25 rounded-lg p-3 bg-amber-500/5 leading-relaxed">
+                    Live scans still use real market data for your entry rules. No TP, SL, timed, indicator, or clock exit is applied for this strategy.
+                  </p>
+                )}
+
+                {form.autoExitEnabled && (
+                <>
+                <p className="text-xs text-zinc-500 border border-zinc-800 rounded-lg px-3 py-2 bg-zinc-900/40 leading-relaxed">
+                  Each block below is <strong className="text-zinc-400">optional</strong>. Leave a percentage blank or 0, turn off switches, or skip indicator rules — only what you configure is used in live scans.
+                </p>
+
                 {(form.strategyType === "time_based" || form.strategyType === "hybrid") && (
                   <>
-                    <SectionTitle>Scheduled exit (clock)</SectionTitle>
-                    <Field
-                      label="Exit clock time"
-                      hint="Close / flatten at this wall-clock time each session (scans: IST for Indian markets, UTC for global symbols)."
-                    >
-                      <Input
-                        type="time"
-                        value={form.exitClockTime}
-                        onChange={(e) => set("exitClockTime", e.target.value)}
-                        className="h-10 bg-zinc-900 border-zinc-700 text-sm max-w-xs"
+                    <SectionTitle>Scheduled exit (clock) — optional</SectionTitle>
+                    <label className="flex items-center gap-3 cursor-pointer rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2 mb-2">
+                      <Switch
+                        checked={form.clockExitEnabled}
+                        onCheckedChange={(v) => set("clockExitEnabled", v)}
                       />
-                    </Field>
+                      <span className="text-sm text-zinc-300">Exit at a fixed clock time each session</span>
+                    </label>
+                    {form.clockExitEnabled && (
+                      <Field
+                        label="Exit clock time"
+                        hint="IST for NSE/BSE; UTC for global symbols in scans."
+                      >
+                        <Input
+                          type="time"
+                          value={form.exitClockTime}
+                          onChange={(e) => set("exitClockTime", e.target.value)}
+                          className="h-10 bg-zinc-900 border-zinc-700 text-sm max-w-xs"
+                        />
+                      </Field>
+                    )}
                   </>
                 )}
 
-                <SectionTitle>Take Profit & Stop Loss</SectionTitle>
+                <SectionTitle>Take profit &amp; stop loss — optional</SectionTitle>
                 <Row>
-                  <Field label="Take Profit %" hint="Close trade when price moves this much in profit">
+                  <Field label="Take profit %" hint="Leave empty or 0 to disable take-profit exits in scans.">
                     <div className="relative">
-                      <Input type="number" min="0.1" step="0.1" value={form.takeProfitPct}
-                        onChange={e => set("takeProfitPct", Number(e.target.value || 0))}
-                        className="h-10 bg-zinc-900 border-zinc-700 text-base text-green-400 font-bold pr-7" />
+                      <Input
+                        type="number"
+                        min={0}
+                        step={0.1}
+                        value={form.takeProfitPct > 0 ? String(form.takeProfitPct) : ""}
+                        placeholder="Off"
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          set("takeProfitPct", v === "" ? 0 : Math.max(0, Number(v) || 0));
+                        }}
+                        className="h-10 bg-zinc-900 border-zinc-700 text-base text-green-400/90 font-bold pr-7"
+                      />
                       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 text-sm">%</span>
                     </div>
                   </Field>
-                  <Field label="Stop Loss %" hint="Close trade when price moves this much against position">
+                  <Field label="Stop loss %" hint="Leave empty or 0 to disable stop-loss exits in scans.">
                     <div className="relative">
-                      <Input type="number" min="0.1" step="0.1" value={form.stopLossPct}
-                        onChange={e => set("stopLossPct", Number(e.target.value || 0))}
-                        className="h-10 bg-zinc-900 border-zinc-700 text-base text-red-400 font-bold pr-7" />
+                      <Input
+                        type="number"
+                        min={0}
+                        step={0.1}
+                        value={form.stopLossPct > 0 ? String(form.stopLossPct) : ""}
+                        placeholder="Off"
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          set("stopLossPct", v === "" ? 0 : Math.max(0, Number(v) || 0));
+                        }}
+                        className="h-10 bg-zinc-900 border-zinc-700 text-base text-red-400/90 font-bold pr-7"
+                      />
                       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 text-sm">%</span>
                     </div>
                   </Field>
-                  <Field label="Trailing Stop %" hint="Trail the stop-loss as price moves in your favour">
+                  <Field label="Trailing stop %" hint="Only used when trailing stop is enabled below.">
                     <div className="relative">
-                      <Input type="number" min="0.1" step="0.1" value={form.trailingStopPct}
-                        onChange={e => set("trailingStopPct", Number(e.target.value || 0))}
-                        className="h-10 bg-zinc-900 border-zinc-700 text-base pr-7" />
+                      <Input
+                        type="number"
+                        min={0}
+                        step={0.1}
+                        value={form.trailingStopPct > 0 ? String(form.trailingStopPct) : ""}
+                        placeholder="—"
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          set("trailingStopPct", v === "" ? 0 : Math.max(0, Number(v) || 0));
+                        }}
+                        className="h-10 bg-zinc-900 border-zinc-700 text-base pr-7"
+                      />
                       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 text-sm">%</span>
                     </div>
                   </Field>
@@ -1214,35 +1045,54 @@ export default function AlgoStrategyBuilder({ open, onOpenChange, existing, onSa
                 <div className="flex flex-wrap gap-4">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <Switch checked={form.trailingStop} onCheckedChange={v => set("trailingStop", v)} />
-                    <span className="text-sm text-zinc-300">Enable trailing stop-loss</span>
+                    <span className="text-sm text-zinc-300">Trailing stop-loss (optional)</span>
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
                     <Switch checked={form.timeBasedExit} onCheckedChange={v => set("timeBasedExit", v)} />
-                    <span className="text-sm text-zinc-300">Force-exit after time</span>
+                    <span className="text-sm text-zinc-300">Force-exit after N minutes (optional)</span>
                   </label>
                 </div>
 
                 {form.timeBasedExit && (
-                  <Field label="Force-exit after (minutes)" hint="Close position forcefully N minutes after entry">
-                    <Input type="number" min="1" value={form.exitAfterMinutes}
+                  <Field label="Minutes after entry" hint="Close the simulated position after this many minutes (used in scans).">
+                    <Input type="number" min={1} value={form.exitAfterMinutes}
                       onChange={e => set("exitAfterMinutes", Number(e.target.value || 1))}
                       className="h-10 bg-zinc-900 border-zinc-700 text-sm max-w-xs" />
                   </Field>
                 )}
 
-                <SectionTitle>Indicator-Based Exit (Optional)</SectionTitle>
-                <p className="text-xs text-zinc-500 -mt-2 mb-2">Define conditions that trigger an exit signal — e.g. EMA crossover reversal. Leave empty to use only TP/SL.</p>
-                <ConditionBuilder
-                  groups={form.exitIndicatorGroups}
-                  groupLogic="AND"
-                  onGroups={g => set("exitIndicatorGroups", g)}
-                  onGroupLogic={() => {}}
-                />
+                <SectionTitle>Indicator-based exit — optional</SectionTitle>
+                <label className="flex items-center gap-3 cursor-pointer rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2 mb-2">
+                  <Switch
+                    checked={form.useExitIndicators}
+                    onCheckedChange={(v) => {
+                      if (v && form.exitIndicatorGroups.length === 0) {
+                        setForm((p) => ({ ...p, useExitIndicators: true, exitIndicatorGroups: [makeGroup()] }));
+                      } else {
+                        set("useExitIndicators", v);
+                      }
+                    }}
+                  />
+                  <span className="text-sm text-zinc-300">Use indicator rules to signal exits (e.g. EMA cross)</span>
+                </label>
+                <p className="text-xs text-zinc-500 -mt-1 mb-2">
+                  Note: full indicator-exit execution in backtests may be limited; TP/SL and clock exits are applied in the scan engine today.
+                </p>
+                {form.useExitIndicators && (
+                  <ConditionBuilder
+                    groups={form.exitIndicatorGroups.length ? form.exitIndicatorGroups : [makeGroup()]}
+                    groupLogic="AND"
+                    onGroups={g => set("exitIndicatorGroups", g)}
+                    onGroupLogic={() => {}}
+                  />
+                )}
+                </>
+                )}
               </>
             )}
 
-            {/* ── Step 5: Position Builder ────────────────────────────────── */}
-            {step === 5 && (
+            {/* ── Step 4: Position Builder ────────────────────────────────── */}
+            {step === 4 && (
               <>
                 <SectionTitle>Order Placement</SectionTitle>
                 <Field label="Order Execution Type" hint="MARKET = execute at current price. LIMIT = set a specific price.">
@@ -1293,8 +1143,8 @@ export default function AlgoStrategyBuilder({ open, onOpenChange, existing, onSa
               </>
             )}
 
-            {/* ── Step 6: Risk Rules ──────────────────────────────────────── */}
-            {step === 6 && (
+            {/* ── Step 5: Risk Rules ──────────────────────────────────────── */}
+            {step === 5 && (
               <>
                 <SectionTitle>Per-Trade Limits</SectionTitle>
                 <Row>
@@ -1342,17 +1192,17 @@ export default function AlgoStrategyBuilder({ open, onOpenChange, existing, onSa
           <p className="text-xs text-zinc-600">Step {step + 1} of {STEPS.length} — {STEPS[step].title}</p>
           <div className="flex items-center gap-3">
             <Button type="button" variant="outline" className="h-9 px-4 border-zinc-700 text-zinc-200"
-              onClick={() => setStep(s => Math.max(0, s - 1))} disabled={step === 0 || saving}>
+              onClick={() => setStep(s => Math.max(0, s - 1))} disabled={step === 0 || saving || isLiveLocked}>
               Back
             </Button>
             {step < STEPS.length - 1 ? (
               <Button type="button" className="h-9 px-5 bg-teal-600 hover:bg-teal-500 text-white font-semibold"
-                onClick={() => setStep(s => Math.min(STEPS.length - 1, s + 1))}>
+                onClick={() => setStep(s => Math.min(STEPS.length - 1, s + 1))} disabled={isLiveLocked}>
                 Next
               </Button>
             ) : (
               <Button type="button" className="h-9 px-5 bg-purple-600 hover:bg-purple-500 text-white font-semibold"
-                onClick={save} disabled={saving}>
+                onClick={save} disabled={saving || isLiveLocked}>
                 {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                 {isEdit ? "Update Strategy" : "Create Strategy"}
               </Button>

@@ -27,13 +27,23 @@ import {
 import {
   AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3,
   Briefcase, ClipboardList, Loader2, RefreshCw, Wallet, X, Pencil, Zap,
-  TrendingUp, TrendingDown, BookOpen, Plus, Trash2, CheckCircle2, Send, Brain, Search,
+  TrendingUp, TrendingDown, BookOpen, Plus, Trash2, CheckCircle2, Send, Brain, Search, LineChart,
 } from "lucide-react";
 import { toast } from "sonner";
 import PlaceOrderPanel from "@/components/trading/PlaceOrderPanel";
 import { STRATEGIES } from "@/components/trading/StrategySelectionDialog";
 import { getStrategyParams } from "@/constants/strategyParams";
 import AlgoStrategyBuilder from "@/components/trading/AlgoStrategyBuilder";
+
+function firstListedSymbol(symbols: unknown): string {
+  if (!Array.isArray(symbols) || symbols.length === 0) return "";
+  const x = symbols[0];
+  if (typeof x === "string") return x.trim().toUpperCase();
+  if (x && typeof x === "object" && "symbol" in x) {
+    return String((x as { symbol?: string }).symbol ?? "").trim().toUpperCase();
+  }
+  return "";
+}
 
 // ── SymbolSearchInput (same UX as PlaceOrderPanel) ────────────────────────────
 type SymbolResult = { symbol: string; description: string; full_symbol: string; exchange: string; type: string };
@@ -195,8 +205,16 @@ interface Strategy {
   webhook_url?: string | null;
   paper_strategy_type?: string | null;
   risk_per_trade_pct: number;
-  stop_loss_pct: number;
-  take_profit_pct: number;
+  stop_loss_pct: number | null;
+  take_profit_pct: number | null;
+  description?: string | null;
+  market_type?: string | null;
+  entry_conditions?: Record<string, unknown> | null;
+  exit_conditions?: Record<string, unknown> | null;
+  position_config?: Record<string, unknown> | null;
+  risk_config?: Record<string, unknown> | null;
+  chart_config?: Record<string, unknown> | null;
+  execution_days?: number[] | null;
   created_at: string;
 }
 
@@ -460,6 +478,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
   const [strategies, setStrategies]       = useState<Strategy[]>([]);
   const [stratLoading, setStratLoading]   = useState(true);
   const [showCreate, setShowCreate]       = useState(false);
+  const [editingAlgoStrategy, setEditingAlgoStrategy] = useState<Strategy | null>(null);
   const [form, setForm]                   = useState<StrategyForm>(EMPTY_STRATEGY);
   const [creating, setCreating]           = useState(false);
   const [useFromPaper, setUseFromPaper]   = useState(false);
@@ -488,6 +507,12 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
   const [firePanel, setFirePanel]         = useState<Record<string, {
     open: boolean; symbol: string; exchange: string; quantity: string; product: string; firing: boolean;
     aiOverride?: boolean;
+    deployStartTime?: string;
+    deployEndTime?: string;
+    deploySquareoff?: string;
+    deployEntryClock?: string;
+    deployExitClock?: string;
+    deployUseAutoExit?: boolean;
     backtestPaperType?: string;     backtestResult?: {
       totalTrades: number; wins: number; losses: number; winRate: number; totalReturn: number;
       maxDrawdown?: number; profitFactor?: number; backtestPeriod?: string; strategyAchieved?: boolean; achievementReason?: string;
@@ -687,6 +712,12 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
   const getFireState = (id: string) => firePanel[id] ?? {
     open: false, symbol: "", exchange: "NSE", quantity: "1", product: "MIS", firing: false,
     aiOverride: false,
+    deployStartTime: "09:15",
+    deployEndTime: "15:15",
+    deploySquareoff: "15:15",
+    deployEntryClock: "09:20",
+    deployExitClock: "15:15",
+    deployUseAutoExit: true,
     backtestPaperType: "trend_following",
     backtestResult: null as any,
     backtestLoading: false,
@@ -896,6 +927,15 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
     setDeployLoading(strategy.id);
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      const deploy_overrides: Record<string, unknown> = {
+        start_time: fs.deployStartTime,
+        end_time: fs.deployEndTime,
+        squareoff_time: fs.deploySquareoff,
+        clock_entry_time: fs.deployEntryClock,
+        clock_exit_time: fs.deployExitClock,
+        use_auto_exit: fs.deployUseAutoExit !== false,
+      };
+
       const res = await supabase.functions.invoke("queue-conditional-order", {
         body: {
           strategy_id: strategy.id,
@@ -906,6 +946,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
           product: fs.product || (strategy.is_intraday ? "MIS" : "CNC"),
           paper_strategy_type: String(strategy.paper_strategy_type ?? "trend_following"),
           expires_hours: 72,
+          deploy_overrides,
         },
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
@@ -1674,7 +1715,10 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                     <RefreshCw className={`h-3.5 w-3.5 ${stratLoading ? "animate-spin" : ""}`} />
                   </button>
                   <button
-                    onClick={() => setShowCreate(true)}
+                    onClick={() => {
+                      setEditingAlgoStrategy(null);
+                      setShowCreate(true);
+                    }}
                     className="flex items-center gap-1 px-2.5 py-1.5 rounded border border-zinc-700 text-xs font-bold text-zinc-400 hover:text-white hover:border-purple-500/50 transition-colors"
                   >
                     <Plus className="h-3.5 w-3.5" /> New Strategy
@@ -1693,7 +1737,10 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                   <p className="text-sm text-zinc-500 font-medium">No strategies yet</p>
                   <p className="text-xs text-zinc-600 mt-1">Create strategies for auto-execution</p>
                   <button
-                    onClick={() => setShowCreate(true)}
+                    onClick={() => {
+                      setEditingAlgoStrategy(null);
+                      setShowCreate(true);
+                    }}
                     className="mt-4 flex items-center gap-1.5 mx-auto px-4 py-2 rounded-lg border border-purple-500/30 text-xs font-bold text-purple-400 hover:bg-purple-500/10 transition-colors outline-none focus:ring-2 focus:ring-purple-500/40"
                   >
                     <Plus className="h-3.5 w-3.5" /> Create your first strategy
@@ -1711,9 +1758,42 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                         {/* Header */}
                         <div className="flex items-center gap-2 p-3">
                           <span className="flex-1 text-sm font-semibold text-white truncate">{s.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (s.is_active) {
+                                toast.error("Deactivate this strategy before editing.");
+                                return;
+                              }
+                              setEditingAlgoStrategy(s);
+                              setShowCreate(true);
+                            }}
+                            disabled={s.is_active}
+                            className="flex items-center gap-1 px-2 py-1.5 rounded-md text-xs font-bold border border-zinc-700 text-zinc-500 hover:border-purple-500/40 hover:text-purple-300 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-zinc-700 disabled:hover:text-zinc-500"
+                            title={s.is_active ? "Deactivate to edit" : "Edit strategy rules"}
+                          >
+                            <LineChart className="h-3.5 w-3.5" /> Edit
+                          </button>
                           {/* Fire Signal */}
                           <button
-                            onClick={() => setFireState(s.id, { open: !fs.open })}
+                            onClick={() => {
+                              const opening = !fs.open;
+                              const ec = s.entry_conditions;
+                              const xc = s.exit_conditions;
+                              const autoExitOn = !(xc && typeof xc === "object" && xc.autoExitEnabled === false);
+                              setFireState(s.id, {
+                                open: opening,
+                                ...(opening ? {
+                                  deployStartTime: s.start_time ?? "09:15",
+                                  deployEndTime: s.end_time ?? "15:15",
+                                  deploySquareoff: s.squareoff_time ?? "15:15",
+                                  deployEntryClock: ec?.clockEntryTime ? String(ec.clockEntryTime) : "09:20",
+                                  deployExitClock: xc?.clockExitTime ? String(xc.clockExitTime) : (s.squareoff_time ?? "15:15"),
+                                  deployUseAutoExit: autoExitOn,
+                                  symbol: fs.symbol.trim() ? fs.symbol : firstListedSymbol(s.symbols),
+                                } : {}),
+                              });
+                            }}
                             disabled={!s.is_active}
                             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold border transition-all ${
                               fs.open ? "bg-teal-500/20 border-teal-500/40 text-teal-300" : "border-zinc-700 text-zinc-500 hover:border-teal-500/40 hover:text-teal-400"
@@ -1823,6 +1903,55 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                                 </Select>
                               </div>
                             </div>
+
+                            <div className="rounded-lg border border-amber-800/35 bg-zinc-900/60 p-3 space-y-3">
+                              <p className="text-xs font-bold text-amber-400/95">Live deploy — session &amp; clocks</p>
+                              <p className="text-[10px] text-zinc-500 leading-relaxed">
+                                Applied only for this deployment; your saved strategy is unchanged. Conditions are evaluated on live candles each run.
+                              </p>
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                <div className="space-y-1">
+                                  <Label className="text-zinc-500 text-[10px] font-semibold">Session start</Label>
+                                  <Input type="time" value={fs.deployStartTime ?? "09:15"}
+                                    onChange={(e) => setFireState(s.id, { deployStartTime: e.target.value })}
+                                    className="h-8 bg-zinc-900 border-zinc-700 text-white text-xs" />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-zinc-500 text-[10px] font-semibold">Session end</Label>
+                                  <Input type="time" value={fs.deployEndTime ?? "15:15"}
+                                    onChange={(e) => setFireState(s.id, { deployEndTime: e.target.value })}
+                                    className="h-8 bg-zinc-900 border-zinc-700 text-white text-xs" />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-zinc-500 text-[10px] font-semibold">Squareoff</Label>
+                                  <Input type="time" value={fs.deploySquareoff ?? "15:15"}
+                                    onChange={(e) => setFireState(s.id, { deploySquareoff: e.target.value })}
+                                    className="h-8 bg-zinc-900 border-zinc-700 text-white text-xs" />
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="space-y-1">
+                                  <Label className="text-zinc-500 text-[10px] font-semibold">Entry clock (time / hybrid)</Label>
+                                  <Input type="time" value={fs.deployEntryClock ?? "09:20"}
+                                    onChange={(e) => setFireState(s.id, { deployEntryClock: e.target.value })}
+                                    className="h-8 bg-zinc-900 border-zinc-700 text-white text-xs" />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-zinc-500 text-[10px] font-semibold">Exit clock</Label>
+                                  <Input type="time" value={fs.deployExitClock ?? "15:15"}
+                                    onChange={(e) => setFireState(s.id, { deployExitClock: e.target.value })}
+                                    className="h-8 bg-zinc-900 border-zinc-700 text-white text-xs" />
+                                </div>
+                              </div>
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <Switch
+                                  checked={fs.deployUseAutoExit !== false}
+                                  onCheckedChange={(v) => setFireState(s.id, { deployUseAutoExit: v })}
+                                />
+                                <span className="text-[11px] text-zinc-400 leading-snug">Use automated exits (SL/TP / timed / clock) for this deploy</span>
+                              </label>
+                            </div>
+
                             {/* Backtest option — available for every order and strategy including custom */}
                             <div className="rounded-lg border border-amber-900/50 bg-amber-950/20 p-3 space-y-2.5">
                               <p className="text-xs font-bold text-amber-500 flex items-center gap-1.5">
@@ -2002,13 +2131,14 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
         onOpenChange={(o) => {
           setShowCreate(o);
           if (!o) {
+            setEditingAlgoStrategy(null);
             setForm(EMPTY_STRATEGY);
             setUseFromPaper(false);
             setPaperType("");
             setBacktestResult(null);
           }
         }}
-        existing={null}
+        existing={editingAlgoStrategy as never}
         onSaved={() => {
           void load(true);
           void loadStrategies();

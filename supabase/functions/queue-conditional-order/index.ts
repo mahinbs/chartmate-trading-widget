@@ -35,6 +35,8 @@ Deno.serve(async (req: Request) => {
       product?: string;
       paper_strategy_type?: string;
       expires_hours?: number;
+      /** Session times, clock entry/exit, use_auto_exit — merged at evaluation time only */
+      deploy_overrides?: Record<string, unknown>;
     };
 
     const { strategy_id, symbol, action, quantity } = body;
@@ -88,6 +90,10 @@ Deno.serve(async (req: Request) => {
       }), { status: 200, headers });
     }
 
+    const deployOverrides = body.deploy_overrides && typeof body.deploy_overrides === "object"
+      ? body.deploy_overrides
+      : {};
+
     const { data: inserted, error: insertErr } = await supabase
       .from("pending_conditional_orders")
       .insert({
@@ -101,6 +107,7 @@ Deno.serve(async (req: Request) => {
         paper_strategy_type: body.paper_strategy_type ?? "trend_following",
         status: "pending",
         expires_at: expiresAt,
+        deploy_overrides: deployOverrides,
       })
       .select()
       .single();
