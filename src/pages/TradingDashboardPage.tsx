@@ -664,6 +664,12 @@ function LiveDashboard({ broker }: { broker: string }) {
       navigate(`/backtest${rest ? `?${rest}` : ""}`, { replace: true });
       return;
     }
+    if (tab === "scanner") {
+      qp.delete("tab");
+      const rest = qp.toString();
+      navigate(`/ai-trading-analysis${rest ? `?${rest}` : ""}`, { replace: true });
+      return;
+    }
     if (tab === "portfolio" || tab === "statement") {
       setActiveTab(tab);
     }

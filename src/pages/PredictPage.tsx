@@ -381,7 +381,7 @@ const PredictPage = () => {
         const { data: ms } = await supabase.functions.invoke(
           "get-market-status",
           {
-            body: { symbol: sym },
+          body: { symbol: sym },
           },
         );
         if (!cancelled && ms) {
@@ -420,9 +420,9 @@ const PredictPage = () => {
       path: "/intraday",
       mobileLabel: "Intraday",
     },
-    {
-      label: "Sign Out",
-      icon: LogOut,
+    { 
+      label: "Sign Out", 
+      icon: LogOut, 
       mobileLabel: "Sign Out",
       onClick: async () => {
         const { error } = await signOut();
@@ -520,89 +520,89 @@ const PredictPage = () => {
   // `sellPosition`   = optional existing position data (buy price + shares) for SELL orders.
   const placeMockOrderAndTrack = useCallback(
     async (
-      strategyCode: string,
-      product: string,
-      selectedAction: "BUY" | "SELL",
-      sellPosition?: { entryPrice: number; shares: number },
-    ) => {
-      if (!result) return;
-      const prefix = isPaperTrade ? "PAPER" : "OPENALGO";
-      let brokerOrderId = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
-      const action = selectedAction;
+    strategyCode: string,
+    product: string,
+    selectedAction: "BUY" | "SELL",
+    sellPosition?: { entryPrice: number; shares: number },
+  ) => {
+    if (!result) return;
+    const prefix = isPaperTrade ? "PAPER" : "OPENALGO";
+    let brokerOrderId = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
+    const action = selectedAction;
 
-      // For SELL: use the position data the user provided; default to current price / calculated shares
+    // For SELL: use the position data the user provided; default to current price / calculated shares
       const entryPrice =
         selectedAction === "SELL" && sellPosition?.entryPrice
-          ? sellPosition.entryPrice
-          : result.currentPrice;
+      ? sellPosition.entryPrice
+      : result.currentPrice;
       const shares =
         selectedAction === "SELL" && sellPosition?.shares
-          ? sellPosition.shares
-          : result.isCrypto
-            ? (result.positionSize?.shares ?? 0)
-            : Math.floor(result.positionSize?.shares || 0) || 1;
+      ? sellPosition.shares
+      : result.isCrypto
+        ? (result.positionSize?.shares ?? 0)
+        : Math.floor(result.positionSize?.shares || 0) || 1;
 
-      const sp = getStrategyParams(strategyCode);
+    const sp = getStrategyParams(strategyCode);
       const aiRecommendedPeriod =
         result.geminiForecast?.positioning_guidance?.recommended_hold_period;
-      const userChosenPeriod = userProfile.userHoldingPeriod;
+    const userChosenPeriod = userProfile.userHoldingPeriod;
       const effectiveHoldingPeriod =
         !userChosenPeriod || userChosenPeriod === "ai_recommendation"
-          ? (aiRecommendedPeriod ?? sp.defaultHoldPeriod)
+      ? (aiRecommendedPeriod ?? sp.defaultHoldPeriod)
           : userChosenPeriod === "none"
             ? sp.defaultHoldPeriod
             : userChosenPeriod;
 
       toast.loading("Placing order…", { id: "trade-start" });
-      try {
+    try {
         const { tradeTrackingService } =
           await import("@/services/tradeTrackingService");
 
-        // Real trade path: place broker order first, then create tracking record.
-        if (!isPaperTrade) {
+      // Real trade path: place broker order first, then create tracking record.
+      if (!isPaperTrade) {
           const strategyLabel =
             STRATEGIES.find((s) => s.value === strategyCode)?.label ??
             "ChartMate AI";
           const { data: orderData, error: orderErr } =
             await supabase.functions.invoke("openalgo-place-order", {
-              body: {
-                symbol: result.symbol,
-                action,
-                quantity: shares || 1,
-                exchange: "NSE",
-                product,
-                pricetype: "MARKET",
-                strategy: strategyLabel,
-                strategy_code: strategyCode,
-                intent: "entry",
-              },
-            });
+          body: {
+            symbol: result.symbol,
+            action,
+            quantity: shares || 1,
+            exchange: "NSE",
+            product,
+            pricetype: "MARKET",
+            strategy: strategyLabel,
+            strategy_code: strategyCode,
+            intent: "entry",
+          },
+        });
 
-          const orderError = (orderData as any)?.error ?? orderErr?.message;
-          if (orderError) {
-            toast.error(`Order failed: ${orderError}`, { id: "trade-start" });
-            return;
-          }
+        const orderError = (orderData as any)?.error ?? orderErr?.message;
+        if (orderError) {
+          toast.error(`Order failed: ${orderError}`, { id: "trade-start" });
+          return;
+        }
 
-          brokerOrderId =
-            (orderData as any)?.orderid ||
-            (orderData as any)?.order_id ||
-            (orderData as any)?.data?.orderid ||
-            brokerOrderId;
+        brokerOrderId =
+          (orderData as any)?.orderid ||
+          (orderData as any)?.order_id ||
+          (orderData as any)?.data?.orderid ||
+          brokerOrderId;
 
-          // Background: poll order fill status (non-blocking)
-          if (brokerOrderId && !brokerOrderId.startsWith("OPENALGO-")) {
-            (async () => {
+        // Background: poll order fill status (non-blocking)
+        if (brokerOrderId && !brokerOrderId.startsWith("OPENALGO-")) {
+          (async () => {
               const {
                 data: { session },
               } = await supabase.auth.getSession();
-              for (let i = 0; i < 5; i++) {
+            for (let i = 0; i < 5; i++) {
                 await new Promise((r) => setTimeout(r, 2500));
-                try {
+              try {
                   const pollRes = await supabase.functions.invoke(
                     "broker-data",
                     {
-                      body: { action: "orderstatus", orderid: brokerOrderId },
+                  body: { action: "orderstatus", orderid: brokerOrderId },
                       headers: {
                         Authorization: `Bearer ${session?.access_token}`,
                       },
@@ -611,64 +611,64 @@ const PredictPage = () => {
                   const status = (
                     (pollRes.data as any)?.data?.status ?? ""
                   ).toLowerCase();
-                  if (status === "complete") {
+                if (status === "complete") {
                     toast.success(
                       `Order ${brokerOrderId.slice(-6)} filled successfully ✓`,
                       { duration: 5000 },
                     );
-                    break;
-                  } else if (status === "rejected" || status === "cancelled") {
+                  break;
+                } else if (status === "rejected" || status === "cancelled") {
                     toast.error(
                       `Order ${brokerOrderId.slice(-6)} ${status}: ${(pollRes.data as any)?.data?.rejectreason ?? ""}`,
                       { duration: 6000 },
                     );
-                    break;
-                  }
+                  break;
+                }
                 } catch {
                   break;
                 }
-              }
-            })();
-          }
+            }
+          })();
         }
+      }
 
-        const response = await tradeTrackingService.startTradeSession({
-          symbol: result.symbol,
-          action,
+      const response = await tradeTrackingService.startTradeSession({
+        symbol: result.symbol,
+        action,
           confidence:
             result.geminiForecast?.action_signal?.confidence ||
             result.confidence ||
             0,
           riskGrade: result.geminiForecast?.risk_grade || "MEDIUM",
-          entryPrice,
-          shares: shares || 1,
-          investmentAmount: parseFloat(investment),
-          leverage: userProfile.leverage,
-          marginType: userProfile.marginType,
+        entryPrice,
+        shares: shares || 1,
+        investmentAmount: parseFloat(investment),
+        leverage: userProfile.leverage,
+        marginType: userProfile.marginType,
           exchange: "NSE",
-          product,
-          brokerOrderId,
-          strategyType: strategyCode,
-          stopLossPercentage: sp.stopLossPercentage,
-          targetProfitPercentage: sp.targetProfitPercentage,
-          holdingPeriod: effectiveHoldingPeriod,
-          aiRecommendedHoldPeriod: aiRecommendedPeriod ?? sp.defaultHoldPeriod,
-          expectedRoiBest: result.geminiForecast?.expected_roi?.best_case,
-          expectedRoiLikely: result.geminiForecast?.expected_roi?.likely_case,
-          expectedRoiWorst: result.geminiForecast?.expected_roi?.worst_case,
-        });
-        if (response.error) {
+        product,
+        brokerOrderId,
+        strategyType: strategyCode,
+        stopLossPercentage: sp.stopLossPercentage,
+        targetProfitPercentage: sp.targetProfitPercentage,
+        holdingPeriod: effectiveHoldingPeriod,
+        aiRecommendedHoldPeriod: aiRecommendedPeriod ?? sp.defaultHoldPeriod,
+        expectedRoiBest: result.geminiForecast?.expected_roi?.best_case,
+        expectedRoiLikely: result.geminiForecast?.expected_roi?.likely_case,
+        expectedRoiWorst: result.geminiForecast?.expected_roi?.worst_case,
+      });
+      if (response.error) {
           toast.error("Tracking failed: " + response.error, {
             id: "trade-start",
           });
-        } else {
-          const label = isPaperTrade
-            ? `Paper ${action} trade started — tracking live`
-            : `${action} order placed. Tracking live!`;
+      } else {
+        const label = isPaperTrade
+          ? `Paper ${action} trade started — tracking live`
+          : `${action} order placed. Tracking live!`;
           toast.success(label, { id: "trade-start" });
 
-          // Build a local trade object for the immediate P&L card —
-          // use response data if available, otherwise construct from known values
+        // Build a local trade object for the immediate P&L card —
+        // use response data if available, otherwise construct from known values
           const tradeId =
             (response.data as any)?.id ||
             (response.data as any)?.trade?.id ||
@@ -676,33 +676,33 @@ const PredictPage = () => {
           const strategyLabel =
             STRATEGIES.find((s) => s.value === strategyCode)?.label ??
             strategyCode;
-          setPlacedTrade({
+        setPlacedTrade({
             id: tradeId,
             symbol: result.symbol,
-            action,
+          action,
             status: "active",
-            entryPrice,
+          entryPrice,
             entryTime: new Date().toISOString(),
             shares: shares || 1,
-            investmentAmount: parseFloat(investment),
+          investmentAmount: parseFloat(investment),
             strategyType: strategyCode,
             stopLossPercentage: sp.stopLossPercentage,
-            targetProfitPercentage: sp.targetProfitPercentage,
+          targetProfitPercentage: sp.targetProfitPercentage,
             currentPrice: result.currentPrice,
             currentPnl: 0,
-            currentPnlPercentage: 0,
-            brokerOrderId,
-            product,
+          currentPnlPercentage: 0,
+          brokerOrderId,
+          product,
             confidence:
               result.geminiForecast?.action_signal?.confidence ||
               result.confidence ||
               0,
-          } as ActiveTrade & { strategyLabel: string });
-          setSellSharesInput(String(shares || 1));
-        }
-      } catch (e: any) {
-        toast.error(e?.message || "Failed", { id: "trade-start" });
+        } as ActiveTrade & { strategyLabel: string });
+        setSellSharesInput(String(shares || 1));
       }
+    } catch (e: any) {
+        toast.error(e?.message || "Failed", { id: "trade-start" });
+    }
     },
     [result, investment, userProfile, isPaperTrade],
   );
@@ -710,39 +710,39 @@ const PredictPage = () => {
   // ── Intercept strategy confirm for live orders → show pre-order sheet ─────
   const handleStrategyConfirm = useCallback(
     (
-      strategyCode: string,
-      product: string,
-      selectedAction: "BUY" | "SELL",
-      sellPosition?: { entryPrice: number; shares: number },
-    ) => {
-      if (isPaperTrade || !result) {
+    strategyCode: string,
+    product: string,
+    selectedAction: "BUY" | "SELL",
+    sellPosition?: { entryPrice: number; shares: number },
+  ) => {
+    if (isPaperTrade || !result) {
         placeMockOrderAndTrack(
           strategyCode,
           product,
           selectedAction,
           sellPosition,
         );
-        return;
-      }
+      return;
+    }
       pendingOrderRef.current = {
         strategy: strategyCode,
         product,
         action: selectedAction,
         sellPosition,
       };
-      const sp = getStrategyParams(strategyCode);
-      const price = result.currentPrice;
-      const shares = result.isCrypto
-        ? (result.positionSize?.shares ?? 0)
-        : Math.floor(result.positionSize?.shares || 0) || 1;
-      const isBuy = selectedAction === "BUY";
-      setPreOrderData({
+    const sp = getStrategyParams(strategyCode);
+    const price = result.currentPrice;
+    const shares = result.isCrypto
+      ? (result.positionSize?.shares ?? 0)
+      : Math.floor(result.positionSize?.shares || 0) || 1;
+    const isBuy = selectedAction === "BUY";
+    setPreOrderData({
         symbol: result.symbol,
         action: selectedAction,
         quantity: shares || 1,
-        price,
+      price,
         exchange: "NSE",
-        product,
+      product,
         strategy:
           STRATEGIES.find((s) => s.value === strategyCode)?.label ??
           "ChartMate AI",
@@ -758,9 +758,9 @@ const PredictPage = () => {
             : price * (1 - sp.targetProfitPercentage / 100)
           ).toFixed(2),
         ),
-        investment: parseFloat(investment),
-      });
-      setShowPreOrderSheet(true);
+      investment: parseFloat(investment),
+    });
+    setShowPreOrderSheet(true);
     },
     [isPaperTrade, result, investment, placeMockOrderAndTrack],
   );
@@ -791,9 +791,9 @@ const PredictPage = () => {
         const { data, error } = await supabase.functions.invoke(
           "get-market-status",
           {
-            body: {
-              symbol: selectedSymbol.full_symbol || selectedSymbol.symbol,
-              exchange: selectedSymbol.exchange,
+          body: {
+            symbol: selectedSymbol.full_symbol || selectedSymbol.symbol,
+            exchange: selectedSymbol.exchange,
               type: selectedSymbol.type,
             },
           },
@@ -985,33 +985,33 @@ const PredictPage = () => {
       if (!user?.id) return;
 
       const { error } = await supabase.from("predictions" as any).insert({
-        user_id: user.id,
-        symbol: predictionData.symbol,
-        timeframe,
-        investment: parseFloat(investment),
-        current_price: predictionData.currentPrice,
-        recommendation: predictionData.recommendation || null,
-        confidence: predictionData.confidence || null,
-        expected_move_direction: predictionData.expectedMove?.direction || null,
-        expected_move_percent: predictionData.expectedMove?.percent || null,
-        price_target_min: predictionData.expectedMove?.priceTarget?.min || null,
-        price_target_max: predictionData.expectedMove?.priceTarget?.max || null,
-        rationale: predictionData.rationale || null,
-        patterns: predictionData.patterns || null,
-        key_levels: predictionData.keyLevels || null,
-        risks: predictionData.risks || null,
-        opportunities: predictionData.opportunities || null,
-        raw_response: {
-          ...predictionData,
-          geminiForecast: predictionData.geminiForecast,
-          savedUserProfile: userProfile,
-          savedDisplayCurrency: displayCurrency,
+          user_id: user.id,
+          symbol: predictionData.symbol,
+          timeframe,
+          investment: parseFloat(investment),
+          current_price: predictionData.currentPrice,
+          recommendation: predictionData.recommendation || null,
+          confidence: predictionData.confidence || null,
+          expected_move_direction: predictionData.expectedMove?.direction || null,
+          expected_move_percent: predictionData.expectedMove?.percent || null,
+          price_target_min: predictionData.expectedMove?.priceTarget?.min || null,
+          price_target_max: predictionData.expectedMove?.priceTarget?.max || null,
+          rationale: predictionData.rationale || null,
+          patterns: predictionData.patterns || null,
+          key_levels: predictionData.keyLevels || null,
+          risks: predictionData.risks || null,
+          opportunities: predictionData.opportunities || null,
+          raw_response: {
+            ...predictionData,
+            geminiForecast: predictionData.geminiForecast,
+            savedUserProfile: userProfile,
+            savedDisplayCurrency: displayCurrency,
           focusTimeframe:
             timeframe === "custom" && customTimeframe
               ? customTimeframe
               : timeframe,
-        },
-      });
+          },
+        });
 
       if (error) {
         console.error("Error saving prediction:", error);
@@ -1104,10 +1104,10 @@ const PredictPage = () => {
       const { data, error } = await supabase.functions.invoke(
         "predict-movement",
         {
-          body: {
+        body: {
             symbol: symbol.split(":")[1] || symbol,
-            investment: parseFloat(investment),
-            timeframe: effectiveTimeframe,
+          investment: parseFloat(investment),
+          timeframe: effectiveTimeframe,
             focusTimeframe: effectiveTimeframe,
             horizons: [primaryHorizon, 240, 1440, 10080],
             ...userProfile,
@@ -1191,7 +1191,7 @@ const PredictPage = () => {
     title?: string;
     showAnalysis?: boolean;
   }) {
-    return (
+  return (
       <div className="min-w-0 w-full lg:self-stretch lg:min-h-0">
         <div className={cn("min-w-0 space-y-4", wrapperClassName)}>
           <Card
@@ -1259,211 +1259,211 @@ const PredictPage = () => {
     <>
       <DashboardShellLayout>
         <div className="bg-background text-foreground">
-          {/* Analysis Loader — rendered at root level so fixed overlay works correctly */}
-          {showAdvancedLoader && (
-            <AdvancedPredictLoader
-              onComplete={handleLoaderComplete}
-              ready={analysisReady}
-              symbol={symbol}
-              isVisible={showAdvancedLoader}
-              timeframe={timeframe}
-            />
-          )}
+      {/* Analysis Loader — rendered at root level so fixed overlay works correctly */}
+      {showAdvancedLoader && (
+        <AdvancedPredictLoader
+          onComplete={handleLoaderComplete}
+          ready={analysisReady}
+          symbol={symbol}
+          isVisible={showAdvancedLoader}
+          timeframe={timeframe}
+        />
+      )}
 
-          <Dialog open={showPresetDialog} onOpenChange={setShowPresetDialog}>
-            <DialogContent className="mx-auto">
-              <DialogHeader>
-                <DialogTitle>Use previous analysis details?</DialogTitle>
-              </DialogHeader>
+      <Dialog open={showPresetDialog} onOpenChange={setShowPresetDialog}>
+        <DialogContent className="mx-auto">
+          <DialogHeader>
+            <DialogTitle>Use previous analysis details?</DialogTitle>
+          </DialogHeader>
 
-              <DialogFooter className="!pt-5">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setShowPresetDialog(false);
-                    // User wants fresh settings; continue to Trading Profile with current symbol + amount
+          <DialogFooter className="!pt-5">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowPresetDialog(false);
+                // User wants fresh settings; continue to Trading Profile with current symbol + amount
                     setCompletedSteps((prev) => [...prev, "choose-asset"]);
-                    setCurrentStep("trading-profile");
-                  }}
-                >
-                  Use New
-                </Button>
-                <Button
-                  onClick={() => {
-                    if (latestPreset) {
-                      applyPreset(latestPreset, true);
+                setCurrentStep("trading-profile");
+              }}
+            >
+              Use New
+            </Button>
+            <Button
+              onClick={() => {
+                if (latestPreset) {
+                  applyPreset(latestPreset, true);
                       setCompletedSteps((prev) => [...prev, "choose-asset"]);
-                      setCurrentStep("trading-profile");
-                      setShowPresetDialog(false);
-                      setTimeout(() => {
+                  setCurrentStep("trading-profile");
+                  setShowPresetDialog(false);
+                  setTimeout(() => {
                         document
                           .getElementById("risk-acknowledge-block")
                           ?.scrollIntoView({
                             behavior: "smooth",
                             block: "center",
                           });
-                      }, 300);
-                    } else {
-                      setShowPresetDialog(false);
-                    }
-                  }}
-                >
-                  Use Prefilled Details
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+                  }, 300);
+                } else {
+                  setShowPresetDialog(false);
+                }
+              }}
+            >
+              Use Prefilled Details
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-          {/* Header */}
-          <div className="border-b border-white/5 bg-background/80 backdrop-blur-xl z-50">
-            <Container className="py-3 sm:py-4">
+      {/* Header */}
+      <div className="border-b border-white/5 bg-background/80 backdrop-blur-xl z-50">
+        <Container className="py-3 sm:py-4">
               <div className="text-center space-y-2 pt-10 lg:pt-0">
                 <h1
                   className={`${isMobile ? "text-2xl" : "text-3xl md:text-4xl"} font-bold text-gradient`}
                 >
-                  Probability-Based Analysis Software
-                </h1>
+              Probability-Based Analysis Software
+            </h1>
                 <p
                   className={`text-muted-foreground ${isMobile ? "text-sm" : ""}`}
                 >
                   Get real-time AI-powered probability-based analysis for any
                   stock, forex, or crypto
-                </p>
-                {user?.email && (
-                  <p className="text-xs text-muted-foreground">
-                    Welcome back, {user.email}
-                  </p>
-                )}
-              </div>
-
-              {/* Progress Stepper */}
-              <div className={`${isMobile ? "mt-4" : "mt-8"}`}>
-                <Stepper
-                  steps={steps}
-                  currentStep={currentStep}
-                  completedSteps={completedSteps}
-                  className={isMobile ? "mobile-stepper" : ""}
-                />
-              </div>
-            </Container>
+            </p>
+            {user?.email && (
+              <p className="text-xs text-muted-foreground">
+                Welcome back, {user.email}
+              </p>
+            )}
           </div>
 
-          {/* Main Content */}
-          <Container className="py-4 sm:py-8">
+          {/* Progress Stepper */}
+              <div className={`${isMobile ? "mt-4" : "mt-8"}`}>
+            <Stepper
+              steps={steps}
+              currentStep={currentStep}
+              completedSteps={completedSteps}
+                  className={isMobile ? "mobile-stepper" : ""}
+            />
+          </div>
+        </Container>
+      </div>
+
+      {/* Main Content */}
+      <Container className="py-4 sm:py-8">
             {/* Step 1 — asset, timeframe & investment + tall chart */}
             {currentStep === "choose-asset" && (
               <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,55%)] gap-4 sm:gap-6 lg:gap-8 items-start">
                 <div className="min-w-0">
-                  <StepContainer
+              <StepContainer
                     title="Asset & investment"
                     description="Pick what to analyze, choose a timeframe, and enter the amount for position sizing"
-                    isActive={true}
+                isActive={true}
                     className="max-w-2xl w-full"
-                  >
+              >
                     <div className="space-y-6">
-                      <div className="space-y-4">
+                <div className="space-y-4">
                         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                           Market
                         </p>
-                        <div>
+                  <div>
                           <div className="flex items-center gap-1.5 mb-2">
                             <Label
                               htmlFor="symbol"
                               className="text-sm font-medium"
                             >
-                              Symbol
-                            </Label>
+                      Symbol
+                    </Label>
                             <CardInfoTooltip
                               text={HELP.predictSymbol}
                               className="text-muted-foreground"
                               side="top"
                             />
                           </div>
-                          <SymbolSearch
-                            value={symbol}
-                            onValueChange={setSymbol}
-                            onSelectSymbol={setSelectedSymbol}
+                    <SymbolSearch
+                      value={symbol}
+                      onValueChange={setSymbol}
+                      onSelectSymbol={setSelectedSymbol}
                             placeholder={
                               isMobile
                                 ? "Search symbols..."
                                 : "Search stocks, crypto, forex... (e.g., AAPL, BTC-USD)"
                             }
-                          />
-                        </div>
+                    />
+                  </div>
 
-                        {symbol && (
-                          <div className="p-4 bg-muted/30 rounded-lg border">
-                            <div className="flex items-center gap-2">
+                  {symbol && (
+                      <div className="p-4 bg-muted/30 rounded-lg border">
+                        <div className="flex items-center gap-2">
                               <CheckCircle className="h-5 w-5 text-green-600 shrink-0" />
                               <span className="font-medium">
                                 Selected: {selectedSymbol?.symbol || symbol}
                               </span>
-                            </div>
-                          </div>
+                        </div>
+                      </div>
                         )}
 
-                        <div>
+                      <div>
                           <div className="flex items-center gap-1.5 mb-2">
                             <Label
                               htmlFor="timeframe"
                               className="text-sm font-medium"
                             >
                               Analysis timeframe
-                            </Label>
+                        </Label>
                             <CardInfoTooltip
                               text={HELP.predictTimeframe}
                               className="text-muted-foreground"
                               side="top"
                             />
                           </div>
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
                             {["15m", "30m", "1h", "4h", "1d", "1w"].map(
                               (tf) => (
-                                <Button
-                                  key={tf}
+                            <Button
+                              key={tf}
                                   variant={
                                     timeframe === tf ? "default" : "outline"
                                   }
-                                  size="sm"
-                                  onClick={() => {
-                                    setTimeframe(tf);
+                              size="sm"
+                              onClick={() => {
+                                setTimeframe(tf);
                                     setCustomTimeframe("");
-                                  }}
-                                  className="w-full"
-                                >
-                                  {tf}
-                                </Button>
+                              }}
+                              className="w-full"
+                            >
+                              {tf}
+                            </Button>
                               ),
                             )}
-                            <Button
+                          <Button
                               variant={
                                 timeframe === "custom" ? "default" : "outline"
                               }
-                              size="sm"
+                            size="sm"
                               onClick={() => setTimeframe("custom")}
-                              className="w-full"
-                            >
-                              Custom
-                            </Button>
-                          </div>
+                            className="w-full"
+                          >
+                            Custom
+                          </Button>
+                        </div>
                           {timeframe === "custom" && (
-                            <div className="mt-2">
-                              <Input
-                                id="customTimeframe"
-                                type="text"
-                                placeholder="e.g., 2h, 3d, 2w"
-                                value={customTimeframe}
+                          <div className="mt-2">
+                            <Input
+                              id="customTimeframe"
+                              type="text"
+                              placeholder="e.g., 2h, 3d, 2w"
+                              value={customTimeframe}
                                 onChange={(e) =>
                                   setCustomTimeframe(e.target.value)
                                 }
-                                className="w-full"
-                              />
-                              <p className="text-xs text-muted-foreground mt-1">
-                                Format: 15m, 30m, 1h, 2h, 4h, 1d, 2d, 1w, etc.
-                              </p>
-                            </div>
-                          )}
-                          <p className="text-xs text-muted-foreground mt-2">
+                              className="w-full"
+                            />
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Format: 15m, 30m, 1h, 2h, 4h, 1d, 2d, 1w, etc.
+                            </p>
+                          </div>
+                        )}
+                        <p className="text-xs text-muted-foreground mt-2">
                             {timeframe === "15m" &&
                               "⚡ Ultra short-term: AI will analyze next 15 minutes"}
                             {timeframe === "30m" &&
@@ -1478,78 +1478,78 @@ const PredictPage = () => {
                               "📆 Weekly: AI will analyze this week's movement"}
                             {timeframe === "custom" &&
                               "✏️ Custom timeframe: Enter your desired analysis window"}
-                          </p>
-                        </div>
-
-                        {selectedSymbol && (
-                          <MarketStatus
-                            symbol={selectedSymbol.full_symbol}
-                            displaySymbol={selectedSymbol.symbol}
-                            exchange={selectedSymbol.exchange}
-                            type={selectedSymbol.type}
-                          />
-                        )}
+                        </p>
                       </div>
+
+                      {selectedSymbol && (
+                        <MarketStatus
+                          symbol={selectedSymbol.full_symbol}
+                          displaySymbol={selectedSymbol.symbol}
+                          exchange={selectedSymbol.exchange}
+                          type={selectedSymbol.type}
+                        />
+                      )}
+                    </div>
 
                       <div className="border-t border-border pt-6 space-y-4">
                         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                           Position size
                         </p>
-                        <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center justify-between gap-2">
                           <Label className="text-sm text-muted-foreground">
                             Show amounts in
                           </Label>
-                          <div className="flex rounded-full border p-0.5 bg-muted/60">
-                            <button
-                              type="button"
-                              className={`px-3 py-1 rounded-full text-sm ${displayCurrency === "INR" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
-                              onClick={() => setDisplayCurrency("INR")}
-                            >
-                              INR
-                            </button>
-                            <button
-                              type="button"
-                              className={`px-3 py-1 rounded-full text-sm ${displayCurrency === "USD" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
-                              onClick={() => setDisplayCurrency("USD")}
-                            >
-                              USD
-                            </button>
-                          </div>
-                        </div>
-                        <div>
+                    <div className="flex rounded-full border p-0.5 bg-muted/60">
+                      <button
+                        type="button"
+                        className={`px-3 py-1 rounded-full text-sm ${displayCurrency === "INR" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                        onClick={() => setDisplayCurrency("INR")}
+                      >
+                        INR
+                      </button>
+                      <button
+                        type="button"
+                        className={`px-3 py-1 rounded-full text-sm ${displayCurrency === "USD" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                        onClick={() => setDisplayCurrency("USD")}
+                      >
+                        USD
+                      </button>
+                    </div>
+                  </div>
+                  <div>
                           <div className="flex items-center gap-1.5 mb-2">
                             <Label
                               htmlFor="investment"
                               className="text-sm font-medium"
                             >
                               Investment amount ({displayCurrency})
-                            </Label>
+                    </Label>
                             <CardInfoTooltip
                               text={HELP.predictInvestment}
                               className="text-muted-foreground"
                               side="top"
                             />
                           </div>
-                          <div className="relative">
-                            <span className="absolute left-3 top-3 h-4 w-4 flex items-center justify-center text-muted-foreground font-medium">
-                              {displayCurrency === "INR" ? "₹" : "$"}
-                            </span>
-                            <Input
-                              id="investment"
-                              type="number"
-                              placeholder="1000"
-                              value={investment}
-                              onChange={(e) => setInvestment(e.target.value)}
-                              className="pl-10"
-                              min="1"
-                              step="0.01"
-                            />
-                          </div>
-                        </div>
+                    <div className="relative">
+                      <span className="absolute left-3 top-3 h-4 w-4 flex items-center justify-center text-muted-foreground font-medium">
+                        {displayCurrency === "INR" ? "₹" : "$"}
+                      </span>
+                      <Input
+                        id="investment"
+                        type="number"
+                        placeholder="1000"
+                        value={investment}
+                        onChange={(e) => setInvestment(e.target.value)}
+                        className="pl-10"
+                        min="1"
+                        step="0.01"
+                      />
+                    </div>
+                  </div>
 
                         {investment && parseFloat(investment) > 0 && (
-                          <div className="p-4 bg-muted/30 rounded-lg border">
-                            <div className="flex items-center gap-2">
+                    <div className="p-4 bg-muted/30 rounded-lg border">
+                      <div className="flex items-center gap-2">
                               <CheckCircle className="h-5 w-5 text-green-600 shrink-0" />
                               <span className="font-medium">
                                 Investment:{" "}
@@ -1560,13 +1560,13 @@ const PredictPage = () => {
                                   displayCurrency,
                                 )}
                               </span>
-                            </div>
-                          </div>
-                        )}
+                      </div>
+                    </div>
+                  )}
                       </div>
 
-                      <Button
-                        onClick={handleNextStep}
+                    <Button
+                      onClick={handleNextStep}
                         disabled={
                           !symbol ||
                           !investment ||
@@ -1574,13 +1574,13 @@ const PredictPage = () => {
                           Number.isNaN(parseFloat(investment))
                         }
                         className="w-full"
-                        size="lg"
-                      >
+                      size="lg"
+                    >
                         Continue to trading profile
-                        <ArrowRight className="ml-2 h-4 w-4" />
-                      </Button>
-                    </div>
-                  </StepContainer>
+                      <ArrowRight className="ml-2 h-4 w-4" />
+                    </Button>
+                </div>
+              </StepContainer>
                 </div>
                 <LiveChartBlock
                   cardClassName="h-[min(17rem,48vh)] sm:h-[21rem] lg:min-h-[32rem] lg:h-[min(28rem,70vh)] xl:min-h-[28rem]"
@@ -1593,17 +1593,17 @@ const PredictPage = () => {
             {currentStep === "trading-profile" && (
               <div className="flex flex-col-reverse gap-4 sm:gap-6 lg:gap-8 items-start">
                 <div className="min-w-0 w-full">
-                  <StepContainer
-                    title="Your Trading Profile"
-                    description="Tell us about your trading style and risk preferences for personalized AI analysis"
-                    isActive={true}
-                  >
-                    <div className="space-y-6">
-                      <UserProfileForm
-                        profile={userProfile}
-                        onChange={setUserProfile}
-                        investmentAmount={parseFloat(investment || "0")}
-                        marketClosed={marketClosed}
+              <StepContainer
+                title="Your Trading Profile"
+                description="Tell us about your trading style and risk preferences for personalized AI analysis"
+                isActive={true}
+              >
+                <div className="space-y-6">
+                  <UserProfileForm
+                    profile={userProfile}
+                    onChange={setUserProfile}
+                    investmentAmount={parseFloat(investment || "0")}
+                    marketClosed={marketClosed}
                         marketOpenTime={
                           marketStatus?.nextRegularOpen
                             ? new Date(
@@ -1611,39 +1611,39 @@ const PredictPage = () => {
                               ).toLocaleString()
                             : undefined
                         }
-                      />
+                  />
 
-                      <div className="p-4 bg-primary/10 rounded-lg border border-primary/20">
-                        <h4 className="font-medium mb-2 flex items-center gap-2">
-                          <BrainCircuit className="h-5 w-5" />
-                          AI Personalization
-                        </h4>
-                        <p className="text-sm text-muted-foreground">
+                  <div className="p-4 bg-primary/10 rounded-lg border border-primary/20">
+                    <h4 className="font-medium mb-2 flex items-center gap-2">
+                      <BrainCircuit className="h-5 w-5" />
+                      AI Personalization
+                    </h4>
+                    <p className="text-sm text-muted-foreground">
                           AI will use your trading profile to provide tailored
                           probability-based analysis, risk assessments, and
                           recommendations that match your strategy and goals.
-                        </p>
-                      </div>
+                    </p>
+                  </div>
 
-                      <div className="flex flex-col sm:flex-row gap-3">
+                  <div className="flex flex-col sm:flex-row gap-3">
                         <Button
                           variant="outline"
                           onClick={handlePrevStep}
                           className="w-full sm:w-auto sm:flex-shrink-0"
                         >
-                          <ArrowLeft className="h-4 w-4 mr-1" /> Back
-                        </Button>
-                        <Button
-                          onClick={handleNextStep}
-                          className="w-full sm:flex-1"
-                          size="lg"
-                        >
-                          Continue to Review
-                          <ArrowRight className="ml-2 h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  </StepContainer>
+                      <ArrowLeft className="h-4 w-4 mr-1" /> Back
+                    </Button>
+                    <Button
+                      onClick={handleNextStep}
+                      className="w-full sm:flex-1"
+                      size="lg"
+                    >
+                      Continue to Review
+                      <ArrowRight className="ml-2 h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </StepContainer>
                 </div>
                 <LiveChartBlock
                   cardClassName="h-[min(17rem,48vh)] sm:h-[21rem] lg:h-[28rem]"
@@ -1656,20 +1656,20 @@ const PredictPage = () => {
             {currentStep === "review" && (
               <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(17rem,36%)] gap-4 sm:gap-6 lg:gap-8 items-start">
                 <div className="min-w-0">
-                  <StepContainer
-                    title="Review & Start Analysis"
-                    description="Confirm your analysis parameters before starting the AI analysis"
-                    isActive={true}
-                  >
-                    <div className="space-y-6">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="p-4 bg-muted/30 rounded-lg border">
-                          <p className="text-sm text-muted-foreground">Asset</p>
+              <StepContainer
+                title="Review & Start Analysis"
+                description="Confirm your analysis parameters before starting the AI analysis"
+                isActive={true}
+              >
+                <div className="space-y-6">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 bg-muted/30 rounded-lg border">
+                      <p className="text-sm text-muted-foreground">Asset</p>
                           <p className="text-lg font-semibold">
                             {selectedSymbol?.symbol || symbol}
                           </p>
-                        </div>
-                        <div className="p-4 bg-muted/30 rounded-lg border">
+                    </div>
+                    <div className="p-4 bg-muted/30 rounded-lg border">
                           <p className="text-sm text-muted-foreground">
                             Investment
                           </p>
@@ -1681,88 +1681,88 @@ const PredictPage = () => {
                               displayCurrency,
                             )}
                           </p>
-                        </div>
-                      </div>
+                    </div>
+                  </div>
 
-                      <div className="p-4 bg-muted/30 rounded-lg border">
+                  <div className="p-4 bg-muted/30 rounded-lg border">
                         <h4 className="font-medium mb-3">
                           Trading Profile Summary
                         </h4>
-                        <div className="grid grid-cols-2 gap-3 text-sm">
-                          <div>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
                             <span className="text-muted-foreground">
                               Risk Tolerance:
                             </span>
                             <span className="ml-2 font-medium capitalize">
                               {userProfile.riskTolerance}
                             </span>
-                          </div>
-                          <div>
+                      </div>
+                      <div>
                             <span className="text-muted-foreground">
                               Trading Style:
                             </span>
                             <span className="ml-2 font-medium capitalize">
                               {userProfile.tradingStyle?.replace(/_/g, " ")}
                             </span>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">Goal:</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Goal:</span>
                             <span className="ml-2 font-medium capitalize">
                               {userProfile.investmentGoal}
                             </span>
-                          </div>
-                          <div>
+                      </div>
+                      <div>
                             <span className="text-muted-foreground">
                               Account Type:
                             </span>
                             <span className="ml-2 font-medium capitalize">
                               {userProfile.marginType}
                             </span>
-                          </div>
-                          <div>
+                      </div>
+                      <div>
                             <span className="text-muted-foreground">
                               Stop Loss:
                             </span>
                             <span className="ml-2 font-medium">
                               {userProfile.stopLossPercentage}%
                             </span>
-                          </div>
-                          <div>
+                      </div>
+                      <div>
                             <span className="text-muted-foreground">
                               Target Profit:
                             </span>
                             <span className="ml-2 font-medium">
                               {userProfile.targetProfitPercentage}%
                             </span>
-                          </div>
+                      </div>
                           {userProfile.marginType !== "cash" && (
-                            <div>
+                        <div>
                               <span className="text-muted-foreground">
                                 Leverage:
                               </span>
                               <span className="ml-2 font-medium text-orange-500">
                                 {userProfile.leverage}x
                               </span>
-                            </div>
-                          )}
                         </div>
-                      </div>
-
-                      {selectedSymbol && (
-                        <MarketStatus
-                          symbol={selectedSymbol.full_symbol}
-                          displaySymbol={selectedSymbol.symbol}
-                          exchange={selectedSymbol.exchange}
-                          type={selectedSymbol.type}
-                        />
                       )}
+                    </div>
+                  </div>
 
-                      <div className="p-4 bg-primary/10 rounded-lg border border-primary/20">
-                        <h4 className="font-medium mb-2 flex items-center gap-2">
-                          <BrainCircuit className="h-5 w-5" />
-                          AI Analysis
-                        </h4>
-                        <ul className="text-sm text-muted-foreground space-y-1">
+                  {selectedSymbol && (
+                    <MarketStatus
+                      symbol={selectedSymbol.full_symbol}
+                      displaySymbol={selectedSymbol.symbol}
+                      exchange={selectedSymbol.exchange}
+                      type={selectedSymbol.type}
+                    />
+                  )}
+
+                  <div className="p-4 bg-primary/10 rounded-lg border border-primary/20">
+                    <h4 className="font-medium mb-2 flex items-center gap-2">
+                      <BrainCircuit className="h-5 w-5" />
+                      AI Analysis
+                    </h4>
+                    <ul className="text-sm text-muted-foreground space-y-1">
                           <li>
                             • Multi-horizon forecasts personalized to your
                             profile
@@ -1781,39 +1781,39 @@ const PredictPage = () => {
                             • Tailored entry/exit strategies for your trading
                             style
                           </li>
-                        </ul>
-                      </div>
+                    </ul>
+                  </div>
 
-                      <div className="flex flex-col sm:flex-row gap-3">
+                  <div className="flex flex-col sm:flex-row gap-3">
                         <Button
                           variant="outline"
                           onClick={handlePrevStep}
                           disabled={loading}
                           className="w-full sm:w-auto sm:flex-shrink-0"
                         >
-                          <ArrowLeft className="h-4 w-4 mr-1" /> Back
-                        </Button>
-                        <Button
-                          onClick={handleNextStep}
-                          disabled={loading}
-                          className="w-full sm:flex-1"
-                          size="lg"
-                        >
-                          {loading ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Starting Analysis...
-                            </>
-                          ) : (
-                            <>
-                              Start AI Analysis
-                              <BrainCircuit className="ml-2 h-4 w-4" />
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                    </div>
-                  </StepContainer>
+                      <ArrowLeft className="h-4 w-4 mr-1" /> Back
+                    </Button>
+                    <Button
+                      onClick={handleNextStep}
+                      disabled={loading}
+                      className="w-full sm:flex-1"
+                      size="lg"
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Starting Analysis...
+                        </>
+                      ) : (
+                        <>
+                          Start AI Analysis
+                          <BrainCircuit className="ml-2 h-4 w-4" />
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </StepContainer>
                 </div>
                 <LiveChartBlock
                   cardClassName="h-[min(15rem,40vh)] sm:h-[18rem] lg:h-[25rem] xl:h-[28rem]"
@@ -1832,15 +1832,15 @@ const PredictPage = () => {
                   showAnalysis={false}
                 />
                 <div className="min-w-0">
-                  <StepContainer
-                    title="Live AI Analysis"
-                    description="Our AI is analyzing market data and generating your probability-based analysis"
-                    isActive={true}
-                  >
-                    <div className="py-8 text-center text-muted-foreground text-sm">
-                      Running AI analysis…
-                    </div>
-                  </StepContainer>
+              <StepContainer
+                title="Live AI Analysis"
+                description="Our AI is analyzing market data and generating your probability-based analysis"
+                isActive={true}
+              >
+                <div className="py-8 text-center text-muted-foreground text-sm">
+                  Running AI analysis…
+                </div>
+              </StepContainer>
                 </div>
               </div>
             )}
@@ -1849,18 +1849,18 @@ const PredictPage = () => {
             {currentStep === "results" && result && (
               <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(17rem,30%)] gap-6 xl:gap-8 items-start">
                 <div className="space-y-6 relative z-10 w-full min-w-0 animate-in fade-in slide-in-from-bottom-4 duration-700">
-                  {/* Ambient glow effects behind results */}
-                  <div className="pointer-events-none absolute -inset-32 bg-primary/5 blur-[120px] -z-10 rounded-[100%]" />
-                  <div className="pointer-events-none absolute top-1/4 -right-32 w-96 h-96 bg-accent/5 blur-[120px] -z-10 rounded-[100%]" />
+                {/* Ambient glow effects behind results */}
+                <div className="pointer-events-none absolute -inset-32 bg-primary/5 blur-[120px] -z-10 rounded-[100%]" />
+                <div className="pointer-events-none absolute top-1/4 -right-32 w-96 h-96 bg-accent/5 blur-[120px] -z-10 rounded-[100%]" />
 
-                  {/* Probability Panel — most important, shown first */}
-                  {result.geminiForecast && (
-                    <ProbabilityPanel
-                      symbol={result.symbol}
-                      currentPrice={result.currentPrice}
-                      geminiForecast={result.geminiForecast}
-                      volumeData={result.volumeData}
-                      analysedAt={predictedAt}
+                {/* Probability Panel — most important, shown first */}
+                {result.geminiForecast && (
+                  <ProbabilityPanel
+                    symbol={result.symbol}
+                    currentPrice={result.currentPrice}
+                    geminiForecast={result.geminiForecast}
+                    volumeData={result.volumeData}
+                    analysedAt={predictedAt}
                       displayCurrency={displayCurrency}
                       usdPerInr={usdPerInr}
                       selectedHorizon={
@@ -1868,28 +1868,28 @@ const PredictPage = () => {
                           ? customTimeframe.trim()
                           : timeframe
                       }
-                      onRefresh={() => {
-                        if (savedPredictionId) {
+                    onRefresh={() => {
+                      if (savedPredictionId) {
                           toast.info(
                             "Start a new analysis from Predict to refresh this dashboard.",
                           );
-                          navigate("/predict");
-                          return;
-                        }
-                        setCurrentStep("review");
+                        navigate("/predict");
+                        return;
+                      }
+                      setCurrentStep("review");
                         setCompletedSteps((prev) =>
                           prev.filter(
                             (s) => s !== "analysis" && s !== "results",
                           ),
                         );
-                      }}
-                    />
-                  )}
+                    }}
+                  />
+                )}
 
-                  {/* AI Reasoning - Why this signal? */}
-                  {result.geminiForecast && (
-                    <AIReasoningDisplay
-                      symbol={result.symbol}
+                {/* AI Reasoning - Why this signal? */}
+                {result.geminiForecast && (
+                  <AIReasoningDisplay
+                    symbol={result.symbol}
                       action={
                         result.geminiForecast.action_signal?.action || "HOLD"
                       }
@@ -1898,16 +1898,16 @@ const PredictPage = () => {
                         result.confidence ||
                         50
                       }
-                      technicalFactors={result.patterns}
+                    technicalFactors={result.patterns}
                       keyDrivers={
                         result.geminiForecast.forecasts?.[0]?.key_drivers
                       }
                       riskFlags={
                         result.geminiForecast.forecasts?.[0]?.risk_flags
                       }
-                      oneLineSummary={result.rationale}
-                      deepAnalysis={result.geminiForecast.deep_analysis}
-                      marketContext={result.geminiForecast.market_context}
+                    oneLineSummary={result.rationale}
+                    deepAnalysis={result.geminiForecast.deep_analysis}
+                    marketContext={result.geminiForecast.market_context}
                       positioningNotes={
                         result.geminiForecast.positioning_guidance?.notes
                       }
@@ -1915,22 +1915,22 @@ const PredictPage = () => {
                         result.volumeData?.volumeProfile ?? undefined
                       }
                       analysedAt={predictedAt}
-                    />
-                  )}
+                  />
+                )}
 
-                  {/* Entry/exit scanner moved to Trading Dashboard → Scanner tab */}
+                {/* Entry/exit scanner moved to Trading Dashboard → Scanner tab */}
 
-                  {/* Decision Screen - Primary Call to Action */}
-                  {result.geminiForecast && (
-                    <DecisionScreen
-                      symbol={result.symbol}
+                {/* Decision Screen - Primary Call to Action */}
+                {result.geminiForecast && (
+                  <DecisionScreen
+                    symbol={result.symbol}
                       currentPrice={convertQuoteToDisplayAmount(
                         result.currentPrice,
                         quoteInUsd,
                         displayCurrency,
                         usdPerInr,
                       )}
-                      investment={parseFloat(investment)}
+                    investment={parseFloat(investment)}
                       action={
                         result.geminiForecast.action_signal?.action || "HOLD"
                       }
@@ -1940,16 +1940,16 @@ const PredictPage = () => {
                         50
                       }
                       riskLevel={result.geminiForecast.risk_grade || "MEDIUM"}
-                      expectedROI={{
+                    expectedROI={{
                         best:
                           result.geminiForecast.expected_roi?.best_case || 10,
                         likely:
                           result.geminiForecast.expected_roi?.likely_case || 5,
                         worst:
                           result.geminiForecast.expected_roi?.worst_case || -5,
-                      }}
-                      positionSize={{
-                        shares: result.positionSize?.shares || 0,
+                    }}
+                    positionSize={{
+                      shares: result.positionSize?.shares || 0,
                         costPerShare: convertQuoteToDisplayAmount(
                           result.positionSize?.costPerShare ||
                             result.currentPrice,
@@ -1968,140 +1968,140 @@ const PredictPage = () => {
                         result.geminiForecast.positioning_guidance
                           ?.recommended_hold_period
                       }
-                      stopLoss={userProfile.stopLossPercentage || 5}
-                      takeProfit={userProfile.targetProfitPercentage || 15}
-                      leverage={userProfile.leverage || 1}
-                      currency={displayCurrency}
+                    stopLoss={userProfile.stopLossPercentage || 5}
+                    takeProfit={userProfile.targetProfitPercentage || 15}
+                    leverage={userProfile.leverage || 1}
+                    currency={displayCurrency}
                       priceCurrency={effectivePriceCurrency}
-                      isCrypto={result.isCrypto}
-                    />
-                  )}
+                    isCrypto={result.isCrypto}
+                  />
+                )}
 
-                  {/* Key Price Levels - shown before Place Order */}
-                  {result.geminiForecast?.support_resistance && (
-                    <Card className="glass-panel">
-                      <CardHeader>
+                {/* Key Price Levels - shown before Place Order */}
+                {result.geminiForecast?.support_resistance && (
+                  <Card className="glass-panel">
+                    <CardHeader>
                         <CardTitle className="text-white">
                           Key Price Levels
                         </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <KeyLevels
+                    </CardHeader>
+                    <CardContent>
+                      <KeyLevels
                           supportLevels={
                             result.geminiForecast.support_resistance.supports
                           }
                           resistanceLevels={
                             result.geminiForecast.support_resistance.resistances
                           }
-                          currentPrice={result.currentPrice}
+                        currentPrice={result.currentPrice}
                           formatLevelPrice={(lvl) => formatPriceForUi(lvl, 2)}
-                        />
-                      </CardContent>
-                    </Card>
-                  )}
+                      />
+                    </CardContent>
+                  </Card>
+                )}
 
                   
 
-                  {/* Use previous strategy or choose new */}
-                  {result && lastUsedStrategy && (
-                    <UsePreviousOrNewStrategyDialog
-                      open={showPreviousOrNewDialog}
-                      onOpenChange={setShowPreviousOrNewDialog}
-                      lastStrategyLabel={lastUsedStrategy.label}
-                      symbol={result.symbol}
+                      {/* Use previous strategy or choose new */}
+                      {result && lastUsedStrategy && (
+                        <UsePreviousOrNewStrategyDialog
+                          open={showPreviousOrNewDialog}
+                          onOpenChange={setShowPreviousOrNewDialog}
+                          lastStrategyLabel={lastUsedStrategy.label}
+                          symbol={result.symbol}
                       action={
                         result.geminiForecast?.action_signal?.action === "SELL"
                           ? "SELL"
                           : "BUY"
                       }
-                      onUsePrevious={() => {
-                        setShowStrategyDialog(true);
-                      }}
-                      onChooseNew={() => setShowStrategyDialog(true)}
-                    />
-                  )}
+                          onUsePrevious={() => {
+                            setShowStrategyDialog(true);
+                          }}
+                          onChooseNew={() => setShowStrategyDialog(true)}
+                        />
+                      )}
 
-                  {/* Strategy selection (AI + market research) → place order */}
-                  {result && (
-                    <StrategySelectionDialog
-                      open={showStrategyDialog}
-                      onOpenChange={setShowStrategyDialog}
+                      {/* Strategy selection (AI + market research) → place order */}
+                      {result && (
+                        <StrategySelectionDialog
+                          open={showStrategyDialog}
+                          onOpenChange={setShowStrategyDialog}
                       currentStrategy={
                         assignedStrategy ??
                         lastUsedStrategy?.strategyType ??
                         userProfile.tradingStrategy ??
                         "trend_following"
                       }
-                      symbol={result.symbol}
+                          symbol={result.symbol}
                       action={
                         result.geminiForecast?.action_signal?.action === "SELL"
                           ? "SELL"
                           : "BUY"
                       }
-                      investment={investment ? parseFloat(investment) : 10000}
+                          investment={investment ? parseFloat(investment) : 10000}
                       timeframe={
                         timeframe === "custom"
                           ? customTimeframe || "1d"
                           : timeframe || "1d"
                       }
-                      currentPrice={result.currentPrice}
-                      isPaperTrade={isPaperTrade}
-                      onConfirm={handleStrategyConfirm}
-                    />
-                  )}
+                    currentPrice={result.currentPrice}
+                          isPaperTrade={isPaperTrade}
+                          onConfirm={handleStrategyConfirm}
+                        />
+                      )}
 
-                  <TradingIntegrationModal
-                    open={showIntegrationModal}
-                    onOpenChange={setShowIntegrationModal}
-                    onSaved={async () => {
-                      await refreshTradingIntegration();
-                      setShowIntegrationModal(false);
-                      setShowStrategyDialog(true);
-                    }}
-                    onSkip={() => setShowIntegrationModal(false)}
-                    save={async (params) => saveTradingIntegration(params)}
-                  />
+                      <TradingIntegrationModal
+                        open={showIntegrationModal}
+                        onOpenChange={setShowIntegrationModal}
+                        onSaved={async () => {
+                          await refreshTradingIntegration();
+                          setShowIntegrationModal(false);
+                          setShowStrategyDialog(true);
+                        }}
+                        onSkip={() => setShowIntegrationModal(false)}
+                        save={async (params) => saveTradingIntegration(params)}
+                      />
 
-                  {/* Analytical Deep Dives - Grouped in Tabs to reduce scrolling */}
-                  {/* Secondary Analytics - Grouped into Tabs */}
-                  <div className="mt-8 animate-in fade-in delay-200 fill-mode-both duration-700">
-                    <Tabs defaultValue="action-plan" className="w-full">
-                      <TabsList className="grid w-full grid-cols-3 mb-8 bg-black/40 backdrop-blur-xl border border-white/10 p-1.5 rounded-full shadow-lg">
-                        <TabsTrigger
-                          value="action-plan"
-                          className="rounded-full data-[state=active]:bg-primary/20 data-[state=active]:text-primary transition-all duration-300"
-                        >
-                          Action Plan
-                        </TabsTrigger>
-                        <TabsTrigger
-                          value="market-context"
-                          className="rounded-full data-[state=active]:bg-primary/20 data-[state=active]:text-primary transition-all duration-300"
-                        >
-                          Market Context
-                        </TabsTrigger>
-                        <TabsTrigger
-                          value="deep-insights"
-                          className="rounded-full data-[state=active]:bg-primary/20 data-[state=active]:text-primary transition-all duration-300"
-                        >
-                          Deep Insights
-                        </TabsTrigger>
-                      </TabsList>
+                {/* Analytical Deep Dives - Grouped in Tabs to reduce scrolling */}
+                {/* Secondary Analytics - Grouped into Tabs */}
+                <div className="mt-8 animate-in fade-in delay-200 fill-mode-both duration-700">
+                  <Tabs defaultValue="action-plan" className="w-full">
+                    <TabsList className="grid w-full grid-cols-3 mb-8 bg-black/40 backdrop-blur-xl border border-white/10 p-1.5 rounded-full shadow-lg">
+                      <TabsTrigger
+                        value="action-plan"
+                        className="rounded-full data-[state=active]:bg-primary/20 data-[state=active]:text-primary transition-all duration-300"
+                      >
+                        Action Plan
+                      </TabsTrigger>
+                      <TabsTrigger
+                        value="market-context"
+                        className="rounded-full data-[state=active]:bg-primary/20 data-[state=active]:text-primary transition-all duration-300"
+                      >
+                        Market Context
+                      </TabsTrigger>
+                      <TabsTrigger
+                        value="deep-insights"
+                        className="rounded-full data-[state=active]:bg-primary/20 data-[state=active]:text-primary transition-all duration-300"
+                      >
+                        Deep Insights
+                      </TabsTrigger>
+                    </TabsList>
 
-                      {/* TAB 1: Action Plan & Risk Mgmt */}
+                    {/* TAB 1: Action Plan & Risk Mgmt */}
                       <TabsContent
                         value="action-plan"
                         className="space-y-6 mt-0"
                       >
-                        {/* Capital Scenarios - Small vs Large investors */}
-                        {result.geminiForecast?.expected_roi && (
-                          <CapitalScenarios
+                      {/* Capital Scenarios - Small vs Large investors */}
+                      {result.geminiForecast?.expected_roi && (
+                        <CapitalScenarios
                             currentPrice={convertQuoteToDisplayAmount(
                               result.currentPrice,
                               quoteInUsd,
                               displayCurrency,
                               usdPerInr,
                             )}
-                            expectedROI={{
+                          expectedROI={{
                               best:
                                 result.geminiForecast.expected_roi.best_case ||
                                 0.5,
@@ -2115,17 +2115,17 @@ const PredictPage = () => {
                             stopLossPercentage={
                               userProfile.stopLossPercentage || 5
                             }
-                            leverage={userProfile.leverage}
-                            allowFractionalShares={true}
+                          leverage={userProfile.leverage}
+                          allowFractionalShares={true}
                             currency={displayCurrency}
-                          />
-                        )}
+                        />
+                      )}
 
-                        {/* Leverage Simulator */}
+                      {/* Leverage Simulator */}
                         {(userProfile.leverage && userProfile.leverage > 1) ||
                         userProfile.marginType !== "cash" ? (
-                          <LeverageSimulator
-                            investment={parseFloat(investment)}
+                        <LeverageSimulator
+                          investment={parseFloat(investment)}
                             expectedMove={
                               result.geminiForecast?.forecasts?.[0]
                                 ?.expected_return_bp
@@ -2133,61 +2133,61 @@ const PredictPage = () => {
                                     .expected_return_bp / 100
                                 : 5
                             }
-                            currentLeverage={userProfile.leverage || 1}
+                          currentLeverage={userProfile.leverage || 1}
                             currency={displayCurrency}
-                          />
-                        ) : null}
+                        />
+                      ) : null}
 
-                        {/* Key Levels moved above Place Order */}
-                      </TabsContent>
+                      {/* Key Levels moved above Place Order */}
+                    </TabsContent>
 
-                      {/* TAB 2: Market Context & Forecasts */}
+                    {/* TAB 2: Market Context & Forecasts */}
                       <TabsContent
                         value="market-context"
                         className="space-y-6 mt-0"
                       >
-                        {/* Market Conditions Dashboard */}
+                      {/* Market Conditions Dashboard */}
                         <MarketConditionsDashboard symbol={result.symbol} />
 
-                        {/* Multi-Horizon Forecasts */}
-                        {result.geminiForecast?.forecasts && (
-                          <Card className="glass-panel">
+                      {/* Multi-Horizon Forecasts */}
+                      {result.geminiForecast?.forecasts && (
+                        <Card className="glass-panel">
                             <CardHeader className="flex flex-row items-center justify-between space-y-0 gap-2">
-                              <CardTitle className="flex items-center gap-2 text-white">
-                                <BarChart3 className="h-5 w-5" />
-                                Multi-Horizon Forecasts
-                              </CardTitle>
+                            <CardTitle className="flex items-center gap-2 text-white">
+                              <BarChart3 className="h-5 w-5" />
+                              Multi-Horizon Forecasts
+                            </CardTitle>
                               <CardInfoTooltip
                                 text={HELP.multiHorizonTable}
                                 className="text-zinc-400"
                               />
-                            </CardHeader>
-                            <CardContent>
-                              <ForecastTable
-                                forecasts={result.geminiForecast.forecasts}
-                                predictedAt={predictedAt}
-                                marketTimeZone={marketTimeZone}
-                                marketStatus={marketStatus}
-                              />
-                            </CardContent>
-                          </Card>
-                        )}
-                      </TabsContent>
+                          </CardHeader>
+                          <CardContent>
+                            <ForecastTable
+                              forecasts={result.geminiForecast.forecasts}
+                              predictedAt={predictedAt}
+                              marketTimeZone={marketTimeZone}
+                              marketStatus={marketStatus}
+                            />
+                          </CardContent>
+                        </Card>
+                      )}
+                    </TabsContent>
 
-                      {/* TAB 3: Deep Insights & Timeline */}
+                    {/* TAB 3: Deep Insights & Timeline */}
                       <TabsContent
                         value="deep-insights"
                         className="space-y-6 mt-0"
                       >
-                        <Card className="glass-panel">
+                      <Card className="glass-panel">
                           <CardHeader className="flex flex-row items-center justify-between space-y-0 gap-2">
                             <CardTitle className="text-white">
                               AI Insights & Analysis
                             </CardTitle>
                             <CardInfoTooltip text={HELP.aiInsights} className="text-zinc-400" />
-                          </CardHeader>
-                          <CardContent>
-                            <Insights
+                        </CardHeader>
+                        <CardContent>
+                          <Insights
                               symbol={result.symbol}
                               keyDrivers={
                                 result.geminiForecast?.forecasts?.[0]?.key_drivers
@@ -2195,9 +2195,9 @@ const PredictPage = () => {
                               riskFlags={
                                 result.geminiForecast?.forecasts?.[0]?.risk_flags
                               }
-                              opportunities={result.opportunities}
-                              rationale={result.rationale}
-                              patterns={result.patterns}
+                            opportunities={result.opportunities}
+                            rationale={result.rationale}
+                            patterns={result.patterns}
                               technicalFactors={result.patterns}
                               deepAnalysis={result.geminiForecast?.deep_analysis}
                               action={result.geminiForecast?.action_signal?.action}
@@ -2212,63 +2212,63 @@ const PredictPage = () => {
                               volumeProfile={
                                 result.volumeData?.volumeProfile ?? undefined
                               }
-                            />
-                          </CardContent>
-                        </Card>
+                          />
+                        </CardContent>
+                      </Card>
 
-                        <NewsAnalysis
-                          symbol={result.symbol}
-                          predictedAt={predictedAt}
-                        />
+                      <NewsAnalysis
+                        symbol={result.symbol}
+                        predictedAt={predictedAt}
+                      />
 
-                        {result.meta?.pipeline && (
-                          <Card className="glass-panel">
+                      {result.meta?.pipeline && (
+                        <Card className="glass-panel">
                             <CardHeader className="flex flex-row items-center justify-between space-y-0 gap-2">
-                              <CardTitle className="text-white">Analysis Timeline</CardTitle>
+                            <CardTitle className="text-white">Analysis Timeline</CardTitle>
                               <CardInfoTooltip
                                 text={HELP.analysisTimelineCard}
                                 className="text-zinc-400"
                               />
-                            </CardHeader>
-                            <CardContent>
-                              <PredictionTimeline
-                                pipeline={result.meta.pipeline}
+                          </CardHeader>
+                          <CardContent>
+                            <PredictionTimeline
+                              pipeline={result.meta.pipeline}
                                 forecasts={
                                   result.geminiForecast?.forecasts?.map((f) => ({
-                                    horizon: f.horizon,
-                                    direction: f.direction,
-                                    probabilities: f.probabilities,
-                                    expected_return_bp: f.expected_return_bp,
+                                horizon: f.horizon,
+                                direction: f.direction,
+                                probabilities: f.probabilities,
+                                expected_return_bp: f.expected_return_bp,
                                     confidence: f.confidence,
                                   })) || []
                                 }
-                                predictedAt={predictedAt || new Date()}
-                                marketTimeZone={marketTimeZone}
-                                marketStatus={marketStatus}
-                              />
-                            </CardContent>
-                          </Card>
-                        )}
-                      </TabsContent>
-                    </Tabs>
-                  </div>
+                              predictedAt={predictedAt || new Date()}
+                              marketTimeZone={marketTimeZone}
+                              marketStatus={marketStatus}
+                            />
+                          </CardContent>
+                        </Card>
+                      )}
+                    </TabsContent>
+                  </Tabs>
+                </div>
 
-                  {/* Regulatory Disclaimer */}
-                  <RegulatoryDisclaimer />
+                {/* Regulatory Disclaimer */}
+                <RegulatoryDisclaimer />
 
-                  {/* Action Buttons */}
-                  <div className="flex flex-col gap-4">
-                    {/* Back to review / re-run buttons */}
-                    <div className="flex gap-2">
+                {/* Action Buttons */}
+                <div className="flex flex-col gap-4">
+                  {/* Back to review / re-run buttons */}
+                  <div className="flex gap-2">
                       <Button
                         variant="outline"
                         onClick={handlePrevStep}
                         className="flex-shrink-0 border-white/10 hover:bg-white/5"
                       >
-                        <ArrowLeft className="h-4 w-4 mr-1" /> Back to Review
-                      </Button>
-                      <Button
-                        variant="outline"
+                      <ArrowLeft className="h-4 w-4 mr-1" /> Back to Review
+                    </Button>
+                    <Button
+                      variant="outline"
                         onClick={() => {
                           setCurrentStep("review");
                           setCompletedSteps((prev) =>
@@ -2277,37 +2277,37 @@ const PredictPage = () => {
                             ),
                           );
                         }}
-                        className="flex-1 border-white/10 hover:bg-white/5"
-                      >
-                        <RefreshCw className="h-4 w-4 mr-1" /> Re-run Analysis
-                      </Button>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <Button
-                        onClick={startNewPredictionFlow}
-                        variant="outline"
-                        className="border-white/10 hover:bg-white/5"
-                      >
-                        New Analysis
-                      </Button>
-                      <Button
-                        onClick={() => navigate("/predictions")}
-                        variant="outline"
-                        className="border-white/10 hover:bg-white/5"
-                      >
-                        View All Analyses
-                      </Button>
-                    </div>
-
-                    <Button
-                      onClick={() => navigate("/active-trades")}
-                      variant="secondary"
-                      className="w-full"
+                      className="flex-1 border-white/10 hover:bg-white/5"
                     >
-                      View Active Trades
+                      <RefreshCw className="h-4 w-4 mr-1" /> Re-run Analysis
                     </Button>
                   </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <Button
+                      onClick={startNewPredictionFlow}
+                      variant="outline"
+                      className="border-white/10 hover:bg-white/5"
+                    >
+                      New Analysis
+                    </Button>
+                    <Button
+                        onClick={() => navigate("/predictions")}
+                      variant="outline"
+                      className="border-white/10 hover:bg-white/5"
+                    >
+                      View All Analyses
+                    </Button>
+                  </div>
+
+                  <Button
+                      onClick={() => navigate("/active-trades")}
+                    variant="secondary"
+                    className="w-full"
+                  >
+                    View Active Trades
+                  </Button>
                 </div>
+              </div>
 
 
               <div className="xl:sticky xl:top-4 flex flex-col gap-3">
@@ -2316,7 +2316,7 @@ const PredictPage = () => {
                     <Card className="glass-panel border border-primary/30 bg-gradient-to-br from-background/80 to-primary/5 shadow-xl">
                       <CardContent className="p-5 space-y-3">
                         {/* Header row */}
-                        <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between">
                           <div>
                             <h3 className="text-lg font-bold text-white">
                               Trade {result.symbol}
@@ -2364,9 +2364,9 @@ const PredictPage = () => {
                               {isInGracePeriod && (
                                 <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40">
                                   Grace Period (24h after expiry)
-                                </Badge>
-                              )}
-                            </div>
+                  </Badge>
+                )}
+              </div>
 
                             {isExpiringSoon && (
                               <Alert className="bg-amber-500/10 border-amber-500/40 text-amber-300 py-2.5">
@@ -2388,7 +2388,7 @@ const PredictPage = () => {
                                 </AlertDescription>
                               </Alert>
                             )}
-                          </div>
+              </div>
                         )}
 
                         {/* Two main buttons */}
@@ -2470,8 +2470,8 @@ const PredictPage = () => {
                           </strong>{" "}
                           requires a premium plan.
                         </p>
-                      </CardContent>
-                    </Card>
+            </CardContent>
+          </Card>
                   )}
 
                   {/* ── Live P&L card — appears after order is placed ── */}
@@ -2670,9 +2670,9 @@ const PredictPage = () => {
                                 <ExternalLink className="h-3.5 w-3.5 mr-1" />
                                 Full view
                               </Button>
-                            </div>
-                          </CardContent>
-                        </Card>
+                  </div>
+                </CardContent>
+              </Card>
                       );
                     })()}
                 <LiveChartBlock
@@ -2680,55 +2680,55 @@ const PredictPage = () => {
                   wrapperClassName="w-full"
                   title="Live price"
                 />
-              </div>
-              </div>
+            </div>
+        </div>
             )}
-          </Container>
+      </Container>
 
-          {/* ── Buy More Dialog ── */}
-          <Dialog open={showBuyMoreDialog} onOpenChange={setShowBuyMoreDialog}>
-            <DialogContent className="max-w-sm mx-auto">
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  <PlusCircle className="h-5 w-5 text-green-500" />
-                  Buy More — {placedTrade?.symbol}
-                </DialogTitle>
-                <DialogDescription>
-                  Additional shares will be bought at the current market price.
-                  Your average entry price will update automatically.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-2">
-                {placedTrade && (
-                  <div className="grid grid-cols-2 gap-3 text-sm rounded-lg bg-muted/30 p-3 border text-center">
-                    <div>
+      {/* ── Buy More Dialog ── */}
+      <Dialog open={showBuyMoreDialog} onOpenChange={setShowBuyMoreDialog}>
+        <DialogContent className="max-w-sm mx-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <PlusCircle className="h-5 w-5 text-green-500" />
+              Buy More — {placedTrade?.symbol}
+            </DialogTitle>
+            <DialogDescription>
+              Additional shares will be bought at the current market price.
+              Your average entry price will update automatically.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {placedTrade && (
+              <div className="grid grid-cols-2 gap-3 text-sm rounded-lg bg-muted/30 p-3 border text-center">
+                <div>
                       <p className="text-xs text-muted-foreground">
                         Current avg price
                       </p>
                       <p className="font-bold">
                         {formatPriceForUi(placedTrade.entryPrice)}
                       </p>
-                    </div>
-                    <div>
+                </div>
+                <div>
                       <p className="text-xs text-muted-foreground">
                         Shares held
                       </p>
-                      <p className="font-bold">{placedTrade.shares}</p>
-                    </div>
-                  </div>
-                )}
-                <div className="space-y-1.5">
+                  <p className="font-bold">{placedTrade.shares}</p>
+                </div>
+              </div>
+            )}
+            <div className="space-y-1.5">
                   <Label>Additional amount ({displayCurrency})</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    placeholder="e.g. 5000"
-                    value={buyMoreAmount}
+              <Input
+                type="number"
+                min={1}
+                placeholder="e.g. 5000"
+                value={buyMoreAmount}
                     onChange={(e) => setBuyMoreAmount(e.target.value)}
                   />
                 </div>
-                {buyMoreAmount && result?.currentPrice && (
-                  <p className="text-xs text-muted-foreground">
+            {buyMoreAmount && result?.currentPrice && (
+              <p className="text-xs text-muted-foreground">
                     ≈{" "}
                     {Math.floor(
                       convertDisplayInputToQuoteAmount(
@@ -2740,149 +2740,149 @@ const PredictPage = () => {
                     )}{" "}
                     more shares at current price{" "}
                     {formatPriceForUi(result.currentPrice)}
-                  </p>
-                )}
-              </div>
-              <DialogFooter>
+                      </p>
+                    )}
+                  </div>
+          <DialogFooter>
                 <Button
                   variant="outline"
                   onClick={() => setShowBuyMoreDialog(false)}
                 >
                   Cancel
                 </Button>
-                <Button
-                  className="bg-green-600 hover:bg-green-700"
+            <Button
+              className="bg-green-600 hover:bg-green-700"
                   disabled={
                     !buyMoreAmount ||
                     parseFloat(buyMoreAmount) <= 0 ||
                     buyMoreLoading
                   }
-                  onClick={async () => {
-                    if (!placedTrade || !buyMoreAmount || !result) return;
-                    setBuyMoreLoading(true);
-                    try {
+              onClick={async () => {
+                if (!placedTrade || !buyMoreAmount || !result) return;
+                setBuyMoreLoading(true);
+                try {
                       const { tradeTrackingService } =
                         await import("@/services/tradeTrackingService");
-                      const res = await tradeTrackingService.addToPosition({
-                        tradeId: placedTrade.id,
+                  const res = await tradeTrackingService.addToPosition({
+                    tradeId: placedTrade.id,
                         additionalAmount: convertDisplayInputToQuoteAmount(
                           parseFloat(buyMoreAmount),
                           quoteInUsd,
                           displayCurrency,
                           usdPerInr,
                         ),
-                        currentPrice: result.currentPrice,
-                        allowFractional: result.isCrypto,
-                      });
-                      if (res.error) {
-                        toast.error("Buy more failed: " + res.error);
-                      } else {
-                        toast.success("Position increased — avg price updated");
-                        // Refresh trade state
+                    currentPrice: result.currentPrice,
+                    allowFractional: result.isCrypto,
+                  });
+                  if (res.error) {
+                    toast.error("Buy more failed: " + res.error);
+                  } else {
+                    toast.success("Position increased — avg price updated");
+                    // Refresh trade state
                         const { data } = await tradeTrackingService.getTrade(
                           placedTrade.id,
                         );
-                        if (data) setPlacedTrade(data);
-                        setShowBuyMoreDialog(false);
-                        setBuyMoreAmount("");
-                      }
-                    } catch (e: any) {
-                      toast.error(e?.message || "Failed");
-                    } finally {
-                      setBuyMoreLoading(false);
-                    }
-                  }}
-                >
+                    if (data) setPlacedTrade(data);
+                    setShowBuyMoreDialog(false);
+                    setBuyMoreAmount("");
+                  }
+                } catch (e: any) {
+                  toast.error(e?.message || "Failed");
+                } finally {
+                  setBuyMoreLoading(false);
+                }
+              }}
+            >
                   {buyMoreLoading ? (
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />
                   ) : (
                     <PlusCircle className="h-4 w-4 mr-2" />
                   )}
-                  Confirm Buy More
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+              Confirm Buy More
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-          {/* ── Sell Dialog (partial or full) ── */}
-          <Dialog open={showSellDialog} onOpenChange={setShowSellDialog}>
-            <DialogContent className="max-w-sm mx-auto">
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  <Minus className="h-5 w-5 text-red-500" />
-                  Sell — {placedTrade?.symbol}
-                </DialogTitle>
-                <DialogDescription>
+      {/* ── Sell Dialog (partial or full) ── */}
+      <Dialog open={showSellDialog} onOpenChange={setShowSellDialog}>
+        <DialogContent className="max-w-sm mx-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Minus className="h-5 w-5 text-red-500" />
+              Sell — {placedTrade?.symbol}
+            </DialogTitle>
+            <DialogDescription>
                   Choose how many shares to sell. Selling all shares closes the
                   position.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-2">
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
                 {placedTrade &&
                   (() => {
-                    const isShort = placedTrade.action === "SELL";
+              const isShort = placedTrade.action === "SELL";
                     const livePrice =
                       placedTrade.currentPrice ?? placedTrade.entryPrice;
-                    const sellQty = parseFloat(sellSharesInput) || 0;
+              const sellQty = parseFloat(sellSharesInput) || 0;
                     const fraction =
                       placedTrade.shares > 0 ? sellQty / placedTrade.shares : 0;
-                    const pnlPerShare = isShort
-                      ? placedTrade.entryPrice - livePrice
-                      : livePrice - placedTrade.entryPrice;
-                    const estimatedPnl = pnlPerShare * sellQty;
-                    const isProfit = estimatedPnl >= 0;
-                    return (
-                      <>
-                        <div className="grid grid-cols-3 gap-2 text-sm rounded-lg bg-muted/30 p-3 border text-center">
-                          <div>
+              const pnlPerShare = isShort
+                ? placedTrade.entryPrice - livePrice
+                : livePrice - placedTrade.entryPrice;
+              const estimatedPnl = pnlPerShare * sellQty;
+              const isProfit = estimatedPnl >= 0;
+              return (
+                <>
+                  <div className="grid grid-cols-3 gap-2 text-sm rounded-lg bg-muted/30 p-3 border text-center">
+                    <div>
                             <p className="text-xs text-muted-foreground">
                               Entry
                             </p>
                             <p className="font-bold">
                               {formatPriceForUi(placedTrade.entryPrice)}
                             </p>
-                          </div>
-                          <div>
+                    </div>
+                    <div>
                             <p className="text-xs text-muted-foreground">
                               Live price
                             </p>
                             <p className="font-bold">
                               {formatPriceForUi(livePrice)}
                             </p>
-                          </div>
-                          <div>
+                    </div>
+                    <div>
                             <p className="text-xs text-muted-foreground">
                               You hold
                             </p>
                             <p className="font-bold">
                               {placedTrade.shares} shares
                             </p>
-                          </div>
-                        </div>
+                    </div>
+                  </div>
 
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <Label>Shares to sell</Label>
-                            <button
-                              className="text-xs text-primary underline"
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <Label>Shares to sell</Label>
+                      <button
+                        className="text-xs text-primary underline"
                               onClick={() =>
                                 setSellSharesInput(String(placedTrade.shares))
                               }
-                            >
-                              Sell all ({placedTrade.shares})
-                            </button>
-                          </div>
-                          <Input
-                            type="number"
-                            min={1}
-                            max={placedTrade.shares}
-                            value={sellSharesInput}
+                      >
+                        Sell all ({placedTrade.shares})
+                      </button>
+                    </div>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={placedTrade.shares}
+                      value={sellSharesInput}
                             onChange={(e) => setSellSharesInput(e.target.value)}
-                          />
-                          {sellQty > 0 && sellQty <= placedTrade.shares && (
-                            <p className="text-xs text-muted-foreground">
-                              {Math.round(fraction * 100)}% of your position
-                              {" · "}Est. P&amp;L:{" "}
+                    />
+                    {sellQty > 0 && sellQty <= placedTrade.shares && (
+                      <p className="text-xs text-muted-foreground">
+                        {Math.round(fraction * 100)}% of your position
+                        {" · "}Est. P&amp;L:{" "}
                               <span
                                 className={
                                   isProfit
@@ -2902,155 +2902,155 @@ const PredictPage = () => {
                                   false,
                                   effectivePriceCurrency,
                                 )}
-                              </span>
-                            </p>
-                          )}
-                        </div>
-                      </>
-                    );
-                  })()}
-              </div>
-              <DialogFooter>
+                        </span>
+                      </p>
+            )}
+          </div>
+                </>
+              );
+            })()}
+          </div>
+          <DialogFooter>
                 <Button
                   variant="outline"
                   onClick={() => setShowSellDialog(false)}
                 >
                   Cancel
                 </Button>
-                <Button
-                  variant="destructive"
-                  disabled={
-                    !sellSharesInput ||
-                    parseFloat(sellSharesInput) <= 0 ||
+            <Button
+              variant="destructive"
+              disabled={
+                !sellSharesInput ||
+                parseFloat(sellSharesInput) <= 0 ||
                     (placedTrade
                       ? parseFloat(sellSharesInput) > placedTrade.shares
                       : true) ||
-                    sellLoading
-                  }
-                  onClick={async () => {
-                    if (!placedTrade || !result) return;
-                    setSellLoading(true);
-                    try {
+                sellLoading
+              }
+              onClick={async () => {
+                if (!placedTrade || !result) return;
+                setSellLoading(true);
+                try {
                       const { tradeTrackingService } =
                         await import("@/services/tradeTrackingService");
                       const res = await tradeTrackingService.closeTrade(
                         placedTrade.id,
                         result.currentPrice,
                       );
-                      if ((res as any)?.error) {
-                        toast.error("Sell failed: " + (res as any).error);
-                      } else {
-                        toast.success("Position closed — trade recorded");
-                        setPlacedTrade(null);
-                        setShowSellDialog(false);
-                      }
-                    } catch (e: any) {
-                      toast.error(e?.message || "Failed");
-                    } finally {
-                      setSellLoading(false);
-                    }
-                  }}
-                >
+                  if ((res as any)?.error) {
+                    toast.error("Sell failed: " + (res as any).error);
+                  } else {
+                    toast.success("Position closed — trade recorded");
+                    setPlacedTrade(null);
+                    setShowSellDialog(false);
+                  }
+                } catch (e: any) {
+                  toast.error(e?.message || "Failed");
+                } finally {
+                  setSellLoading(false);
+                }
+              }}
+            >
                   {sellLoading ? (
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />
                   ) : (
                     <Minus className="h-4 w-4 mr-2" />
                   )}
-                  Confirm Sell
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+              Confirm Sell
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-          {/* Premium Plan Required Dialog */}
-          <Dialog open={showPremiumDialog} onOpenChange={setShowPremiumDialog}>
-            <DialogContent className="max-w-[95vw] md:max-w-5xl bg-zinc-950 border border-zinc-800 text-white p-5 sm:p-8 md:p-10 rounded-2xl md:rounded-3xl overflow-y-auto max-h-[90vh]">
-              <DialogHeader className="mb-8">
+      {/* Premium Plan Required Dialog */}
+      <Dialog open={showPremiumDialog} onOpenChange={setShowPremiumDialog}>
+        <DialogContent className="max-w-[95vw] md:max-w-5xl bg-zinc-950 border border-zinc-800 text-white p-5 sm:p-8 md:p-10 rounded-2xl md:rounded-3xl overflow-y-auto max-h-[90vh]">
+          <DialogHeader className="mb-8">
                 <DialogTitle className="text-2xl md:text-4xl font-black text-center tracking-tight">
                   Premium Plan Required
                 </DialogTitle>
-                <DialogDescription className="text-center text-zinc-400 text-base md:text-lg mt-2 max-w-2xl mx-auto">
+            <DialogDescription className="text-center text-zinc-400 text-base md:text-lg mt-2 max-w-2xl mx-auto">
                   Buy a premium plan to enable live trade execution and advanced
                   AI insights.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {PRICING_PLANS.map((plan) => (
-                  <div
-                    key={plan.id}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {PRICING_PLANS.map((plan) => (
+              <div
+                key={plan.id}
                     className={`p-6 rounded-2xl flex flex-col relative transition-all border ${
                       plan.recommended
                         ? "bg-gradient-to-b from-teal-950/40 to-black border-teal-500/30 shadow-[0_0_30px_rgba(20,184,166,0.1)] lg:-mt-2"
                         : "bg-black border-zinc-800 shadow-md"
                     } ${plan.id === "proPlan" && "md:col-span-2 lg:col-span-1"}`}
-                  >
-                    {plan.recommended && (
-                      <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-teal-500 text-black text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest z-10">
-                        Recommended
-                      </div>
-                    )}
+              >
+                {plan.recommended && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-teal-500 text-black text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest z-10">
+                    Recommended
+                  </div>
+                )}
                     <h3
                       className={`text-lg font-bold mb-2 ${plan.recommended ? "text-teal-400" : "text-zinc-200"}`}
                     >
                       {plan.name}
                     </h3>
-                    <div className="text-3xl font-black mb-4 tracking-tight text-white">
-                      ${plan.price}
+                <div className="text-3xl font-black mb-4 tracking-tight text-white">
+                  ${plan.price}
                       <span className="text-sm text-zinc-500 font-normal ml-1">
                         /{plan.period}
                       </span>
-                    </div>
-                    <ul className="space-y-3 mb-8 flex-1 text-sm text-zinc-300">
-                      {plan.features.slice(0, 6).map((feature, i) => (
-                        <li key={i} className="flex gap-3 items-start text-xs">
+                </div>
+                <ul className="space-y-3 mb-8 flex-1 text-sm text-zinc-300">
+                  {plan.features.slice(0, 6).map((feature, i) => (
+                    <li key={i} className="flex gap-3 items-start text-xs">
                           <CheckCircle
                             className={`h-4 w-4 shrink-0 mt-0.5 ${plan.recommended ? "text-teal-400" : "text-teal-500"}`}
                           />
-                          <span className="leading-snug">{feature}</span>
-                        </li>
-                      ))}
-                    </ul>
-                    <Button
+                      <span className="leading-snug">{feature}</span>
+                    </li>
+                  ))}
+                </ul>
+                <Button
                       className={`w-full py-5 rounded-xl ${plan.recommended ? "bg-teal-500 hover:bg-teal-400 text-black shadow-lg shadow-teal-500/20" : "bg-zinc-100 hover:bg-zinc-300 text-black"} font-bold transition-all`}
-                      onClick={async () => {
+                  onClick={async () => {
                         const {
                           data: { session },
                         } = await supabase.auth.getSession();
-                        if (!session) {
-                          setShowPremiumDialog(false);
+                    if (!session) {
+                    setShowPremiumDialog(false);
                           navigate(
                             "/auth?redirect=" + encodeURIComponent("/predict"),
                           );
-                          return;
-                        }
-                        setShowPremiumDialog(false);
-                        const result = await createCheckoutSession({
-                          plan_id: plan.id,
+                      return;
+                    }
+                    setShowPremiumDialog(false);
+                    const result = await createCheckoutSession({
+                      plan_id: plan.id,
                           success_url:
                             window.location.origin +
                             "/algo-setup?checkout=success",
                           cancel_url: window.location.origin + "/predict",
-                        });
-                        if ("error" in result) {
-                          toast.error(result.error);
-                          return;
-                        }
-                        if ("url" in result) window.location.href = result.url;
-                      }}
-                    >
+                    });
+                    if ("error" in result) {
+                      toast.error(result.error);
+                      return;
+                    }
+                    if ("url" in result) window.location.href = result.url;
+                  }}
+                >
                       {plan.recommended ? "Get Pro Plan" : "Get Started"}
-                    </Button>
-                  </div>
-                ))}
+                </Button>
               </div>
-            </DialogContent>
-          </Dialog>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
 
-          {/* Disclaimer */}
+      {/* Disclaimer */}
           <div className="border-t bg-muted/20">
-            <Container className="py-4">
-              <Alert>
-                <AlertTriangle className="h-4 w-4" />
+        <Container className="py-4">
+          <Alert>
+            <AlertTriangle className="h-4 w-4" />
                 <AlertDescription
                   className={`${isMobile ? "text-xs" : "text-sm"}`}
                 >
@@ -3058,18 +3058,18 @@ const PredictPage = () => {
                   educational purposes only. Not financial advice. Past
                   performance does not guarantee future results. Always do your
                   own research.
-                </AlertDescription>
-              </Alert>
-            </Container>
+            </AlertDescription>
+          </Alert>
+        </Container>
           </div>
 
-          {/* ── Pre-order deep AI analysis sheet ──────────────────────────────── */}
-          <PreOrderConfirmSheet
-            open={showPreOrderSheet}
-            order={preOrderData}
-            onConfirm={() => {
-              setShowPreOrderSheet(false);
-              const p = pendingOrderRef.current;
+      {/* ── Pre-order deep AI analysis sheet ──────────────────────────────── */}
+      <PreOrderConfirmSheet
+        open={showPreOrderSheet}
+        order={preOrderData}
+        onConfirm={() => {
+          setShowPreOrderSheet(false);
+          const p = pendingOrderRef.current;
               if (p)
                 placeMockOrderAndTrack(
                   p.strategy,
@@ -3077,13 +3077,13 @@ const PredictPage = () => {
                   p.action,
                   p.sellPosition,
                 );
-              pendingOrderRef.current = null;
-            }}
-            onCancel={() => {
-              setShowPreOrderSheet(false);
-              pendingOrderRef.current = null;
-            }}
-          />
+          pendingOrderRef.current = null;
+        }}
+        onCancel={() => {
+          setShowPreOrderSheet(false);
+          pendingOrderRef.current = null;
+        }}
+      />
         </div>
       </DashboardShellLayout>
     </>
