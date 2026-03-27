@@ -1354,6 +1354,8 @@ type MergedAiRow = {
   entryExitRuleSummary: string;
   liveViability: string;
   rejectionDetail: string;
+  /** Populated when verdict is confirm — why the model + rules accepted the setup */
+  confirmationDetail: string;
   whyThisScore: string;
   scoreSource: string;
 };
@@ -1494,6 +1496,9 @@ function heuristicMergeRow(raw: RawSignal, ind: RealIndicators | null): MergedAi
     ? `Review bucket — mixed evidence: ${whyThisScore}`
     : "";
   const rationale = `${whyThisScore} Composite → ${score}/100 (${verdict}).`;
+  const confirmationDetail = verdict === "confirm"
+    ? stripStaleScoreClaims(`Rule-based confirm: ${whyThisScore}`, score)
+    : "";
 
   return {
     probabilityScore: score,
@@ -1502,6 +1507,7 @@ function heuristicMergeRow(raw: RawSignal, ind: RealIndicators | null): MergedAi
     entryExitRuleSummary,
     liveViability,
     rejectionDetail,
+    confirmationDetail,
     whyThisScore,
     scoreSource: "heuristic",
   };
@@ -1552,16 +1558,21 @@ function mergeAiScoresIntoRaw(
     const aiEntry = strField(r.entryExitRuleSummary);
     const aiLive = strField(r.liveViability);
     const aiReject = strField(r.rejectionDetail);
+    const aiConfirm = strField(r.confirmationDetail);
     const aiWhy = strField(r.whyThisScore);
 
     if (aiScore === null) {
       const fs = h.probabilityScore;
+      const confirmText = h.verdict === "confirm"
+        ? stripStaleScoreClaims(aiConfirm || h.confirmationDetail, fs)
+        : "";
       return {
         ...h,
         whyThisScore: whyThisScoreAligned(aiWhy || h.whyThisScore, fs),
         rationale:
           `${stripStaleScoreClaims((aiRationale || h.rationale) + " (AI omitted numeric score; rule-based score used.)", fs)} Same blended score as the headline: ${fs}/100.`,
         rejectionDetail: stripStaleScoreClaims(h.rejectionDetail, fs),
+        confirmationDetail: confirmText,
         scoreSource: "heuristic",
       };
     }
@@ -1590,9 +1601,18 @@ function mergeAiScoresIntoRaw(
       rejectionDetail = `Neither clean accept nor hard reject: ${whyThisScore}`;
     }
     if (verdict === "confirm") {
-      rejectionDetail = rejectionDetail || "";
+      rejectionDetail = "";
     }
     rejectionDetail = stripStaleScoreClaims(rejectionDetail, probabilityScore);
+
+    let confirmationDetail = "";
+    if (verdict === "confirm") {
+      confirmationDetail = stripStaleScoreClaims(
+        aiConfirm ||
+          `Model: ${stripStaleScoreClaims(aiRationale || "Read supports a confirm at this bar.", probabilityScore)} Rule stack: ${stripStaleScoreClaims(h.whyThisScore, probabilityScore)}`,
+        probabilityScore,
+      );
+    }
 
     const rationaleCore = aiVague
       ? `${h.whyThisScore} Model returned a neutral score with thin text; prioritizing structured rule read.`
@@ -1606,6 +1626,7 @@ function mergeAiScoresIntoRaw(
       entryExitRuleSummary,
       liveViability,
       rejectionDetail,
+      confirmationDetail,
       whyThisScore,
       scoreSource: aiVague ? "heuristic+gemini" : "gemini+heuristic",
     };
@@ -1769,7 +1790,8 @@ Return ONLY a JSON array (no markdown), SAME LENGTH AND SAME ORDER as input. Eac
   "entryExitRuleSummary": string (one sentence: what the strategy rule implies for this bar),
   "whyThisScore": string (indicator + context only; do NOT write a different numeric score here — the server blends your probabilityScore with rules; if you mention a score it must equal probabilityScore),
   "liveViability": string (empty "" if not live; if live, why it could work OR what breaks it),
-  "rejectionDetail": string (if verdict is reject or review: why not a clean confirm; if confirm: short risk caveat or "") }
+  "rejectionDetail": string (if verdict is reject or review: 2-3 sentences why not a clean confirm, cite indicators; if confirm: ""),
+  "confirmationDetail": string (if verdict is confirm: 2-3 sentences why this setup passes — cite RSI/MACD/BB/bar context and rule alignment; if reject or review: "") }
 
 Scoring guide:
 - BUY: higher if oversold RSI, price near lower BB, MACD not bearish; lower if overbought or stale without reset.
@@ -2128,6 +2150,7 @@ Deno.serve(async (req: Request) => {
         whyThisScore: ai?.whyThisScore ?? "",
         liveViability: ai?.liveViability ?? "",
         rejectionDetail: ai?.rejectionDetail ?? "",
+        confirmationDetail: ai?.confirmationDetail ?? "",
         scoreSource: ai?.scoreSource ?? "heuristic",
         isLive: rawSig.isLive ?? false,
         isPredicted: false,

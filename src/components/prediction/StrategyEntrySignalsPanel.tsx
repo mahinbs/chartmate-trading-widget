@@ -75,6 +75,7 @@ type SignalRow = {
   whyThisScore?: string;
   liveViability?: string;
   rejectionDetail?: string;
+  confirmationDetail?: string;
   scoreSource?: string;
   isLive?: boolean;
   isPredicted?: boolean;
@@ -355,9 +356,19 @@ function SignalAnalysisCard(props: {
       ) : null}
 
       {row.verdict === "confirm" ? (
-        <p className="text-xs text-zinc-500 leading-relaxed">
-          Confirmed setups still carry gap, liquidity, and news risk — use position sizing and stops.
-        </p>
+        <div className="rounded-lg border border-emerald-500/35 bg-emerald-950/20 p-3 space-y-1">
+          {row.confirmationDetail?.trim() || row.whyThisScore ? (
+            <>
+              <p className="text-xs font-bold uppercase tracking-wide text-emerald-300">Why confirmed</p>
+              <p className="text-sm text-emerald-50/95 leading-relaxed">
+                {row.confirmationDetail?.trim() || row.whyThisScore}
+              </p>
+            </>
+          ) : null}
+          <p className="text-[11px] text-zinc-500 leading-relaxed">
+            Gap, liquidity, and headline risk still apply — size positions and use stops.
+          </p>
+        </div>
       ) : null}
     </div>
   );
