@@ -29,6 +29,9 @@ import { KeyLevels } from "@/components/prediction/KeyLevels";
 import { Insights } from "@/components/prediction/Insights";
 import { PostPredictionReport } from "@/components/prediction/PostPredictionReport";
 import { formatCurrency, formatPercentage } from "@/lib/display-utils";
+import { isUsdDenominatedSymbol } from "@/lib/tradingview-symbols";
+import { convertQuoteToDisplayAmount } from "@/lib/convert-quote-display-currency";
+import { fetchUsdPerInr } from "@/lib/fx-inr-usd";
 import { Container } from "@/components/layout/Container";
 import { getPredictionWindowEnd } from "@/lib/prediction-window";
 import { getEffectiveStart } from "@/lib/market-hours";
@@ -75,6 +78,21 @@ interface Prediction {
 
 type AnalysisData = CachedAnalysisData;
 
+/** Currency the user had selected when the analysis was saved (`PredictPage` → `raw_response.savedDisplayCurrency`). */
+function savedDisplayCurrencyFor(prediction: Prediction): "INR" | "USD" {
+  const raw = prediction.raw_response as { savedDisplayCurrency?: unknown } | undefined;
+  if (raw?.savedDisplayCurrency === "INR") return "INR";
+  if (raw?.savedDisplayCurrency === "USD") return "USD";
+  return isUsdDenominatedSymbol(prediction.symbol) ? "USD" : "INR";
+}
+
+function signedExpectedMovePercent(direction: string | null, pct: number | null): number {
+  const p = Math.abs(pct ?? 0);
+  const d = (direction || "").toLowerCase();
+  if (d === "down") return -p;
+  return p;
+}
+
 export default function PredictionsPage() {
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -91,6 +109,7 @@ export default function PredictionsPage() {
   const [marketStatuses, setMarketStatuses] = useState<Record<string, any>>({});
   const { toast } = useToast();
   const navigate = useNavigate();
+  const [usdPerInr, setUsdPerInr] = useState<number | null>(null);
 
   // Fetch market status for a symbol
   const fetchMarketStatus = async (symbol: string) => {
@@ -189,6 +208,27 @@ export default function PredictionsPage() {
     loadCachedAnalysis();
     fetchPredictions();
   }, []);
+
+  useEffect(() => {
+    if (predictions.length === 0) return;
+    let needsFx = false;
+    for (const p of predictions) {
+      const dc = savedDisplayCurrencyFor(p);
+      const q = isUsdDenominatedSymbol(p.symbol);
+      if ((dc === "USD" && !q) || (dc === "INR" && q)) {
+        needsFx = true;
+        break;
+      }
+    }
+    if (!needsFx) return;
+    let cancelled = false;
+    void fetchUsdPerInr().then((r) => {
+      if (!cancelled && r != null) setUsdPerInr(r);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [predictions]);
 
   const fetchPredictions = async () => {
     try {
@@ -470,6 +510,40 @@ export default function PredictionsPage() {
           ) : (
             (() => {
               const predictionCards = predictions.map((prediction) => {
+                const displayCurrency = savedDisplayCurrencyFor(prediction);
+                const quoteInUsd = isUsdDenominatedSymbol(prediction.symbol);
+                const priceQuote = prediction.current_price ?? 0;
+                const priceDisplay = convertQuoteToDisplayAmount(
+                  priceQuote,
+                  quoteInUsd,
+                  displayCurrency,
+                  usdPerInr,
+                );
+                const expPct = prediction.expected_move_percent;
+                const signedMovePct = signedExpectedMovePercent(
+                  prediction.expected_move_direction,
+                  expPct,
+                );
+                const changeDisplay =
+                  Math.abs(priceDisplay) * (Math.abs(expPct ?? 0) / 100);
+                const ptMin =
+                  prediction.price_target_min != null
+                    ? convertQuoteToDisplayAmount(
+                        prediction.price_target_min,
+                        quoteInUsd,
+                        displayCurrency,
+                        usdPerInr,
+                      )
+                    : null;
+                const ptMax =
+                  prediction.price_target_max != null
+                    ? convertQuoteToDisplayAmount(
+                        prediction.price_target_max,
+                        quoteInUsd,
+                        displayCurrency,
+                        usdPerInr,
+                      )
+                    : null;
                 const marketStatus = marketStatuses[prediction.symbol];
                 const effectiveStart = getEffectiveStart(
                   new Date(prediction.created_at),
@@ -525,15 +599,16 @@ export default function PredictionsPage() {
                           <SummaryHeader
                             variant="flat"
                             symbol={prediction.symbol}
-                            currentPrice={prediction.current_price || 0}
-                            change={0}
-                            changePercent={
-                              prediction.expected_move_percent || 0
-                            }
+                            currentPrice={priceDisplay}
+                            change={changeDisplay}
+                            changePercent={signedMovePct}
                             recommendation={
                               prediction.recommendation || undefined
                             }
                             confidence={prediction.confidence ?? undefined}
+                            priceDecimals={3}
+                            changePercentDecimals={2}
+                            currency={displayCurrency}
                           />
                           </div>
                           <div
@@ -610,7 +685,7 @@ export default function PredictionsPage() {
                           </p>
                           <p className="font-semibold text-foreground text-sm sm:text-base tabular-nums">
                             {prediction.investment
-                              ? formatCurrency(prediction.investment, 0)
+                              ? formatCurrency(prediction.investment, 0, false, displayCurrency)
                               : "N/A"}
                           </p>
                         </div>
@@ -641,7 +716,7 @@ export default function PredictionsPage() {
                             {prediction.expected_move_percent
                               ? formatPercentage(
                                   prediction.expected_move_percent,
-                                  1,
+                                  2,
                                   false,
                                 )
                               : "N/A"}
@@ -652,9 +727,8 @@ export default function PredictionsPage() {
                             Price Target
                           </p>
                           <p className="font-semibold text-foreground text-xs sm:text-sm break-words">
-                            {prediction.price_target_min &&
-                            prediction.price_target_max
-                              ? `${formatCurrency(prediction.price_target_min, 2)} – ${formatCurrency(prediction.price_target_max, 2)}`
+                            {ptMin != null && ptMax != null
+                              ? `${formatCurrency(ptMin, 3, false, displayCurrency)} – ${formatCurrency(ptMax, 3, false, displayCurrency)}`
                               : "N/A"}
                           </p>
                         </div>
@@ -693,8 +767,15 @@ export default function PredictionsPage() {
                                     </p>
                                     <p className="mt-1 break-all font-mono text-sm font-semibold tabular-nums text-foreground sm:text-base">
                                       {formatCurrency(
-                                        evaluation.startPrice,
-                                        4,
+                                        convertQuoteToDisplayAmount(
+                                          evaluation.startPrice,
+                                          quoteInUsd,
+                                          displayCurrency,
+                                          usdPerInr,
+                                        ),
+                                        3,
+                                        false,
+                                        displayCurrency,
                                       )}
                                     </p>
                                   </div>
@@ -703,7 +784,17 @@ export default function PredictionsPage() {
                                       Price after window
                                     </p>
                                     <p className="mt-1 break-all font-mono text-sm font-semibold tabular-nums text-foreground sm:text-base">
-                                      {formatCurrency(evaluation.endPrice, 4)}
+                                      {formatCurrency(
+                                        convertQuoteToDisplayAmount(
+                                          evaluation.endPrice,
+                                          quoteInUsd,
+                                          displayCurrency,
+                                          usdPerInr,
+                                        ),
+                                        3,
+                                        false,
+                                        displayCurrency,
+                                      )}
                                     </p>
                                   </div>
                                   <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2.5 min-[400px]:min-h-[4.5rem] sm:px-3.5 sm:py-3">
@@ -745,7 +836,7 @@ export default function PredictionsPage() {
                                     {prediction.expected_move_percent != null
                                       ? formatPercentage(
                                           prediction.expected_move_percent,
-                                          1,
+                                          2,
                                           false,
                                         )
                                       : "—"}
