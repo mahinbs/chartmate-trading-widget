@@ -12,12 +12,20 @@ interface ProvisionStatus {
 
 export interface TradingDashboardAccessGateProps {
   children: (ctx: { broker: string }) => React.ReactNode;
+  /**
+   * Where to send signed-in users who are not allowed (unpaid or algo not provisioned).
+   * @default "/algo-setup" — live trading dashboard onboarding.
+   */
+  notReadyRedirect?: "/algo-setup" | "/pricing";
 }
 
 /**
- * Same access rules as /trading-dashboard: signed-in, paid, algo provisioned, active broker integration.
+ * Signed-in, paid, algo provisioned, active broker integration — otherwise redirects.
  */
-export function TradingDashboardAccessGate({ children }: TradingDashboardAccessGateProps) {
+export function TradingDashboardAccessGate({
+  children,
+  notReadyRedirect = "/algo-setup",
+}: TradingDashboardAccessGateProps) {
   const { pathname, search } = useLocation();
   const { user, loading: authLoading } = useAuth();
   const [status, setStatus] = useState<ProvisionStatus>({
@@ -73,7 +81,7 @@ export function TradingDashboardAccessGate({ children }: TradingDashboardAccessG
   }
 
   if (!status.provisioned) {
-    return <Navigate to="/algo-setup" replace />;
+    return <Navigate to={notReadyRedirect} replace />;
   }
 
   return <>{children({ broker: status.broker ?? "zerodha" })}</>;

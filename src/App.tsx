@@ -60,6 +60,7 @@ import { EntryDigestToastBridge } from "./components/EntryDigestToastBridge";
 import { EntryPointNotificationsBell } from "./components/EntryPointNotificationsBell";
 import { useAuth } from "./hooks/useAuth";
 import { useLocation } from "react-router-dom";
+import { AlgoToolsDashboardLayout } from "./components/layout/AlgoToolsDashboardLayout";
 
 // OpenAlgo ping temporarily disabled in mock-order mode to avoid CORS noise
 
@@ -109,6 +110,8 @@ function isLoggedInAppPath(pathname: string): boolean {
     "/intraday",
     "/active-trades",
     "/news",
+    "/ai-trading-analysis",
+    "/backtest",
     "/strategies",
     "/broker-callback",
     "/affiliate/dashboard",
@@ -161,21 +164,15 @@ const App = () => (
               <Route path="/ai-probability-engine" element={<AIPobabilityEnginePage />} />
               <Route path="/affiliate-partner" element={<AffiliatePartnerPage />} />
               <Route
-                path="/ai-trading-analysis"
                 element={
                   <ProtectedRoute>
-                    <TradingAiAnalysisPage />
+                    <AlgoToolsDashboardLayout />
                   </ProtectedRoute>
                 }
-              />
-              <Route
-                path="/backtest"
-                element={
-                  <ProtectedRoute>
-                    <TradingBacktestPage />
-                  </ProtectedRoute>
-                }
-              />
+              >
+                <Route path="/ai-trading-analysis" element={<TradingAiAnalysisPage />} />
+                <Route path="/backtest" element={<TradingBacktestPage />} />
+              </Route>
               <Route
                 path="/trading-dashboard"
                 element={

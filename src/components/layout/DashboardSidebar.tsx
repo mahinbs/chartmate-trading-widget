@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import gsap from "gsap";
 import {
@@ -52,73 +52,80 @@ function useDashboardNavLinks(): DashboardNavLink[] {
     fetchAlgoStatus();
   }, [user?.id, isPremium]);
 
-  const isAlgoProvisioned =
+  const canUseAlgoTools =
     isPremium && (algoStatus === "provisioned" || algoStatus === "active");
 
-  const links: DashboardNavLink[] = [
-    { to: "/home", label: "Dashboard", icon: LayoutDashboard },
-    { to: "/predict", label: "New Analysis", icon: LineChart },
-    {
-      to: "/predictions",
-      label: "Past Analyses",
-      icon: Activity,
-      iconOpacity: "",
-    },
-    {
-      to: "/active-trades?tab=completed",
-      label: "Paper Trade Performance",
-      icon: BarChart3,
-    },
-    { to: "/news", label: "News Feed", icon: Newspaper },
-  ];
+  return useMemo(() => {
+    const next: DashboardNavLink[] = [
+      { to: "/home", label: "Dashboard", icon: LayoutDashboard },
+      { to: "/predict", label: "New Analysis", icon: LineChart },
+      {
+        to: "/predictions",
+        label: "Past Analyses",
+        icon: Activity,
+        iconOpacity: "",
+      },
+      {
+        to: "/active-trades?tab=completed",
+        label: "Paper Trade Performance",
+        icon: BarChart3,
+      },
+      { to: "/news", label: "News Feed", icon: Newspaper },
+    ];
 
-  if (isPremium) {
-    if (isAlgoProvisioned) {
-      links.push({
-        to: "/trading-dashboard",
-        label: "Algo Trade",
-        icon: Bot,
-        iconColor: "",
-      });
-      links.push({
-        to: "/ai-trading-analysis",
-        label: "AI Trading Analysis",
-        icon: Target,
-        iconColor: "",
-      });
-      links.push({
-        to: "/backtest",
-        label: "Backtesting",
-        icon: LineChart,
-        iconColor: "",
-      });
+    if (isPremium) {
+      if (canUseAlgoTools) {
+        next.push({
+          to: "/trading-dashboard",
+          label: "Algo Trade",
+          icon: Bot,
+          iconColor: "text-primary opacity-80",
+        });
+      } else {
+        next.push({
+          to: "/algo-setup",
+          label: "Algo Trade",
+          icon: Bot,
+          iconColor: "text-primary opacity-80",
+        });
+      }
     } else {
-      links.push({
-        to: "/algo-setup",
+      next.push({
+        to: "/pricing",
         label: "Algo Trade",
         icon: Bot,
-        iconColor: "",
+        iconColor: "text-primary opacity-80",
       });
     }
-  } else {
-    links.push({
-      to: "/pricing",
-      label: "Algo Trade",
-      icon: Bot,
-      iconColor: "",
-    });
-  }
 
-  if (isAdmin) {
-    links.push({
-      to: "/admin",
-      label: "Admin Panel",
-      icon: ShieldCheck,
-      iconColor: "text-destructive opacity-80",
+    const aiTo = canUseAlgoTools ? "/ai-trading-analysis" : "/pricing";
+    const backtestTo = canUseAlgoTools ? "/backtest" : "/pricing";
+    next.push({
+      to: aiTo,
+      label: "AI Trading Analysis",
+      icon: Target,
+      iconColor: "text-primary opacity-80",
+      ...(canUseAlgoTools ? {} : { matchActive: false }),
     });
-  }
+    next.push({
+      to: backtestTo,
+      label: "Backtesting",
+      icon: LineChart,
+      iconColor: "text-primary opacity-80",
+      ...(canUseAlgoTools ? {} : { matchActive: false }),
+    });
 
-  return links;
+    if (isAdmin) {
+      next.push({
+        to: "/admin",
+        label: "Admin Panel",
+        icon: ShieldCheck,
+        iconColor: "text-destructive opacity-80",
+      });
+    }
+
+    return next;
+  }, [isAdmin, isPremium, canUseAlgoTools]);
 }
 
 export function DashboardSidebar({
@@ -183,35 +190,28 @@ export function DashboardSidebar({
             <div className="space-y-2">
               {links.map((link) => {
                 const Icon = link.icon;
-                const isActive = isDashboardNavActive(
-                  link.to,
-                  pathname,
-                  search,
-                );
-                if (isActive) {
-                  return (
-                    <Link
-                      key={link.label}
-                      to={link.to}
-                      className="flex items-center gap-3 px-3 py-2 rounded-lg bg-sidebar-primary/10 text-primary border-l-[3px] border-primary text-sm font-semibold transition-colors shadow-[inset_0_1px_0_0_rgba(255,255,255,0.02)]"
-                    >
-                      <Icon className="h-4 w-4" /> {link.label}
-                    </Link>
-                  );
-                }
+                const isActive =
+                  link.matchActive === false
+                    ? false
+                    : isDashboardNavActive(link.to, pathname, search);
                 return (
                   <Link
                     key={link.label}
                     to={link.to}
-                    className="flex items-center gap-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:text-foreground hover:bg-sidebar-primary/5 transition-all text-sm font-medium border-l-[3px] border-transparent ml-[1px]"
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors border-l-[3px]",
+                      isActive
+                        ? "bg-sidebar-primary/10 text-primary border-primary font-semibold shadow-[inset_0_1px_0_0_rgba(255,255,255,0.02)]"
+                        : "text-sidebar-foreground hover:text-foreground hover:bg-sidebar-primary/5 font-medium border-transparent ml-[1px]",
+                    )}
                   >
                     <Icon
                       className={cn(
-                        "h-4 w-4",
-                        link.iconColor,
-                        link.iconOpacity,
+                        "h-4 w-4 shrink-0",
+                        !isActive && link.iconColor,
+                        !isActive && link.iconOpacity,
                       )}
-                    />{" "}
+                    />
                     {link.label}
                   </Link>
                 );

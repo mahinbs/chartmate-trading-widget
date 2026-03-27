@@ -6,6 +6,8 @@ export interface DashboardNavLink {
   icon: LucideIcon;
   iconOpacity?: string;
   iconColor?: string;
+  /** When false, never render as active (e.g. multiple items linking to `/pricing`). */
+  matchActive?: boolean;
 }
 
 /** Match router location to a `to` string that may include `?query`. */

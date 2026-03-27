@@ -1,25 +1,17 @@
 import React from "react";
+import { useOutletContext } from "react-router-dom";
 import BacktestingSection from "@/components/trading/BacktestingSection";
-import { TradingDashboardAccessGate } from "@/components/trading/TradingDashboardAccessGate";
 import { TradingDashboardShell } from "@/components/trading/TradingDashboardShell";
-import { DashboardShellLayout } from "@/components/layout/DashboardShellLayout";
+import type { AlgoToolsOutletContext } from "@/components/layout/AlgoToolsDashboardLayout";
 
-function BacktestContent({ broker }: { broker: string }) {
+/** Broker from `AlgoToolsDashboardLayout` outlet context (stable when switching vs `/ai-trading-analysis`). */
+export default function TradingBacktestPage() {
+  const { broker } = useOutletContext<AlgoToolsOutletContext>();
   return (
     <TradingDashboardShell broker={broker} pageTitle="Backtesting">
       <div className="min-w-0">
         <BacktestingSection />
       </div>
     </TradingDashboardShell>
-  );
-}
-
-export default function TradingBacktestPage() {
-  return (
-    <DashboardShellLayout>
-      <TradingDashboardAccessGate>
-        {(ctx) => <BacktestContent broker={ctx.broker} />}
-      </TradingDashboardAccessGate>
-    </DashboardShellLayout>
   );
 }

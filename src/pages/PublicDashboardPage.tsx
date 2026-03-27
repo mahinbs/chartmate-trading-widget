@@ -494,6 +494,9 @@ function accentColors(key: string) {
   return { stroke: "#8b5cf6", fill: "#8b5cf6", border: "border-violet-500/40", bg: "bg-violet-500/5" };
 }
 
+/** Pixel height for per-metric 7-day charts (bar / line / area). */
+const METRIC_SEVEN_DAY_CHART_HEIGHT = 220;
+
 function MetricSparkline({ m, data }: { m: Metric; data: ChartPoint[] }) {
   const colors = accentColors(m.key);
   const chartType = m.chart_type || "area";
@@ -502,7 +505,7 @@ function MetricSparkline({ m, data }: { m: Metric; data: ChartPoint[] }) {
 
   const commonProps = {
     data,
-    margin: { top: 4, right: 4, left: 0, bottom: 0 },
+    margin: { top: 8, right: 8, left: 0, bottom: 4 },
   };
 
   const axisProps = {
@@ -512,7 +515,7 @@ function MetricSparkline({ m, data }: { m: Metric; data: ChartPoint[] }) {
   };
 
   return (
-    <ResponsiveContainer width="100%" height={100}>
+    <ResponsiveContainer width="100%" height={METRIC_SEVEN_DAY_CHART_HEIGHT}>
       {chartType === "bar" ? (
         <BarChart {...commonProps}>
           <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeOpacity={0.4} />

@@ -54,7 +54,10 @@ export const DashboardMobileDrawer = forwardRef<HTMLDivElement, DashboardMobileD
               <div className="space-y-2">
                 {links.map((link) => {
                   const Icon = link.icon;
-                  const isActive = isDashboardNavActive(link.to, pathname, search);
+                  const isActive =
+                    link.matchActive === false
+                      ? false
+                      : isDashboardNavActive(link.to, pathname, search);
                   return (
                     <Link
                       key={link.label}
@@ -67,7 +70,13 @@ export const DashboardMobileDrawer = forwardRef<HTMLDivElement, DashboardMobileD
                           : "text-sidebar-foreground hover:text-foreground hover:bg-sidebar-primary/5 border-l-[3px] border-transparent",
                       )}
                     >
-                      <Icon className={cn("h-4 w-4", link.iconColor, link.iconOpacity)} />{" "}
+                      <Icon
+                        className={cn(
+                          "h-4 w-4 shrink-0",
+                          !isActive && link.iconColor,
+                          !isActive && link.iconOpacity,
+                        )}
+                      />
                       {link.label}
                     </Link>
                   );

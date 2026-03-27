@@ -1,4 +1,5 @@
 import { type ReactNode } from "react";
+import { Outlet } from "react-router-dom";
 import { DashboardSidebar } from "./DashboardSidebar";
 import { cn } from "@/lib/utils";
 
@@ -23,5 +24,14 @@ export function DashboardShellLayout({ children, className }: DashboardShellLayo
         </div>
       </main>
     </div>
+  );
+}
+
+/** Same shell as {@link DashboardShellLayout} but renders an {@link Outlet} for nested routes — keeps the sidebar mounted when switching between sibling paths (e.g. AI analysis ↔ backtest). */
+export function DashboardShellOutletLayout({ className }: { className?: string }) {
+  return (
+    <DashboardShellLayout className={className}>
+      <Outlet />
+    </DashboardShellLayout>
   );
 }

@@ -124,7 +124,7 @@ export default function NewsPage() {
     <DashboardShellLayout>
       <div className="min-h-screen bg-background text-foreground">
       {/* Header */}
-      <div className="border-b border-white/5 bg-background/80 backdrop-blur-xl sticky top-0 z-50">
+      <div className="border-b border-white/5 bg-background/80 backdrop-blur-xl">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="pt-10 lg:pt-0 flex items-center gap-4">
             <div className="flex items-center gap-2">
@@ -145,7 +145,7 @@ export default function NewsPage() {
         </div>
       </div>
 
-      <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-8 max-w-6xl">
+      <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-8">
         <Tabs defaultValue="regional" className="space-y-4 sm:space-y-8" onValueChange={setActiveTab}>
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between flex-wrap gap-3">
             <div className="overflow-x-auto w-full sm:w-auto pb-1">
