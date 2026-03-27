@@ -177,12 +177,68 @@ function clampInt(n: number, lo: number, hi: number) {
   return Math.min(hi, Math.max(lo, Math.floor(n)));
 }
 
-function scanProgressStageLabel(p: number): string {
-  if (p >= 100) return "Done — showing results";
-  if (p < 20) return "Fetching OHLCV & computing indicators…";
-  if (p < 45) return "Running entry/exit rules on each bar…";
-  if (p < 78) return "AI (Gemini) scoring & blending with rule engine…";
-  return "Merging outcomes & building signal cards…";
+/** One bar step every ~this long while the edge function runs (slow enough you rarely sit at the cap for minutes). */
+const SCAN_PROGRESS_STEP_MS = 2000;
+/** Do not pass this with server still running — then we flush 1% at a time to 100 when the response returns. */
+const SCAN_PROGRESS_CAP_WHILE_WAITING = 93;
+/** Completing the bar to 100% (1% per tick) after the server responds — ties “full bar” to “analysis done”. */
+const SCAN_PROGRESS_FLUSH_STEP_MS = 26;
+/** Rotates sub-lines inside each phase (ChatGPT-style “thinking” copy). */
+const SCAN_THINKING_ROTATE_MS = 2400;
+
+const SCAN_THINKING_PHASES: { max: number; lines: string[] }[] = [
+  {
+    max: 22,
+    lines: [
+      "Connecting to the market data service…",
+      "Requesting intraday candles for your lookback window…",
+      "Aligning timestamps and session boundaries…",
+    ],
+  },
+  {
+    max: 45,
+    lines: [
+      "Computing RSI, MACD, and volatility context…",
+      "Walking each bar with built-in strategy templates…",
+      "Checking BUY/SELL rules across selected strategies…",
+    ],
+  },
+  {
+    max: 72,
+    lines: [
+      "Preparing candidate signals for the AI pass…",
+      "Gemini is scoring each candidate vs indicators…",
+      "Blending model output with the rule engine…",
+    ],
+  },
+  {
+    max: SCAN_PROGRESS_CAP_WHILE_WAITING,
+    lines: [
+      "Resolving verdicts — confirm, mixed, or reject…",
+      "Building signal cards with entry time and price…",
+      "Preparing rows for your scan history…",
+    ],
+  },
+  {
+    max: 99,
+    lines: [
+      "Sealing this run into your history…",
+      "Syncing signal cards to the page…",
+      "Final checks before showing results…",
+    ],
+  },
+];
+
+function pickScanThinkingLine(progressPercent: number, rotateTick: number): string {
+  const p = Math.min(100, Math.max(0, Math.floor(progressPercent)));
+  if (p >= 100) return "Analysis complete — showing your results below…";
+  for (const phase of SCAN_THINKING_PHASES) {
+    if (p <= phase.max) {
+      const lines = phase.lines;
+      return lines[rotateTick % lines.length] ?? lines[0];
+    }
+  }
+  return "Working…";
 }
 
 function formatDurationShort(ms: number): string {
@@ -886,7 +942,10 @@ export function StrategyEntrySignalsPanel({
   const [schedulesLoading, setSchedulesLoading] = useState(false);
   const [deletingScheduleId, setDeletingScheduleId] = useState<string | null>(null);
   const [scanProgress, setScanProgress] = useState(0);
+  /** Cycles ChatGPT-style status lines while the same % band can last many seconds. */
+  const [scanThinkingTick, setScanThinkingTick] = useState(0);
   const scanProgressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const scanProgressRef = useRef(0);
 
   const todayKey = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
@@ -968,6 +1027,12 @@ export function StrategyEntrySignalsPanel({
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!loading) return;
+    const id = setInterval(() => setScanThinkingTick((t) => t + 1), SCAN_THINKING_ROTATE_MS);
+    return () => clearInterval(id);
+  }, [loading]);
 
   const fetchHistoryList = useCallback(async (page = 1) => {
     setHistoryLoading(true);
@@ -1238,12 +1303,18 @@ export function StrategyEntrySignalsPanel({
       clearInterval(scanProgressTimerRef.current);
       scanProgressTimerRef.current = null;
     }
+    setScanThinkingTick(0);
+    scanProgressRef.current = 1;
+    setScanProgress(1);
     setLoading(true);
     setSignals([]);
-    setScanProgress(6);
     scanProgressTimerRef.current = setInterval(() => {
-      setScanProgress((prev) => Math.min(94, prev + 1.2 + Math.random() * 3.5));
-    }, 400);
+      setScanProgress((prev) => {
+        const n = Math.min(SCAN_PROGRESS_CAP_WHILE_WAITING, prev + 1);
+        scanProgressRef.current = n;
+        return n;
+      });
+    }, SCAN_PROGRESS_STEP_MS);
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -1305,7 +1376,11 @@ export function StrategyEntrySignalsPanel({
         clearInterval(scanProgressTimerRef.current);
         scanProgressTimerRef.current = null;
       }
-      setScanProgress(100);
+      while (scanProgressRef.current < 100) {
+        await new Promise((r) => setTimeout(r, SCAN_PROGRESS_FLUSH_STEP_MS));
+        scanProgressRef.current = Math.min(100, scanProgressRef.current + 1);
+        setScanProgress(scanProgressRef.current);
+      }
       setSignals(list);
       setScanMeta({
         dataSource: (data as any)?.dataSource,
@@ -1351,13 +1426,17 @@ export function StrategyEntrySignalsPanel({
         });
       }
       fetchHistoryList(1);
-      await new Promise((r) => setTimeout(r, 420));
+      await new Promise((r) => setTimeout(r, 320));
     } catch (e: unknown) {
       if (scanProgressTimerRef.current != null) {
         clearInterval(scanProgressTimerRef.current);
         scanProgressTimerRef.current = null;
       }
-      setScanProgress(0);
+      while (scanProgressRef.current > 0) {
+        await new Promise((r) => setTimeout(r, 42));
+        scanProgressRef.current = Math.max(0, scanProgressRef.current - 1);
+        setScanProgress(scanProgressRef.current);
+      }
       toast({
         title: "Scan failed",
         description: e instanceof Error ? e.message : "Unknown error",
@@ -1365,6 +1444,7 @@ export function StrategyEntrySignalsPanel({
       });
     } finally {
       setLoading(false);
+      scanProgressRef.current = 0;
       setScanProgress(0);
     }
   }, [
@@ -1897,20 +1977,21 @@ export function StrategyEntrySignalsPanel({
             aria-busy="true"
           >
             <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
-              <span className="text-teal-100/95 font-medium leading-snug">
-                {scanProgressStageLabel(scanProgress)}
+              <span className="text-teal-100/95 font-medium leading-snug min-w-0">
+                {pickScanThinkingLine(scanProgress, scanThinkingTick)}
               </span>
-              <span className="tabular-nums text-zinc-500 shrink-0">{Math.min(100, Math.round(scanProgress))}%</span>
+              <span className="tabular-nums text-zinc-500 shrink-0">{Math.min(100, Math.floor(scanProgress))}%</span>
             </div>
             <Progress
-              value={Math.min(100, scanProgress)}
+              value={Math.min(100, Math.floor(scanProgress))}
               className="h-2.5 bg-zinc-800/90 [&>div]:bg-gradient-to-r [&>div]:from-teal-500 [&>div]:to-cyan-400"
             />
             <p className="text-[10px] text-zinc-500 leading-relaxed">
-              Progress moves while the edge function runs (one request: candles → detection → Gemini). It is not a byte-accurate
-              download meter; when it hits 100%, results below are the fresh scan.{" "}
-              <span className="text-zinc-400">Live</span> appears on cards when the latest bar still matches and is inside the
-              live time window for that chart interval.
+              The bar advances <span className="text-zinc-400">1% at a time</span> while the server works; status lines rotate
+              like a thinking trace. When the bar reaches <span className="text-zinc-400">100%</span>, this scan is done and
+              results appear below.{" "}
+              <span className="text-zinc-400">Live</span> on a card means the latest bar still matches inside the live window
+              for that interval.
             </p>
           </div>
         ) : null}
