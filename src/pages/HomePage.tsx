@@ -55,7 +55,7 @@ interface WatchlistItem {
 export default function HomePage() {
   const { user } = useAuth();
   const { save, refresh } = useTradingIntegration();
-  const { isPremium } = useSubscription();
+  const { hasAlgoAccess, hasAnalysisAccess, manualFullAccessBypass } = useSubscription();
   const [showBrokerModal, setShowBrokerModal] = useState(false);
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [activeStock, setActiveStock] = useState<{
@@ -69,9 +69,10 @@ export default function HomePage() {
   const [newsLoading, setNewsLoading] = useState(true);
   const [algoStatus, setAlgoStatus] = useState<string | null>(null);
   const isAlgoProvisioned =
-    isPremium && (algoStatus === "provisioned" || algoStatus === "active");
-  const algoEntryPath = !isPremium
-    ? "/pricing"
+    manualFullAccessBypass ||
+    (hasAlgoAccess && (algoStatus === "provisioned" || algoStatus === "active"));
+  const algoEntryPath = !hasAlgoAccess
+    ? "/pricing?feature=algo"
     : isAlgoProvisioned
       ? "/trading-dashboard"
       : "/algo-setup";
@@ -131,7 +132,7 @@ export default function HomePage() {
 
   useEffect(() => {
     const fetchAlgoStatus = async () => {
-      if (!user?.id || !isPremium) {
+      if (!user?.id || !hasAlgoAccess) {
         setAlgoStatus(null);
         return;
       }
@@ -143,7 +144,7 @@ export default function HomePage() {
       setAlgoStatus(data?.status ?? null);
     };
     fetchAlgoStatus();
-  }, [user?.id, isPremium]);
+  }, [user?.id, hasAlgoAccess]);
 
   const addStock = async () => {
     if (!user?.id) return;
@@ -410,7 +411,7 @@ export default function HomePage() {
                   to={algoEntryPath}
                   className="shrink-0 w-full md:w-auto flex justify-center bg-primary text-primary-foreground px-8 h-[52px] items-center rounded-xl font-semibold hover:bg-primary/90 transition-all shadow-[0_4px_16px_-4px_var(--primary)] group-hover:shadow-[0_8px_24px_-6px_var(--primary)] text-base glass-button-premium border-white/20"
                 >
-                  {!isPremium
+                  {!hasAlgoAccess
                     ? "Upgrade to Unlock →"
                     : isAlgoProvisioned
                       ? "Open Live Dashboard →"
@@ -421,8 +422,21 @@ export default function HomePage() {
 
             {/* SECONDARY ROW (2 Col) */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Link to="/predictions" className="block outline-none group">
-                <div className="glass-card-premium p-6 hover:border-primary/30 transition-all h-full flex flex-col justify-center group-hover:bg-white/10 shadow-md shadow-background/10">
+              <Link
+                to={
+                  hasAnalysisAccess
+                    ? "/predictions"
+                    : "/pricing?feature=analysis"
+                }
+                className="block outline-none group"
+              >
+                <div
+                  className={`glass-card-premium p-6 transition-all h-full flex flex-col justify-center shadow-md shadow-background/10 relative overflow-hidden ${
+                    hasAnalysisAccess
+                      ? "hover:border-primary/30 group-hover:bg-white/10"
+                      : "opacity-80 border-dashed border-muted-foreground/25"
+                  }`}
+                >
                   <div className="absolute inset-0 w-[40%] h-[40%] blur-3xl bg-secondary opacity-50 transition-opacity duration-700 -translate-x-1/2 left-1/2 top-1/2"></div>
                   <div className="relative z-[2] flex items-center gap-5">
                     <div className="p-3 bg-muted border border-border/50 rounded-xl shrink-0 group-hover:bg-muted/80 transition-colors shadow-sm">
@@ -431,6 +445,11 @@ export default function HomePage() {
                     <div>
                       <p className="font-bold text-foreground text-[17px] tracking-tight">
                         Past Analyses
+                        {!hasAnalysisAccess && (
+                          <span className="ml-2 text-xs font-normal text-muted-foreground">
+                            (Probability / Pro)
+                          </span>
+                        )}
                       </p>
                       <p className="text-[13px] font-medium text-muted-foreground/80 mt-1">
                         Review your complete analysis history and AI
@@ -441,10 +460,20 @@ export default function HomePage() {
                 </div>
               </Link>
               <Link
-                to="/active-trades?tab=completed"
+                to={
+                  hasAnalysisAccess
+                    ? "/active-trades?tab=performance"
+                    : "/pricing?feature=analysis"
+                }
                 className="block outline-none group"
               >
-                <div className="glass-card-premium p-6 hover:border-primary/30 transition-all h-full flex flex-col justify-center group-hover:bg-white/10 shadow-md shadow-background/10">
+                <div
+                  className={`glass-card-premium p-6 transition-all h-full flex flex-col justify-center shadow-md shadow-background/10 relative overflow-hidden ${
+                    hasAnalysisAccess
+                      ? "hover:border-primary/30 group-hover:bg-white/10"
+                      : "opacity-80 border-dashed border-muted-foreground/25"
+                  }`}
+                >
                   <div className="absolute inset-0 w-[40%] h-[40%] blur-3xl bg-primary opacity-50 transition-opacity duration-700 -translate-x-1/2 left-1/2 top-1/2"></div>
                   <div className="relative z-[2] flex items-center gap-5">
                     <div className="p-3 bg-muted border border-border/50 rounded-xl shrink-0 group-hover:bg-muted/80 transition-colors shadow-sm">
@@ -453,6 +482,11 @@ export default function HomePage() {
                     <div>
                       <p className="font-bold text-foreground text-[17px] tracking-tight">
                         Paper Trade Performance
+                        {!hasAnalysisAccess && (
+                          <span className="ml-2 text-xs font-normal text-muted-foreground">
+                            (Probability / Pro)
+                          </span>
+                        )}
                       </p>
                       <p className="text-[13px] font-medium text-muted-foreground/80 mt-1">
                         Analyze your trading performance, win rates, and P&L

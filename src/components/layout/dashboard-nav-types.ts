@@ -8,6 +8,8 @@ export interface DashboardNavLink {
   iconColor?: string;
   /** When false, never render as active (e.g. multiple items linking to `/pricing`). */
   matchActive?: boolean;
+  /** Shown as upgrade CTA (routes to `to`, typically `/pricing?...`). */
+  locked?: boolean;
 }
 
 /** Match router location to a `to` string that may include `?query`. */

@@ -5,9 +5,11 @@ import {
   Activity,
   BarChart3,
   Bot,
+  CreditCard,
   HelpCircle,
   LayoutDashboard,
   LineChart,
+  Lock,
   LogOut,
   Menu,
   Newspaper,
@@ -32,13 +34,13 @@ export interface DashboardSidebarProps {
 
 function useDashboardNavLinks(): DashboardNavLink[] {
   const { isAdmin } = useAdmin();
-  const { isPremium } = useSubscription();
+  const { hasAlgoAccess, hasAnalysisAccess } = useSubscription();
   const { user } = useAuth();
   const [algoStatus, setAlgoStatus] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchAlgoStatus = async () => {
-      if (!user?.id || !isPremium) {
+      if (!user?.id || !hasAlgoAccess) {
         setAlgoStatus(null);
         return;
       }
@@ -50,30 +52,39 @@ function useDashboardNavLinks(): DashboardNavLink[] {
       setAlgoStatus(data?.status ?? null);
     };
     fetchAlgoStatus();
-  }, [user?.id, isPremium]);
+  }, [user?.id, hasAlgoAccess]);
 
   const canUseAlgoTools =
-    isPremium && (algoStatus === "provisioned" || algoStatus === "active");
+    hasAlgoAccess && (algoStatus === "provisioned" || algoStatus === "active");
 
   return useMemo(() => {
     const next: DashboardNavLink[] = [
       { to: "/home", label: "Dashboard", icon: LayoutDashboard },
-      { to: "/predict", label: "New Analysis", icon: LineChart },
       {
-        to: "/predictions",
+        to: hasAnalysisAccess ? "/predict" : "/pricing?feature=analysis",
+        label: "New Analysis",
+        icon: LineChart,
+        locked: !hasAnalysisAccess,
+      },
+      {
+        to: hasAnalysisAccess ? "/predictions" : "/pricing?feature=analysis",
         label: "Past Analyses",
         icon: Activity,
         iconOpacity: "",
+        locked: !hasAnalysisAccess,
       },
       {
-        to: "/active-trades?tab=completed",
+        to: hasAnalysisAccess
+          ? "/active-trades?tab=performance"
+          : "/pricing?feature=analysis",
         label: "Paper Trade Performance",
         icon: BarChart3,
+        locked: !hasAnalysisAccess,
       },
       { to: "/news", label: "News Feed", icon: Newspaper },
     ];
 
-    if (isPremium) {
+    if (hasAlgoAccess) {
       if (canUseAlgoTools) {
         next.push({
           to: "/trading-dashboard",
@@ -91,10 +102,11 @@ function useDashboardNavLinks(): DashboardNavLink[] {
       }
     } else {
       next.push({
-        to: "/pricing",
+        to: "/pricing?feature=algo",
         label: "Algo Trade",
         icon: Bot,
         iconColor: "text-primary opacity-80",
+        locked: true,
       });
     }
 
@@ -115,6 +127,13 @@ function useDashboardNavLinks(): DashboardNavLink[] {
       ...(canUseAlgoTools ? {} : { matchActive: false }),
     });
 
+    next.push({
+      to: "/subscription",
+      label: "Subscription",
+      icon: CreditCard,
+      iconColor: "text-muted-foreground opacity-90",
+    });
+
     if (isAdmin) {
       next.push({
         to: "/admin",
@@ -125,7 +144,7 @@ function useDashboardNavLinks(): DashboardNavLink[] {
     }
 
     return next;
-  }, [isAdmin, isPremium, canUseAlgoTools]);
+  }, [isAdmin, hasAlgoAccess, hasAnalysisAccess, canUseAlgoTools]);
 }
 
 export function DashboardSidebar({
@@ -198,8 +217,10 @@ export function DashboardSidebar({
                   <Link
                     key={link.label}
                     to={link.to}
+                    title={link.locked ? "Upgrade to unlock" : undefined}
                     className={cn(
                       "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors border-l-[3px]",
+                      link.locked && "opacity-75",
                       isActive
                         ? "bg-sidebar-primary/10 text-primary border-primary font-semibold shadow-[inset_0_1px_0_0_rgba(255,255,255,0.02)]"
                         : "text-sidebar-foreground hover:text-foreground hover:bg-sidebar-primary/5 font-medium border-transparent ml-[1px]",
@@ -212,7 +233,10 @@ export function DashboardSidebar({
                         !isActive && link.iconOpacity,
                       )}
                     />
-                    {link.label}
+                    <span className="flex-1 truncate">{link.label}</span>
+                    {link.locked && (
+                      <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-80" />
+                    )}
                   </Link>
                 );
               })}

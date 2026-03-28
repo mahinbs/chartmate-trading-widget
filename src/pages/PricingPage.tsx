@@ -1,5 +1,6 @@
 import { Helmet } from "react-helmet-async";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion, Variants } from "framer-motion";
 import { FaCheckCircle } from "react-icons/fa";
 
@@ -7,9 +8,17 @@ import AiPredictionHeader from "@/components/landingpage/mainlandingpage/AiPredi
 import AiPredictionFooter from "@/components/landingpage/mainlandingpage/AiPredictionFooter";
 import { Button } from "@/components/ui/button";
 import { PRICING_PLANS } from "@/constants/pricing";
+import { useAuth } from "@/hooks/useAuth";
+import { useSubscription } from "@/hooks/useSubscription";
+import { isMidTierEligibleForProOnlyUpgrade } from "@/lib/subscriptionEntitlements";
 import { supabase } from "@/integrations/supabase/client";
-import { createCheckoutSession } from "@/services/stripeService";
+import {
+  createBillingPortalSession,
+  createCheckoutSession,
+  hasActiveSubscription,
+} from "@/services/stripeService";
 import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
 
 const fadeUp: Variants = {
   hidden: { opacity: 0, y: 30 },
@@ -26,6 +35,51 @@ const staggerContainer: Variants = {
 
 const PricingPage = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { user } = useAuth();
+  const { subscription, loading: subLoading, hasAnalysisAccess, hasAlgoAccess } =
+    useSubscription();
+  const [portalLoading, setPortalLoading] = useState(false);
+
+  const paid = hasActiveSubscription(subscription);
+  const planId = subscription?.plan_id;
+  const onProPlan = paid && planId === "proPlan";
+  const proUpgradeViaPortal = paid && isMidTierEligibleForProOnlyUpgrade(planId);
+  /** DB-granted access with fake Stripe ids (see migrations) — portal would fail. */
+  const manualCompedPro = Boolean(
+    subscription?.stripe_customer_id?.startsWith("cus_manual_exc_"),
+  );
+
+  const visiblePlans = useMemo(() => {
+    if (onProPlan) return [];
+    if (proUpgradeViaPortal) return PRICING_PLANS.filter((p) => p.id === "proPlan");
+    return PRICING_PLANS;
+  }, [onProPlan, proUpgradeViaPortal]);
+
+  useEffect(() => {
+    if (subLoading) return;
+    const f = searchParams.get("feature");
+
+    if (user?.id && f === "analysis" && hasAnalysisAccess) {
+      navigate("/predict", { replace: true });
+      return;
+    }
+    if (user?.id && f === "algo" && hasAlgoAccess) {
+      navigate("/trading-dashboard", { replace: true });
+      return;
+    }
+    if (user?.id && f === "trades" && (hasAlgoAccess || hasAnalysisAccess)) {
+      navigate("/active-trades", { replace: true });
+      return;
+    }
+  }, [
+    searchParams,
+    subLoading,
+    user?.id,
+    hasAnalysisAccess,
+    hasAlgoAccess,
+    navigate,
+  ]);
 
   const startPremiumCheckout = async (planId: string) => {
     const {
@@ -35,10 +89,15 @@ const PricingPage = () => {
       navigate("/auth?redirect=" + encodeURIComponent("/pricing"));
       return;
     }
+    const origin = window.location.origin;
+    const successUrl =
+      planId === "botIntegration"
+        ? `${origin}/algo-setup?checkout=success`
+        : `${origin}/home?checkout=success`;
     const result = await createCheckoutSession({
       plan_id: planId,
-      success_url: window.location.origin + "/algo-setup?checkout=success",
-      cancel_url: window.location.origin + "/pricing",
+      success_url: successUrl,
+      cancel_url: `${origin}/pricing`,
     });
     if ("error" in result) {
       toast.error(result.error);
@@ -82,81 +141,155 @@ const PricingPage = () => {
 
         <motion.section
           initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, margin: "-80px" }}
+          animate="visible"
           variants={staggerContainer}
           className="py-8 bg-zinc-950 border-zinc-900 relative"
         >
           <div className="container mx-auto px-4 relative z-10">
-            <div className="grid lg:grid-cols-3 gap-8 max-w-6xl mx-auto items-stretch">
-              {PRICING_PLANS.map((plan) => (
-                <motion.div
-                  key={plan.id}
-                  variants={fadeUp}
-                  className={`p-8 rounded-3xl flex flex-col relative transition-all shadow-lg hover:border-zinc-700 ${
-                    plan.recommended
-                      ? "bg-gradient-to-b from-teal-950/40 to-black border border-teal-500/30 shadow-[0_0_40px_rgba(20,184,166,0.1)] lg:h-[110%] lg:-mt-[5%] lg:mb-[4%]"
-                      : "bg-black border border-zinc-800"
-                  }`}
-                >
-                  {plan.recommended && (
-                    <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-teal-500 text-black text-[10px] font-bold px-4 py-1.5 rounded-full uppercase tracking-widest">
-                      Recommended
-                    </div>
-                  )}
-                  <h3
-                    className={`text-xl font-bold mb-2 ${
-                      plan.recommended ? "text-teal-400" : "text-zinc-200"
-                    }`}
-                  >
-                    {plan.name}
-                  </h3>
-                  <div
-                    className={`${
-                      plan.recommended ? "text-zinc-400" : "text-zinc-500"
-                    } mb-6 font-light text-sm min-h-[40px]`}
-                  >
-                    {plan.description}
-                  </div>
-                  <div className="text-4xl font-black mb-6 tracking-tight text-white">
-                    ${plan.price}
-                    <span
-                      className={`text-lg ${
-                        plan.recommended ? "text-zinc-500" : "text-zinc-600"
-                      } font-normal ml-1 tracking-normal`}
+            {onProPlan ? (
+              <motion.div
+                variants={fadeUp}
+                className="max-w-xl mx-auto p-8 rounded-3xl border border-teal-500/30 bg-teal-950/20 text-center"
+              >
+                <h3 className="text-xl font-bold text-teal-400 mb-2">You&apos;re on Pro</h3>
+                {manualCompedPro ? (
+                  <p className="text-zinc-400 text-sm mb-2">
+                    This account has full Pro access on a complimentary / manual basis. Renewal and
+                    billing are handled internally — there is no Stripe customer portal for this
+                    profile.
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-zinc-400 text-sm mb-6">
+                      Manage renewal, payment method, or schedule changes in the billing portal.
+                    </p>
+                    <Button
+                      className="w-full py-6 bg-teal-500 hover:bg-teal-400 text-black font-bold rounded-xl"
+                      disabled={portalLoading}
+                      onClick={async () => {
+                        setPortalLoading(true);
+                        const r = await createBillingPortalSession(`${window.location.origin}/pricing`);
+                        setPortalLoading(false);
+                        if ("error" in r) {
+                          toast.error(r.error);
+                          return;
+                        }
+                        window.location.href = r.url;
+                      }}
                     >
-                      /{plan.period}
-                    </span>
-                  </div>
-                  <ul
-                    className={`space-y-4 mb-10 flex-1 text-sm ${
-                      plan.recommended ? "text-zinc-200" : "text-zinc-300"
+                      {portalLoading ? (
+                        <Loader2 className="h-5 w-5 animate-spin mx-auto" />
+                      ) : (
+                        "Open billing portal"
+                      )}
+                    </Button>
+                  </>
+                )}
+              </motion.div>
+            ) : (
+              <div
+                className={`grid gap-8 max-w-6xl mx-auto items-stretch ${
+                  visiblePlans.length === 1 ? "lg:grid-cols-1 max-w-md mx-auto" : "lg:grid-cols-3"
+                }`}
+              >
+                {proUpgradeViaPortal && (
+                  <p className="lg:col-span-3 text-center text-zinc-400 text-sm mb-2">
+                    You already have an active subscription. Upgrade to Pro below — use{" "}
+                    <strong className="text-zinc-200">billing portal</strong> so Stripe charges only the
+                    prorated difference (when enabled in your Stripe dashboard).
+                  </p>
+                )}
+                {visiblePlans.map((plan) => (
+                  <motion.div
+                    key={plan.id}
+                    variants={fadeUp}
+                    className={`p-8 rounded-3xl flex flex-col relative transition-all shadow-lg hover:border-zinc-700 ${
+                      plan.recommended
+                        ? "bg-gradient-to-b from-teal-950/40 to-black border border-teal-500/30 shadow-[0_0_40px_rgba(20,184,166,0.1)] lg:h-[110%] lg:-mt-[5%] lg:mb-[4%]"
+                        : "bg-black border border-zinc-800"
                     }`}
                   >
-                    {plan.features.map((feature, j) => (
-                      <li key={j} className="flex gap-3 items-center">
-                        <FaCheckCircle
-                          className={`${
-                            plan.recommended ? "text-teal-400" : "text-teal-500"
-                          } flex-shrink-0`}
-                        />
-                        {feature}
-                      </li>
-                    ))}
-                  </ul>
-                  <Button
-                    onClick={() => startPremiumCheckout(plan.id)}
-                    className={
-                      plan.recommended
-                        ? "w-full py-6 bg-teal-500 hover:bg-teal-400 text-black font-bold rounded-xl transition-colors shadow-lg shadow-teal-500/20"
-                        : "w-full py-6 bg-zinc-100 text-black hover:bg-zinc-300 rounded-xl font-bold transition-colors"
-                    }
-                  >
-                    {plan.recommended ? "Get Pro Plan" : "Get Started"}
-                  </Button>
-                </motion.div>
-              ))}
-            </div>
+                    {plan.recommended && (
+                      <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-teal-500 text-black text-[10px] font-bold px-4 py-1.5 rounded-full uppercase tracking-widest">
+                        Recommended
+                      </div>
+                    )}
+                    <h3
+                      className={`text-xl font-bold mb-2 ${
+                        plan.recommended ? "text-teal-400" : "text-zinc-200"
+                      }`}
+                    >
+                      {plan.name}
+                    </h3>
+                    <div
+                      className={`${
+                        plan.recommended ? "text-zinc-400" : "text-zinc-500"
+                      } mb-6 font-light text-sm min-h-[40px]`}
+                    >
+                      {plan.description}
+                    </div>
+                    <div className="text-4xl font-black mb-6 tracking-tight text-white">
+                      ${plan.price}
+                      <span
+                        className={`text-lg ${
+                          plan.recommended ? "text-zinc-500" : "text-zinc-600"
+                        } font-normal ml-1 tracking-normal`}
+                      >
+                        /{plan.period}
+                      </span>
+                    </div>
+                    <ul
+                      className={`space-y-4 mb-10 flex-1 text-sm ${
+                        plan.recommended ? "text-zinc-200" : "text-zinc-300"
+                      }`}
+                    >
+                      {plan.features.map((feature, j) => (
+                        <li key={j} className="flex gap-3 items-center">
+                          <FaCheckCircle
+                            className={`${
+                              plan.recommended ? "text-teal-400" : "text-teal-500"
+                            } flex-shrink-0`}
+                          />
+                          {feature}
+                        </li>
+                      ))}
+                    </ul>
+                    <Button
+                      onClick={async () => {
+                        if (proUpgradeViaPortal && plan.id === "proPlan") {
+                          setPortalLoading(true);
+                          const r = await createBillingPortalSession(`${window.location.origin}/pricing`);
+                          setPortalLoading(false);
+                          if ("error" in r) {
+                            toast.error(r.error);
+                            return;
+                          }
+                          window.location.href = r.url;
+                          return;
+                        }
+                        startPremiumCheckout(plan.id);
+                      }}
+                      disabled={portalLoading}
+                      className={
+                        plan.recommended
+                          ? "w-full py-6 bg-teal-500 hover:bg-teal-400 text-black font-bold rounded-xl transition-colors shadow-lg shadow-teal-500/20"
+                          : "w-full py-6 bg-zinc-100 text-black hover:bg-zinc-300 rounded-xl font-bold transition-colors"
+                      }
+                    >
+                      {portalLoading ? (
+                        <Loader2 className="h-5 w-5 animate-spin mx-auto" />
+                      ) : proUpgradeViaPortal && plan.id === "proPlan" ? (
+                        "Upgrade in billing portal"
+                      ) : plan.recommended ? (
+                        "Get Pro Plan"
+                      ) : (
+                        "Get Started"
+                      )}
+                    </Button>
+                  </motion.div>
+                ))}
+              </div>
+            )}
           </div>
         </motion.section>
       </main>

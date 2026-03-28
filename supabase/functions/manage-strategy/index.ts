@@ -339,6 +339,45 @@ Deno.serve(async (req: Request) => {
             { status: 400, headers },
           );
         }
+
+        const { data: rowSym } = await supabase
+          .from("user_strategies")
+          .select("symbols")
+          .eq("id", strategyId)
+          .eq("user_id", user.id)
+          .maybeSingle();
+        const syms = (rowSym as { symbols?: unknown })?.symbols;
+        let hasTradableSymbol = false;
+        if (Array.isArray(syms)) {
+          for (const x of syms) {
+            if (typeof x === "string" && x.trim().length > 0) {
+              hasTradableSymbol = true;
+              break;
+            }
+            if (x && typeof x === "object") {
+              const sym = String((x as Record<string, unknown>).symbol ?? "").trim();
+              const q = Number((x as Record<string, unknown>).quantity ?? 0);
+              if (sym.length > 0 && Number.isFinite(q) && q >= 1) {
+                hasTradableSymbol = true;
+                break;
+              }
+              if (sym.length > 0) {
+                hasTradableSymbol = true;
+                break;
+              }
+            }
+          }
+        }
+        if (!hasTradableSymbol) {
+          return new Response(
+            JSON.stringify({
+              error:
+                "Set a symbol and quantity before going live (confirm in the activation dialog or edit the strategy).",
+              error_code: "ACTIVATION_NEEDS_SYMBOL",
+            }),
+            { status: 400, headers },
+          );
+        }
       }
 
       const { data: toggled, error: toggleErr } = await supabase

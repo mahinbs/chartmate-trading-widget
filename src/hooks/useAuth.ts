@@ -2,6 +2,13 @@ import { useState, useEffect } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 
+export type SignUpProfileData = {
+  full_name: string;
+  date_of_birth: string; // YYYY-MM-DD
+  phone?: string;
+  country?: string;
+};
+
 export const useAuth = () => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -27,17 +34,29 @@ export const useAuth = () => {
     return () => subscription.unsubscribe();
   }, []);
 
-  const signUp = async (email: string, password: string) => {
+  const signUp = async (
+    email: string,
+    password: string,
+    profile?: SignUpProfileData,
+  ) => {
     const redirectUrl = `${window.location.origin}/`;
-    
-    const { error } = await supabase.auth.signUp({
+
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        emailRedirectTo: redirectUrl
-      }
+        emailRedirectTo: redirectUrl,
+        data: profile
+          ? {
+              full_name: profile.full_name.trim(),
+              date_of_birth: profile.date_of_birth,
+              phone: (profile.phone ?? "").trim(),
+              country: (profile.country ?? "").trim(),
+            }
+          : undefined,
+      },
     });
-    return { error };
+    return { data, error };
   };
 
   const signIn = async (email: string, password: string) => {

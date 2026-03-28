@@ -1,6 +1,6 @@
 import { forwardRef } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { LogOut, User, X } from "lucide-react";
+import { Lock, LogOut, User, X } from "lucide-react";
 import logo from "@/assets/logo.png";
 import type { DashboardNavLink } from "./dashboard-nav-types";
 import { isDashboardNavActive } from "./dashboard-nav-types";
@@ -62,9 +62,11 @@ export const DashboardMobileDrawer = forwardRef<HTMLDivElement, DashboardMobileD
                     <Link
                       key={link.label}
                       to={link.to}
+                      title={link.locked ? "Upgrade to unlock" : undefined}
                       onClick={onClose}
                       className={cn(
                         "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-sm font-medium",
+                        link.locked && "opacity-75",
                         isActive
                           ? "bg-sidebar-primary/10 text-primary border-l-[3px] border-primary font-semibold"
                           : "text-sidebar-foreground hover:text-foreground hover:bg-sidebar-primary/5 border-l-[3px] border-transparent",
@@ -77,7 +79,10 @@ export const DashboardMobileDrawer = forwardRef<HTMLDivElement, DashboardMobileD
                           !isActive && link.iconOpacity,
                         )}
                       />
-                      {link.label}
+                      <span className="flex-1 truncate">{link.label}</span>
+                      {link.locked && (
+                        <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-80" />
+                      )}
                     </Link>
                   );
                 })}

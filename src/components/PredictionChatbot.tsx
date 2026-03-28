@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useNavigate } from "react-router-dom";
+import { useSubscription } from "@/hooks/useSubscription";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface Message {
@@ -126,7 +127,7 @@ function isAnalysisQuery(msg: string): boolean {
   return /\b(should i buy|should i sell|buy or sell|good time to|right time to|worth buying|worth investing|analysis|analyse|analyze|recommend|hold or|invest in)\b/i.test(msg);
 }
 
-const WELCOME_TEXT = `Hey! 👋 I'm your **TradingSmart Bot** powered by real-time market data, news and sentiment analysis.
+const WELCOME_TEXT_ANALYSIS = `Hey! 👋 I'm your **TradingSmart Bot** powered by real-time market data, news and sentiment analysis.
 
 Ask me anything:
 • **Live prices** "What's Tesla trading at?"
@@ -135,6 +136,16 @@ Ask me anything:
 • **Market impact** "How is crude oil affecting markets?"
 
 I'll give you a real answer based on current news, sentiment, and market trends. For an in-depth technical analysis with backtesting, use our **Detailed Analysis** page.`;
+
+const WELCOME_TEXT_FREE = `Hey! 👋 I'm your **TradingSmart Bot** powered by real-time market data, news and sentiment analysis.
+
+Ask me anything:
+• **Live prices** "What's Tesla trading at?"
+• **News & sentiment** "What's happening with Reliance?"
+• **Buy/Sell/Hold advice** "Should I buy Bitcoin now?"
+• **Market impact** "How is crude oil affecting markets?"
+
+I'll give you a real answer based on current news, sentiment, and market trends.`;
 
 // ── Helpers: DB persistence ─────────────────────────────────────────────────
 async function getUserId(): Promise<string | null> {
@@ -149,6 +160,7 @@ function titleFromMessage(text: string): string {
 
 // ── Component ────────────────────────────────────────────────────────────────
 export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
+  const { hasAnalysisAccess } = useSubscription();
   const [messages, setMessages]         = useState<Message[]>([]);
   const [input, setInput]               = useState("");
   const [typing, setTyping]             = useState(false);
@@ -191,17 +203,20 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
     setTyping(false);
     setInput("");
     const t = setTimeout(() => {
+      const welcome = hasAnalysisAccess ? WELCOME_TEXT_ANALYSIS : WELCOME_TEXT_FREE;
       setMessages([{
         id: uid("welcome"),
         role: "bot",
-        text: WELCOME_TEXT,
+        text: welcome,
         component: (
         <div className="flex flex-wrap gap-2 mt-3">
-          <Button variant="outline" size="sm"
-              className="bg-primary/10 border-primary/20 hover:bg-primary/20 text-xs gap-1.5"
-              onClick={() => { setOpen(false); navigate("/predict"); }}>
-              <ExternalLink className="h-3 w-3" /> Open Detailed Analysis
-          </Button>
+          {hasAnalysisAccess && (
+            <Button variant="outline" size="sm"
+                className="bg-primary/10 border-primary/20 hover:bg-primary/20 text-xs gap-1.5"
+                onClick={() => { setOpen(false); navigate("/predict"); }}>
+                <ExternalLink className="h-3 w-3" /> Open Detailed Analysis
+            </Button>
+          )}
           <Button variant="outline" size="sm"
               className="bg-purple-500/10 border-purple-500/20 hover:bg-purple-500/20 text-xs gap-1.5"
               onClick={() => sendMessage("What's the latest market news and sentiment?")}>
@@ -213,7 +228,7 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
       setTimeout(() => inputRef.current?.focus(), 200);
     }, 200);
     return () => clearTimeout(t);
-  }, [navigate, setOpen]);
+  }, [navigate, setOpen, hasAnalysisAccess]);
 
   // Auto-start new chat on first open if no history panel
   useEffect(() => {
@@ -305,7 +320,7 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
         const answer = data.answer;
         if (cId) persistMessage(cId, "bot", answer);
 
-        if (wasAnalysis) {
+        if (wasAnalysis && hasAnalysisAccess) {
           addBotMsg(answer, (
             <Button variant="outline" size="sm"
               className="bg-primary/10 border-primary/20 hover:bg-primary/20 text-xs gap-1.5 mt-1"
@@ -324,7 +339,7 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
     } finally {
       setTyping(false);
     }
-  }, [messages, navigate, setOpen, convId]);
+  }, [messages, navigate, setOpen, convId, hasAnalysisAccess]);
 
   const handleSend = () => {
     if (input.trim()) sendMessage(input);

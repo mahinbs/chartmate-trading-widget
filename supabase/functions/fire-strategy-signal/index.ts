@@ -15,6 +15,11 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  evaluateGuideRiskGates,
+  parseGuideRiskGates,
+} from "../_shared/algoGuideRiskGates.ts";
+import { planAllowsAlgo } from "../_shared/subscription-plans.ts";
 
 const OPENALGO_URL = (Deno.env.get("OPENALGO_URL") ?? "").replace(/\/$/, "");
 
@@ -99,13 +104,21 @@ Deno.serve(async (req: Request) => {
     // ── Check subscription ──────────────────────────────────────────────────
     const { data: sub } = await supabase
       .from("user_subscriptions")
-      .select("status")
+      .select("status, current_period_end, plan_id")
       .eq("user_id", user.id)
       .maybeSingle();
 
-    if (sub?.status !== "active" && sub?.status !== "trialing") {
+    const endMs = sub?.current_period_end ? new Date(sub.current_period_end as string).getTime() : null;
+    const graceOk = endMs == null || endMs + 24 * 60 * 60 * 1000 > Date.now();
+    const paid = (sub?.status === "active" || sub?.status === "trialing") && graceOk;
+    const algoOk = paid && planAllowsAlgo((sub?.plan_id as string) ?? null);
+
+    if (!algoOk) {
       return new Response(
-        JSON.stringify({ error: "Active subscription required to place orders", error_code: "NO_SUBSCRIPTION" }),
+        JSON.stringify({
+          error: "Active Bot / Pro subscription required to fire strategy orders",
+          error_code: "NO_SUBSCRIPTION",
+        }),
         { status: 403, headers },
       );
     }
@@ -164,6 +177,36 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: "This SHORT strategy only allows SELL entries." }), { status: 400, headers });
     }
 
+    const isIntradayStrategy = Boolean(strategyObj.is_intraday ?? true);
+    const riskTz =
+      selectedSymbol.toUpperCase().endsWith(".NS") || selectedSymbol.toUpperCase().endsWith(".BO")
+        ? "Asia/Kolkata"
+        : "UTC";
+    const gateCfg = parseGuideRiskGates(strategyObj.risk_config, riskTz);
+    const { count: openPosCount, error: openPosErr } = await supabase
+      .from("active_trades")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .in("status", ["active", "monitoring", "exit_zone"]);
+    if (openPosErr) {
+      console.error("fire-strategy-signal active_trades count:", openPosErr);
+    }
+    const gateDeny = evaluateGuideRiskGates({
+      cfg: gateCfg,
+      nowSec: Math.floor(Date.now() / 1000),
+      timeZone: riskTz,
+      isIntraday: isIntradayStrategy,
+      openPositionCount: openPosCount ?? 0,
+      stopLossPct: Number(strategyObj.stop_loss_pct ?? 0),
+      takeProfitPct: Number(strategyObj.take_profit_pct ?? 0),
+    });
+    if (!gateDeny.ok) {
+      return new Response(
+        JSON.stringify({ error: gateDeny.reason, error_code: gateDeny.code }),
+        { status: 422, headers },
+      );
+    }
+
     const resolvedExchange = String(
       positionConfig.exchange ??
       body.exchange ??
@@ -184,6 +227,13 @@ Deno.serve(async (req: Request) => {
     // ── Strict dynamic condition gate: fire only if strategy matches NOW ─────
     try {
       if (!SUPABASE_URL) throw new Error("SUPABASE_URL missing");
+      const chartCfg = strategyObj.chart_config && typeof strategyObj.chart_config === "object"
+        ? strategyObj.chart_config as Record<string, unknown>
+        : {};
+      let intradayInterval = String(chartCfg.interval ?? "5m").trim().toLowerCase() || "5m";
+      if (intradayInterval === "1d" || intradayInterval === "1day" || intradayInterval === "daily") {
+        intradayInterval = "5m";
+      }
       const customId = `custom_${strategy.id}`;
       const scanReq = await fetch(`${SUPABASE_URL}/functions/v1/strategy-entry-signals`, {
         method: "POST",
@@ -197,7 +247,7 @@ Deno.serve(async (req: Request) => {
           action,
           days: 90,
           preferIntraday: true,
-          intradayInterval: "5m",
+          intradayInterval,
           intradayLookbackMinutes: 5 * 24 * 60,
           customStrategies: [{
             id: customId,

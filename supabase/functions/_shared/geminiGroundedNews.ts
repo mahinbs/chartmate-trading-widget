@@ -13,6 +13,12 @@ export type GroundedNewsRow = {
   url?: string;
 };
 
+export type GroundedArticleRef = {
+  url: string;
+  source: string;
+  title: string;
+};
+
 function seedHash(s: string): number {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
@@ -37,15 +43,77 @@ function searchBlurbForSymbol(symbol: string): string {
 /** Prefer gemini-2.5-flash for search grounding (fast, documented support). */
 const GROUNDING_MODEL = "gemini-2.5-flash";
 
-export async function fetchGeminiGroundedNewsItems(symbol: string, limit = 8): Promise<GroundedNewsRow[]> {
+type GeminiGenerateResponse = {
+  candidates?: Array<{
+    groundingMetadata?: {
+      groundingChunks?: Array<{ web?: { uri?: string; title?: string } }>;
+      groundingSupports?: Array<{
+        segment?: { text?: string };
+        groundingChunkIndices?: number[];
+      }>;
+    };
+    grounding_metadata?: {
+      grounding_chunks?: Array<{ web?: { uri?: string; title?: string } }>;
+      grounding_supports?: Array<{
+        segment?: { text?: string };
+        grounding_chunk_indices?: number[];
+      }>;
+    };
+  }>;
+};
+
+function extractGroundedUriHeadlines(
+  data: GeminiGenerateResponse,
+  limit: number,
+): GroundedArticleRef[] {
+  const candidate = data.candidates?.[0];
+  const meta = candidate?.groundingMetadata ?? candidate?.grounding_metadata;
+  const chunks: Array<{ web?: { uri?: string; title?: string } }> =
+    meta?.groundingChunks ?? meta?.grounding_chunks ?? [];
+  const supports: Array<{
+    segment?: { text?: string };
+    groundingChunkIndices?: number[];
+    grounding_chunk_indices?: number[];
+  }> = meta?.groundingSupports ?? meta?.grounding_supports ?? [];
+
+  const byUri = new Map<string, { uri: string; source: string; headline: string }>();
+
+  for (const sup of supports) {
+    const text = (sup.segment?.text || "").trim().replace(/\s+/g, " ");
+    if (text.length < 24) continue;
+    const idxs = sup.groundingChunkIndices ?? sup.grounding_chunk_indices ?? [];
+    for (const idx of idxs) {
+      const w = chunks[idx]?.web;
+      const uri = w?.uri;
+      if (!uri || !uri.startsWith("http")) continue;
+      const domain = (w.title || "").replace(/^www\./i, "") || "News";
+      const headline = text.length > 180 ? `${text.slice(0, 177)}…` : text;
+      const prev = byUri.get(uri);
+      if (!prev || headline.length > prev.headline.length) {
+        byUri.set(uri, { uri, source: domain, headline });
+      }
+    }
+  }
+
+  if (byUri.size === 0) {
+    for (const ch of chunks) {
+      const w = ch.web;
+      const uri = w?.uri;
+      if (!uri || !uri.startsWith("http")) continue;
+      const domain = (w.title || "News").replace(/^www\./i, "");
+      const headline = `Story indexed from ${domain}`;
+      if (!byUri.has(uri)) byUri.set(uri, { uri, source: domain, headline });
+    }
+  }
+
+  return [...byUri.values()]
+    .slice(0, limit)
+    .map((row) => ({ url: row.uri, source: row.source, title: row.headline }));
+}
+
+async function callGeminiGrounded(prompt: string, limit: number): Promise<GroundedArticleRef[]> {
   const key = Deno.env.get("GEMINI_API_KEY");
   if (!key) return [];
-
-  const focus = searchBlurbForSymbol(symbol);
-  const prompt =
-    `Use Google Search. Find up to ${limit} distinct, recent (last 14 days) news stories that materially relate to: ${focus}\n` +
-    `Requirements: only include stories you can attribute to a real publisher page. Prefer primary sources (Reuters, Bloomberg, company IR, exchange filings, Economic Times, Moneycontrol for India, CoinDesk for crypto, etc.).\n` +
-    `In your answer, write 2 short sentences summarizing the overall tone, then the rest must be grounded in what you found.`;
 
   try {
     const res = await fetch(
@@ -70,61 +138,46 @@ export async function fetchGeminiGroundedNewsItems(symbol: string, limit = 8): P
       return [];
     }
 
-    const data = await res.json();
-    const candidate = data.candidates?.[0];
-    const meta = candidate?.groundingMetadata ?? candidate?.grounding_metadata;
-    const chunks: Array<{ web?: { uri?: string; title?: string } }> =
-      meta?.groundingChunks ?? meta?.grounding_chunks ?? [];
-    const supports: Array<{
-      segment?: { text?: string };
-      groundingChunkIndices?: number[];
-      grounding_chunk_indices?: number[];
-    }> = meta?.groundingSupports ?? meta?.grounding_supports ?? [];
-
-    const byUri = new Map<string, { uri: string; source: string; headline: string }>();
-
-    for (const sup of supports) {
-      const text = (sup.segment?.text || "").trim().replace(/\s+/g, " ");
-      if (text.length < 24) continue;
-      const idxs = sup.groundingChunkIndices ?? sup.grounding_chunk_indices ?? [];
-      for (const idx of idxs) {
-        const w = chunks[idx]?.web;
-        const uri = w?.uri;
-        if (!uri || !uri.startsWith("http")) continue;
-        const domain = (w.title || "").replace(/^www\./i, "") || "News";
-        const headline = text.length > 180 ? `${text.slice(0, 177)}…` : text;
-        const prev = byUri.get(uri);
-        if (!prev || headline.length > prev.headline.length) {
-          byUri.set(uri, { uri, source: domain, headline });
-        }
-      }
-    }
-
-    if (byUri.size === 0) {
-      for (const ch of chunks) {
-        const w = ch.web;
-        const uri = w?.uri;
-        if (!uri || !uri.startsWith("http")) continue;
-        const domain = (w.title || "News").replace(/^www\./i, "");
-        const headline = `Story indexed from ${domain}`;
-        if (!byUri.has(uri)) byUri.set(uri, { uri, source: domain, headline });
-      }
-    }
-
-    const h = seedHash(symbol);
-    const out: GroundedNewsRow[] = [...byUri.values()].map((row, i) => ({
-      time: new Date(Date.now() - (i * 37 + (h % 120)) * 60 * 1000).toISOString(),
-      source: row.source,
-      headline: row.headline,
-      sentiment_score: 0,
-      novelty: "Grounded web",
-      relevance: "1",
-      url: row.uri,
-    }));
-
-    return out.slice(0, limit);
+    const data = (await res.json()) as GeminiGenerateResponse;
+    return extractGroundedUriHeadlines(data, limit);
   } catch (e) {
-    console.error("fetchGeminiGroundedNewsItems:", e);
+    console.error("callGeminiGrounded:", e);
     return [];
   }
+}
+
+export async function fetchGeminiGroundedNewsItems(symbol: string, limit = 8): Promise<GroundedNewsRow[]> {
+  const focus = searchBlurbForSymbol(symbol);
+  const prompt =
+    `Use Google Search. Find up to ${limit} distinct, recent (last 14 days) news stories that materially relate to: ${focus}\n` +
+    `Requirements: only include stories you can attribute to a real publisher page. Prefer primary sources (Reuters, Bloomberg, company IR, exchange filings, Economic Times, Moneycontrol for India, CoinDesk for crypto, etc.).\n` +
+    `In your answer, write 2 short sentences summarizing the overall tone, then the rest must be grounded in what you found.`;
+
+  const refs = await callGeminiGrounded(prompt, limit);
+  const h = seedHash(symbol);
+  return refs.map((row, i) => ({
+    time: new Date(Date.now() - (i * 37 + (h % 120)) * 60 * 1000).toISOString(),
+    source: row.source,
+    headline: row.title,
+    sentiment_score: 0,
+    novelty: "Grounded web",
+    relevance: "1",
+    url: row.url,
+  }));
+}
+
+/**
+ * Broad finance headlines worldwide; URLs come from search grounding (not invented).
+ * Region is refined later via detectRegion / feed heuristics in fetch-news.
+ */
+export async function fetchGeminiGroundedWorldFinanceArticles(limit = 12): Promise<GroundedArticleRef[]> {
+  const prompt =
+    `Use Google Search. Find up to ${limit} distinct, recent (last 10 days) stories about global financial markets: stocks, IPOs, central banks, FX, commodities, and major regional markets (US, Europe, Asia, India NSE/BSE, Middle East, LatAm when relevant).\n` +
+    `Requirements:\n` +
+    `- Every story must correspond to a real article URL you found in search (no invented links).\n` +
+    `- Prefer reputable outlets (Reuters, Bloomberg, FT, WSJ, CNBC, Economic Times, Moneycontrol, Nikkei, etc.).\n` +
+    `- Aim for geographic variety when possible.\n` +
+    `Briefly synthesize, but tie each point to grounded sources.`;
+
+  return await callGeminiGrounded(prompt, limit);
 }

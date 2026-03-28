@@ -2,25 +2,31 @@ import React, { useEffect, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { hasActiveSubscription, type UserSubscription } from "@/services/stripeService";
+import { planAllowsAlgo } from "@/lib/subscriptionEntitlements";
+import { isManualFullAccessEmail } from "@/lib/manualSubscriptionBypass";
 import { TradingDashboardLoadingScreen } from "./TradingDashboardShell";
 
-interface ProvisionStatus {
+interface GateState {
+  loading: boolean;
   provisioned: boolean;
   broker: string | null;
-  loading: boolean;
+  /** Where to send the user once loading finishes. */
+  redirectTo: string | null;
 }
 
 export interface TradingDashboardAccessGateProps {
   children: (ctx: { broker: string }) => React.ReactNode;
   /**
-   * Where to send signed-in users who are not allowed (unpaid or algo not provisioned).
-   * @default "/algo-setup" — live trading dashboard onboarding.
+   * If the user has algo entitlement but onboarding/broker isn’t ready yet.
+   * @default "/algo-setup"
    */
-  notReadyRedirect?: "/algo-setup" | "/pricing";
+  notReadyRedirect?: string;
 }
 
 /**
- * Signed-in, paid, algo provisioned, active broker integration — otherwise redirects.
+ * Signed-in users only. Unpaid → pricing. Paid Probability-only ($99) → subscription (no live algo).
+ * Bot/Pro with algo tier but not provisioned → algo-setup (or `notReadyRedirect`).
  */
 export function TradingDashboardAccessGate({
   children,
@@ -28,24 +34,52 @@ export function TradingDashboardAccessGate({
 }: TradingDashboardAccessGateProps) {
   const { pathname, search } = useLocation();
   const { user, loading: authLoading } = useAuth();
-  const [status, setStatus] = useState<ProvisionStatus>({
+  const [status, setStatus] = useState<GateState>({
+    loading: true,
     provisioned: false,
     broker: null,
-    loading: true,
+    redirectTo: null,
   });
 
   useEffect(() => {
     if (!user?.id) return;
+    if (isManualFullAccessEmail(user.email)) {
+      setStatus({
+        loading: false,
+        provisioned: true,
+        broker: null,
+        redirectTo: null,
+      });
+      return;
+    }
     (async () => {
       const { data: sub } = await supabase
         .from("user_subscriptions")
-        .select("status")
+        .select("status, current_period_end, plan_id")
         .eq("user_id", user.id)
         .maybeSingle();
 
-      const isPaid = sub?.status === "active" || sub?.status === "trialing";
-      if (!isPaid) {
-        setStatus({ provisioned: false, broker: null, loading: false });
+      const row = sub as UserSubscription | null;
+      const subActive = hasActiveSubscription(row);
+      const planId = (row?.plan_id as string) ?? null;
+
+      if (!subActive) {
+        setStatus({
+          loading: false,
+          provisioned: false,
+          broker: null,
+          redirectTo: "/pricing",
+        });
+        return;
+      }
+
+      if (!planAllowsAlgo(planId)) {
+        setStatus({
+          loading: false,
+          provisioned: false,
+          broker: null,
+          redirectTo: "/subscription?feature=algo",
+        });
         return;
       }
 
@@ -64,12 +98,13 @@ export function TradingDashboardAccessGate({
         .maybeSingle();
 
       setStatus({
+        loading: false,
         provisioned: !!isProvisioned,
         broker: integration?.broker ?? null,
-        loading: false,
+        redirectTo: isProvisioned ? null : notReadyRedirect,
       });
     })();
-  }, [user?.id]);
+  }, [user?.id, notReadyRedirect]);
 
   if (authLoading || status.loading) {
     return <TradingDashboardLoadingScreen />;
@@ -80,8 +115,8 @@ export function TradingDashboardAccessGate({
     return <Navigate to={`/auth?redirect=${redirect}`} replace />;
   }
 
-  if (!status.provisioned) {
-    return <Navigate to={notReadyRedirect} replace />;
+  if (status.redirectTo) {
+    return <Navigate to={status.redirectTo} replace />;
   }
 
   return <>{children({ broker: status.broker ?? "zerodha" })}</>;

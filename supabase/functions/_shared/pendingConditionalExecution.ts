@@ -2,6 +2,10 @@
  * Shared: evaluate one pending_conditional_orders row — strategy-entry-signals + optional placeorder.
  * Used by process-conditional-orders (cron) and stream-conditional-tick (live WS-driven).
  */
+import {
+  evaluateGuideRiskGates,
+  parseGuideRiskGates,
+} from "./algoGuideRiskGates.ts";
 // deno-lint-ignore no-explicit-any
 type SupabaseLike = any;
 
@@ -28,7 +32,13 @@ export type PendingConditionalRow = {
   deploy_overrides?: Record<string, unknown> | null;
 };
 
-export type TryExecuteResult = "fired" | "not_matched" | "cooldown" | "cancelled" | "error";
+export type TryExecuteResult =
+  | "fired"
+  | "not_matched"
+  | "cooldown"
+  | "cancelled"
+  | "error"
+  | "risk_blocked";
 
 function cloneJson<T>(v: T): T {
   try {
@@ -147,6 +157,14 @@ export async function tryExecutePendingRow(
     checkHeaders["x-digest-user-id"] = String(row.user_id);
   }
 
+  const chartCfg = merged.chart_config && typeof merged.chart_config === "object"
+    ? merged.chart_config as Record<string, unknown>
+    : {};
+  let intradayInterval = String(chartCfg.interval ?? "5m").trim().toLowerCase() || "5m";
+  if (intradayInterval === "1d" || intradayInterval === "1day" || intradayInterval === "daily") {
+    intradayInterval = "5m";
+  }
+
   const checkRes = await fetch(`${supabaseUrl}/functions/v1/strategy-entry-signals`, {
     method: "POST",
     headers: checkHeaders,
@@ -156,7 +174,7 @@ export async function tryExecutePendingRow(
       action: row.action,
       days: 90,
       preferIntraday: true,
-      intradayInterval: "5m",
+      intradayInterval,
       intradayLookbackMinutes: 5 * 24 * 60,
       customStrategies: [{
         id: customId,
@@ -197,6 +215,25 @@ export async function tryExecutePendingRow(
     .eq("id", row.id);
 
   if (!achieved) return "not_matched";
+
+  const symU = String(row.symbol).toUpperCase();
+  const riskTz = symU.endsWith(".NS") || symU.endsWith(".BO") ? "Asia/Kolkata" : "UTC";
+  const gateCfg = parseGuideRiskGates(merged.risk_config, riskTz);
+  const { count: openPosCount } = await supabase
+    .from("active_trades")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", row.user_id)
+    .in("status", ["active", "monitoring", "exit_zone"]);
+  const gateDeny = evaluateGuideRiskGates({
+    cfg: gateCfg,
+    nowSec: Math.floor(Date.now() / 1000),
+    timeZone: riskTz,
+    isIntraday: Boolean(merged.is_intraday ?? true),
+    openPositionCount: openPosCount ?? 0,
+    stopLossPct: merged.stop_loss_pct != null ? Number(merged.stop_loss_pct) : 0,
+    takeProfitPct: merged.take_profit_pct != null ? Number(merged.take_profit_pct) : 0,
+  });
+  if (!gateDeny.ok) return "risk_blocked";
 
   const { data: integration } = await supabase
     .from("user_trading_integration")

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +33,8 @@ import { useToast } from "@/hooks/use-toast";
 import { toast as sonnerToast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { DashboardShellLayout } from "@/components/layout/DashboardShellLayout";
+import { useSubscription } from "@/hooks/useSubscription";
+import { cn } from "@/lib/utils";
 
 interface BrokerOrder {
   id: string;
@@ -113,6 +115,30 @@ export default function ActiveTradesPage() {
   const triggeredRef = useRef<Set<string>>(new Set());
   const { toast } = useToast();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { hasAnalysisAccess } = useSubscription();
+
+  const rawTab = searchParams.get("tab") || "active";
+  const tabValue = useMemo(() => {
+    const allowed = hasAnalysisAccess
+      ? ["active", "completed", "orders", "performance"]
+      : ["active", "orders"];
+    return allowed.includes(rawTab) ? rawTab : "active";
+  }, [rawTab, hasAnalysisAccess]);
+
+  const onTabChange = useCallback(
+    (v: string) => {
+      setSearchParams(
+        (prev) => {
+          const n = new URLSearchParams(prev);
+          n.set("tab", v);
+          return n;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
 
   // ── Real-time SL / TP auto-exit ────────────────────────────────────────────
   // Called on every live price tick. If SL or TP is breached for a live-order
@@ -833,35 +859,47 @@ export default function ActiveTradesPage() {
 
         {/* Trades Tabs */}
         <Tabs
-          defaultValue="active"
+          value={tabValue}
           className="w-full"
           onValueChange={(v) => {
+            onTabChange(v);
             if (v === "orders" && brokerOrders.length === 0)
               loadBrokerOrders(false);
           }}
         >
           <div className="overflow-x-auto pb-1">
-            <TabsList className="grid w-full min-w-[360px] max-w-3xl grid-cols-4">
+            <TabsList
+              className={cn(
+                "grid w-full max-w-3xl",
+                hasAnalysisAccess
+                  ? "min-w-[360px] grid-cols-4"
+                  : "min-w-[200px] grid-cols-2",
+              )}
+            >
               <TabsTrigger value="active" className="text-xs sm:text-sm">
                 <Activity className="h-3.5 w-3.5 mr-1" />
                 <span>Active ({activeTrades.length})</span>
               </TabsTrigger>
-              <TabsTrigger value="completed" className="text-xs sm:text-sm">
-                <CheckCircle className="h-3.5 w-3.5 mr-1" />
-                <span className="hidden sm:inline">Completed</span>
-                <span className="sm:hidden">Done</span>
-                <span> ({completedTrades.length})</span>
-              </TabsTrigger>
+              {hasAnalysisAccess && (
+                <TabsTrigger value="completed" className="text-xs sm:text-sm">
+                  <CheckCircle className="h-3.5 w-3.5 mr-1" />
+                  <span className="hidden sm:inline">Completed</span>
+                  <span className="sm:hidden">Done</span>
+                  <span> ({completedTrades.length})</span>
+                </TabsTrigger>
+              )}
               <TabsTrigger value="orders" className="text-xs sm:text-sm">
                 <History className="h-3.5 w-3.5 mr-1" />
                 <span className="hidden sm:inline">Broker Orders</span>
                 <span className="sm:hidden">Orders</span>
               </TabsTrigger>
-              <TabsTrigger value="performance" className="text-xs sm:text-sm">
-                <BarChart3 className="h-3.5 w-3.5 mr-1" />
-                <span className="hidden sm:inline">Performance</span>
-                <span className="sm:hidden">Perf.</span>
-              </TabsTrigger>
+              {hasAnalysisAccess && (
+                <TabsTrigger value="performance" className="text-xs sm:text-sm">
+                  <BarChart3 className="h-3.5 w-3.5 mr-1" />
+                  <span className="hidden sm:inline">Performance</span>
+                  <span className="sm:hidden">Perf.</span>
+                </TabsTrigger>
+              )}
             </TabsList>
           </div>
 

@@ -6,6 +6,13 @@
  * WL 5yr           → mode: payment (one-time, admin-generated link with security token)
  * Premium plans → mode: subscription (recurring yearly)
  *
+ * Billing notes (product policy — implement in Stripe Dashboard / Customer Portal as needed):
+ * - Downgrades: effective after the current period ends (use cancel_at_period_end + new plan at renewal).
+ * - Upgrade to Pro ($129) from Bot ($49) or Probability ($99): charge price difference via proration
+ *   (Subscription update + proration_behavior) or Customer Portal.
+ * - Adding Probability ($99) while on Bot-only is a separate product purchase (full $99), not a prorated
+ *   upgrade from $49; next renewal can be consolidated to $129 in Stripe (merged subscription).
+ *
  * Env: STRIPE_SECRET_KEY, STRIPE_PRICE_BOT, STRIPE_PRICE_PROB, STRIPE_PRICE_PRO,
  *      STRIPE_PRICE_WL_1Y, STRIPE_PRICE_WL_2Y, STRIPE_PRICE_WL_5Y
  */

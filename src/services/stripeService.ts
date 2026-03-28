@@ -7,6 +7,7 @@ export interface UserSubscription {
   status: string;
   current_period_end: string | null;
   cancel_at_period_end?: boolean | null;
+  stripe_customer_id?: string | null;
 }
 
 export async function createCheckoutSession(params: {
@@ -36,6 +37,28 @@ export async function createCheckoutSession(params: {
   const errMsg = data?.error ?? res.error?.message ?? "Failed to create checkout";
   if (res.error || data?.error) return { error: errMsg };
   if (!data?.url) return { error: "No checkout URL returned" };
+  return { url: data.url };
+}
+
+export async function createBillingPortalSession(return_url?: string): Promise<
+  { url: string } | { error: string }
+> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    return { error: "Please sign in to continue" };
+  }
+
+  const res = await supabase.functions.invoke("create-customer-portal-session", {
+    body: {
+      return_url: return_url ?? `${window.location.origin}/subscription`,
+    },
+    headers: { Authorization: `Bearer ${session.access_token}` },
+  });
+
+  const data = res.data as { url?: string; error?: string } | null;
+  const errMsg = data?.error ?? res.error?.message ?? "Failed to open billing portal";
+  if (res.error || data?.error) return { error: errMsg };
+  if (!data?.url) return { error: "No portal URL returned" };
   return { url: data.url };
 }
 

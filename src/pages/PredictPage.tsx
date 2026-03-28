@@ -57,7 +57,12 @@ import {
 } from "@/components/trading/StrategySelectionDialog";
 import { UsePreviousOrNewStrategyDialog } from "@/components/trading/UsePreviousOrNewStrategyDialog";
 import { PRICING_PLANS } from "@/constants/pricing";
-import { createCheckoutSession } from "@/services/stripeService";
+import { isMidTierEligibleForProOnlyUpgrade } from "@/lib/subscriptionEntitlements";
+import {
+  createBillingPortalSession,
+  createCheckoutSession,
+  hasActiveSubscription,
+} from "@/services/stripeService";
 import { getStrategyParams } from "@/constants/strategyParams";
 import { toast } from "sonner";
 import {
@@ -435,12 +440,22 @@ const PredictPage = () => {
   const { save: saveTradingIntegration, refresh: refreshTradingIntegration } =
     useTradingIntegration();
   const {
-    isPremium,
+    hasAlgoAccess,
+    subscription,
     isExpiringSoon,
     daysUntilExpiry,
     isAutoRenewDisabled,
     isInGracePeriod,
   } = useSubscription();
+
+  const midTierProOnlyUpgrade =
+    hasActiveSubscription(subscription) &&
+    isMidTierEligibleForProOnlyUpgrade(subscription?.plan_id);
+
+  const algoDialogPlans = useMemo(
+    () => (midTierProOnlyUpgrade ? PRICING_PLANS.filter((p) => p.id === "proPlan") : PRICING_PLANS),
+    [midTierProOnlyUpgrade],
+  );
   const [showIntegrationModal, setShowIntegrationModal] = useState(false);
   const [showStrategyDialog, setShowStrategyDialog] = useState(false);
   const [showPreviousOrNewDialog, setShowPreviousOrNewDialog] = useState(false);
@@ -2355,7 +2370,7 @@ const PredictPage = () => {
                         </div>
 
                         {/* Subscription status for OpenAlgo users */}
-                        {isPremium && (
+                        {hasAlgoAccess && (
                           <div className="space-y-2">
                             <div className="flex flex-wrap items-center gap-2">
                               <Badge className="bg-teal-500/20 text-teal-300 border border-teal-500/40">
@@ -2396,7 +2411,7 @@ const PredictPage = () => {
                           <Button
                             disabled={checkingOnboarding}
                             onClick={async () => {
-                              if (!isPremium) {
+                              if (!hasAlgoAccess) {
                                 setShowPremiumDialog(true);
                                 return;
                               }
@@ -2967,15 +2982,30 @@ const PredictPage = () => {
         <DialogContent className="max-w-[95vw] md:max-w-5xl bg-zinc-950 border border-zinc-800 text-white p-5 sm:p-8 md:p-10 rounded-2xl md:rounded-3xl overflow-y-auto max-h-[90vh]">
           <DialogHeader className="mb-8">
                 <DialogTitle className="text-2xl md:text-4xl font-black text-center tracking-tight">
-                  Premium Plan Required
+                  Algo plan required
                 </DialogTitle>
             <DialogDescription className="text-center text-zinc-400 text-base md:text-lg mt-2 max-w-2xl mx-auto">
-                  Buy a premium plan to enable live trade execution and advanced
-                  AI insights.
+              {midTierProOnlyUpgrade ? (
+                <>
+                  You already have an active plan. Add live OpenAlgo by upgrading to{" "}
+                  <strong className="text-zinc-200">Pro ($129)</strong> in the billing portal — Stripe
+                  charges only the prorated difference when that is enabled in Stripe.
+                </>
+              ) : (
+                <>
+                  Live OpenAlgo is included on <strong className="text-zinc-200">Bot ($49)</strong> or{" "}
+                  <strong className="text-zinc-200">Pro ($129)</strong>. Probability ($99) does not
+                  include live broker execution.
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {PRICING_PLANS.map((plan) => (
+          <div
+            className={`grid gap-6 ${
+              algoDialogPlans.length === 1 ? "grid-cols-1 max-w-md mx-auto" : "grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
+            }`}
+          >
+            {algoDialogPlans.map((plan) => (
               <div
                 key={plan.id}
                     className={`p-6 rounded-2xl flex flex-col relative transition-all border ${
@@ -3024,12 +3054,24 @@ const PredictPage = () => {
                       return;
                     }
                     setShowPremiumDialog(false);
+                    const origin = window.location.origin;
+                    if (midTierProOnlyUpgrade && plan.id === "proPlan") {
+                      const r = await createBillingPortalSession(`${origin}/predict`);
+                      if ("error" in r) {
+                        toast.error(r.error);
+                        return;
+                      }
+                      window.location.href = r.url;
+                      return;
+                    }
+                    const successAfterPay =
+                      plan.id === "botIntegration"
+                        ? `${origin}/algo-setup?checkout=success`
+                        : `${origin}/home?checkout=success`;
                     const result = await createCheckoutSession({
                       plan_id: plan.id,
-                          success_url:
-                            window.location.origin +
-                            "/algo-setup?checkout=success",
-                          cancel_url: window.location.origin + "/predict",
+                      success_url: successAfterPay,
+                      cancel_url: `${origin}/predict`,
                     });
                     if ("error" in result) {
                       toast.error(result.error);
@@ -3038,7 +3080,11 @@ const PredictPage = () => {
                     if ("url" in result) window.location.href = result.url;
                   }}
                 >
-                      {plan.recommended ? "Get Pro Plan" : "Get Started"}
+                  {midTierProOnlyUpgrade && plan.id === "proPlan"
+                    ? "Upgrade in billing portal"
+                    : plan.recommended
+                      ? "Get Pro Plan"
+                      : "Get Started"}
                 </Button>
               </div>
             ))}

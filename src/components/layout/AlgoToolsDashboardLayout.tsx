@@ -12,7 +12,7 @@ export type AlgoToolsOutletContext = { broker: string };
 export function AlgoToolsDashboardLayout() {
   return (
     <DashboardShellLayout>
-      <TradingDashboardAccessGate notReadyRedirect="/pricing">
+      <TradingDashboardAccessGate notReadyRedirect="/algo-setup">
         {(ctx) => (
           <Outlet context={{ broker: ctx.broker } as AlgoToolsOutletContext} />
         )}
