@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your TradingSmart.ai verification code</title>
+</head>
+<body style="margin:0;padding:0;background-color:#050505;">
+  <!-- Supabase: use {{ .Token }} (6-digit OTP). Enable "Confirm email" under Auth > Providers > Email. -->
+  <div style="display:none;max-height:0;overflow:hidden;">
+    Your TradingSmart.ai code is {{ .Token }}. Enter it in the app to verify {{ .Email }}.
+  </div>
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color:#050505;">
+    <tr>
+      <td align="center" style="padding:40px 16px;">
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width:480px;background-color:#0f1419;border:1px solid #1e293b;border-radius:16px;">
+          <tr>
+            <td align="center" style="padding:32px 24px 16px;background:linear-gradient(180deg,#0c1917,#0f1419);">
+              <img src="https://www.tradingsmart.ai/assets/logo-BvaV304R.png" width="100" alt="TradingSmart.ai" style="display:block;border:0;">
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:8px 28px 8px;font-family:Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;">
+              <h1 style="margin:0;font-size:22px;font-weight:700;color:#f8fafc;">Verify your email</h1>
+              <p style="margin:12px 0 0;font-size:15px;line-height:1.55;color:#94a3b8;">
+                Enter this code in the app to finish signing up for <strong style="color:#e2e8f0;">{{ .Email }}</strong>:
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding:24px 28px 8px;">
+              <div style="font-family:Consolas,Monaco,ui-monospace,monospace;font-size:36px;font-weight:700;letter-spacing:0.35em;color:#14b8a6;padding:16px 24px;background:#0a1210;border:1px solid #134e4a;border-radius:12px;display:inline-block;">
+                {{ .Token }}
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:8px 28px 28px;font-family:Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;">
+              <p style="margin:0;font-size:13px;line-height:1.5;color:#64748b;">
+                This code expires soon. If you didn’t create an account, ignore this message.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 28px;background:#0a0f14;border-top:1px solid #1e293b;text-align:center;font-size:12px;color:#64748b;font-family:Segoe UI,Roboto,sans-serif;">
+              <a href="https://www.tradingsmart.ai/" style="color:#14b8a6;text-decoration:none;">tradingsmart.ai</a>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

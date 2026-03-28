@@ -45,6 +45,57 @@ function firstListedSymbol(symbols: unknown): string {
   return "";
 }
 
+function defaultsForGoLiveStrategy(s: Strategy): { symbol: string; exchange: string; quantity: string; product: string } {
+  const rawSyms = s.symbols as unknown;
+  let symbol = firstListedSymbol(s.symbols);
+  let exchange = "NSE";
+  let quantity = 1;
+  let product = s.is_intraday ? "MIS" : "CNC";
+  if (Array.isArray(rawSyms) && rawSyms.length > 0) {
+    const x0 = rawSyms[0];
+    if (x0 && typeof x0 === "object") {
+      const o = x0 as Record<string, unknown>;
+      if (!symbol) symbol = String(o.symbol ?? "").trim().toUpperCase();
+      exchange = String(o.exchange ?? exchange).toUpperCase();
+      const q = Number(o.quantity ?? 1);
+      if (Number.isFinite(q) && q >= 1) quantity = Math.floor(q);
+      const pt = String(o.product_type ?? o.orderProduct ?? "").trim();
+      if (pt) product = pt.toUpperCase();
+    }
+  }
+  const pc = s.position_config;
+  if (pc && typeof pc === "object") {
+    if (!symbol) symbol = firstListedSymbol(s.symbols);
+    const pq = Number((pc as { quantity?: unknown }).quantity ?? 0);
+    if (pq >= 1) quantity = Math.floor(pq);
+    const ex = String((pc as { exchange?: unknown }).exchange ?? "").trim();
+    if (ex) exchange = ex.toUpperCase();
+    const op = String((pc as { orderProduct?: unknown }).orderProduct ?? "").trim();
+    if (op) product = op.toUpperCase();
+  }
+  return {
+    symbol,
+    exchange,
+    quantity: String(Math.max(1, quantity)),
+    product: product || (s.is_intraday ? "MIS" : "CNC"),
+  };
+}
+
+async function userHasBrokerForStrategies(): Promise<boolean> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return false;
+  const { data, error } = await (supabase as any)
+    .from("user_trading_integration")
+    .select("is_active, openalgo_api_key, openalgo_username")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (error || !data) return false;
+  if (!(data as { is_active?: boolean }).is_active) return false;
+  const key = String((data as { openalgo_api_key?: string }).openalgo_api_key ?? "").trim();
+  const un = String((data as { openalgo_username?: string }).openalgo_username ?? "").trim();
+  return Boolean(key || un);
+}
+
 // ── SymbolSearchInput (same UX as PlaceOrderPanel) ────────────────────────────
 type SymbolResult = { symbol: string; description: string; full_symbol: string; exchange: string; type: string };
 function SymbolSearchInput({
@@ -504,6 +555,15 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
     broker_order_id?: string | null;
     error_message?: string | null;
   } | null>>({});
+  const [goLive, setGoLive] = useState<{
+    strategy: Strategy;
+    symbol: string;
+    exchange: string;
+    quantity: string;
+    product: string;
+  } | null>(null);
+  const [goLiveLoading, setGoLiveLoading] = useState(false);
+
   const [firePanel, setFirePanel]         = useState<Record<string, {
     open: boolean; symbol: string; exchange: string; quantity: string; product: string; firing: boolean;
     aiOverride?: boolean;
@@ -784,6 +844,85 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
       }
       await loadStrategies();
     } finally { setToggleLoading(null); }
+  };
+
+  const handleStrategyToggleClick = async (s: Strategy) => {
+    if (s.is_active) {
+      void toggleStrategy(s.id);
+      return;
+    }
+    const brokerOk = await userHasBrokerForStrategies();
+    if (!brokerOk) {
+      toast.error(
+        "Connect your broker (OpenAlgo) first — use Connect on Home or the AI Prediction page, then return here to go live.",
+        { duration: 9000 },
+      );
+      return;
+    }
+    setGoLive({ strategy: s, ...defaultsForGoLiveStrategy(s) });
+  };
+
+  const confirmGoLive = async () => {
+    if (!goLive) return;
+    const sym = goLive.symbol.trim().toUpperCase();
+    const qty = parseInt(goLive.quantity, 10);
+    if (!sym) {
+      toast.error("Enter a trading symbol (e.g. RELIANCE)");
+      return;
+    }
+    if (!Number.isFinite(qty) || qty < 1) {
+      toast.error("Quantity must be at least 1");
+      return;
+    }
+    setGoLiveLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        toast.error("Sign in required");
+        return;
+      }
+      const symbolsPayload = [{
+        symbol: sym,
+        exchange: goLive.exchange.trim().toUpperCase() || "NSE",
+        quantity: qty,
+        product_type: goLive.product.trim().toUpperCase() || "MIS",
+      }];
+      const prevPc = goLive.strategy.position_config;
+      const position_config = {
+        ...(prevPc && typeof prevPc === "object" ? prevPc : {}),
+        quantity: qty,
+        exchange: goLive.exchange.trim().toUpperCase() || "NSE",
+        orderProduct: goLive.product.trim().toUpperCase() || "MIS",
+      };
+      const up = await supabase.functions.invoke("manage-strategy", {
+        body: {
+          action: "update",
+          strategy_id: goLive.strategy.id,
+          symbols: symbolsPayload,
+          position_config,
+        },
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const upErr = (up.data as { error?: string })?.error;
+      if (up.error || upErr) {
+        toast.error(String(upErr ?? up.error?.message ?? "Could not save symbol/quantity"));
+        return;
+      }
+      const tog = await supabase.functions.invoke("manage-strategy", {
+        body: { action: "toggle", strategy_id: goLive.strategy.id },
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const togErr = (tog.data as { error?: string })?.error;
+      if (tog.error || togErr) {
+        toast.error(String(togErr ?? tog.error?.message ?? "Could not activate strategy"));
+        return;
+      }
+      toast.success(`"${goLive.strategy.name}" is live — ${sym} × ${qty} (${goLive.exchange})`);
+      setGoLive(null);
+      await loadStrategies();
+    } finally {
+      setGoLiveLoading(false);
+    }
   };
 
   const deleteStrategy = async (id: string, name: string) => {
@@ -1804,12 +1943,13 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                           </button>
                           {/* Active toggle */}
                           <button
-                            onClick={() => toggleStrategy(s.id)}
-                            disabled={toggleLoading === s.id}
+                            type="button"
+                            onClick={() => void handleStrategyToggleClick(s)}
+                            disabled={toggleLoading === s.id || goLiveLoading}
                             className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
                               s.is_active ? "bg-purple-600" : "bg-zinc-700"
                             } disabled:opacity-60`}
-                            title={s.is_active ? "Deactivate" : "Activate"}
+                            title={s.is_active ? "Deactivate" : "Go live — broker must be connected, then set symbol & quantity"}
                           >
                             {toggleLoading === s.id
                               ? <Loader2 className="h-3 w-3 text-white mx-auto animate-spin" />
@@ -2125,6 +2265,96 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
           </Tabs>
         </CardContent>
       </Card>
+
+      <Dialog open={goLive != null} onOpenChange={(o) => { if (!o) setGoLive(null); }}>
+        <DialogContent className="bg-zinc-950 border-zinc-800 text-white sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-white">Go live — confirm execution</DialogTitle>
+            <DialogDescription className="text-zinc-400 text-xs">
+              Orders route through OpenAlgo to your broker. Enter the symbol and quantity you want this strategy to use
+              (same as OpenAlgo: symbol, exchange, quantity, product).
+            </DialogDescription>
+          </DialogHeader>
+          {goLive && (
+            <div className="space-y-3 py-1">
+              <p className="text-xs text-zinc-500 font-medium truncate">{goLive.strategy.name}</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1 col-span-2">
+                  <Label className="text-zinc-500 text-[10px]">Symbol *</Label>
+                  <div className="relative">
+                    <SymbolSearchInput
+                      value={goLive.symbol}
+                      onChange={(v) => setGoLive((g) => (g ? { ...g, symbol: v } : null))}
+                      onSelect={(sym, ex) => setGoLive((g) => (g ? { ...g, symbol: sym, exchange: ex } : null))}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-zinc-500 text-[10px]">Exchange</Label>
+                  <Select
+                    value={goLive.exchange}
+                    onValueChange={(v) => setGoLive((g) => (g ? { ...g, exchange: v } : null))}
+                  >
+                    <SelectTrigger className="bg-zinc-900 border-zinc-700 text-zinc-200 h-9 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-zinc-900 border-zinc-700">
+                      {EXCHANGES_LIST.map((e) => (
+                        <SelectItem key={e} value={e} className="text-xs">{e}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-zinc-500 text-[10px]">Quantity *</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={goLive.quantity}
+                    onChange={(e) => setGoLive((g) => (g ? { ...g, quantity: e.target.value } : null))}
+                    className="bg-zinc-900 border-zinc-700 text-white text-sm h-9"
+                  />
+                </div>
+                <div className="space-y-1 col-span-2">
+                  <Label className="text-zinc-500 text-[10px]">Product</Label>
+                  <Select
+                    value={goLive.product}
+                    onValueChange={(v) => setGoLive((g) => (g ? { ...g, product: v } : null))}
+                  >
+                    <SelectTrigger className="bg-zinc-900 border-zinc-700 text-zinc-200 h-9 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-zinc-900 border-zinc-700">
+                      {PRODUCT_LIST.map((p) => (
+                        <SelectItem key={p} value={p} className="text-xs">{p}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              className="border-zinc-700 text-zinc-300"
+              onClick={() => setGoLive(null)}
+              disabled={goLiveLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="bg-purple-600 hover:bg-purple-500 text-white"
+              onClick={() => void confirmGoLive()}
+              disabled={goLiveLoading}
+            >
+              {goLiveLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Activate strategy"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlgoStrategyBuilder
         open={showCreate}

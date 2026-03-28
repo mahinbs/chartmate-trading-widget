@@ -50,10 +50,10 @@ Deno.serve(async (req: Request) => {
 
     // ── Verify paid + onboarding + integration prerequisites ─────────────
     const access = await resolveTradeAccess(supabase as any, user.id);
-    if (!access.hasActiveSubscription) {
+    if (!access.hasAlgoEntitlement) {
       return new Response(
         JSON.stringify({
-          error: "An active subscription is required to place live orders. Please purchase a plan.",
+          error: "An active Algo / Pro subscription is required to place live orders. Please purchase the Bot or higher plan.",
           error_code: "NO_SUBSCRIPTION",
         }),
         { status: 403, headers },

@@ -2,7 +2,7 @@
  * strategy-entry-signals — Multi-strategy library entry scan + AI scoring
  *
  * Real data used here (dynamically fetched each run):
- * - OHLCV: Twelve Data (TWELVE_DATA_API_KEY) → Yahoo Finance chart (no key) → Alpha Vantage (ALPHA_VANTAGE_API_KEY)
+ * - OHLCV (+ volume when API provides it): Twelve Data → Yahoo chart → Yahoo/Alpha Vantage daily
  * - Indicators snapshot: Twelve Data → Alpha Vantage → computed from OHLCV
  * - Scoring: Gemini (GEMINI_API_KEY) blended with rule-based read
  *
@@ -22,6 +22,15 @@
  * Returns: { signals: [...], interval, dataIsIntraday, isIntraday, customSelectionDailyOnly (skipped intraday fetch), ... }
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  detectOrbHits,
+  detectRsiDivergenceHits,
+  detectSupertrendDualTfHits,
+  detectSupertrendFlipHits,
+  detectVwapBounceHits,
+  extractAlgoGuidePreset,
+  type PresetHit,
+} from "../_shared/algoGuideDetectors.ts";
 
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 const TWELVE_DATA_API_KEY = Deno.env.get("TWELVE_DATA_API_KEY") ?? "";
@@ -36,7 +45,7 @@ const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-type OhlcvPack = { t: number[]; o: number[]; h: number[]; l: number[]; c: number[]; interval: string };
+type OhlcvPack = { t: number[]; o: number[]; h: number[]; l: number[]; c: number[]; interval: string; v?: number[] };
 
 function toTwelveDataSymbol(yahooSymbol: string, assetType: string): string {
   if (assetType === "crypto") return yahooSymbol.replace(/-/g, "/").replace(/=X$/, "").replace("USDT", "USD");
@@ -76,6 +85,7 @@ async function fetchTwelveDataCandles(
     const h: number[] = [];
     const l: number[] = [];
     const c: number[] = [];
+    const v: number[] = [];
     for (const row of data.values) {
       if (row?.open == null || row?.close == null || row?.high == null || row?.low == null || !row?.datetime) continue;
       const ts = Math.floor(new Date(String(row.datetime)).getTime() / 1000);
@@ -85,9 +95,11 @@ async function fetchTwelveDataCandles(
       h.push(Number(row.high));
       l.push(Number(row.low));
       c.push(Number(row.close));
+      const vol = row.volume != null ? Number(row.volume) : 0;
+      v.push(Number.isFinite(vol) ? vol : 0);
     }
     if (c.length < 10) return null;
-    return { t, o, h, l, c, interval };
+    return { t, o, h, l, c, v, interval };
   } catch {
     return null;
   }
@@ -109,17 +121,20 @@ async function fetchAlphaVantageDailyCandles(yahooSymbol: string): Promise<Ohlcv
     const h: number[] = [];
     const l: number[] = [];
     const c: number[] = [];
-    for (const [d, vAny] of rows) {
-      const v = vAny as Record<string, string>;
+    const volOut: number[] = [];
+    for (const [d, row] of rows) {
+      const av = row as Record<string, string>;
       const tsSec = Math.floor(new Date(String(d)).getTime() / 1000);
       t.push(tsSec);
-      o.push(Number(v["1. open"]));
-      h.push(Number(v["2. high"]));
-      l.push(Number(v["3. low"]));
-      c.push(Number(v["4. close"]));
+      o.push(Number(av["1. open"]));
+      h.push(Number(av["2. high"]));
+      l.push(Number(av["3. low"]));
+      c.push(Number(av["4. close"]));
+      const vol = av["5. volume"] != null ? Number(av["5. volume"]) : 0;
+      volOut.push(Number.isFinite(vol) ? vol : 0);
     }
     if (c.length < 10) return null;
-    return { t, o, h, l, c, interval: "1d" };
+    return { t, o, h, l, c, v: volOut, interval: "1d" };
   } catch {
     return null;
   }
@@ -145,7 +160,7 @@ function normalizeToYahooSymbol(raw: string): string {
   return clean.toUpperCase();
 }
 
-async function fetchYahooDaily(yahooSymbol: string, days: number): Promise<{ t: number[]; c: number[]; h: number[]; l: number[]; o: number[] }> {
+async function fetchYahooDaily(yahooSymbol: string, days: number): Promise<{ t: number[]; c: number[]; h: number[]; l: number[]; o: number[]; v: number[] }> {
   const period2 = Math.floor(Date.now() / 1000);
   const period1 = period2 - days * 86400;
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?period1=${period1}&period2=${period2}&interval=1d`;
@@ -164,6 +179,7 @@ async function fetchYahooDaily(yahooSymbol: string, days: number): Promise<{ t: 
   const h: number[] = [];
   const l: number[] = [];
   const o: number[] = [];
+  const v: number[] = [];
   // IMPORTANT: keep timestamps aligned with filtered OHLC values
   for (let i = 0; i < tRaw.length; i++) {
     if (q.close?.[i] != null && q.open?.[i] != null) {
@@ -172,9 +188,11 @@ async function fetchYahooDaily(yahooSymbol: string, days: number): Promise<{ t: 
       h.push(Number(q.high[i] ?? q.close[i]));
       l.push(Number(q.low[i] ?? q.close[i]));
       o.push(Number(q.open[i]));
+      const vol = q.volume?.[i] != null ? Number(q.volume[i]) : 0;
+      v.push(Number.isFinite(vol) ? vol : 0);
     }
   }
-  return { t, c, h, l, o };
+  return { t, c, h, l, o, v };
 }
 
 async function fetchYahooChart(params: {
@@ -182,7 +200,7 @@ async function fetchYahooChart(params: {
   period1: number;
   period2: number;
   interval: string;
-}): Promise<{ t: number[]; c: number[]; h: number[]; l: number[]; o: number[]; interval: string }> {
+}): Promise<{ t: number[]; c: number[]; h: number[]; l: number[]; o: number[]; v: number[]; interval: string }> {
   const { yahooSymbol, period1, period2, interval } = params;
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?period1=${period1}&period2=${period2}&interval=${encodeURIComponent(interval)}`;
   const res = await fetch(url, {
@@ -200,6 +218,7 @@ async function fetchYahooChart(params: {
   const h: number[] = [];
   const l: number[] = [];
   const o: number[] = [];
+  const v: number[] = [];
   // keep arrays aligned (skip nulls)
   for (let i = 0; i < tRaw.length; i++) {
     if (q.close?.[i] != null && q.open?.[i] != null) {
@@ -208,9 +227,11 @@ async function fetchYahooChart(params: {
       h.push(Number(q.high?.[i] ?? q.close[i]));
       l.push(Number(q.low?.[i] ?? q.close[i]));
       o.push(Number(q.open[i]));
+      const vol = q.volume?.[i] != null ? Number(q.volume[i]) : 0;
+      v.push(Number.isFinite(vol) ? vol : 0);
     }
   }
-  return { t, c, h, l, o, interval };
+  return { t, c, h, l, o, v, interval };
 }
 
 function sma(arr: number[], p: number): number[] {
@@ -569,16 +590,23 @@ type EntryConditionsConfig = {
   rawExpression?: string;
   strategySubtype?: "indicator_based" | "time_based" | "hybrid";
   clockEntryTime?: string;
+  /** ORB / Supertrend / VWAP / RSI divergence — evaluated in strategy-entry-signals when set */
+  algoGuidePreset?: string;
+  /** Guide §1: block signal bar if wall-clock in first opening 15m (9:15–9:29 IST when tz is Asia/Kolkata) */
+  algoGuideBlockFirstSessionMinutes?: boolean;
 };
 
 type ConditionEvalCtx = {
   c: number[];
   h: number[];
   l: number[];
+  /** Bar volume, same length as c when present (Yahoo / Twelve Data / Alpha Vantage) */
+  v?: number[];
   realIndicators: RealIndicators;
   rsiCache: Map<number, number[]>;
   smaCache: Map<number, number[]>;
   emaCache: Map<number, number[]>;
+  volSmaCache: Map<number, number[]>;
   /** Unix seconds per candle — required for TIME_IS(...) */
   timestamps?: number[];
   /** IANA zone for wall-clock rules (IST for Indian symbols, UTC otherwise) */
@@ -675,6 +703,7 @@ function stripTimeIsCalls(raw: string): string {
  */
 function entryConditionsAreUsableForScan(cfg: EntryConditionsConfig | null | undefined): boolean {
   if (!cfg || typeof cfg !== "object") return false;
+  if (extractAlgoGuidePreset(cfg)) return true;
   const st = String(cfg.strategySubtype ?? "").toLowerCase();
   if (st === "time_based") {
     const hhmm =
@@ -735,6 +764,15 @@ function resolveIndicatorValue(
   if (id === "BB_UPPER") return ctx.realIndicators.bbUpper;
   if (id === "BB_MIDDLE") return ctx.realIndicators.bbMiddle;
   if (id === "BB_LOWER") return ctx.realIndicators.bbLower;
+  if (id === "VOLUME") {
+    if (!ctx.v || ctx.v.length !== ctx.c.length) return null;
+    return getSeriesValue(ctx.v, idx);
+  }
+  if (id === "VOL_SMA") {
+    if (!ctx.v || ctx.v.length !== ctx.c.length) return null;
+    if (!ctx.volSmaCache.has(p)) ctx.volSmaCache.set(p, sma(ctx.v, p));
+    return getSeriesValue(ctx.volSmaCache.get(p) ?? [], idx);
+  }
   return null;
 }
 
@@ -956,6 +994,8 @@ function evaluateRawExpression(expression: string, idx: number, ctx: ConditionEv
   replaceIndicator(/\bBB_LOWER\b/g, () => resolveIndicatorValue("BB_LOWER", undefined, idx, ctx));
   replaceIndicator(/\bCHANGE_PCT\b/g, () => resolveIndicatorValue("CHANGE_PCT", undefined, idx, ctx));
   replaceIndicator(/\bPRICE\b/g, () => resolveIndicatorValue("PRICE", undefined, idx, ctx));
+  replaceIndicator(/VOL_SMA\((\d+)\)/g, (m) => resolveIndicatorValue("VOL_SMA", Number(m[1]), idx, ctx));
+  replaceIndicator(/\bVOLUME\b/g, () => resolveIndicatorValue("VOLUME", 1, idx, ctx));
 
   expr = expr.replace(/\bAND\b/g, "&&").replace(/\bOR\b/g, "||");
   expr = expr.replace(/(?<![<>!=])=(?!=)/g, "==");
@@ -1257,13 +1297,50 @@ function buildCustomStrategyConditionAudit(
     idx,
     ctx,
   );
+  const rawAdjunct = stripTimeIsCalls(String(entryCfg.rawExpression ?? "")).trim();
+  if (rawAdjunct.length > 0) {
+    const adjOk = evaluateRawExpression(rawAdjunct, idx, ctx);
+    const lines = [
+      ...inner,
+      { ok: true, label: "── Raw adjunct (AND with groups above)" },
+      { ok: adjOk, label: `${rawAdjunct} → ${adjOk ? "TRUE" : "FALSE"}` },
+      { ok: ok && adjOk, label: `══ Visual AND raw adjunct: ${ok && adjOk ? "PASS" : "FAIL"}` },
+    ];
+    return { kind: "custom_visual", overallMatch: ok && adjOk, lines, snapshot: baseSnap };
+  }
   return { kind: "custom_visual", overallMatch: ok, lines: inner, snapshot: baseSnap };
+}
+
+function wallClockMinutesScan(tsSec: number, tz: string): number | null {
+  try {
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: tz,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).formatToParts(new Date(tsSec * 1000));
+    const hh = Number(parts.find((p) => p.type === "hour")?.value ?? NaN);
+    const mm = Number(parts.find((p) => p.type === "minute")?.value ?? NaN);
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+    return hh * 60 + mm;
+  } catch {
+    return null;
+  }
+}
+
+/** Skip entries on opening-range candles (guide: avoid first 15 minutes). */
+function guideBlocksOpenQuarterBar(entryCfg: EntryConditionsConfig, tsSec: number, scanTimeZone: string): boolean {
+  if (!entryCfg.algoGuideBlockFirstSessionMinutes) return false;
+  const m = wallClockMinutesScan(tsSec, scanTimeZone);
+  if (m == null) return false;
+  return m >= 9 * 60 + 15 && m < 9 * 60 + 30;
 }
 
 function customEntryConfigRunnable(
   entryCfg: EntryConditionsConfig,
   subtype: "indicator_based" | "time_based" | "hybrid",
 ): boolean {
+  if (extractAlgoGuidePreset(entryCfg)) return true;
   if (subtype === "time_based") {
     const hhmm =
       String(entryCfg.clockEntryTime ?? "").trim() ||
@@ -1279,7 +1356,8 @@ function customEntryConfigRunnable(
     }
     return Array.isArray(entryCfg.groups) && entryCfg.groups.length > 0;
   }
-  const hasVisual = Array.isArray(entryCfg.groups) && entryCfg.groups.length > 0;
+  const hasVisual = Array.isArray(entryCfg.groups) &&
+    entryCfg.groups.some((g) => Array.isArray(g?.conditions) && g.conditions.length > 0);
   const hasRaw = typeof entryCfg.rawExpression === "string" && entryCfg.rawExpression.trim().length > 0;
   return hasVisual || hasRaw;
 }
@@ -1293,6 +1371,7 @@ function customEntryConditionsMatchAt(
   timestamps: number[],
   scanTimeZone: string,
 ): boolean {
+  if (guideBlocksOpenQuarterBar(entryCfg, timestamps[idx], scanTimeZone)) return false;
   if (subtype === "time_based") {
     const hhmm =
       String(entryCfg.clockEntryTime ?? "").trim() ||
@@ -1320,18 +1399,26 @@ function customEntryConditionsMatchAt(
     }
     return timeOk && indOk;
   }
-    const hasVisual = Array.isArray(entryCfg.groups) && entryCfg.groups.length > 0;
+  const hasVisual = Array.isArray(entryCfg.groups) &&
+    entryCfg.groups.some((g) => Array.isArray(g?.conditions) && g.conditions.length > 0);
     const hasRaw = typeof entryCfg.rawExpression === "string" && entryCfg.rawExpression.trim().length > 0;
+  const rawAdjunct = stripTimeIsCalls(String(entryCfg.rawExpression ?? "")).trim();
   if (!hasVisual && !hasRaw) return false;
-  return entryCfg.mode === "raw"
-      ? evaluateRawExpression(String(entryCfg.rawExpression ?? ""), idx, ctx)
-      : evaluateConditionGroups(
+  if (entryCfg.mode === "raw") {
+    return evaluateRawExpression(String(entryCfg.rawExpression ?? ""), idx, ctx);
+  }
+  const gl = String(entryCfg.groupLogic ?? "AND").toUpperCase() === "OR" ? "OR" : "AND";
+  const visualOk = evaluateConditionGroups(
         Array.isArray(entryCfg.groups) ? entryCfg.groups : [],
-        String(entryCfg.groupLogic ?? "AND").toUpperCase() === "OR" ? "OR" : "AND",
+    gl,
         idx,
         ctx,
       );
+  if (rawAdjunct.length > 0) {
+    return visualOk && evaluateRawExpression(rawAdjunct, idx, ctx);
   }
+  return visualOk;
+}
 
 type CustomStrategyScanFields = {
   id: string;
@@ -1438,12 +1525,25 @@ function resolvedSlTpMaxHoldForCustom(
  * Retries with ruleRelaxation 1 then 2 when tier 0 finds no signals (wider numeric/cross slack; clock ±2/±5 min).
  * Raw-only indicator expressions are not numerically relaxed — only tier 0 runs for that shape.
  */
+function usedIntervalApprox5m(barMinutesApprox: number): boolean {
+  return barMinutesApprox >= 4 && barMinutesApprox <= 6;
+}
+
+function effectivePresetSignalBar(hit: PresetHit): number {
+  return hit.i + (hit.entryBarOffset ?? 0);
+}
+
+/** Optional 15m series for algo-guide dual Supertrend (5m fast + 15m slow). */
+type SupertrendSlowPack = { t: number[]; h: number[]; l: number[]; c: number[] };
+
 function detectCustomEntrySignals(
   cs: CustomStrategyScanFields,
   timestamps: number[],
   c: number[],
   h: number[],
   l: number[],
+  oBars: number[] | undefined,
+  vBars: number[] | undefined,
   dataSource: string,
   indicatorSource: string,
   realIndicators: RealIndicators,
@@ -1452,6 +1552,7 @@ function detectCustomEntrySignals(
   maxSignals: number,
   realtimeMode: boolean,
   barMinutesApprox: number,
+  supertrendSlow: SupertrendSlowPack | null,
 ): RawSignal[] {
   const entryCfg = cs.entryConditions;
   if (!entryCfg || typeof entryCfg !== "object") return [];
@@ -1466,10 +1567,12 @@ function detectCustomEntrySignals(
     c,
     h,
     l,
+    v: vBars && vBars.length === c.length ? vBars : undefined,
     realIndicators,
     rsiCache: new Map<number, number[]>(),
     smaCache: new Map<number, number[]>(),
     emaCache: new Map<number, number[]>(),
+    volSmaCache: new Map<number, number[]>(),
     timestamps,
     timeZone: scanTimeZone,
   };
@@ -1505,6 +1608,123 @@ function detectCustomEntrySignals(
 
   const sma20 = sma(c, 20);
   const r = rsi(c, 14);
+
+  const preset = extractAlgoGuidePreset(entryCfg);
+  if (preset) {
+    let presetHits: PresetHit[] = [];
+    if (preset === "orb") presetHits = detectOrbHits(timestamps, c, h, l, scanTimeZone);
+    else if (preset === "supertrend_7_3") {
+      if (
+        supertrendSlow &&
+        supertrendSlow.c.length >= 15 &&
+        usedIntervalApprox5m(barMinutesApprox)
+      ) {
+        presetHits = detectSupertrendDualTfHits(
+          timestamps,
+          h,
+          l,
+          c,
+          supertrendSlow.t,
+          supertrendSlow.h,
+          supertrendSlow.l,
+          supertrendSlow.c,
+          scanTimeZone,
+        );
+      } else {
+        presetHits = detectSupertrendFlipHits(h, l, c, timestamps, scanTimeZone);
+      }
+    } else if (preset === "vwap_bounce") {
+      presetHits = vBars && vBars.length === c.length
+        ? detectVwapBounceHits(timestamps, h, l, c, vBars, scanTimeZone, oBars)
+        : [];
+    } else if (preset === "rsi_divergence") presetHits = detectRsiDivergenceHits(c, h, l);
+
+    const collectPresetAtTier = (relaxationTier: number): RawSignal[] => {
+      ctx.ruleRelaxation = relaxationTier;
+      const out: RawSignal[] = [];
+      const sorted = [...presetHits].sort((a, b) => effectivePresetSignalBar(a) - effectivePresetSignalBar(b));
+
+      for (const side of actions) {
+        const entries: RawSignal[] = [];
+        let inTrade = false;
+        let entryPrice = 0;
+        let hold = 0;
+        let hi = 0;
+        const sideHits = sorted.filter((hit) => hit.side === side);
+        for (let i = 20; i < n; i++) {
+          if (inTrade) {
+            hold++;
+            const ratio = c[i] / entryPrice;
+            const slM = side === "BUY" ? 1 - slPct / 100 : 1 + slPct / 100;
+            const tpM = side === "BUY" ? 1 + tpPct / 100 : 1 - tpPct / 100;
+            const hitSl = slPct > 0 && (side === "BUY" ? ratio <= slM : ratio >= slM);
+            const hitTp = tpPct > 0 && (side === "BUY" ? ratio >= tpM : ratio <= tpM);
+            if (hitSl || hitTp || hold >= maxHold) inTrade = false;
+            continue;
+          }
+          while (hi < sideHits.length && effectivePresetSignalBar(sideHits[hi]) < i) hi++;
+          if (hi >= sideHits.length || effectivePresetSignalBar(sideHits[hi]) !== i) continue;
+          const hit = sideHits[hi];
+          hi++;
+          const signalBar = effectivePresetSignalBar(hit);
+          const hitBar = hit.i;
+          const ei = realtimeMode ? signalBar : signalBar + 1;
+          if (ei >= n) continue;
+          const entryTs = timestamps[ei];
+          if (!barAllowedByCustomSchedule(entryTs, cs.executionDays, cs.startTime, cs.endTime, scanTimeZone)) {
+            continue;
+          }
+          const conditionAudit: StrategyConditionAudit = {
+            kind: "custom_visual",
+            overallMatch: true,
+            lines: [
+              {
+                ok: true,
+                label: `Algo guide preset "${preset}" at bar ${signalBar}${
+                  hitBar !== signalBar ? ` (setup ${hitBar})` : ""
+                } (${side})`,
+              },
+            ],
+            snapshot: {
+              barIndex: signalBar,
+              barTimeIso: new Date(timestamps[signalBar] * 1000).toISOString(),
+              evaluationTimeZone: scanTimeZone,
+              ...indicatorSnapshotAtBar(signalBar, ctx),
+            },
+          };
+          const lastTs = timestamps[ei];
+          const d = new Date(lastTs * 1000);
+          entries.push({
+    strategyId: cs.id,
+    strategyLabel: cs.name,
+            entryIndex: ei,
+    entryDate: d.toISOString().slice(0, 10),
+    entryTime: d.toISOString(),
+    entryTimestamp: lastTs * 1000,
+    side,
+            priceAtEntry: c[ei],
+            isLive: ei === n - 1,
+            conditionAudit,
+            marketData: mkMarketData(ei, c, h, l, r, sma20, dataSource, indicatorSource),
+            customScanMeta: {
+              ...meta,
+              signalSide: side,
+              algoGuidePreset: preset,
+              ...(relaxationTier > 0 ? { ruleRelaxationTier: relaxationTier } : {}),
+            },
+          });
+          inTrade = true;
+          entryPrice = c[ei];
+          hold = 0;
+        }
+        out.push(...entries.slice(-maxSignals));
+      }
+      return out;
+    };
+
+    const fromPreset = collectPresetAtTier(0);
+    if (fromPreset.length > 0) return fromPreset;
+  }
 
   const rawIndicatorOnly = subtype === "indicator_based" && entryCfg.mode === "raw";
   const relaxationTiers = rawIndicatorOnly ? [0] : [0, 1, 2];
@@ -2526,35 +2746,46 @@ Deno.serve(async (req: Request) => {
     let c: number[] = [];
     let h: number[] = [];
     let l: number[] = [];
+    let o: number[] = [];
+    let v: number[] = [];
     let usedInterval = "1d";
     let dataSource = "yahoo";
+
+    const customWantsDualSupertrend =
+      customStrategies.some((cs) =>
+        extractAlgoGuidePreset(cs.entryConditions) === "supertrend_7_3" && cs.isIntraday !== false
+      );
 
     // ── Multi-source candle pipeline: TwelveData → Yahoo intraday → Yahoo daily → Alpha Vantage ──
     // When all selected customs are daily-only, skip sub-daily fetches so entry/exit match saved strategy mode.
     if (!customSelectionDailyOnly) {
-      // 1) TwelveData intraday (primary for US/crypto/forex)
-      if (!isIndian) {
-        const tdResult = await fetchTwelveDataCandles(yahooSymbol, assetType, intradayInterval, 500);
-        if (tdResult && tdResult.c.length >= 10) {
-          t = tdResult.t; c = tdResult.c; h = tdResult.h; l = tdResult.l;
-          usedInterval = intradayInterval; dataSource = "twelvedata";
-          console.log(`Candles: TwelveData ${intradayInterval} (${c.length} bars) for ${yahooSymbol}`);
-        }
+    // 1) TwelveData intraday (primary for US/crypto/forex)
+    if (!isIndian) {
+      const tdResult = await fetchTwelveDataCandles(yahooSymbol, assetType, intradayInterval, 500);
+      if (tdResult && tdResult.c.length >= 10) {
+        t = tdResult.t; c = tdResult.c; h = tdResult.h; l = tdResult.l;
+        o = tdResult.o && tdResult.o.length === tdResult.c.length ? tdResult.o : tdResult.c.slice();
+          v = tdResult.v && tdResult.v.length === tdResult.c.length ? tdResult.v : [];
+        usedInterval = intradayInterval; dataSource = "twelvedata";
+        console.log(`Candles: TwelveData ${intradayInterval} (${c.length} bars) for ${yahooSymbol}`);
       }
+    }
 
-      // 2) Yahoo Finance intraday (primary for Indian stocks, fallback for others)
-      if (!c.length) {
-        const seq = [intradayInterval, "15m", "60m"];
-        for (const interval of seq) {
-          try {
-            const r = await fetchYahooChart({ yahooSymbol, period1: period1Intraday, period2, interval });
-            if (r.c.length >= 10) {
-              t = r.t; c = r.c; h = r.h; l = r.l; usedInterval = r.interval;
-              dataSource = "yahoo"; console.log(`Candles: Yahoo ${interval} (${c.length} bars)`);
-              break;
-            }
-          } catch { /* try next */ }
-        }
+    // 2) Yahoo Finance intraday (primary for Indian stocks, fallback for others)
+    if (!c.length) {
+      const seq = [intradayInterval, "15m", "60m"];
+      for (const interval of seq) {
+        try {
+          const r = await fetchYahooChart({ yahooSymbol, period1: period1Intraday, period2, interval });
+          if (r.c.length >= 10) {
+              t = r.t; c = r.c; h = r.h; l = r.l; o = r.o;
+              v = r.v && r.v.length === r.c.length ? r.v : [];
+              usedInterval = r.interval;
+            dataSource = "yahoo"; console.log(`Candles: Yahoo ${interval} (${c.length} bars)`);
+            break;
+          }
+        } catch { /* try next */ }
+      }
       }
     } else {
       console.log(
@@ -2566,7 +2797,9 @@ Deno.serve(async (req: Request) => {
     if (!c.length) {
       try {
         const d = await fetchYahooDaily(yahooSymbol, days);
-        t = d.t; c = d.c; h = d.h; l = d.l; usedInterval = "1d";
+        t = d.t; c = d.c; h = d.h; l = d.l; o = d.o;
+        v = d.v && d.v.length === d.c.length ? d.v : [];
+        usedInterval = "1d";
         dataSource = "yahoo-daily"; console.log(`Candles: Yahoo daily (${c.length} bars)`);
       } catch { /* try Alpha Vantage */ }
     }
@@ -2575,7 +2808,8 @@ Deno.serve(async (req: Request) => {
     if (!c.length && !isIndian) {
       const avResult = await fetchAlphaVantageDailyCandles(yahooSymbol);
       if (avResult && avResult.c.length >= 10) {
-        t = avResult.t; c = avResult.c; h = avResult.h; l = avResult.l;
+        t = avResult.t; c = avResult.c; h = avResult.h; l = avResult.l; o = avResult.o;
+        v = avResult.v && avResult.v.length === avResult.c.length ? avResult.v : [];
         usedInterval = "1d"; dataSource = "alphavantage";
         console.log(`Candles: Alpha Vantage daily (${c.length} bars) for ${yahooSymbol}`);
       }
@@ -2583,6 +2817,35 @@ Deno.serve(async (req: Request) => {
 
     if (!c.length) {
       return new Response(JSON.stringify({ error: "Could not fetch price data from any source" }), { status: 502, headers });
+    }
+
+    if (o.length !== c.length) o = c.slice();
+
+    /** 15m OHLC for algo-guide dual Supertrend when primary chart is ~5m. */
+    let supertrendSlow: SupertrendSlowPack | null = null;
+    const barMinPrimary = intervalLabelToBarMinutes(usedInterval);
+    if (
+      customWantsDualSupertrend &&
+      !customSelectionDailyOnly &&
+      usedInterval !== "1d" &&
+      usedIntervalApprox5m(barMinPrimary)
+    ) {
+      try {
+        let s15: SupertrendSlowPack | null = null;
+        if (TWELVE_DATA_API_KEY) {
+          const td15 = await fetchTwelveDataCandles(yahooSymbol, assetType, "15m", 500);
+          if (td15 && td15.c.length >= 15) {
+            s15 = { t: td15.t, h: td15.h, l: td15.l, c: td15.c };
+          }
+        }
+        if (!s15) {
+          const r15 = await fetchYahooChart({ yahooSymbol, period1: period1Intraday, period2, interval: "15m" });
+          if (r15.c.length >= 15) s15 = { t: r15.t, h: r15.h, l: r15.l, c: r15.c };
+        }
+        supertrendSlow = s15;
+      } catch {
+        supertrendSlow = null;
+      }
     }
 
     // ── Fetch real indicators from APIs (enriches Gemini scoring context) ──
@@ -2634,12 +2897,16 @@ Deno.serve(async (req: Request) => {
         scanTimeZone,
       ));
       if (hasCustomConditions(cs)) {
+        const vAligned = v.length === c.length ? v : undefined;
+        const oAligned = o.length === c.length ? o : undefined;
         const fromCustom = detectCustomEntrySignals(
           csScan,
         t,
         c,
         h,
         l,
+          oAligned,
+          vAligned,
         dataSource,
         realIndicators.source,
           realIndicators,
@@ -2648,6 +2915,7 @@ Deno.serve(async (req: Request) => {
           maxPerStrategy,
           realtimeMode,
           barMinutesApprox,
+          supertrendSlow,
       );
         allRaw.push(...fromCustom);
         if (fromCustom.length > 0) continue;

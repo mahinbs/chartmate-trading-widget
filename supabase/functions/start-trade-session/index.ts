@@ -97,10 +97,10 @@ serve(async (req) => {
     // Enforce backend prerequisites for live trading only.
     if (!isPaperTrade) {
       const access = await resolveTradeAccess(supabaseClient as any, user.id);
-      if (!access.hasActiveSubscription) {
+      if (!access.hasAlgoEntitlement) {
         return new Response(
           JSON.stringify({
-            error: "Active paid subscription required before starting a live trade session.",
+            error: "Active Algo (Bot) or higher subscription required before starting a live trade session.",
             error_code: "NO_SUBSCRIPTION",
           }),
           { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },

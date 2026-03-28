@@ -5,8 +5,29 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { stripePriceToPlanId } from "../_shared/subscription-plans.ts";
 
 const WEBHOOK_SECRET = Deno.env.get("STRIPE_WEBHOOK_SECRET") ?? "";
+const STRIPE_SECRET = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
+
+function planIdFromStripeSubscription(sub: Record<string, unknown>): string | undefined {
+  const metaPlan = (sub.metadata as Record<string, string> | undefined)?.plan_id;
+  if (metaPlan) return metaPlan;
+  const items = sub.items as { data?: Array<{ price?: { id?: string } }> } | undefined;
+  const priceId = items?.data?.[0]?.price?.id;
+  if (!priceId) return undefined;
+  const map = stripePriceToPlanId();
+  return map[priceId];
+}
+
+async function fetchStripeSubscription(subId: string): Promise<Record<string, unknown> | null> {
+  if (!STRIPE_SECRET) return null;
+  const res = await fetch(`https://api.stripe.com/v1/subscriptions/${subId}`, {
+    headers: { Authorization: `Bearer ${STRIPE_SECRET}` },
+  });
+  if (!res.ok) return null;
+  return (await res.json()) as Record<string, unknown>;
+}
 
 async function verifyStripeWebhook(payload: string, sigHeader: string, secret: string): Promise<{ type: string; data?: { object?: Record<string, unknown> } }> {
   const parts = sigHeader.split(",").reduce((acc, p) => {
@@ -139,20 +160,31 @@ Deno.serve(async (req: Request) => {
               .eq("token", wlToken);
           }
         }
-      } else {
-        // For one-time payments (e.g. test_1_rupee) there's no subscription; set 1yr access
-        const periodEnd: string | null = obj?.current_period_end
-          ? new Date((obj.current_period_end as number) * 1000).toISOString()
-          : null;
+      } else if (userId && planId) {
+        let periodEnd: string | null = null;
+        let resolvedPlanId = planId;
+        let cancelAtEnd = false;
+        if (subId) {
+          const stripeSub = await fetchStripeSubscription(subId);
+          if (stripeSub) {
+            const cpe = stripeSub.current_period_end as number | undefined;
+            if (cpe) periodEnd = new Date(cpe * 1000).toISOString();
+            const fromStripe = planIdFromStripeSubscription(stripeSub);
+            if (fromStripe) resolvedPlanId = fromStripe;
+            cancelAtEnd = Boolean(stripeSub.cancel_at_period_end);
+          }
+        } else if (obj?.current_period_end) {
+          periodEnd = new Date((obj.current_period_end as number) * 1000).toISOString();
+        }
         await supabase.from("user_subscriptions").upsert(
           {
-            user_id:              userId,
-            stripe_customer_id:   custId ?? null,
+            user_id: userId,
+            stripe_customer_id: custId ?? null,
             stripe_subscription_id: subId ?? null,
-            plan_id:              planId,
-            status:               "active",
-            current_period_end:   periodEnd,
-            cancel_at_period_end: false,
+            plan_id: resolvedPlanId,
+            status: "active",
+            current_period_end: periodEnd,
+            cancel_at_period_end: cancelAtEnd,
             updated_at: new Date().toISOString(),
           },
           { onConflict: "user_id" },
@@ -165,20 +197,32 @@ Deno.serve(async (req: Request) => {
         customer?: string;
         current_period_end?: number;
         cancel_at_period_end?: boolean;
+        metadata?: Record<string, string>;
+        items?: { data?: Array<{ price?: { id?: string } }> };
       };
       const subId = sub.id;
       const status = (sub.status as string) ?? "canceled";
+      const resolvedPlan = planIdFromStripeSubscription(obj as Record<string, unknown>);
+
+      const dbStatus =
+        status === "active" || status === "trialing"
+          ? status
+          : status === "past_due"
+            ? "past_due"
+            : "canceled";
+      const updatePayload: Record<string, unknown> = {
+        status: dbStatus,
+        current_period_end: sub.current_period_end
+          ? new Date(sub.current_period_end * 1000).toISOString()
+          : null,
+        cancel_at_period_end: Boolean(sub.cancel_at_period_end),
+        updated_at: new Date().toISOString(),
+      };
+      if (resolvedPlan) updatePayload.plan_id = resolvedPlan;
 
       await supabase
         .from("user_subscriptions")
-        .update({
-          status: status === "active" ? "active" : "canceled",
-          current_period_end: sub.current_period_end
-            ? new Date(sub.current_period_end * 1000).toISOString()
-            : null,
-          cancel_at_period_end: Boolean(sub.cancel_at_period_end),
-          updated_at: new Date().toISOString(),
-        })
+        .update(updatePayload)
         .eq("stripe_subscription_id", subId);
 
       const wlRes = await supabase

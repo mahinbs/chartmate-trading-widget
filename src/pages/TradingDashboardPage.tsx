@@ -26,6 +26,14 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import BrokerPortfolioCard from "@/components/trading/BrokerPortfolioCard";
@@ -107,7 +115,8 @@ interface Strategy {
   start_time: string;
   end_time: string;
   squareoff_time: string;
-  symbols: string[];
+  /** String tickers and/or OpenAlgo-style { symbol, exchange, quantity, product_type } */
+  symbols?: unknown[];
   openalgo_webhook_id?: string;
   webhook_url?: string | null;
   market_type?: "crypto" | "stocks" | "forex" | "all" | null;
@@ -130,6 +139,54 @@ interface Strategy {
   created_at: string;
 }
 
+/** Resolve primary symbol string for display / scans / fire fallback */
+function symbolFromStrategy(s: Strategy): string {
+  const arr = s.symbols;
+  if (!Array.isArray(arr) || arr.length === 0) return "";
+  const first = arr[0];
+  if (typeof first === "string") return first.trim().toUpperCase();
+  if (first && typeof first === "object") {
+    return String((first as Record<string, unknown>).symbol ?? "").trim().toUpperCase();
+  }
+  return "";
+}
+
+function defaultsForGoLive(s: Strategy): { symbol: string; exchange: string; quantity: string; product: string } {
+  const arr = s.symbols;
+  let symbol = "";
+  let exchange = "NSE";
+  let quantity = 1;
+  let product = s.is_intraday ? "MIS" : "CNC";
+  if (Array.isArray(arr) && arr.length > 0) {
+    const x = arr[0];
+    if (typeof x === "string" && x.trim()) symbol = x.trim().toUpperCase();
+    else if (x && typeof x === "object") {
+      const o = x as Record<string, unknown>;
+      symbol = String(o.symbol ?? "").trim().toUpperCase();
+      exchange = String(o.exchange ?? "NSE").toUpperCase();
+      const q = Number(o.quantity ?? 1);
+      if (Number.isFinite(q) && q >= 1) quantity = Math.floor(q);
+      product = String(o.product_type ?? o.orderProduct ?? product).toUpperCase() || product;
+    }
+  }
+  const pc = s.position_config;
+  if (pc && typeof pc === "object") {
+    if (!symbol) symbol = symbolFromStrategy({ ...s, symbols: arr });
+    const pq = Number((pc as { quantity?: unknown }).quantity ?? 0);
+    if (pq >= 1) quantity = Math.floor(pq);
+    const ex = String((pc as { exchange?: unknown }).exchange ?? "").trim();
+    if (ex) exchange = ex.toUpperCase();
+    const op = String((pc as { orderProduct?: unknown }).orderProduct ?? "").trim();
+    if (op) product = op.toUpperCase();
+  }
+  return {
+    symbol,
+    exchange,
+    quantity: String(Math.max(1, quantity)),
+    product: product || (s.is_intraday ? "MIS" : "CNC"),
+  };
+}
+
 // ── StrategiesPanel ────────────────────────────────────────────────────────────
 function StrategiesPanel({ broker }: { broker: string }) {
   const [showGuide, setShowGuide] = useState(false);
@@ -150,6 +207,15 @@ function StrategiesPanel({ broker }: { broker: string }) {
     firing: boolean;
     aiOverride: boolean;
   }>>({});
+  /** Go live: confirm symbol/qty before is_active=true */
+  const [goLive, setGoLive] = useState<{
+    strategy: Strategy;
+    symbol: string;
+    exchange: string;
+    quantity: string;
+    product: string;
+  } | null>(null);
+  const [goLiveLoading, setGoLiveLoading] = useState(false);
   const brokerLabel = broker.charAt(0).toUpperCase() + broker.slice(1);
 
   const getFireState = (id: string) => firePanel[id] ?? {
@@ -161,7 +227,7 @@ function StrategiesPanel({ broker }: { broker: string }) {
 
   const fireSignal = async (strategy: Strategy, action: "BUY" | "SELL") => {
     const fs = getFireState(strategy.id);
-    const sym = fs.symbol.trim().toUpperCase() || (strategy.symbols?.[0] ?? "");
+    const sym = fs.symbol.trim().toUpperCase() || symbolFromStrategy(strategy);
     if (!sym) { toast.error("Enter a symbol to fire this signal"); return; }
     const qty = parseInt(fs.quantity) || 1;
 
@@ -234,7 +300,7 @@ function StrategiesPanel({ broker }: { broker: string }) {
 
   useEffect(() => { loadStrategies(); }, []);
 
-  const toggleStrategy = async (id: string) => {
+  const toggleStrategyOff = async (id: string) => {
     setToggleLoading(id);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -242,7 +308,7 @@ function StrategiesPanel({ broker }: { broker: string }) {
         body: { action: "toggle", strategy_id: id },
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
-      const err = (res.data as any)?.error;
+      const err = (res.data as { error?: string })?.error;
       if (res.error || err) {
         toast.error(String(err ?? res.error?.message ?? "Could not change deployment status"));
         return;
@@ -251,6 +317,108 @@ function StrategiesPanel({ broker }: { broker: string }) {
     } finally {
       setToggleLoading(null);
     }
+  };
+
+  const openGoLive = async (s: Strategy) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      toast.error("Sign in required");
+      return;
+    }
+    const { data: integ } = await (supabase as any)
+      .from("user_trading_integration")
+      .select("is_active, openalgo_api_key, openalgo_username")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    const row = integ as { is_active?: boolean; openalgo_api_key?: string; openalgo_username?: string } | null;
+    const brokerOk = Boolean(
+      row?.is_active &&
+        (String(row.openalgo_api_key ?? "").trim() || String(row.openalgo_username ?? "").trim()),
+    );
+    if (!brokerOk) {
+      toast.error(
+        "Connect your broker (OpenAlgo) on Home or AI Prediction first, then return here to go live.",
+        { duration: 9000 },
+      );
+      return;
+    }
+    const d = defaultsForGoLive(s);
+    setGoLive({ strategy: s, ...d });
+  };
+
+  const confirmGoLive = async () => {
+    if (!goLive) return;
+    const sym = goLive.symbol.trim().toUpperCase();
+    const qty = parseInt(goLive.quantity, 10);
+    if (!sym) {
+      toast.error("Enter a trading symbol (e.g. RELIANCE, INFY)");
+      return;
+    }
+    if (!Number.isFinite(qty) || qty < 1) {
+      toast.error("Quantity must be at least 1");
+      return;
+    }
+    setGoLiveLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        toast.error("Sign in required");
+        return;
+      }
+      const symbolsPayload = [
+        {
+          symbol: sym,
+          exchange: goLive.exchange.trim().toUpperCase() || "NSE",
+          quantity: qty,
+          product_type: goLive.product.trim().toUpperCase() || "MIS",
+        },
+      ];
+      const prevPc = goLive.strategy.position_config;
+      const position_config = {
+        ...(prevPc && typeof prevPc === "object" ? prevPc : {}),
+        quantity: qty,
+        exchange: goLive.exchange.trim().toUpperCase() || "NSE",
+        orderProduct: goLive.product.trim().toUpperCase() || "MIS",
+      };
+
+      const up = await supabase.functions.invoke("manage-strategy", {
+        body: {
+          action: "update",
+          strategy_id: goLive.strategy.id,
+          symbols: symbolsPayload,
+          position_config,
+        },
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const upErr = (up.data as { error?: string })?.error;
+      if (up.error || upErr) {
+        toast.error(String(upErr ?? up.error?.message ?? "Could not save symbol/quantity"));
+        return;
+      }
+
+      const tog = await supabase.functions.invoke("manage-strategy", {
+        body: { action: "toggle", strategy_id: goLive.strategy.id },
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const togErr = (tog.data as { error?: string })?.error;
+      if (tog.error || togErr) {
+        toast.error(String(togErr ?? tog.error?.message ?? "Could not activate strategy"));
+        return;
+      }
+      toast.success(`"${goLive.strategy.name}" is live — ${sym} × ${qty} (${goLive.exchange})`);
+      setGoLive(null);
+      await loadStrategies();
+    } finally {
+      setGoLiveLoading(false);
+    }
+  };
+
+  const onToggleClick = (s: Strategy) => {
+    if (s.is_active) {
+      void toggleStrategyOff(s.id);
+      return;
+    }
+    void openGoLive(s);
   };
 
   const deleteStrategy = async (id: string, name: string) => {
@@ -338,6 +506,95 @@ function StrategiesPanel({ broker }: { broker: string }) {
           onSaved={() => { void loadStrategies(); }}
         />
 
+        <Dialog open={goLive != null} onOpenChange={(o) => { if (!o) setGoLive(null); }}>
+          <DialogContent className="bg-zinc-950 border-zinc-800 text-white sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-white">Go live — confirm execution</DialogTitle>
+              <DialogDescription className="text-zinc-400 text-xs">
+                ChartMate sends orders through OpenAlgo to your broker. Set the symbol and quantity that
+                match your margin and exchange rules (same fields OpenAlgo uses: symbol, exchange, quantity, product).
+              </DialogDescription>
+            </DialogHeader>
+            {goLive && (
+              <div className="space-y-3 py-1">
+                <p className="text-xs text-zinc-500 font-medium truncate">{goLive.strategy.name}</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1 col-span-2">
+                    <Label className="text-zinc-500 text-[10px]">Symbol *</Label>
+                    <Input
+                      value={goLive.symbol}
+                      onChange={(e) => setGoLive((g) => g ? { ...g, symbol: e.target.value.toUpperCase() } : null)}
+                      placeholder="RELIANCE"
+                      className="bg-zinc-900 border-zinc-700 text-white font-mono text-sm h-9"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-zinc-500 text-[10px]">Exchange</Label>
+                    <Select
+                      value={goLive.exchange}
+                      onValueChange={(v) => setGoLive((g) => g ? { ...g, exchange: v } : null)}
+                    >
+                      <SelectTrigger className="bg-zinc-900 border-zinc-700 text-zinc-200 h-9 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-zinc-900 border-zinc-700">
+                        {EXCHANGES.map((e) => (
+                          <SelectItem key={e.value} value={e.value} className="text-xs">{e.value}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-zinc-500 text-[10px]">Quantity *</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={goLive.quantity}
+                      onChange={(e) => setGoLive((g) => g ? { ...g, quantity: e.target.value } : null)}
+                      className="bg-zinc-900 border-zinc-700 text-white text-sm h-9"
+                    />
+                  </div>
+                  <div className="space-y-1 col-span-2">
+                    <Label className="text-zinc-500 text-[10px]">Product (OpenAlgo / broker)</Label>
+                    <Select
+                      value={goLive.product}
+                      onValueChange={(v) => setGoLive((g) => g ? { ...g, product: v } : null)}
+                    >
+                      <SelectTrigger className="bg-zinc-900 border-zinc-700 text-zinc-200 h-9 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-zinc-900 border-zinc-700">
+                        {PRODUCT_TYPES.map((p) => (
+                          <SelectItem key={p.value} value={p.value} className="text-xs">{p.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+            )}
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button
+                type="button"
+                variant="outline"
+                className="border-zinc-700 text-zinc-300"
+                onClick={() => setGoLive(null)}
+                disabled={goLiveLoading}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className="bg-purple-600 hover:bg-purple-500 text-white"
+                onClick={() => void confirmGoLive()}
+                disabled={goLiveLoading}
+              >
+                {goLiveLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Activate strategy"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         {/* Strategy list */}
         {loading ? (
           <div className="flex justify-center py-6">
@@ -384,20 +641,21 @@ function StrategiesPanel({ broker }: { broker: string }) {
                           ? "bg-teal-500/20 border-teal-500/40 text-teal-300"
                           : "border-zinc-700 text-zinc-500 hover:border-teal-500/40 hover:text-teal-400"
                       }`}
-                      title="Fire a signal directly from ChartMate"
+                      title="Execute: place an immediate MARKET BUY/SELL via OpenAlgo (manual test). Strategy must be ACTIVE. This is not the PDF backtester — it sends a real order if your broker session is valid."
                     >
                       <Zap className="h-3 w-3" />
                       Execute
                     </button>
 
-                    {/* Active toggle */}
+                    {/* Active toggle — OFF immediately; ON opens go-live dialog */}
                     <button
-                      onClick={() => toggleStrategy(s.id)}
-                      disabled={toggleLoading === s.id}
+                      type="button"
+                      onClick={() => onToggleClick(s)}
+                      disabled={toggleLoading === s.id || goLiveLoading}
                       className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
                         s.is_active ? "bg-purple-600" : "bg-zinc-700"
                       } disabled:opacity-60`}
-                      title={s.is_active ? "Deactivate" : "Activate"}
+                      title={s.is_active ? "Deactivate (stop automated use of this strategy)" : "Go live — set symbol & quantity, then activate"}
                     >
                       {toggleLoading === s.id ? (
                         <Loader2 className="h-3 w-3 text-white mx-auto animate-spin" />
@@ -457,7 +715,7 @@ function StrategiesPanel({ broker }: { broker: string }) {
                         <div className="space-y-1">
                           <Label className="text-zinc-600 text-[10px]">Symbol *</Label>
                           <Input
-                            placeholder={s.symbols?.[0] ?? "RELIANCE"}
+                            placeholder={symbolFromStrategy(s) || "RELIANCE"}
                             value={fs.symbol}
                             onChange={e => setFireState(s.id, { symbol: e.target.value.toUpperCase() })}
                             className="bg-zinc-900 border-zinc-700 text-white font-mono text-xs h-8"
@@ -568,7 +826,10 @@ function StrategiesPanel({ broker }: { broker: string }) {
                     {entryExitOpen[s.id] && (
                       <div className="mt-2">
                         <StrategyEntrySignalsPanel
-                          symbol={(s.symbols?.[0] ?? "").includes(".") ? s.symbols![0] : `${s.symbols?.[0] ?? "RELIANCE"}.NS`}
+                          symbol={(() => {
+                            const sym = symbolFromStrategy(s);
+                            return sym.includes(".") ? sym : `${sym || "RELIANCE"}.NS`;
+                          })()}
                         />
                       </div>
                     )}

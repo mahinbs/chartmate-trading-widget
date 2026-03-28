@@ -31,6 +31,12 @@ import { toast } from "sonner";
 import BrokerSyncSection, { ALL_BROKERS } from "@/components/trading/BrokerSyncSection";
 import BrokerPortfolioCard from "@/components/trading/BrokerPortfolioCard";
 import { getTradingIntegration } from "@/services/openalgoIntegrationService";
+import { planAllowsAlgo } from "@/lib/subscriptionEntitlements";
+import {
+  createBillingPortalSession,
+  hasActiveSubscription,
+  type UserSubscription,
+} from "@/services/stripeService";
 
 interface OnboardingForm {
   full_name: string;
@@ -153,6 +159,8 @@ export default function AlgoOnboardingPage() {
   const [done, setDone] = useState(false);
   const [form, setForm] = useState<OnboardingForm>(EMPTY_FORM);
   const [hasBrokerIntegration, setHasBrokerIntegration] = useState(false);
+  const [tierGate, setTierGate] = useState<"ok" | "prob" | "unpaid">("ok");
+  const [portalBusy, setPortalBusy] = useState(false);
 
   const checkBrokerIntegration = async () => {
     const { data } = await getTradingIntegration();
@@ -186,6 +194,17 @@ export default function AlgoOnboardingPage() {
         .maybeSingle();
 
       if (sub?.plan_id) setPlanId(sub.plan_id);
+
+      const subTyped = sub as UserSubscription | null;
+      if (!hasActiveSubscription(subTyped)) {
+        setTierGate("unpaid");
+      } else if (subTyped?.plan_id === "probIntelligence") {
+        setTierGate("prob");
+      } else if (!planAllowsAlgo(subTyped?.plan_id)) {
+        setTierGate("unpaid");
+      } else {
+        setTierGate("ok");
+      }
 
       // Pre-fill name from profile if available
       const name = session.user.user_metadata?.full_name ?? session.user.email?.split("@")[0] ?? "";
@@ -310,6 +329,73 @@ export default function AlgoOnboardingPage() {
     return (
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-teal-400" />
+      </div>
+    );
+  }
+
+  if (tierGate === "prob") {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center px-4 py-12">
+        <Card className="w-full max-w-lg bg-zinc-900 border-zinc-800 text-white">
+          <CardHeader>
+            <CardTitle className="text-xl font-black">Live algo is not on your current plan</CardTitle>
+            <CardDescription className="text-zinc-400">
+              Probability ($99) includes detailed analysis and paper trading. OpenAlgo live execution is
+              included on <strong className="text-zinc-200">Bot ($49)</strong> or{" "}
+              <strong className="text-zinc-200">Pro ($129)</strong>. Upgrade to{" "}
+              <strong className="text-teal-400">Pro</strong> in billing to get both — Stripe charges only
+              the prorated difference when configured in the portal.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col sm:flex-row gap-3">
+            <Button
+              className="bg-teal-500 hover:bg-teal-400 text-black font-bold"
+              disabled={portalBusy}
+              onClick={async () => {
+                setPortalBusy(true);
+                const r = await createBillingPortalSession();
+                setPortalBusy(false);
+                if ("error" in r) {
+                  toast.error(r.error);
+                  return;
+                }
+                window.location.href = r.url;
+              }}
+            >
+              {portalBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Open billing portal"}
+            </Button>
+            <Button variant="outline" className="border-zinc-600" onClick={() => navigate("/subscription")}>
+              Subscription help
+            </Button>
+            <Button variant="ghost" className="text-zinc-400" onClick={() => navigate("/home")}>
+              Back to dashboard
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (tierGate === "unpaid") {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center px-4 py-12">
+        <Card className="w-full max-w-lg bg-zinc-900 border-zinc-800 text-white">
+          <CardHeader>
+            <CardTitle className="text-xl font-black">Subscribe to use Algo setup</CardTitle>
+            <CardDescription className="text-zinc-400">
+              OpenAlgo onboarding is for <strong className="text-zinc-200">Bot</strong> or{" "}
+              <strong className="text-zinc-200">Pro</strong> subscribers. Choose a plan to continue.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col sm:flex-row gap-3">
+            <Button className="bg-teal-500 hover:bg-teal-400 text-black font-bold" onClick={() => navigate("/pricing?feature=algo")}>
+              View plans
+            </Button>
+            <Button variant="outline" className="border-zinc-600" onClick={() => navigate("/home")}>
+              Back to dashboard
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }

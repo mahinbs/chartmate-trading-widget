@@ -1,3 +1,5 @@
+import { planAllowsAlgo } from "./subscription-plans.ts";
+
 type SupabaseLike = {
   from: (table: string) => {
     select: (columns: string) => any;
@@ -5,7 +7,10 @@ type SupabaseLike = {
 };
 
 export interface TradeAccessContext {
+  /** Paid subscription row is active (any legacy plan). */
   hasActiveSubscription: boolean;
+  /** Includes bot ($49) or analysis tiers that also get OpenAlgo. */
+  hasAlgoEntitlement: boolean;
   onboardingStatus: string | null;
   hasProvisionedOnboarding: boolean;
   hasActiveIntegration: boolean;
@@ -25,7 +30,7 @@ export async function resolveTradeAccess(
   const [{ data: sub }, { data: onboarding }, { data: integration }] = await Promise.all([
     supabase
       .from("user_subscriptions")
-      .select("status, current_period_end")
+      .select("status, current_period_end, plan_id")
       .eq("user_id", userId)
       .maybeSingle(),
     supabase
@@ -48,12 +53,15 @@ export async function resolveTradeAccess(
       (sub.status === "active" || sub.status === "trialing") &&
       (graceEndMs == null || graceEndMs > Date.now()),
   );
+  const planId = (sub?.plan_id as string | null) ?? null;
+  const hasAlgoEntitlement = hasActiveSubscription && planAllowsAlgo(planId);
   const onboardingStatus = (onboarding?.status as string | null) ?? null;
   const hasProvisionedOnboarding = onboardingStatus === "provisioned" || onboardingStatus === "active";
   const hasActiveIntegration = Boolean(integration && integration.is_active);
 
   return {
     hasActiveSubscription,
+    hasAlgoEntitlement,
     onboardingStatus,
     hasProvisionedOnboarding,
     hasActiveIntegration,

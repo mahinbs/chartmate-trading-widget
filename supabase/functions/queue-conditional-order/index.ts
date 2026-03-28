@@ -4,6 +4,7 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { planAllowsAlgo } from "../_shared/subscription-plans.ts";
 
 const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin":  "*",
@@ -46,11 +47,17 @@ Deno.serve(async (req: Request) => {
 
     const { data: sub } = await supabase
       .from("user_subscriptions")
-      .select("status")
+      .select("status, current_period_end, plan_id")
       .eq("user_id", user.id)
       .maybeSingle();
-    if (sub?.status !== "active" && sub?.status !== "trialing") {
-      return new Response(JSON.stringify({ error: "Active subscription required", error_code: "NO_SUBSCRIPTION" }), { status: 403, headers });
+    const endMs = sub?.current_period_end ? new Date(sub.current_period_end as string).getTime() : null;
+    const graceOk = endMs == null || endMs + 24 * 60 * 60 * 1000 > Date.now();
+    const paid = (sub?.status === "active" || sub?.status === "trialing") && graceOk;
+    if (!paid || !planAllowsAlgo((sub?.plan_id as string) ?? null)) {
+      return new Response(
+        JSON.stringify({ error: "Active Bot / Pro subscription required", error_code: "NO_SUBSCRIPTION" }),
+        { status: 403, headers },
+      );
     }
 
     const { data: strategy } = await supabase

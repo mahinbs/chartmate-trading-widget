@@ -38,6 +38,7 @@ export const PRICING_PLANS: PricingPlan[] = [
             "Trade success probability scoring",
             "Risk vs reward analysis",
             "Paper trading simulation",
+            "Does not include live broker / OpenAlgo (upgrade to Pro for that)",
         ],
     },
     {

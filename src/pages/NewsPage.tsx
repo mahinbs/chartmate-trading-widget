@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,6 +41,9 @@ export default function NewsPage() {
   const [userRegion, setUserRegion] = useState<string>(localStorage.getItem("user_region") || "IN");
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
+  /** True when the DB has no rows for `userRegion` and we are showing global market news instead. */
+  const [regionalShowsGlobalFallback, setRegionalShowsGlobalFallback] = useState(false);
+  const regionalFallbackRef = useRef(false);
   const ITEMS_PER_PAGE = 15;
   const LOAD_MORE_COUNT = 12;
 
@@ -56,6 +59,8 @@ export default function NewsPage() {
   useEffect(() => {
     setPage(0);
     setNews([]);
+    regionalFallbackRef.current = false;
+    setRegionalShowsGlobalFallback(false);
     fetchNews(0);
   }, [activeTab, userRegion]);
 
@@ -74,33 +79,57 @@ export default function NewsPage() {
   const fetchNews = async (pageNum: number) => {
     setLoading(true);
     try {
-      let query = supabase.from('news' as any).select('*', { count: 'exact' });
-
-      if (activeTab === "trending") {
-        query = query.eq('is_trending', true);
-      } else if (activeTab === "regional") {
-        query = query.eq('region', userRegion);
-      } else {
-        query = query.eq('region', 'GLOBAL');
-      }
-
       const from = pageNum === 0 ? 0 : ITEMS_PER_PAGE + (pageNum - 1) * LOAD_MORE_COUNT;
       const to = pageNum === 0 ? ITEMS_PER_PAGE - 1 : from + LOAD_MORE_COUNT - 1;
 
-      const { data, error, count } = await query
-        .order('published_at', { ascending: false })
+      const buildBaseQuery = () => supabase.from("news" as any).select("*", { count: "exact" });
+
+      let query = buildBaseQuery();
+
+      if (activeTab === "trending") {
+        query = query.eq("is_trending", true);
+      } else if (activeTab === "regional") {
+        const regionKey = regionalFallbackRef.current ? "GLOBAL" : userRegion;
+        query = query.eq("region", regionKey);
+      } else {
+        query = query.eq("region", "GLOBAL");
+      }
+
+      let { data, error, count } = await query
+        .order("published_at", { ascending: false })
         .range(from, to);
 
       if (error) throw error;
-      
-      const newArticles = (data as unknown as NewsArticle[]) || [];
+
+      let newArticles = (data as unknown as NewsArticle[]) || [];
+
+      if (
+        activeTab === "regional" &&
+        !regionalFallbackRef.current &&
+        pageNum === 0 &&
+        newArticles.length === 0
+      ) {
+        regionalFallbackRef.current = true;
+        setRegionalShowsGlobalFallback(true);
+        const fbQuery = buildBaseQuery().eq("region", "GLOBAL");
+        const fb = await fbQuery
+          .order("published_at", { ascending: false })
+          .range(from, to);
+        if (fb.error) throw fb.error;
+        newArticles = (fb.data as unknown as NewsArticle[]) || [];
+        count = fb.count;
+      } else if (activeTab === "regional" && pageNum === 0 && newArticles.length > 0) {
+        regionalFallbackRef.current = false;
+        setRegionalShowsGlobalFallback(false);
+      }
+
       if (pageNum === 0) {
         setNews(newArticles);
       } else {
-        setNews(prev => [...prev, ...newArticles]);
+        setNews((prev) => [...prev, ...newArticles]);
       }
-      
-      setHasMore(count ? (from + newArticles.length) < count : false);
+
+      setHasMore(count ? from + newArticles.length < count : false);
     } catch (error) {
       console.error("Error fetching news:", error);
     } finally {
@@ -136,6 +165,8 @@ export default function NewsPage() {
             size="sm"
             onClick={() => {
               setPage(0);
+              regionalFallbackRef.current = false;
+              setRegionalShowsGlobalFallback(false);
               fetchNews(0);
             }}
             className="border-white/10 hover:bg-white/5 hidden sm:flex items-center gap-2"
@@ -171,7 +202,13 @@ export default function NewsPage() {
           <TabsContent value="trending" className="mt-0">
             <NewsGrid articles={news} loading={loading && page === 0} />
           </TabsContent>
-          <TabsContent value="regional" className="mt-0">
+          <TabsContent value="regional" className="mt-0 space-y-3">
+            {regionalShowsGlobalFallback ? (
+              <p className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-sm text-amber-100/90">
+                No market articles are tagged for <span className="font-semibold">{userRegion}</span> yet.
+                Showing <span className="font-semibold">global</span> headlines until the next news sync adds your region.
+              </p>
+            ) : null}
             <NewsGrid articles={news} loading={loading && page === 0} />
           </TabsContent>
           <TabsContent value="global" className="mt-0">

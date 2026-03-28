@@ -14,12 +14,15 @@ import ActiveTradeDetailsPage from "./pages/ActiveTradeDetailsPage";
 import AuthPage from "./pages/AuthPage";
 import BrokerCallbackPage from "./pages/BrokerCallbackPage";
 import { ProtectedRoute } from "./components/ProtectedRoute";
+import { AnalysisFeatureGate } from "./components/AnalysisFeatureGate";
+import { TradesHubGate } from "./components/TradesHubGate";
 import LandingPage from "./pages/LandingPage";
 import WhiteLabelPage from "./pages/WhiteLabelPage";
 import TermsOfService from "./pages/TermsOfService";
 import RiskDisclaimer from "./pages/RiskDisclaimer";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import ContactUsPage from "./pages/ContactUs";
+import SubscriptionSettingsPage from "./pages/SubscriptionSettingsPage";
 import MarketPicksPage from "./pages/MarketPicksPage";
 import AdminUsersPage from "./pages/admin/AdminUsersPage";
 import AdminPredictionsPage from "./pages/admin/AdminPredictionsPage";
@@ -115,6 +118,7 @@ function isLoggedInAppPath(pathname: string): boolean {
     "/affiliate/dashboard",
     "/algo-setup",
     "/market-picks",
+    "/subscription",
   ]);
   if (exactApp.has(pathname)) return true;
   if (pathname.startsWith("/news/")) return true;
@@ -191,6 +195,14 @@ const App = () => (
                 }
               />
               <Route path="/contact-us" element={<ContactUsPage />} />
+              <Route
+                path="/subscription"
+                element={
+                  <ProtectedRoute>
+                    <SubscriptionSettingsPage />
+                  </ProtectedRoute>
+                }
+              />
               <Route path="/blogs" element={<BlogsPage />} />
               <Route path="/blogs/:slug" element={<BlogDetailPage />} />
               <Route path="/dashboard" element={<PublicDashboardPage />} />
@@ -218,7 +230,9 @@ const App = () => (
                 path="/predict"
                 element={
                   <ProtectedRoute>
-                    <PredictPage />
+                    <AnalysisFeatureGate>
+                      <PredictPage />
+                    </AnalysisFeatureGate>
                   </ProtectedRoute>
                 }
               />
@@ -226,7 +240,9 @@ const App = () => (
                 path="/predictions"
                 element={
                   <ProtectedRoute>
-                    <PredictionsPage />
+                    <AnalysisFeatureGate>
+                      <PredictionsPage />
+                    </AnalysisFeatureGate>
                   </ProtectedRoute>
                 }
               />
@@ -234,7 +250,9 @@ const App = () => (
                 path="/predictions/:predictionId/full"
                 element={
                   <ProtectedRoute>
-                    <SavedAnalysisRedirect />
+                    <AnalysisFeatureGate>
+                      <SavedAnalysisRedirect />
+                    </AnalysisFeatureGate>
                   </ProtectedRoute>
                 }
               />
@@ -242,7 +260,9 @@ const App = () => (
                 path="/intraday"
                 element={
                   <ProtectedRoute>
-                    <IntradayPage />
+                    <AnalysisFeatureGate>
+                      <IntradayPage />
+                    </AnalysisFeatureGate>
                   </ProtectedRoute>
                 }
               />
@@ -250,7 +270,9 @@ const App = () => (
                 path="/active-trades"
                 element={
                   <ProtectedRoute>
-                    <ActiveTradesPage />
+                    <TradesHubGate>
+                      <ActiveTradesPage />
+                    </TradesHubGate>
                   </ProtectedRoute>
                 }
               />
@@ -274,7 +296,9 @@ const App = () => (
                 path="/trade/:id"
                 element={
                   <ProtectedRoute>
-                    <ActiveTradeDetailsPage />
+                    <TradesHubGate>
+                      <ActiveTradeDetailsPage />
+                    </TradesHubGate>
                   </ProtectedRoute>
                 }
               />
