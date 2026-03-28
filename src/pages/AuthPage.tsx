@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import type { CountryCode } from "libphonenumber-js";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,11 +13,22 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useAuth } from "@/hooks/useAuth";
+import { useAuthEmailCooldown } from "@/hooks/useAuthEmailCooldown";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2 } from "lucide-react";
+import {
+  isAuthEmailRateLimitError,
+  parseAuthRateLimitWaitSeconds,
+} from "@/lib/authRateLimitMessage";
+import { Clock, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { PhoneCountryCodeCombobox } from "@/components/auth/PhoneCountryCodeCombobox";
+import {
+  buildE164FromNational,
+  DEFAULT_SIGNUP_PHONE_ISO,
+} from "@/lib/countryDialCodes";
 
 function computeAgeFromIsoDate(isoDate: string): number | null {
   if (!isoDate || !/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return null;
@@ -32,6 +44,35 @@ function computeAgeFromIsoDate(isoDate: string): number | null {
 
 function normalizeOtp(raw: string): string {
   return raw.replace(/\D/g, "").slice(0, 6);
+}
+
+function EmailCooldownBanner({
+  showTimer,
+  mmss,
+  generic,
+}: {
+  showTimer: boolean;
+  mmss: string;
+  generic: boolean;
+}) {
+  if (!showTimer && !generic) return null;
+  return (
+    <Alert className="mb-4 border-amber-500/40 bg-amber-500/10 text-amber-950 dark:border-amber-400/30 dark:bg-amber-500/15 dark:text-amber-50">
+      <Clock className="h-4 w-4 text-amber-700 dark:text-amber-200" />
+      <AlertTitle>Please wait</AlertTitle>
+      <AlertDescription>
+        {showTimer ? (
+          <>
+            You can try again in{" "}
+            <span className="font-mono text-base font-semibold tabular-nums">{mmss}</span>{" "}
+            (minutes:seconds).
+          </>
+        ) : (
+          <>Too many email requests right now. Try again in a little while.</>
+        )}
+      </AlertDescription>
+    </Alert>
+  );
 }
 
 /**
@@ -72,7 +113,8 @@ const AuthPage = () => {
   const [signUpData, setSignUpData] = useState({
     fullName: "",
     dateOfBirth: "",
-    phone: "",
+    phoneCountryIso: DEFAULT_SIGNUP_PHONE_ISO as CountryCode,
+    phoneNational: "",
     country: "",
     email: "",
     password: "",
@@ -83,6 +125,24 @@ const AuthPage = () => {
   const { role, loading: roleLoading } = useUserRole();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const emailCooldown = useAuthEmailCooldown();
+  const [genericEmailRateLimit, setGenericEmailRateLimit] = useState(false);
+
+  const applyEmailRateLimitFromError = (error: {
+    message?: string;
+    code?: string;
+    status?: number;
+  }) => {
+    if (!isAuthEmailRateLimitError(error)) return;
+    const sec = parseAuthRateLimitWaitSeconds(error);
+    if (sec != null) {
+      setGenericEmailRateLimit(false);
+      emailCooldown.startCooldownSeconds(sec);
+    } else {
+      emailCooldown.clearCooldown();
+      setGenericEmailRateLimit(true);
+    }
+  };
 
   const signUpAge = useMemo(
     () => computeAgeFromIsoDate(signUpData.dateOfBirth),
@@ -218,14 +278,22 @@ const AuthPage = () => {
     setIsLoading(true);
 
     try {
+      const phoneE164 = buildE164FromNational(
+        signUpData.phoneCountryIso,
+        signUpData.phoneNational,
+      );
       const { data, error } = await signUp(signUpData.email, signUpData.password, {
         full_name: name,
         date_of_birth: signUpData.dateOfBirth,
-        phone: signUpData.phone,
+        phone: phoneE164,
         country: signUpData.country,
       });
 
       if (error) {
+        applyEmailRateLimitFromError(error);
+        if (isAuthEmailRateLimitError(error)) {
+          return;
+        }
         if (isEmailAlreadyRegisteredAuthError(error)) {
           toast({
             title: "Account exists",
@@ -243,6 +311,7 @@ const AuthPage = () => {
       }
 
       if (data?.session) {
+        setGenericEmailRateLimit(false);
         toast({
           title: "Welcome!",
           description: "Your account is ready.",
@@ -250,6 +319,7 @@ const AuthPage = () => {
         return;
       }
 
+      setGenericEmailRateLimit(false);
       setPendingSignupEmail(signUpData.email.trim());
       setSignUpOtp("");
       setAuthPhase("signup-otp");
@@ -316,9 +386,14 @@ const AuthPage = () => {
         },
       });
       if (error) {
+        applyEmailRateLimitFromError(error);
+        if (isAuthEmailRateLimitError(error)) {
+          return;
+        }
         toast({ title: "Could not resend", description: error.message, variant: "destructive" });
         return;
       }
+      setGenericEmailRateLimit(false);
       toast({ title: "Code sent", description: "Check your inbox for a new code." });
     } finally {
       setIsLoading(false);
@@ -338,9 +413,14 @@ const AuthPage = () => {
         redirectTo: `${window.location.origin}/auth`,
       });
       if (error) {
+        applyEmailRateLimitFromError(error);
+        if (isAuthEmailRateLimitError(error)) {
+          return;
+        }
         toast({ title: "Request failed", description: error.message, variant: "destructive" });
         return;
       }
+      setGenericEmailRateLimit(false);
       setForgotOtp("");
       setForgotPassword("");
       setForgotPasswordConfirm("");
@@ -363,9 +443,14 @@ const AuthPage = () => {
         redirectTo: `${window.location.origin}/auth`,
       });
       if (error) {
+        applyEmailRateLimitFromError(error);
+        if (isAuthEmailRateLimitError(error)) {
+          return;
+        }
         toast({ title: "Could not resend", description: error.message, variant: "destructive" });
         return;
       }
+      setGenericEmailRateLimit(false);
       toast({ title: "Code sent", description: "Check your inbox for a new code." });
     } finally {
       setIsLoading(false);
@@ -459,6 +544,11 @@ const AuthPage = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            <EmailCooldownBanner
+              showTimer={emailCooldown.active}
+              mmss={emailCooldown.mmss}
+              generic={genericEmailRateLimit && !emailCooldown.active}
+            />
             <form onSubmit={handleVerifySignupOtp} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="signup-otp">6-digit code</Label>
@@ -481,10 +571,10 @@ const AuthPage = () => {
                 type="button"
                 variant="outline"
                 className="w-full"
-                disabled={isLoading}
+                disabled={isLoading || emailCooldown.active}
                 onClick={handleResendSignupOtp}
               >
-                Resend code
+                {emailCooldown.active ? `Wait ${emailCooldown.mmss}` : "Resend code"}
               </Button>
               <Button type="button" variant="ghost" className="w-full" onClick={backToTabs}>
                 Back to sign in
@@ -507,6 +597,11 @@ const AuthPage = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            <EmailCooldownBanner
+              showTimer={emailCooldown.active}
+              mmss={emailCooldown.mmss}
+              generic={genericEmailRateLimit && !emailCooldown.active}
+            />
             <form onSubmit={handleSendPasswordReset} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="forgot-email">Email</Label>
@@ -519,9 +614,9 @@ const AuthPage = () => {
                   required
                 />
               </div>
-              <Button type="submit" className="w-full" disabled={isLoading}>
+              <Button type="submit" className="w-full" disabled={isLoading || emailCooldown.active}>
                 {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Send code
+                {emailCooldown.active ? `Wait ${emailCooldown.mmss}` : "Send code"}
               </Button>
               <Button type="button" variant="ghost" className="w-full" onClick={backToTabs}>
                 Back to sign in
@@ -544,6 +639,11 @@ const AuthPage = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            <EmailCooldownBanner
+              showTimer={emailCooldown.active}
+              mmss={emailCooldown.mmss}
+              generic={genericEmailRateLimit && !emailCooldown.active}
+            />
             <form onSubmit={handleVerifyRecoveryOtp} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="recovery-otp">6-digit code</Label>
@@ -590,10 +690,10 @@ const AuthPage = () => {
                 type="button"
                 variant="outline"
                 className="w-full"
-                disabled={isLoading}
+                disabled={isLoading || emailCooldown.active}
                 onClick={handleResendRecoveryOtp}
               >
-                Resend code
+                {emailCooldown.active ? `Wait ${emailCooldown.mmss}` : "Resend code"}
               </Button>
               <Button type="button" variant="ghost" className="w-full" onClick={backToTabs}>
                 Back to sign in
@@ -615,6 +715,11 @@ const AuthPage = () => {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          <EmailCooldownBanner
+            showTimer={emailCooldown.active}
+            mmss={emailCooldown.mmss}
+            generic={genericEmailRateLimit && !emailCooldown.active}
+          />
           <Tabs defaultValue="signin" className="w-full">
             <TabsList className="grid w-full grid-cols-2 mb-4">
               <TabsTrigger value="signin">Sign In</TabsTrigger>
@@ -693,29 +798,49 @@ const AuthPage = () => {
                     </p>
                   )}
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-phone">Phone (optional)</Label>
-                    <Input
-                      id="signup-phone"
-                      type="tel"
-                      autoComplete="tel"
-                      placeholder="+1 · country code & number"
-                      value={signUpData.phone}
-                      onChange={(e) => setSignUpData({ ...signUpData, phone: e.target.value })}
-                    />
+                <div className="space-y-2">
+                  <Label>Phone (optional)</Label>
+                  <div className="flex flex-row gap-2 sm:gap-3 items-end">
+                    <div className="space-y-1.5 w-[5.25rem] sm:w-24 shrink-0">
+                      <span className="text-xs text-muted-foreground">Code</span>
+                      <PhoneCountryCodeCombobox
+                        id="signup-phone-code"
+                        value={signUpData.phoneCountryIso}
+                        onValueChange={(iso) =>
+                          setSignUpData({
+                            ...signUpData,
+                            phoneCountryIso: iso,
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1.5 flex-1 min-w-0">
+                      <span className="text-xs text-muted-foreground">Phone number</span>
+                      <Input
+                        id="signup-phone-national"
+                        type="tel"
+                        inputMode="numeric"
+                        autoComplete="tel-national"
+                        placeholder="National number (digits only)"
+                        className="h-10 w-full"
+                        value={signUpData.phoneNational}
+                        onChange={(e) =>
+                          setSignUpData({ ...signUpData, phoneNational: e.target.value })
+                        }
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-country">Country / region (optional)</Label>
-                    <Input
-                      id="signup-country"
-                      type="text"
-                      autoComplete="country-name"
-                      placeholder="e.g. United States"
-                      value={signUpData.country}
-                      onChange={(e) => setSignUpData({ ...signUpData, country: e.target.value })}
-                    />
-                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="signup-country">Country / region (optional)</Label>
+                  <Input
+                    id="signup-country"
+                    type="text"
+                    autoComplete="country-name"
+                    placeholder="e.g. United States"
+                    value={signUpData.country}
+                    onChange={(e) => setSignUpData({ ...signUpData, country: e.target.value })}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="signup-email">Email</Label>
@@ -753,9 +878,9 @@ const AuthPage = () => {
                     required
                   />
                 </div>
-                <Button type="submit" className="w-full" disabled={isLoading}>
+                <Button type="submit" className="w-full" disabled={isLoading || emailCooldown.active}>
                   {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Sign Up
+                  {emailCooldown.active ? `Wait ${emailCooldown.mmss}` : "Sign Up"}
                 </Button>
               </form>
             </TabsContent>

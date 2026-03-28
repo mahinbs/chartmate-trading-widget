@@ -26,6 +26,7 @@ import type { DashboardNavLink } from "./dashboard-nav-types";
 import { isDashboardNavActive } from "./dashboard-nav-types";
 import { DashboardMobileDrawer } from "./DashboardMobileDrawer";
 import { cn } from "@/lib/utils";
+import { useSignupProfile } from "@/hooks/useSignupProfile";
 
 export interface DashboardSidebarProps {
   className?: string;
@@ -153,12 +154,12 @@ export function DashboardSidebar({
 }: DashboardSidebarProps) {
   const { pathname, search } = useLocation();
   const { signOut, user } = useAuth();
+  const { displayName } = useSignupProfile();
   const links = useDashboardNavLinks();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
 
   const userEmail = user?.email;
-  const userShortName = userEmail?.split("@")[0] ?? null;
 
   useEffect(() => {
     if (isMobileMenuOpen && mobileMenuRef.current) {
@@ -251,22 +252,28 @@ export function DashboardSidebar({
           >
             <HelpCircle className="h-4 w-4 opacity-70" /> Help Center (FAQ)
           </Link>
-          <div className="flex items-center gap-3 px-2 py-1.5 rounded-xl border border-transparent hover:border-border hover:bg-sidebar-accent/50 cursor-pointer transition-colors group">
+          <div className="flex items-center gap-2 rounded-xl border border-transparent hover:border-border hover:bg-sidebar-accent/50 transition-colors group px-2 py-1.5">
             <div className="h-9 w-9 rounded-full bg-muted flex items-center justify-center text-foreground border border-border shrink-0 overflow-hidden shadow-sm">
               <User className="h-4 w-4 opacity-50" />
             </div>
-            <div className="flex-1 min-w-0 pr-2">
-              <p className="text-sm font-semibold text-foreground truncate leading-tight group-hover:text-primary transition-colors">
-                {userShortName || "User"}
-              </p>
+            <div className="flex-1 min-w-0 pr-1">
+              <Link
+                to="/profile"
+                className="text-sm font-semibold text-foreground truncate leading-tight block hover:text-primary transition-colors"
+              >
+                {displayName}
+              </Link>
               <p className="text-[11px] text-muted-foreground truncate leading-tight mt-0.5">
                 {userEmail}
               </p>
             </div>
             <button
               type="button"
-              onClick={() => signOut()}
-              className="text-muted-foreground hover:text-destructive transition-colors px-1"
+              onClick={(e) => {
+                e.preventDefault();
+                signOut();
+              }}
+              className="text-muted-foreground hover:text-destructive transition-colors px-2 py-1.5 shrink-0 rounded-r-xl"
               title="Sign Out"
             >
               <LogOut className="h-4 w-4" />
@@ -290,7 +297,7 @@ export function DashboardSidebar({
         onClose={closeMobileMenu}
         links={links}
         userEmail={userEmail}
-        userShortName={userShortName}
+        profileDisplayName={displayName}
         onSignOut={signOut}
       />
     </>

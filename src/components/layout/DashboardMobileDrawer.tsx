@@ -11,13 +11,14 @@ export interface DashboardMobileDrawerProps {
   onClose: () => void;
   links: DashboardNavLink[];
   userEmail?: string | null;
-  userShortName?: string | null;
+  /** Full name from signup profile (single field, not email local-part). */
+  profileDisplayName: string;
   onSignOut: () => void;
 }
 
 export const DashboardMobileDrawer = forwardRef<HTMLDivElement, DashboardMobileDrawerProps>(
   function DashboardMobileDrawer(
-    { open, onClose, links, userEmail, userShortName, onSignOut },
+    { open, onClose, links, userEmail, profileDisplayName, onSignOut },
     ref,
   ) {
     const { pathname, search } = useLocation();
@@ -91,14 +92,18 @@ export const DashboardMobileDrawer = forwardRef<HTMLDivElement, DashboardMobileD
           </div>
 
           <div className="p-4 border-t border-sidebar-border pb-8">
-            <div className="flex items-center gap-3 px-2 py-2">
+            <div className="flex items-center gap-2 px-2 py-2">
               <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center text-foreground border border-border shrink-0">
                 <User className="h-5 w-5 opacity-50" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-foreground truncate leading-tight">
-                  {userShortName || "User"}
-                </p>
+                <Link
+                  to="/profile"
+                  onClick={onClose}
+                  className="text-sm font-semibold text-foreground truncate leading-tight block hover:text-primary transition-colors"
+                >
+                  {profileDisplayName}
+                </Link>
                 <p className="text-xs text-muted-foreground truncate leading-tight mt-0.5">
                   {userEmail}
                 </p>
@@ -109,7 +114,7 @@ export const DashboardMobileDrawer = forwardRef<HTMLDivElement, DashboardMobileD
                   onSignOut();
                   onClose();
                 }}
-                className="text-muted-foreground hover:text-destructive transition-colors px-1"
+                className="text-muted-foreground hover:text-destructive transition-colors px-2 shrink-0"
               >
                 <LogOut className="h-4 w-4" />
               </button>

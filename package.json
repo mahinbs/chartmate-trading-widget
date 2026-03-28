@@ -54,6 +54,7 @@
     "gsap": "^3.14.2",
     "input-otp": "^1.4.2",
     "keen-slider": "^6.8.6",
+    "libphonenumber-js": "^1.12.40",
     "lightweight-charts": "^5.1.0",
     "lucide-react": "^0.462.0",
     "next-themes": "^0.3.0",

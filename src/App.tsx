@@ -23,6 +23,7 @@ import RiskDisclaimer from "./pages/RiskDisclaimer";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import ContactUsPage from "./pages/ContactUs";
 import SubscriptionSettingsPage from "./pages/SubscriptionSettingsPage";
+import ProfilePage from "./pages/ProfilePage";
 import MarketPicksPage from "./pages/MarketPicksPage";
 import AdminUsersPage from "./pages/admin/AdminUsersPage";
 import AdminPredictionsPage from "./pages/admin/AdminPredictionsPage";
@@ -119,6 +120,7 @@ function isLoggedInAppPath(pathname: string): boolean {
     "/algo-setup",
     "/market-picks",
     "/subscription",
+    "/profile",
   ]);
   if (exactApp.has(pathname)) return true;
   if (pathname.startsWith("/news/")) return true;
@@ -200,6 +202,14 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <SubscriptionSettingsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/profile"
+                element={
+                  <ProtectedRoute>
+                    <ProfilePage />
                   </ProtectedRoute>
                 }
               />
