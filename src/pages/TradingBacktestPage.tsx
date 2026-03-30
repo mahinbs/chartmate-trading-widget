@@ -8,7 +8,7 @@ import type { AlgoToolsOutletContext } from "@/components/layout/AlgoToolsDashbo
 export default function TradingBacktestPage() {
   const { broker } = useOutletContext<AlgoToolsOutletContext>();
   return (
-    <TradingDashboardShell broker={broker} pageTitle="Backtesting">
+    <TradingDashboardShell hideHeader={true} broker={broker} pageTitle="Backtesting">
       <div className="min-w-0">
         <BacktestingSection />
       </div>

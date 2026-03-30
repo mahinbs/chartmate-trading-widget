@@ -138,9 +138,10 @@ export interface TradingDashboardShellProps {
   children: React.ReactNode;
   /** Shown next to “Live Trading Dashboard” (e.g. page section title). */
   pageTitle?: string;
+  hideHeader?: boolean;
 }
 
-export function TradingDashboardShell({ broker, children, pageTitle }: TradingDashboardShellProps) {
+export function TradingDashboardShell({ broker, children, pageTitle, hideHeader }: TradingDashboardShellProps) {
   const market = useMarketStatus();
   const brokerLabel = broker.charAt(0).toUpperCase() + broker.slice(1);
 
@@ -148,7 +149,7 @@ export function TradingDashboardShell({ broker, children, pageTitle }: TradingDa
     <DashboardShellLayout>
       <div className="min-h-screen bg-black text-zinc-100">
         <ScheduledDigestClientTrigger />
-        <header className="sticky top-0 z-50 border-b border-zinc-800 bg-black/90 backdrop-blur-xl">
+        {!hideHeader && <header className="sticky top-0 z-50 border-b border-zinc-800 bg-black/90 backdrop-blur-xl">
           <div className="container mx-auto px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3 min-w-0">
               <Link to="/home" className="text-zinc-500 hover:text-zinc-300 transition-colors shrink-0">
@@ -180,12 +181,12 @@ export function TradingDashboardShell({ broker, children, pageTitle }: TradingDa
               <EntryPointNotificationsHeaderButton />
             </div>
           </div>
-        </header>
+        </header>}
 
         <main className="container mx-auto px-4 py-5">
-          <div className="mb-5">
+          {!hideHeader && <div className="mb-5">
             <BrokerSyncSection broker={broker} />
-          </div>
+          </div>}
           {children}
         </main>
       </div>

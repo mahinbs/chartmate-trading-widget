@@ -8,7 +8,7 @@ import type { AlgoToolsOutletContext } from "@/components/layout/AlgoToolsDashbo
 export default function TradingAiAnalysisPage() {
   const { broker } = useOutletContext<AlgoToolsOutletContext>();
   return (
-    <TradingDashboardShell broker={broker} pageTitle="AI Trading Analysis">
+    <TradingDashboardShell hideHeader={true} broker={broker} pageTitle="AI Trading Analysis">
       <TradingAiAnalysisPanel />
     </TradingDashboardShell>
   );

@@ -11,6 +11,7 @@
  *    same strategy 1w / 1m / 3m / 6m / 1y ago
  */
 import { useEffect, useState, useCallback, Fragment } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   ComposedChart, AreaChart, Area, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
@@ -40,8 +41,9 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import {
-  BarChart3, Brain, ChevronLeft, ChevronRight,
-  Loader2, LineChart as LineChartIcon, Search, Trash2, Zap,
+  BarChart3, Brain, ChevronLeft, ChevronRight, Download, ExternalLink,
+  Eye, ListFilter, Loader2, LineChart as LineChartIcon, Search, ShieldCheck, 
+  Trash2, TrendingUp, X, Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { fetchUsdInr } from "@/lib/fxRates";
@@ -331,263 +333,337 @@ function TradeDetailPopup({
   const [tab, setTab] = useState<"chart" | "whatif">("chart");
 
   const prices = trade.candles.map(c => c.close);
-  const minP = prices.length ? Math.min(...prices) * 0.997 : 0;
-  const maxP = prices.length ? Math.max(...prices) * 1.003 : 1;
+  const minP = prices.length ? Math.min(...prices) * 0.995 : 0;
+  const maxP = prices.length ? Math.max(...prices) * 1.005 : 1;
   const profitable = trade.returnPct > 0;
   const pnlFromPct = (trade.returnPct / 100) * initialCapital;
   const pnlLabel = formatMoneyAmount(pnlFromPct, displayCurrency);
-  const quoteNote = quoteNoteForSymbol(symbol, exchangeForQuote, displayCurrency, inrPerUsd, fxRateDate);
 
-  // Find similar trades (same exit reason, within ±20% return)
+  // Find similar trades (same exit reason, within ±50% return relative)
   const similarTrades = allTrades.filter(
     t => t.tradeNo !== trade.tradeNo
       && t.exitReason === trade.exitReason
       && Math.abs(t.returnPct - trade.returnPct) <= Math.abs(trade.returnPct) * 0.5
-  ).slice(0, 5);
+  ).slice(0, 4);
 
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
-      <DialogContent className="bg-zinc-900 border-zinc-700 max-w-3xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="text-zinc-100 flex items-center gap-2 text-sm">
-            <span className="font-mono text-teal-400">{symbol}</span>
-            Trade #{trade.tradeNo}
-            <ExitReasonBadge reason={trade.exitReason} />
-            <span className={`font-mono font-bold ml-auto ${profitable ? "text-emerald-400" : "text-red-400"}`}>
-              {trade.returnPct >= 0 ? "+" : ""}{trade.returnPct}%
-              {` (${pnlLabel} on ${displayCurrency} ${initialCapital.toLocaleString(displayCurrency === "INR" ? "en-IN" : "en-US")} notional)`}
-            </span>
-          </DialogTitle>
-        </DialogHeader>
+      <DialogContent className="flex h-[92vh] max-h-[92vh] w-[96vw] !max-w-[96vw] flex-col gap-0 !overflow-hidden border-zinc-800 bg-zinc-950 p-0 sm:!max-w-[800px] sm:h-auto sm:max-h-[90vh]">
+        <div className="shrink-0 border-b border-zinc-800 px-5 py-4">
+          <DialogHeader className="space-y-1">
+            <div className="flex items-center justify-between gap-4">
+              <DialogTitle className="text-white text-lg flex items-center gap-2">
+                <span className="font-mono text-teal-400">{symbol}</span>
+                <span className="text-zinc-600">/</span>
+                Trade #{trade.tradeNo}
+              </DialogTitle>
+              <ExitReasonBadge reason={trade.exitReason} />
+            </div>
+            <div className="text-zinc-500 text-[10px] sm:text-xs flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className={`font-mono font-bold ${profitable ? "text-emerald-400" : "text-red-400"}`}>
+                {trade.returnPct >= 0 ? "+" : ""}{trade.returnPct}%
+              </span>
+              <span className="text-zinc-700">|</span>
+              <span>{pnlLabel} P&L</span>
+              <span className="text-zinc-700">|</span>
+              <span>{displayCurrency} {initialCapital.toLocaleString()} notional</span>
+            </div>
+          </DialogHeader>
+        </div>
 
         {/* Tab switcher */}
-        <div className="flex gap-1 border-b border-zinc-800 -mt-2 pb-0">
+        <div className="flex shrink-0 bg-zinc-900/30 px-5 border-b border-zinc-900">
           {(["chart", "whatif"] as const).map(t => (
-            <button key={t} type="button" onClick={() => setTab(t)}
-              className={`px-3 py-1.5 text-xs rounded-t transition-colors ${tab === t ? "bg-zinc-800 text-zinc-200 border-b-2 border-teal-500" : "text-zinc-500 hover:text-zinc-300"}`}>
-              {t === "chart" ? "Trade Chart & Details" : "Historical What-If"}
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTab(t)}
+              className={`px-4 py-3 text-xs font-medium transition-all relative ${
+                tab === t
+                  ? "text-teal-400"
+                  : "text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              {t === "chart" ? "Trade Analysis" : "Historical Windows"}
+              {tab === t && (
+                <motion.div
+                  layoutId="activeTab"
+                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-500"
+                />
+              )}
             </button>
           ))}
         </div>
 
-        {quoteNote && (
-          <p className="text-[10px] text-zinc-500 mt-1">{quoteNote}</p>
-        )}
+        <div className="min-h-0 flex-1 overflow-y-auto p-5 space-y-6 scrollbar-thin scrollbar-thumb-zinc-800">
+          {tab === "chart" && (
+            <div className="space-y-6">
+              {/* Key details grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <StatCard label="Entry" value={trade.entryPrice ?? "—"} sub={trade.entryDate} />
+                <StatCard label="Exit" value={trade.exitPrice ?? "—"} sub={trade.exitDate} color={profitable ? "green" : "red"} />
+                <StatCard label="Holding" value={`${trade.holdingDays ?? "—"}d`} sub="Duration" />
+                <StatCard label="Return" value={`${trade.returnPct >= 0 ? "+" : ""}${trade.returnPct}%`} sub={pnlLabel} color={profitable ? "green" : "red"} />
+              </div>
 
-        {tab === "chart" && (
-          <div className="space-y-4 text-xs">
-            {/* Key details row */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <div className="bg-zinc-800/60 rounded p-2">
-                <p className="text-[10px] text-zinc-500">Entry</p>
-                <p className="font-mono text-zinc-200">{trade.entryDate}</p>
-                <p className="font-mono text-emerald-300">{trade.entryPrice ?? "—"}</p>
-              </div>
-              <div className="bg-zinc-800/60 rounded p-2">
-                <p className="text-[10px] text-zinc-500">Exit</p>
-                <p className="font-mono text-zinc-200">{trade.exitDate}</p>
-                <p className={`font-mono ${profitable ? "text-emerald-300" : "text-red-300"}`}>{trade.exitPrice ?? "—"}</p>
-              </div>
-              <div className="bg-zinc-800/60 rounded p-2">
-                <p className="text-[10px] text-zinc-500">Holding</p>
-                <p className="font-mono text-zinc-200">{trade.holdingDays ?? "—"} days</p>
-              </div>
-              <div className="bg-zinc-800/60 rounded p-2">
-                <p className="text-[10px] text-zinc-500">P&L</p>
-                <p className={`font-mono font-bold ${profitable ? "text-emerald-400" : "text-red-400"}`}>
-                  {trade.returnPct >= 0 ? "+" : ""}{trade.returnPct}%
-                </p>
-                <p className="font-mono text-zinc-400">{pnlLabel}</p>
-              </div>
-            </div>
-
-            {/* Indicators at entry */}
-            <div className="flex flex-wrap gap-2">
-              {trade.entryRsi !== null && (
-                <span className="bg-zinc-800 rounded px-2 py-1 text-[11px] text-zinc-400">
-                  RSI at entry: <span className="text-purple-300 font-mono">{trade.entryRsi}</span>
-                </span>
-              )}
-              {trade.entrySma20 !== null && (
-                <span className="bg-zinc-800 rounded px-2 py-1 text-[11px] text-zinc-400">
-                  SMA20 at entry: <span className="text-amber-300 font-mono">{trade.entrySma20}</span>
-                </span>
-              )}
-              {trade.entryMacd !== null && (
-                <span className="bg-zinc-800 rounded px-2 py-1 text-[11px] text-zinc-400">
-                  MACD at entry: <span className="text-sky-300 font-mono">{trade.entryMacd}</span>
-                </span>
-              )}
-              {trade.exitRsi !== null && (
-                <span className="bg-zinc-800 rounded px-2 py-1 text-[11px] text-zinc-400">
-                  RSI at exit: <span className="text-purple-300 font-mono">{trade.exitRsi}</span>
-                </span>
-              )}
-            </div>
-
-            {/* Price chart */}
-            {trade.candles.length > 0 ? (
-              <>
-                <div>
-                  <p className="text-[10px] text-zinc-500 mb-1">
-                    Price · <span className="text-amber-400">— SMA20</span> · Entry <span className="text-emerald-400">↑</span> Exit <span className={profitable ? "text-emerald-400" : "text-red-400"}>↑</span>
-                  </p>
-                  <ResponsiveContainer width="100%" height={180}>
-                    <ComposedChart data={trade.candles} margin={{ top: 4, right: 8, bottom: 4, left: 4 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                      <XAxis dataKey="date" tick={{ fill: "#71717a", fontSize: 9 }} tickFormatter={(v: string) => v.slice(5)} interval="preserveStartEnd" />
-                      <YAxis domain={[minP, maxP]} tick={{ fill: "#71717a", fontSize: 9 }} tickFormatter={(v: number) => v.toFixed(0)} width={46} />
-                      <Tooltip
-                        contentStyle={{ background: "#18181b", border: "1px solid #3f3f46", borderRadius: 6, fontSize: 11 }}
-                        formatter={(v: number, name: string) => [v?.toFixed?.(2) ?? v, name]}
-                      />
-                      <Line type="monotone" dataKey="close" stroke="#94a3b8" dot={false} strokeWidth={1.5} name="Close" />
-                      <Line type="monotone" dataKey="sma20" stroke="#f59e0b" dot={false} strokeWidth={1} strokeDasharray="4 2" name="SMA20" />
-                      <ReferenceLine x={trade.entryDate} stroke="#22c55e" strokeWidth={1.5} strokeDasharray="4 2"
-                        label={{ value: "E", fill: "#22c55e", fontSize: 9, position: "top" }} />
-                      <ReferenceLine x={trade.exitDate} stroke={profitable ? "#22c55e" : "#ef4444"} strokeWidth={1.5} strokeDasharray="4 2"
-                        label={{ value: "X", fill: profitable ? "#22c55e" : "#ef4444", fontSize: 9, position: "top" }} />
-                      {trade.entryPrice && <ReferenceLine y={trade.entryPrice} stroke="#22c55e" strokeWidth={1} strokeDasharray="2 2" />}
-                      {trade.exitPrice && <ReferenceLine y={trade.exitPrice} stroke={profitable ? "#22c55e" : "#ef4444"} strokeWidth={1} strokeDasharray="2 2" />}
-                    </ComposedChart>
-                  </ResponsiveContainer>
+              {/* Indicators row */}
+              {(trade.entryRsi !== null || trade.entrySma20 !== null || trade.entryMacd !== null) && (
+                <div className="flex flex-wrap gap-2">
+                  {trade.entryRsi !== null && (
+                    <div className="bg-zinc-900 border border-zinc-800 rounded px-2.5 py-1.5 flex items-center gap-2">
+                      <span className="text-[10px] uppercase text-zinc-500 font-medium">RSI Entry</span>
+                      <span className="text-purple-400 font-mono text-xs">{trade.entryRsi}</span>
+                    </div>
+                  )}
+                  {trade.entrySma20 !== null && (
+                    <div className="bg-zinc-900 border border-zinc-800 rounded px-2.5 py-1.5 flex items-center gap-2">
+                      <span className="text-[10px] uppercase text-zinc-500 font-medium">SMA20 Entry</span>
+                      <span className="text-amber-400 font-mono text-xs">{trade.entrySma20}</span>
+                    </div>
+                  )}
+                  {trade.entryMacd !== null && (
+                    <div className="bg-zinc-900 border border-zinc-800 rounded px-2.5 py-1.5 flex items-center gap-2">
+                      <span className="text-[10px] uppercase text-zinc-500 font-medium">MACD Entry</span>
+                      <span className="text-sky-400 font-mono text-xs">{trade.entryMacd}</span>
+                    </div>
+                  )}
                 </div>
+              )}
 
-                {/* RSI sub-chart */}
-                {trade.candles.some(c => c.rsi14 !== null) && (
-                  <div>
-                    <p className="text-[10px] text-zinc-500 mb-1">RSI(14)</p>
-                    <ResponsiveContainer width="100%" height={70}>
-                      <LineChart data={trade.candles} margin={{ top: 2, right: 8, bottom: 2, left: 4 }}>
-                        <XAxis dataKey="date" hide />
-                        <YAxis domain={[0, 100]} hide width={0} />
-                        <ReferenceLine y={70} stroke="#ef4444" strokeDasharray="2 2" strokeWidth={0.8} />
-                        <ReferenceLine y={30} stroke="#22c55e" strokeDasharray="2 2" strokeWidth={0.8} />
-                        <Line type="monotone" dataKey="rsi14" stroke="#a78bfa" dot={false} strokeWidth={1.5} />
-                        <Tooltip contentStyle={{ background: "#18181b", border: "1px solid #3f3f46", borderRadius: 6, fontSize: 10 }}
-                          formatter={(v: number) => [v?.toFixed?.(1), "RSI"]} labelFormatter={() => ""} />
-                      </LineChart>
+              {/* Advanced charts */}
+              {trade.candles.length > 0 ? (
+                <div className="space-y-4">
+                  <div className="rounded-xl border border-zinc-800 bg-black/40 p-4 shadow-inner">
+                    <div className="flex items-center justify-between mb-4">
+                      <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">Price Evolution & Indicators</p>
+                      <div className="flex items-center gap-3 text-[9px] text-zinc-600">
+                        <span className="flex items-center gap-1"><div className="w-2 h-1 bg-amber-500/80" /> SMA20</span>
+                        <span className="flex items-center gap-1"><div className="w-2 h-1 bg-emerald-500/80" /> ENTRY</span>
+                        <span className="flex items-center gap-1"><div className="w-2 h-1 bg-red-500/80" /> EXIT</span>
+                      </div>
+                    </div>
+                    <ResponsiveContainer width="100%" height={280}>
+                      <ComposedChart data={trade.candles} margin={{ top: 15, right: 10, bottom: 0, left: 0 }}>
+                        <defs>
+                          <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#3f3f46" stopOpacity={0.2} />
+                            <stop offset="95%" stopColor="#3f3f46" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                        <XAxis
+                          dataKey="date"
+                          tick={{ fill: "#52525b", fontSize: 9 }}
+                          tickFormatter={(v: string) => v.slice(5)}
+                          axisLine={false}
+                          tickLine={false}
+                          padding={{ left: 10, right: 10 }}
+                        />
+                        <YAxis
+                          domain={[minP, maxP]}
+                          tick={{ fill: "#52525b", fontSize: 9 }}
+                          tickFormatter={(v: number) => v.toLocaleString()}
+                          width={45}
+                          axisLine={false}
+                          tickLine={false}
+                          orientation="right"
+                        />
+                        <Tooltip
+                          contentStyle={{ background: "#09090b", border: "1px solid #27272a", borderRadius: 8, fontSize: 11, color: "#fff" }}
+                          itemStyle={{ padding: 0 }}
+                          cursor={{ stroke: "#3f3f46" }}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="close"
+                          stroke="#71717a"
+                          strokeWidth={2}
+                          fill="url(#priceGrad)"
+                          name="Price"
+                          isAnimationActive={false}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="sma20"
+                          stroke="#f59e0b"
+                          dot={false}
+                          strokeWidth={1.5}
+                          strokeDasharray="4 4"
+                          name="SMA 20"
+                          opacity={0.7}
+                        />
+                        <ReferenceLine
+                          x={trade.entryDate}
+                          stroke="#10b981"
+                          strokeWidth={2}
+                          strokeDasharray="5 5"
+                          label={{ value: "Entry", fill: "#10b981", fontSize: 10, position: "top", fontWeight: "bold" }}
+                        />
+                        <ReferenceLine
+                          x={trade.exitDate}
+                          stroke={profitable ? "#10b981" : "#ef4444"}
+                          strokeWidth={2}
+                          strokeDasharray="5 5"
+                          label={{ value: "Exit", fill: profitable ? "#10b981" : "#ef4444", fontSize: 10, position: "top", fontWeight: "bold" }}
+                        />
+                      </ComposedChart>
                     </ResponsiveContainer>
                   </div>
-                )}
-              </>
-            ) : (
-              <p className="text-zinc-600 py-4 text-center">No candle data available for this trade.</p>
-            )}
 
-            {/* Similar trades */}
-            {similarTrades.length > 0 && (
-              <div>
-                <p className="text-[10px] text-zinc-400 font-medium mb-1">Similar trades in this backtest ({similarTrades.length} found)</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                  {similarTrades.map(t => (
-                    <div key={t.tradeNo} className="bg-zinc-800/50 rounded px-2 py-1.5 flex items-center justify-between gap-2">
-                      <span className="text-zinc-500 text-[10px] font-mono">#{t.tradeNo} · {t.entryDate}</span>
-                      <div className="flex items-center gap-1">
-                        <ExitReasonBadge reason={t.exitReason} />
-                        <span className={`font-mono text-[11px] font-bold ${t.profitable ? "text-emerald-400" : "text-red-400"}`}>
-                          {t.returnPct >= 0 ? "+" : ""}{t.returnPct}%
-                        </span>
-                      </div>
+                  {/* RSI component */}
+                  {trade.candles.some(c => c.rsi14 !== null) && (
+                    <div className="rounded-xl border border-zinc-800 bg-black/20 p-4">
+                      <p className="text-[10px] font-semibold text-zinc-500 mb-3 uppercase tracking-widest">RSI (14)</p>
+                      <ResponsiveContainer width="100%" height={80}>
+                        <LineChart data={trade.candles} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
+                          <YAxis domain={[0, 100]} hide />
+                          <Tooltip
+                            contentStyle={{ background: "#09090b", border: "1px solid #27272a", borderRadius: 6, fontSize: 10 }}
+                            formatter={(v: number) => [v?.toFixed?.(1), "RSI"]}
+                          />
+                          <ReferenceLine y={70} stroke="#ef4444" strokeDasharray="3 3" opacity={0.4} />
+                          <ReferenceLine y={30} stroke="#10b981" strokeDasharray="3 3" opacity={0.4} />
+                          <ReferenceLine y={50} stroke="#52525b" strokeDasharray="1 1" opacity={0.2} />
+                          <Line
+                            type="monotone"
+                            dataKey="rsi14"
+                            stroke="#8b5cf6"
+                            dot={false}
+                            strokeWidth={2}
+                            isAnimationActive={false}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
                     </div>
-                  ))}
+                  )}
                 </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {tab === "whatif" && (
-          <div className="space-y-4 text-xs">
-            <p className="text-zinc-400">
-              <span className="text-teal-300 font-medium">Historical what-if:</span> How would this same strategy have performed if you had started it at different points in the past?
-            </p>
-
-            {snapshots.length === 0 ? (
-              <p className="text-zinc-600 py-4 text-center">Historical data not available.</p>
-            ) : (
-              <>
-                {/* Snapshot cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {snapshots.map(s => (
-                    <div key={s.lookbackDays} className={`rounded border p-3 space-y-2 ${s.totalReturn >= 0 ? "border-emerald-800/50 bg-emerald-950/20" : "border-red-800/50 bg-red-950/20"}`}>
-                      <div className="flex items-center justify-between">
-                        <p className="font-medium text-zinc-300">Started {s.label}</p>
-                        <span className={`font-mono font-bold text-sm ${s.totalReturn >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                          {s.totalReturn >= 0 ? "+" : ""}{s.totalReturn}%
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-3 gap-1 text-[10px]">
-                        <div>
-                          <p className="text-zinc-500">Trades</p>
-                          <p className="font-mono text-zinc-300">{s.trades}</p>
-                        </div>
-                        <div>
-                          <p className="text-zinc-500">Win rate</p>
-                          <p className={`font-mono ${s.winRate >= 50 ? "text-emerald-300" : "text-red-300"}`}>{s.winRate}%</p>
-                        </div>
-                        <div>
-                          <p className="text-zinc-500">Avg hold</p>
-                          <p className="font-mono text-zinc-300">{s.avgHoldingDays}d</p>
-                        </div>
-                        <div>
-                          <p className="text-zinc-500">Best</p>
-                          <p className="font-mono text-emerald-300">+{s.bestTrade}%</p>
-                        </div>
-                        <div>
-                          <p className="text-zinc-500">Worst</p>
-                          <p className="font-mono text-red-300">{s.worstTrade}%</p>
-                        </div>
-                        <div>
-                          <p className="text-zinc-500">W/L</p>
-                          <p className="font-mono text-zinc-300">{s.wins}/{s.losses}</p>
-                        </div>
-                      </div>
-                      {/* Mini equity curve for this window */}
-                      {s.equityCurveSlice.length > 3 && (
-                        <ResponsiveContainer width="100%" height={50}>
-                          <AreaChart data={s.equityCurveSlice} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
-                            <defs>
-                              <linearGradient id={`g${s.lookbackDays}`} x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor={s.totalReturn >= 0 ? "#22c55e" : "#ef4444"} stopOpacity={0.3} />
-                                <stop offset="95%" stopColor={s.totalReturn >= 0 ? "#22c55e" : "#ef4444"} stopOpacity={0} />
-                              </linearGradient>
-                            </defs>
-                            <Area type="monotone" dataKey="value"
-                              stroke={s.totalReturn >= 0 ? "#22c55e" : "#ef4444"}
-                              fill={`url(#g${s.lookbackDays})`} strokeWidth={1.2} dot={false} />
-                          </AreaChart>
-                        </ResponsiveContainer>
-                      )}
-                    </div>
-                  ))}
+              ) : (
+                <div className="h-40 flex items-center justify-center border border-dashed border-zinc-800 rounded-lg text-zinc-600 text-xs italic">
+                  Visual data not available for this window
                 </div>
+              )}
 
-                {/* Comparison bar chart */}
-                <div>
-                  <p className="text-[10px] text-zinc-400 font-medium mb-1">Return comparison across windows</p>
-                  <ResponsiveContainer width="100%" height={100}>
-                    <ComposedChart data={snapshots} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                      <XAxis dataKey="label" tick={{ fill: "#71717a", fontSize: 9 }} />
-                      <YAxis tick={{ fill: "#71717a", fontSize: 9 }} tickFormatter={(v: number) => `${v}%`} width={36} />
-                      <Tooltip contentStyle={{ background: "#18181b", border: "1px solid #3f3f46", borderRadius: 6, fontSize: 11 }}
-                        formatter={(v: number) => [`${v >= 0 ? "+" : ""}${v}%`, "Return"]} />
-                      <ReferenceLine y={0} stroke="#52525b" strokeWidth={1} />
-                      <Bar dataKey="totalReturn" radius={[3, 3, 0, 0]}>
-                        {snapshots.map((s, i) => <Cell key={i} fill={s.totalReturn >= 0 ? "#22c55e" : "#ef4444"} fillOpacity={0.8} />)}
-                      </Bar>
-                    </ComposedChart>
-                  </ResponsiveContainer>
+              {/* Similar Trades section */}
+              {similarTrades.length > 0 && (
+                <div className="space-y-3">
+                  <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">Comparison: Similar Behavior</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {similarTrades.map(t => {
+                      const isProf = t.returnPct > 0;
+                      return (
+                        <div key={t.tradeNo} className="flex items-center justify-between p-3 rounded-lg border border-zinc-900 bg-zinc-950/40 hover:bg-zinc-900/60 transition-colors group">
+                          <div className="space-y-1">
+                            <p className="text-[11px] font-mono text-zinc-300">Run #{t.tradeNo} <span className="text-zinc-600 ml-1">• {t.entryDate}</span></p>
+                            <ExitReasonBadge reason={t.exitReason} />
+                          </div>
+                          <div className="text-right">
+                            <p className={`text-xs font-bold font-mono ${isProf ? "text-emerald-400" : "text-red-400"}`}>
+                              {t.returnPct >= 0 ? "+" : ""}{t.returnPct}%
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
+              )}
+            </div>
+          )}
 
-                <p className="text-[10px] text-zinc-600">
-                  These figures show only trades that started within each time window, using the same strategy, same symbol, same conditions. Real returns would depend on execution timing.
+          {tab === "whatif" && (
+            <div className="space-y-6">
+              <div className="bg-teal-500/5 border border-teal-500/10 rounded-lg p-4">
+                <p className="text-zinc-400 text-xs leading-relaxed">
+                  <span className="text-teal-400 font-bold uppercase mr-2 tracking-tighter">Historical What-If</span>
+                  Simulating the same strategy across different historical entry points. This helps validate if this trade's outcome was an outlier or consistent with past windows.
                 </p>
-              </>
-            )}
-          </div>
-        )}
+              </div>
+
+              {snapshots.length === 0 ? (
+                <div className="h-40 flex items-center justify-center border border-dashed border-zinc-800 rounded-lg text-zinc-600 text-xs italic">
+                  No multi-window benchmarks available
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Snapshot cards grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {snapshots.map(s => (
+                      <div key={s.lookbackDays} className={`rounded-xl border p-4 space-y-4 transition-all ${s.totalReturn >= 0 ? "border-emerald-500/20 bg-emerald-500/[0.02]" : "border-red-500/20 bg-red-500/[0.02]"}`}>
+                        <div className="flex items-center justify-between">
+                          <p className="font-bold text-zinc-300 uppercase tracking-tighter text-xs">Window: {s.label}</p>
+                          <Badge variant="outline" className={`${s.totalReturn >= 0 ? "border-emerald-500/40 text-emerald-400" : "border-red-500/40 text-red-400"}`}>
+                            {s.totalReturn >= 0 ? "+" : ""}{s.totalReturn}%
+                          </Badge>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <p className="text-[9px] text-zinc-500 uppercase">Win Rate</p>
+                            <p className={`font-mono text-xs font-semibold ${s.winRate >= 50 ? "text-emerald-400" : "text-amber-400"}`}>{s.winRate}%</p>
+                          </div>
+                          <div className="space-y-1 text-right">
+                            <p className="text-[9px] text-zinc-500 uppercase">Avg Hold</p>
+                            <p className="font-mono text-xs text-zinc-300 font-semibold">{s.avgHoldingDays}d</p>
+                          </div>
+                        </div>
+
+                        {s.equityCurveSlice.length > 5 && (
+                          <div className="h-12 w-full opacity-60">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <AreaChart data={s.equityCurveSlice} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+                                <defs>
+                                  <linearGradient id={`grad${s.lookbackDays}`} x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor={s.totalReturn >= 0 ? "#10b981" : "#ef4444"} stopOpacity={0.2} />
+                                    <stop offset="95%" stopColor={s.totalReturn >= 0 ? "#10b981" : "#ef4444"} stopOpacity={0} />
+                                  </linearGradient>
+                                </defs>
+                                <Area
+                                  type="monotone"
+                                  dataKey="value"
+                                  stroke={s.totalReturn >= 0 ? "#10b981" : "#ef4444"}
+                                  fill={`url(#grad${s.lookbackDays})`}
+                                  strokeWidth={1}
+                                  dot={false}
+                                />
+                              </AreaChart>
+                            </ResponsiveContainer>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Windows Comparison Bar Chart */}
+                  <div className="rounded-xl border border-zinc-800 bg-black/40 p-5">
+                    <p className="text-[10px] font-semibold text-zinc-500 mb-5 uppercase tracking-widest text-center">Relative Performance Comparison</p>
+                    <ResponsiveContainer width="100%" height={120}>
+                      <ComposedChart data={snapshots}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                        <XAxis dataKey="label" tick={{ fill: "#52525b", fontSize: 9 }} axisLine={false} tickLine={false} />
+                        <YAxis hide domain={['auto', 'auto']} />
+                        <Tooltip
+                          contentStyle={{ background: "#09090b", border: "1px solid #27272a", borderRadius: 8, fontSize: 10 }}
+                          formatter={(v: number) => [`${v >= 0 ? "+" : ""}${v}%`, "Return"]}
+                        />
+                        <Bar dataKey="totalReturn" radius={[4, 4, 0, 0]}>
+                          {snapshots.map((s, i) => (
+                            <Cell key={i} fill={s.totalReturn >= 0 ? "#10b981" : "#ef4444"} opacity={0.8} />
+                          ))}
+                        </Bar>
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="shrink-0 border-t border-zinc-800 p-4 bg-zinc-950 flex justify-end">
+          <Button variant="ghost" size="sm" onClick={onClose} className="text-zinc-500 hover:text-white">
+            Close Analysis
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -609,33 +685,81 @@ function EquityCurveChart({
   const scale = base0 && Number.isFinite(base0) && base0 !== 0 ? initialCapital / base0 : 1;
   const scaled = data.map(d => ({ ...d, value: d.value * scale }));
   const startV = scaled[0]?.value ?? initialCapital;
-  const isPos = (scaled[scaled.length - 1]?.value ?? startV) >= startV;
+  const endV = scaled[scaled.length - 1]?.value ?? startV;
+  const isPos = endV >= startV;
+  const totalRet = ((endV - startV) / startV) * 100;
+  
   const curSym = displayCurrency === "INR" ? "₹" : "$";
   const loc = displayCurrency === "INR" ? "en-IN" : "en-US";
-  const fmtK = (v: number) => `${curSym}${(v / 1000).toFixed(0)}k`;
+  const fmtK = (v: number) => `${curSym}${(v / 1000).toFixed(1)}k`;
   const fmtFull = (v: number) => `${curSym}${v.toLocaleString(loc, { maximumFractionDigits: 0 })}`;
+  
   return (
-    <div>
-      <p className="text-xs text-zinc-400 font-medium mb-2">
-        Equity curve ({fmtFull(initialCapital)} starting notional · {displayCurrency})
-      </p>
-      <ResponsiveContainer width="100%" height={140}>
-        <AreaChart data={scaled} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
-          <defs>
-            <linearGradient id="eqGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={isPos ? "#22c55e" : "#ef4444"} stopOpacity={0.25} />
-              <stop offset="95%" stopColor={isPos ? "#22c55e" : "#ef4444"} stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-          <XAxis dataKey="date" tick={{ fill: "#71717a", fontSize: 9 }} tickFormatter={(v: string) => v.slice(2, 10)} interval="preserveStartEnd" />
-          <YAxis tick={{ fill: "#71717a", fontSize: 9 }} tickFormatter={fmtK} width={48} />
-          <Tooltip contentStyle={{ background: "#18181b", border: "1px solid #3f3f46", borderRadius: 6, fontSize: 11 }}
-            formatter={(v: number) => [fmtFull(Number(v)), "Portfolio"]} />
-          <ReferenceLine y={initialCapital} stroke="#71717a" strokeDasharray="3 3" strokeWidth={1} />
-          <Area type="monotone" dataKey="value" stroke={isPos ? "#22c55e" : "#ef4444"} fill="url(#eqGrad)" strokeWidth={1.5} dot={false} />
-        </AreaChart>
-      </ResponsiveContainer>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">Equity Curve</p>
+          <p className="text-[10px] text-zinc-500">Starting: {fmtFull(initialCapital)} · {displayCurrency}</p>
+        </div>
+        <div className="text-right">
+          <p className={`text-sm font-bold font-mono ${isPos ? "text-emerald-400" : "text-red-400"}`}>
+            {totalRet >= 0 ? "+" : ""}{totalRet.toFixed(2)}%
+          </p>
+          <p className="text-[9px] text-zinc-600 font-mono uppercase">Absolute Return</p>
+        </div>
+      </div>
+      
+      <div className="rounded-xl border border-zinc-800 bg-black/40 p-4 shadow-inner">
+        <ResponsiveContainer width="100%" height={260}>
+          <AreaChart data={scaled} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
+            <defs>
+              <linearGradient id="eqGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={isPos ? "#10b981" : "#ef4444"} stopOpacity={0.25} />
+                <stop offset="95%" stopColor={isPos ? "#10b981" : "#ef4444"} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+            <XAxis 
+              dataKey="date" 
+              tick={{ fill: "#52525b", fontSize: 9 }} 
+              tickFormatter={(v: string) => v.slice(2, 10)} 
+              axisLine={false}
+              tickLine={false}
+              interval="preserveStartEnd"
+            />
+            <YAxis 
+              tick={{ fill: "#52525b", fontSize: 9 }} 
+              tickFormatter={fmtK} 
+              width={50} 
+              axisLine={false}
+              tickLine={false}
+              orientation="right"
+              domain={['auto', 'auto']}
+            />
+            <Tooltip 
+              contentStyle={{ background: "#09090b", border: "1px solid #27272a", borderRadius: 8, fontSize: 11 }}
+              formatter={(v: number) => [fmtFull(Number(v)), "Portfolio Value"]} 
+              labelStyle={{ color: "#71717a", marginBottom: 4 }}
+            />
+            <ReferenceLine 
+              y={initialCapital} 
+              stroke="#52525b" 
+              strokeDasharray="4 4" 
+              strokeWidth={1}
+              label={{ value: "Initial Capital", position: "left", fill: "#52525b", fontSize: 10 }}
+            />
+            <Area 
+              type="monotone" 
+              dataKey="value" 
+              stroke={isPos ? "#10b981" : "#ef4444"} 
+              fill="url(#eqGrad)" 
+              strokeWidth={2.5} 
+              dot={false}
+              activeDot={{ r: 4, strokeWidth: 0, fill: isPos ? "#10b981" : "#ef4444" }}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }
@@ -643,47 +767,112 @@ function EquityCurveChart({
 function TradeReturnsChart({ trades }: { trades: Trade[] }) {
   if (!trades || trades.length === 0) return null;
   const data = trades.map(t => ({ name: `#${t.tradeNo}`, ret: t.returnPct }));
+  const avgRet = data.reduce((a, b) => a + b.ret, 0) / data.length;
+  
   return (
-    <div>
-      <p className="text-xs text-zinc-400 font-medium mb-2">Return per Trade (%)</p>
-      <ResponsiveContainer width="100%" height={120}>
-        <ComposedChart data={data} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-          <XAxis dataKey="name" tick={{ fill: "#71717a", fontSize: 9 }} />
-          <YAxis tick={{ fill: "#71717a", fontSize: 9 }} tickFormatter={(v: number) => `${v}%`} width={36} />
-          <Tooltip contentStyle={{ background: "#18181b", border: "1px solid #3f3f46", borderRadius: 6, fontSize: 11 }}
-            formatter={(v: number) => [`${v >= 0 ? "+" : ""}${v.toFixed(2)}%`, "Return"]} />
-          <ReferenceLine y={0} stroke="#52525b" strokeWidth={1} />
-          <Bar dataKey="ret" radius={[2, 2, 0, 0]}>
-            {data.map((d, i) => <Cell key={i} fill={d.ret > 0 ? "#22c55e" : "#ef4444"} fillOpacity={0.8} />)}
-          </Bar>
-        </ComposedChart>
-      </ResponsiveContainer>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">Return per Trade (%)</p>
+        <p className="text-[10px] text-zinc-500 font-mono">Avg: <span className={avgRet >= 0 ? "text-emerald-400" : "text-red-400"}>{avgRet.toFixed(2)}%</span></p>
+      </div>
+
+      <div className="rounded-xl border border-zinc-800 bg-black/20 p-4">
+        <ResponsiveContainer width="100%" height={200}>
+          <ComposedChart data={data} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+            <XAxis 
+              dataKey="name" 
+              tick={{ fill: "#52525b", fontSize: 9 }} 
+              axisLine={false}
+              tickLine={false}
+            />
+            <YAxis 
+              tick={{ fill: "#52525b", fontSize: 9 }} 
+              tickFormatter={(v: number) => `${v}%`} 
+              width={40} 
+              axisLine={false}
+              tickLine={false}
+              orientation="right"
+            />
+            <Tooltip 
+              contentStyle={{ background: "#09090b", border: "1px solid #27272a", borderRadius: 8, fontSize: 11 }}
+              formatter={(v: number) => [`${v >= 0 ? "+" : ""}${v.toFixed(2)}%`, "Trade Return"]} 
+              labelStyle={{ color: "#71717a", marginBottom: 4 }}
+            />
+            <ReferenceLine y={0} stroke="#52525b" strokeWidth={1} />
+            <ReferenceLine 
+              y={avgRet} 
+              stroke="#71717a" 
+              strokeDasharray="3 3" 
+              label={{ value: "Average", position: "left", fill: "#71717a", fontSize: 9 }} 
+            />
+            <Bar dataKey="ret" radius={[3, 3, 0, 0]}>
+              {data.map((d, i) => (
+                <Cell 
+                  key={i} 
+                  fill={d.ret > 0 ? "#10b981" : "#ef4444"} 
+                  fillOpacity={0.7} 
+                  className="transition-all hover:fill-opacity-100"
+                />
+              ))}
+            </Bar>
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }
 
 function DailyPortfolioReturnsChart({ data }: { data: Array<{ date: string; returnPct: number }> }) {
   if (!data || data.length === 0) {
-    return <p className="text-zinc-600 text-xs py-4 text-center">No daily return series from the engine.</p>;
+    return (
+      <div className="h-40 flex items-center justify-center border border-dashed border-zinc-800 rounded-xl text-zinc-600 text-xs italic">
+        Daily return series not available
+      </div>
+    );
   }
   const chart = data.map(d => ({ name: d.date.slice(5), ret: d.returnPct }));
   return (
-    <div>
-      <p className="text-xs text-zinc-400 font-medium mb-2">Portfolio return per bar / day (%)</p>
-      <ResponsiveContainer width="100%" height={160}>
-        <ComposedChart data={chart} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-          <XAxis dataKey="name" tick={{ fill: "#71717a", fontSize: 8 }} interval="preserveStartEnd" />
-          <YAxis tick={{ fill: "#71717a", fontSize: 9 }} tickFormatter={(v: number) => `${v}%`} width={40} />
-          <Tooltip contentStyle={{ background: "#18181b", border: "1px solid #3f3f46", borderRadius: 6, fontSize: 11 }}
-            formatter={(v: number) => [`${Number(v) >= 0 ? "+" : ""}${Number(v).toFixed(3)}%`, "Return"]} />
-          <ReferenceLine y={0} stroke="#52525b" strokeWidth={1} />
-          <Bar dataKey="ret" radius={[1, 1, 0, 0]}>
-            {chart.map((d, i) => <Cell key={i} fill={d.ret > 0 ? "#22c55e" : "#ef4444"} fillOpacity={0.75} />)}
-          </Bar>
-        </ComposedChart>
-      </ResponsiveContainer>
+    <div className="space-y-3">
+      <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">Daily Portfolio Volatility (%)</p>
+      <div className="rounded-xl border border-zinc-800 bg-black/20 p-4">
+        <ResponsiveContainer width="100%" height={240}>
+          <ComposedChart data={chart} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+            <XAxis 
+              dataKey="name" 
+              tick={{ fill: "#52525b", fontSize: 8 }} 
+              interval="preserveStartEnd" 
+              axisLine={false}
+              tickLine={false}
+            />
+            <YAxis 
+              tick={{ fill: "#52525b", fontSize: 9 }} 
+              tickFormatter={(v: number) => `${v}%`} 
+              width={40} 
+              axisLine={false}
+              tickLine={false}
+              orientation="right"
+            />
+            <Tooltip 
+              contentStyle={{ background: "#09090b", border: "1px solid #27272a", borderRadius: 8, fontSize: 11 }}
+              formatter={(v: number) => [`${Number(v) >= 0 ? "+" : ""}${Number(v).toFixed(3)}%`, "Bar Return"]} 
+              labelStyle={{ color: "#71717a", marginBottom: 4 }}
+            />
+            <ReferenceLine y={0} stroke="#52525b" strokeWidth={1} />
+            <Bar dataKey="ret" radius={[1, 1, 0, 0]}>
+              {chart.map((d, i) => (
+                <Cell 
+                  key={i} 
+                  fill={d.ret > 0 ? "#10b981" : "#ef4444"} 
+                  fillOpacity={0.6} 
+                  className="transition-all hover:fill-opacity-100"
+                />
+              ))}
+            </Bar>
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }
@@ -733,6 +922,7 @@ export default function BacktestingSection() {
   const historyPerPage = 10;
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"trades" | "equity" | "returns" | "daily">("trades");
+  const [resultPopupOpen, setResultPopupOpen] = useState(false);
 
   const selectedCustom = customStrategies.find(s => s.id === selectedCustomId) ?? null;
   const stratLabel =
@@ -957,6 +1147,7 @@ export default function BacktestingSection() {
       setLastBacktestClientMs(Math.round(performance.now() - runStarted));
       if (res.error || d?.error) { toast.error(String(d?.error ?? "Backtest failed")); return; }
       setResult(d);
+      setResultPopupOpen(true);
 
       // Save to history
       try {
@@ -990,6 +1181,7 @@ export default function BacktestingSection() {
             },
             trades: Array.isArray(d.trades) ? d.trades : [],
             historical_snapshots: Array.isArray(d.historicalSnapshots) ? d.historicalSnapshots : [],
+            returns: Array.isArray(d.dailyReturns) ? d.dailyReturns : [],
           });
           loadHistory();
         }
@@ -1064,6 +1256,133 @@ export default function BacktestingSection() {
     return null;
   })();
 
+  const renderHistoryDetailModal = () => {
+    const h = history.find(it => String((it as any).id) === expandedHistoryId);
+    if (!h) return <div className="p-8 text-center text-zinc-500">History record not found.</div>;
+    const s = (h as any).summary ?? {};
+    const ret = Number(s.totalReturn ?? 0);
+    const histTrades: Trade[] = Array.isArray((h as any).trades) ? (h as any).trades : [];
+
+    return (
+      <div className="flex min-h-0 flex-1 flex-col w-full">
+        <div className="shrink-0 border-b border-zinc-800 px-5 py-4">
+          <DialogHeader className="space-y-1">
+            <DialogTitle className="text-white text-lg flex items-center gap-2">
+               Backtest details: <span className="font-mono text-teal-400">{(h as any).symbol}</span>
+            </DialogTitle>
+            <div className="text-zinc-500 text-xs flex items-center gap-3">
+              <span>{(h as any).strategy_label ?? (h as any).mode}</span>
+              <span>•</span>
+              <span>{new Date((h as any).created_at).toLocaleString()}</span>
+            </div>
+          </DialogHeader>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <StatCard label="Win Rate" value={`${s.winRate ?? "—"}%`} color={Number(s.winRate) >= 50 ? "green" : "red"} />
+            <StatCard label="Return" value={`${ret >= 0 ? "+" : ""}${s.totalReturn ?? "—"}%`} color={ret >= 0 ? "green" : "red"} />
+            <StatCard label="Max DD" value={`${s.maxDrawdown ?? "—"}%`} color="red" />
+            <StatCard label="Sharpe" value={s.sharpeRatio ?? "—"} />
+            {s.bestTrade != null && <StatCard label="Best" value={`+${s.bestTrade}%`} color="green" />}
+            {s.worstTrade != null && <StatCard label="Worst" value={`${s.worstTrade}%`} color="red" />}
+            {s.avgHoldingDays != null && <StatCard label="Avg Hold" value={`${s.avgHoldingDays}d`} />}
+            {s.expectancy != null && <StatCard label="Expectancy" value={`${Number(s.expectancy) >= 0 ? "+" : ""}${s.expectancy}%`} color={Number(s.expectancy) >= 0 ? "green" : "red"} />}
+          </div>
+
+          <DailyPortfolioReturnsChart data={(h as any).returns || []} />
+
+          {histTrades.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Trade history ({histTrades.length})</p>
+              <div className="rounded-lg border border-zinc-800 overflow-hidden bg-black/20">
+                <table className="w-full text-xs">
+                  <thead className="bg-zinc-900 border-b border-zinc-800 sticky top-0">
+                    <tr className="text-zinc-500">
+                      <th className="text-left px-3 py-2">#</th>
+                      <th className="text-left px-3 py-2">Entry</th>
+                      <th className="text-left px-3 py-2">Exit</th>
+                      <th className="text-right px-3 py-2">Hold</th>
+                      <th className="text-right px-3 py-2">Px In</th>
+                      <th className="text-right px-3 py-2">Px Out</th>
+                      <th className="text-right px-3 py-2">Ret%</th>
+                      <th className="text-center px-3 py-2">Why</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {histTrades.map((t, ti) => (
+                      <tr key={ti}
+                        className="border-t border-zinc-800/50 cursor-pointer hover:bg-zinc-800/40 transition-colors"
+                        onClick={e => { e.stopPropagation(); openTradeFromHistory(t, h as Record<string, unknown>); }}>
+                        <td className="px-3 py-2.5 text-zinc-600 font-mono">{t.tradeNo ?? ti + 1}</td>
+                        <td className="px-3 py-2.5 text-zinc-300 font-mono">{t.entryDate}</td>
+                        <td className="px-3 py-2.5 text-zinc-300 font-mono">{t.exitDate}</td>
+                        <td className="px-3 py-2.5 text-right text-zinc-400 font-mono">{t.holdingDays ?? "—"}</td>
+                        <td className="px-3 py-2.5 text-right text-zinc-300 font-mono">{t.entryPrice ?? "—"}</td>
+                        <td className="px-3 py-2.5 text-right text-zinc-300 font-mono">{t.exitPrice ?? "—"}</td>
+                        <td className={`px-3 py-2.5 text-right font-mono font-semibold ${t.profitable ? "text-emerald-400" : "text-red-400"}`}>
+                          {t.returnPct >= 0 ? "+" : ""}{t.returnPct}%
+                        </td>
+                        <td className="px-3 py-2.5 text-center"><ExitReasonBadge reason={t.exitReason ?? "unknown"} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex shrink-0 items-center justify-between gap-3 border-t border-zinc-800 bg-zinc-950 px-5 py-3 pr-14 sm:pr-5">
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" className="border-teal-700/50 text-teal-300 text-xs"
+              onClick={e => {
+                e.stopPropagation();
+                const p = (h as any).params ?? {};
+                setSymbol(String((h as any).symbol ?? ""));
+                setExchange(String((h as any).exchange ?? "NSE"));
+                setAction(((h as any).action === "SELL" ? "SELL" : "BUY") as "BUY" | "SELL");
+                if (p.stop_loss_pct) setSlPct(String(p.stop_loss_pct));
+                if (p.take_profit_pct) setTpPct(String(p.take_profit_pct));
+                if (p.days) setDays(String(p.days));
+                if (p.display_currency === "INR" || p.display_currency === "USD") {
+                  setDisplayCurrency(p.display_currency);
+                }
+                if (p.initial_capital != null && p.initial_capital !== "") {
+                  setInitialCapital(String(p.initial_capital));
+                }
+                const csid = p.custom_strategy_id;
+                if (csid != null && String(csid).length > 0) {
+                  setSelectedCustomId(String(csid));
+                }
+                setExpandedHistoryId(null);
+                toast.info("Config loaded — click Run Backtesting");
+              }}>
+              <Zap className="h-3 w-3 mr-1" /> Re-run this config
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="border-red-900/30 text-zinc-500 hover:text-red-400 hover:bg-red-950/20"
+              disabled={historyDeletingId === expandedHistoryId}
+              onClick={e => {
+                e.stopPropagation();
+                if (expandedHistoryId) void deleteHistoryRun(expandedHistoryId);
+              }}
+            >
+               {historyDeletingId === expandedHistoryId
+                ? <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                : <Trash2 className="h-4 w-4 mr-2" />}
+               Delete run
+            </Button>
+          </div>
+          <Button variant="ghost" size="sm" onClick={() => setExpandedHistoryId(null)}>Close</Button>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <Card className="bg-zinc-900 border-zinc-800">
       <CardHeader className="pb-2">
@@ -1071,10 +1390,6 @@ export default function BacktestingSection() {
           <LineChartIcon className="h-4 w-4 text-teal-400" />
           Backtesting
         </CardTitle>
-        <CardDescription className="text-zinc-500 text-xs max-w-2xl">
-          VectorBT runs on the server (OpenAlgo + historical data). In Strategy mode, pick a preset or custom strategy first, then symbol and risk fields.
-          The app sends your full custom-strategy snapshot plus this run’s symbol / SL / TP; the engine simulates bar by bar and opens trades when entry rules match on past bars (and execution days), not only when “setup” matches today.
-        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
 
@@ -1201,10 +1516,10 @@ export default function BacktestingSection() {
                 </div>
               </details>
             )}
-            <p className="text-[10px] text-zinc-600 mt-2 leading-relaxed">
+            {/* <p className="text-[10px] text-zinc-600 mt-2 leading-relaxed">
               Backtesting scans the whole history: a trade opens on any past day where your entry conditions pass (and execution-day filters apply).
               “Setup not active” on the last bar only describes today, not whether the run will find trades in the past.
-            </p>
+            </p> */}
           </div>
         ) : null}
 
@@ -1304,216 +1619,287 @@ export default function BacktestingSection() {
             {aiLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Brain className="h-4 w-4 mr-2" />}
             AI Review SL/TP & Timing
           </Button>
+          {result && !resultPopupOpen && (
+            <Button variant="ghost" onClick={() => setResultPopupOpen(true)} className="text-teal-400 hover:text-teal-300 hover:bg-teal-400/10">
+              <Eye className="h-4 w-4 mr-2" /> View Last Result
+            </Button>
+          )}
         </div>
 
-        {/* ─── Results ──────────────────────────────────────────────────── */}
-        {result && (
-          <div className="rounded-lg border border-zinc-700 p-3 space-y-4 text-xs">
-
-            {/* Header */}
-            <div className="flex items-start justify-between flex-wrap gap-2">
-              <div>
-                <div className="text-teal-400 font-semibold text-sm flex items-center gap-2 flex-wrap">
-                  {mode === "strategy" ? stratLabel : `Simple ${action}`}
-                  {result.usedCustomConditions && (
-                    <Badge className="bg-teal-900/60 text-teal-300 border-teal-700 text-[10px] px-1.5 py-0">Custom conds</Badge>
-                  )}
-                </div>
-                <p className="text-zinc-500 text-[10px]">
-                  {result.symbol} · {result.exchange} · {result.backtestPeriod}
-                  {result.strategy ? <span className="text-zinc-600"> · engine {result.strategy}</span> : null}
-                  {lastBacktestClientMs != null ? (
-                    <span className="text-zinc-600"> · round-trip {lastBacktestClientMs} ms</span>
-                  ) : null}
-                </p>
-              </div>
-              <Badge className={result.strategyAchieved ? "bg-emerald-900/60 text-emerald-300" : "bg-zinc-800 text-zinc-400"}>
-                Setup: {result.strategyAchieved ? "Active now" : "Not active"}
-              </Badge>
-            </div>
-
-            {/* Primary stats */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <StatCard label="Total Trades" value={result.totalTrades} />
-              <StatCard label="Win Rate" value={`${result.winRate}%`} sub={`${result.wins}W / ${result.losses}L`} color={result.winRate >= 50 ? "green" : "red"} />
-              <StatCard label="Total Return" value={`${result.totalReturn >= 0 ? "+" : ""}${result.totalReturn}%`} color={result.totalReturn >= 0 ? "green" : "red"} />
-              <StatCard label="Max Drawdown" value={`${result.maxDrawdown}%`} color="red" />
-              <StatCard label="Profit Factor" value={result.profitFactor} color={result.profitFactor >= 1.5 ? "green" : result.profitFactor >= 1 ? "yellow" : "red"} />
-              <StatCard label="Sharpe" value={result.sharpeRatio} color={result.sharpeRatio >= 1 ? "green" : result.sharpeRatio >= 0.5 ? "yellow" : "default"} />
-              <StatCard label="Best Trade" value={`+${result.bestTrade}%`} color="green" />
-              <StatCard label="Worst Trade" value={`${result.worstTrade}%`} color="red" />
-            </div>
-
-            {/* Extended stats */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <StatCard label="Avg Hold" value={`${result.avgHoldingDays}d`} />
-              <StatCard label="Avg Win" value={`+${result.avgWin}%`} color="green" />
-              <StatCard label="Avg Loss" value={`${result.avgLoss}%`} color="red" />
-              <StatCard label="Expectancy" value={`${result.expectancy >= 0 ? "+" : ""}${result.expectancy}%`} color={result.expectancy >= 0 ? "green" : "red"} />
-              <StatCard label="Win Streak" value={`${result.maxWinStreak}`} color="green" />
-              <StatCard label="Loss Streak" value={`${result.maxLossStreak}`} color="red" />
-              {result.exitReasonCounts && Object.keys(result.exitReasonCounts).length > 0 && (
-                <div className="rounded border border-zinc-800 bg-zinc-950/50 p-2 sm:col-span-2">
-                  <p className="text-[10px] text-zinc-500 mb-1">Exit reasons</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {Object.entries(result.exitReasonCounts).map(([r, cnt]) => (
-                      <span key={r} className="flex items-center gap-1">
-                        <ExitReasonBadge reason={r} />
-                        <span className="text-zinc-400 font-mono">{cnt}</span>
-                      </span>
-                    ))}
+        {/* ─── Results Popup ────────────────────────────────────────────── */}
+        <Dialog open={resultPopupOpen} onOpenChange={setResultPopupOpen}>
+          <DialogContent className="flex h-[94vh] max-h-[94vh] w-[98vw] !max-w-[98vw] flex-col gap-0 !overflow-hidden border-zinc-800 bg-zinc-950 p-0 sm:h-[90vh] sm:max-h-[90vh] sm:!max-w-[1200px]">
+            <div className="shrink-0 border-b border-zinc-800 px-5 py-4 flex items-center justify-between bg-zinc-950/50 backdrop-blur-xl">
+              <DialogHeader className="space-y-1 text-left">
+                <DialogTitle className="text-white text-lg flex items-center gap-2">
+                  <div className="p-1.5 rounded-lg bg-teal-500/10 border border-teal-500/20">
+                    <BarChart3 className="h-5 w-5 text-teal-400" />
                   </div>
-                </div>
-              )}
-            </div>
-
-            {/* Current indicators */}
-            {result.currentIndicators && (
-              <div className="rounded border border-zinc-800 bg-zinc-950/50 p-2">
-                <p className="text-[10px] text-zinc-500 mb-1">Current indicators</p>
-                <div className="flex flex-wrap gap-3 text-[11px] font-mono">
-                  <span className="text-zinc-400">Price: <span className="text-zinc-200">{result.currentIndicators.price}</span></span>
-                  <span className="text-zinc-400">SMA20: <span className="text-amber-300">{result.currentIndicators.sma20}</span></span>
-                  <span className="text-zinc-400">RSI14: <span className="text-purple-300">{result.currentIndicators.rsi14}</span></span>
-                  <span className="text-zinc-400">MACD: <span className="text-sky-300">{result.currentIndicators.macd}</span> / <span className="text-sky-400">{result.currentIndicators.macdSignal}</span></span>
-                </div>
+                  Backtest Analysis
+                </DialogTitle>
+                {result && (
+                  <p className="text-zinc-500 text-[10px] sm:text-xs font-mono">
+                    {result.symbol} · {result.exchange} · {result.backtestPeriod}
+                  </p>
+                )}
+              </DialogHeader>
+              <div className="flex items-center gap-3">
+                {result?.strategyAchieved && (
+                  <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 px-2 py-0.5 text-[10px] uppercase tracking-wider hidden sm:flex">
+                    Setup Active
+                  </Badge>
+                )}
               </div>
-            )}
-
-            <p className="text-zinc-500 text-[11px]">
-              Setup now: {result.strategyAchieved ? "Yes ✓" : "No"} — {result.achievementReason}
-            </p>
-
-            {result.executionDaysApplied && result.executionDaysApplied.length > 0 && (
-              <p className="text-[10px] text-zinc-500">
-                <span className="text-zinc-400">Execution days in backtest:</span>{" "}
-                {result.executionDaysApplied.map(d => EXEC_DAY_LABELS[d] ?? String(d)).join(", ")}
-                <span className="text-zinc-600"> (matches strategy builder: 0=Sun … 6=Sat)</span>
-              </p>
-            )}
-
-            {/* Tabs */}
-            <div className="flex flex-wrap gap-1 border-b border-zinc-800">
-              {(["trades", "equity", "returns", "daily"] as const).map(tab => (
-                <button key={tab} type="button" onClick={() => setActiveTab(tab)}
-                  className={`px-3 py-1.5 text-xs rounded-t transition-colors ${activeTab === tab ? "bg-zinc-800 text-zinc-200 border-b-2 border-teal-500" : "text-zinc-500 hover:text-zinc-300"}`}>
-                  {tab === "trades" ? `Trades (${result.totalTrades})` : tab === "equity" ? "Equity Curve" : tab === "returns" ? "Per-trade %" : "Daily %"}
-                </button>
-              ))}
             </div>
 
-            {/* Tab: Trades */}
-            {activeTab === "trades" && (result.totalTrades ?? 0) > 0 && (
-              <div className="space-y-3">
-                {Array.isArray(result.trades) && result.trades.length > 0 ? (
-                  <>
-                    <p className="text-zinc-400 text-[11px]">
-                      <span className="text-teal-400 font-medium">Trade cards</span> — click a card or table row for full chart + historical what-if in a popup.
-                    </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                      {result.trades.map(t => (
+            <div className="min-h-0 flex-1 overflow-y-auto p-6 scrollbar-none hover:scrollbar-thin scrollbar-thumb-zinc-800">
+              {result && (
+                <div className="space-y-10 pb-10 max-w-6xl mx-auto">
+                  {/* Performance Summary Header */}
+                  <div className="relative group">
+                    <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-6 bg-zinc-900/40 backdrop-blur-sm rounded-2xl p-6 border border-zinc-800/50">
+                      <div>
+                        <div className="flex items-center gap-3 mb-2">
+                          <h2 className="text-teal-400 font-bold text-xl tracking-tight">
+                            {mode === "strategy" ? stratLabel : `Simple ${action}`}
+                          </h2>
+                          {result.usedCustomConditions && (
+                            <Badge className="bg-teal-500/10 text-teal-300 border-teal-500/30 text-[9px] px-2 py-0">CUSTOM LOGIC</Badge>
+                          )}
+                        </div>
+                        <p className="text-zinc-500 text-xs flex items-center gap-2">
+                          <span className="w-1 h-1 rounded-full bg-zinc-700" />
+                          Tested with engine {result.strategy}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-8">
+                        <div className="text-right">
+                          <p className="text-[10px] text-zinc-500 uppercase tracking-[0.2em] font-bold mb-1">Net Return</p>
+                          <p className={`text-3xl font-black font-mono leading-none ${result.totalReturn >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                            {result.totalReturn >= 0 ? "+" : ""}{result.totalReturn}%
+                          </p>
+                        </div>
+                        <div className="w-px h-10 bg-zinc-800/50 hidden sm:block" />
+                        <div className="text-right">
+                          <p className="text-[10px] text-zinc-500 uppercase tracking-[0.2em] font-bold mb-1">Win Rate</p>
+                          <p className={`text-3xl font-black font-mono leading-none ${result.winRate >= 50 ? "text-emerald-400" : "text-amber-400"}`}>
+                            {result.winRate}%
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Key Metrics Grid */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <StatCard label="Executed Trades" value={result.totalTrades} sub={`${result.wins}W / ${result.losses}L`} />
+                    <StatCard label="Profit Factor" value={result.profitFactor} color={result.profitFactor >= 1.5 ? "green" : result.profitFactor >= 1 ? "yellow" : "red"} />
+                    <StatCard label="Avg. Return" value={`${result.expectancy >= 0 ? "+" : ""}${result.expectancy}%`} color={result.expectancy >= 0 ? "green" : "red"} />
+                    <StatCard label="Max Drawdown" value={`${result.maxDrawdown}%`} color="red" />
+                  </div>
+
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <StatCard label="Sharpe Ratio" value={result.sharpeRatio} color={result.sharpeRatio >= 1 ? "green" : "default"} />
+                    <StatCard label="Avg Hold Time" value={`${result.avgHoldingDays}d`} />
+                    <StatCard label="Best Trade" value={`+${result.bestTrade}%`} color="green" />
+                    <StatCard label="Worst Trade" value={`${result.worstTrade}%`} color="red" />
+                  </div>
+
+                  {/* Analysis Tabs */}
+                  <div className="space-y-6">
+                    <div className="flex flex-wrap gap-2 bg-zinc-900/20 p-1.5 rounded-xl border border-zinc-900/50">
+                      {(["trades", "equity", "returns", "daily"] as const).map(tab => (
                         <button
-                          key={t.tradeNo}
+                          key={tab}
                           type="button"
-                          onClick={() => result && openTradeFromLive(t, result)}
-                          className="text-left rounded-lg border border-zinc-700 bg-zinc-950/80 p-3 hover:border-teal-600/50 hover:bg-zinc-900/90 transition-colors space-y-2"
+                          onClick={() => setActiveTab(tab)}
+                          className={`px-5 py-2.5 text-xs font-semibold rounded-lg transition-all ${
+                            activeTab === tab
+                              ? "bg-teal-500/10 text-teal-400 shadow-[0_0_15px_rgba(20,184,166,0.1)] border border-teal-500/20"
+                              : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+                          }`}
                         >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-mono text-sm text-zinc-200">Trade #{t.tradeNo}</span>
-                            <ExitReasonBadge reason={t.exitReason} />
-                          </div>
-                          <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[10px] text-zinc-500">
-                            <span>Entry</span>
-                            <span className="font-mono text-zinc-300 text-right">{t.entryDate}</span>
-                            <span>Exit</span>
-                            <span className="font-mono text-zinc-300 text-right">{t.exitDate}</span>
-                            <span>Hold</span>
-                            <span className="font-mono text-zinc-300 text-right">{t.holdingDays ?? "—"}d</span>
-                          </div>
-                          <div className="flex items-center justify-between pt-1 border-t border-zinc-800">
-                            <span className="text-[10px] text-zinc-500 font-mono">
-                              {t.entryPrice ?? "—"} → {t.exitPrice ?? "—"}
-                            </span>
-                            <span className={`font-mono text-sm font-bold ${t.profitable ? "text-emerald-400" : "text-red-400"}`}>
-                              {t.returnPct >= 0 ? "+" : ""}{t.returnPct}%
-                            </span>
-                          </div>
+                          {tab === "trades" ? `Trade Log (${result.totalTrades})` : tab === "equity" ? "Equity Curve" : tab === "returns" ? "Return Distribution" : "Daily Volatility"}
                         </button>
                       ))}
                     </div>
 
-                    <p className="text-zinc-500 text-[10px] font-medium pt-1">All trades (table)</p>
-                    <div className="rounded border border-zinc-800 overflow-hidden">
-                      <table className="w-full text-[11px]">
-                        <thead className="bg-zinc-950 sticky top-0">
-                          <tr className="text-zinc-500">
-                            <th className="text-left px-2 py-2">#</th>
-                            <th className="text-left px-2 py-2">Entry</th>
-                            <th className="text-left px-2 py-2">Exit</th>
-                            <th className="text-right px-2 py-2">Hold</th>
-                            <th className="text-right px-2 py-2">Px In</th>
-                            <th className="text-right px-2 py-2">Px Out</th>
-                            <th className="text-right px-2 py-2">Return</th>
-                            <th className="text-center px-2 py-2">Why</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {pagedTrades.map(t => (
-                            <tr key={t.tradeNo}
-                              className="border-t border-zinc-800/60 cursor-pointer hover:bg-zinc-800/40 transition-colors"
-                              onClick={() => result && openTradeFromLive(t, result)}>
-                              <td className="px-2 py-2 text-zinc-600 font-mono">{t.tradeNo}</td>
-                              <td className="px-2 py-2 text-zinc-300 font-mono">{t.entryDate}</td>
-                              <td className="px-2 py-2 text-zinc-300 font-mono">{t.exitDate}</td>
-                              <td className="px-2 py-2 text-right text-zinc-400 font-mono">{t.holdingDays ?? "—"}</td>
-                              <td className="px-2 py-2 text-right text-zinc-300 font-mono">{t.entryPrice ?? "—"}</td>
-                              <td className="px-2 py-2 text-right text-zinc-300 font-mono">{t.exitPrice ?? "—"}</td>
-                              <td className={`px-2 py-2 text-right font-mono font-semibold ${t.profitable ? "text-emerald-400" : "text-red-400"}`}>
-                                {t.returnPct >= 0 ? "+" : ""}{t.returnPct}%
-                              </td>
-                              <td className="px-2 py-2 text-center"><ExitReasonBadge reason={t.exitReason} /></td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <Button size="sm" variant="outline" className="border-zinc-700 text-zinc-200"
-                        onClick={() => setTradesPage(p => Math.max(1, p - 1))} disabled={tradesPage <= 1}>
-                        <ChevronLeft className="h-4 w-4 mr-1" /> Prev
-                      </Button>
-                      <span className="text-[10px] text-zinc-500">
-                        {(tradesPage - 1) * tradesPerPage + 1}–{Math.min(tradesPage * tradesPerPage, result.trades.length)} of {result.trades.length}
-                      </span>
-                      <Button size="sm" variant="outline" className="border-zinc-700 text-zinc-200"
-                        onClick={() => setTradesPage(p => Math.min(totalTradePages, p + 1))} disabled={tradesPage >= totalTradePages}>
-                        Next <ChevronRight className="h-4 w-4 ml-1" />
-                      </Button>
-                    </div>
-                  </>
-                ) : (
-                  <Alert className="bg-amber-950/30 border-amber-800">
-                    <AlertDescription className="text-amber-200/90 text-xs">
-                      The engine reports <strong>{result.totalTrades}</strong> trade(s), but the trade list in the response is empty.
-                      Redeploy/restart OpenAlgo with the latest <code className="text-amber-100/80">vectorbt_backtest_service.py</code> so each trade is included in{" "}
-                      <code className="text-amber-100/80">trades[]</code>.
-                    </AlertDescription>
-                  </Alert>
-                )}
-              </div>
-            )}
+                    <AnimatePresence mode="wait">
+                      <motion.div
+                        key={activeTab}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        transition={{ duration: 0.2 }}
+                        className="pt-2"
+                      >
+                        {activeTab === "trades" && (
+                          <div className="space-y-8">
+                            {/* Card View for Recent Trades */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                              {result.trades.slice(0, 12).map(t => (
+                                <button
+                                  key={t.tradeNo}
+                                  type="button"
+                                  onClick={() => openTradeFromLive(t, result)}
+                                  className="text-left rounded-xl border border-zinc-800/60 bg-zinc-900/20 p-4 hover:border-teal-500/30 hover:bg-zinc-900/40 transition-all group relative overflow-hidden"
+                                >
+                                  <div className="absolute top-0 right-0 p-2 opacity-20 group-hover:opacity-40 transition-opacity">
+                                    <TrendingUp className="h-12 w-12 text-zinc-700" />
+                                  </div>
+                                  <div className="flex items-center justify-between mb-4 relative z-10">
+                                    <span className="font-mono text-[10px] text-zinc-500 font-bold uppercase tracking-widest">TRD-{t.tradeNo}</span>
+                                    <ExitReasonBadge reason={t.exitReason} />
+                                  </div>
+                                  <div className="flex items-end justify-between relative z-10">
+                                    <div className="space-y-1">
+                                      <p className="text-[10px] text-zinc-600 font-bold uppercase tracking-tighter">Exit Date</p>
+                                      <p className="text-xs text-zinc-300 font-mono">{t.exitDate}</p>
+                                    </div>
+                                    <div className="text-right">
+                                      <p className={`text-xl font-black font-mono tracking-tighter ${t.profitable ? "text-emerald-400" : "text-red-400"}`}>
+                                        {t.returnPct >= 0 ? "+" : ""}{t.returnPct}%
+                                      </p>
+                                    </div>
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
 
-            {activeTab === "equity" && (
-              <EquityCurveChart
-                data={result.equityCurve ?? []}
-                initialCapital={Math.max(1000, parseFloat(initialCapital) || 100000)}
-                displayCurrency={displayCurrency}
-              />
-            )}
-            {activeTab === "returns" && <TradeReturnsChart trades={result.trades ?? []} />}
-            {activeTab === "daily" && <DailyPortfolioReturnsChart data={result.dailyReturns ?? []} />}
-          </div>
-        )}
+                            {/* Full Journal Table */}
+                            <div className="space-y-4">
+                              <div className="flex items-center justify-between">
+                                <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                                  <ListFilter className="h-3.5 w-3.5" />
+                                  Complete Trade Journal
+                                </h3>
+                              </div>
+                              <div className="rounded-xl border border-zinc-800/80 overflow-hidden bg-black/40">
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-[11px] leading-relaxed">
+                                    <thead className="bg-zinc-900/80 border-b border-zinc-800">
+                                      <tr className="text-zinc-500 uppercase tracking-tighter">
+                                        <th className="text-left px-4 py-3 font-bold"># ID</th>
+                                        <th className="text-left px-4 py-3 font-bold">Execution Timeline</th>
+                                        <th className="text-right px-4 py-3 font-bold">Hold</th>
+                                        <th className="text-right px-4 py-3 font-bold">Price Point (In → Out)</th>
+                                        <th className="text-right px-4 py-3 font-bold">Performance</th>
+                                        <th className="text-center px-4 py-3 font-bold">Exit</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-zinc-900/50">
+                                      {pagedTrades.map(t => (
+                                        <tr key={t.tradeNo}
+                                          className="cursor-pointer hover:bg-teal-500/[0.03] transition-colors group"
+                                          onClick={() => openTradeFromLive(t, result)}>
+                                          <td className="px-4 py-3.5 text-zinc-600 font-mono font-bold group-hover:text-zinc-400">#{t.tradeNo}</td>
+                                          <td className="px-4 py-3.5">
+                                            <div className="font-mono text-zinc-400 group-hover:text-zinc-200">
+                                              {t.entryDate} <span className="text-zinc-800 mx-1">→</span> {t.exitDate}
+                                            </div>
+                                          </td>
+                                          <td className="px-4 py-3.5 text-right text-zinc-500 font-mono group-hover:text-zinc-300">{t.holdingDays ?? "—"}d</td>
+                                          <td className="px-4 py-3.5 text-right">
+                                            <span className="font-mono text-zinc-500 group-hover:text-zinc-300">
+                                              {t.entryPrice?.toLocaleString() ?? "—"} <span className="text-zinc-800 mx-1">→</span> {t.exitPrice?.toLocaleString() ?? "—"}
+                                            </span>
+                                          </td>
+                                          <td className={`px-4 py-3.5 text-right font-mono font-bold ${t.profitable ? "text-emerald-400" : "text-red-400"}`}>
+                                            {t.returnPct >= 0 ? "+" : ""}{t.returnPct}%
+                                          </td>
+                                          <td className="px-4 py-3.5 text-center"><ExitReasonBadge reason={t.exitReason} /></td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                              
+                              <div className="flex items-center justify-between px-2 pt-2">
+                                <Button size="sm" variant="ghost" className="text-zinc-500 hover:text-teal-400 transition-colors"
+                                  onClick={() => setTradesPage(p => Math.max(1, p - 1))} disabled={tradesPage <= 1}>
+                                  <ChevronLeft className="h-4 w-4 mr-2" /> Previous Era
+                                </Button>
+                                <div className="flex gap-2">
+                                  {[...Array(totalTradePages)].map((_, i) => (
+                                    <button
+                                      key={i}
+                                      onClick={() => setTradesPage(i + 1)}
+                                      className={`w-1 h-1 rounded-full transition-all duration-300 ${tradesPage === i + 1 ? "bg-teal-500 w-6" : "bg-zinc-800 hover:bg-zinc-600"}`}
+                                    />
+                                  ))}
+                                </div>
+                                <Button size="sm" variant="ghost" className="text-zinc-500 hover:text-teal-400 transition-colors"
+                                  onClick={() => setTradesPage(p => Math.min(totalTradePages, p + 1))} disabled={tradesPage >= totalTradePages}>
+                                  Next Era <ChevronRight className="h-4 w-4 ml-2" />
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {activeTab === "equity" && (
+                          <div className="max-w-5xl mx-auto py-4">
+                            <EquityCurveChart
+                              data={result.equityCurve}
+                              initialCapital={Number(initialCapital)}
+                              displayCurrency={displayCurrency}
+                            />
+                          </div>
+                        )}
+
+                        {activeTab === "returns" && (
+                          <div className="max-w-5xl mx-auto py-4">
+                            <TradeReturnsChart trades={result.trades} />
+                          </div>
+                        )}
+
+                        {activeTab === "daily" && (
+                          <div className="max-w-5xl mx-auto">
+                            <DailyPortfolioReturnsChart data={result.dailyReturns || []} />
+                          </div>
+                        )}
+                      </motion.div>
+                    </AnimatePresence>
+                  </div>
+
+                  {/* Compliance & Footnote */}
+                   <div className="pt-10 border-t border-zinc-900/50 flex flex-col sm:flex-row justify-between items-center gap-6">
+                     <div className="flex items-center gap-6">
+                       <div className="space-y-1">
+                         <p className="text-[10px] text-zinc-600 uppercase font-bold tracking-[0.2em]">Data Origin</p>
+                         <p className="text-xs text-zinc-400 font-mono">{result.exchange}:{result.symbol}</p>
+                       </div>
+                       <div className="w-px h-6 bg-zinc-900" />
+                       <div className="space-y-1">
+                         <p className="text-[10px] text-zinc-600 uppercase font-bold tracking-[0.2em]">Strategy ID</p>
+                         <p className="text-xs text-zinc-400 font-mono">{result.strategy}</p>
+                       </div>
+                     </div>
+                     <p className="text-[10px] text-zinc-600 italic text-center sm:text-right max-w-sm">
+                        Hypothetical performance results have inherent limitations. No representation is being made that any account will achieve profits similar to those shown.
+                     </p>
+                   </div>
+                </div>
+              )}
+            </div>
+
+            <div className="shrink-0 border-t border-zinc-900 p-5 bg-zinc-950 flex flex-col sm:flex-row justify-between items-center gap-4">
+              <div className="flex items-center gap-2 text-zinc-600 text-[10px] uppercase font-bold tracking-widest">
+                <ShieldCheck className="h-3.5 w-3.5 text-teal-600/50" />
+                Verified Backtest Service
+              </div>
+              <div className="flex gap-3 w-full sm:w-auto">
+                <Button variant="outline" size="sm" onClick={() => setResultPopupOpen(false)} className="flex-1 sm:flex-none border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-900">
+                  Close Analysis
+                </Button>
+                <Button size="sm" className="flex-1 sm:flex-none bg-teal-600 hover:bg-teal-500 shadow-lg shadow-teal-500/10" onClick={() => window.print()}>
+                  <Download className="h-3.5 w-3.5 mr-2" /> Export PDF Report
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {timingReview && (
           <Alert className="bg-purple-950/30 border-purple-800">
@@ -1589,126 +1975,60 @@ export default function BacktestingSection() {
                       const histTrades: Trade[] = Array.isArray((h as any).trades) ? (h as any).trades : [];
                       return (
                         <Fragment key={hId}>
-                          <tr className={`border-t border-zinc-800/60 cursor-pointer transition-colors ${isExp ? "bg-zinc-800/60" : "hover:bg-zinc-800/30"}`}
-                            onClick={() => setExpandedHistoryId(isExp ? null : hId)}>
-                            <td className="px-2 py-2 text-zinc-500 font-mono">{String((h as any).created_at ?? "").slice(0, 16).replace("T", " ")}</td>
-                            <td className="px-2 py-2 text-zinc-200 font-mono">{String((h as any).symbol ?? "—")}</td>
-                            <td className="px-2 py-2 text-zinc-400 flex items-center gap-1">
-                              {String((h as any).strategy_label ?? (h as any).mode ?? "—")}
-                              {s.usedCustomConditions && <Badge className="bg-teal-900/60 text-teal-300 border-teal-700 text-[9px] px-1 py-0 ml-1">CC</Badge>}
-                            </td>
-                            <td className="px-2 py-2 text-right text-zinc-300 font-mono">{String(s.totalTrades ?? "—")}</td>
-                            <td className="px-2 py-2 text-right text-zinc-300 font-mono">{String(s.winRate ?? "—")}%</td>
-                            <td className={`px-2 py-2 text-right font-mono font-semibold ${ret >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                              {ret >= 0 ? "+" : ""}{String(s.totalReturn ?? "—")}%
-                            </td>
-                            <td className="px-2 py-2 text-center">
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                className="h-8 w-8 p-0 text-zinc-500 hover:text-red-400 hover:bg-red-950/30"
-                                title="Delete this run"
-                                disabled={historyDeletingId === hId}
-                                onClick={e => {
-                                  e.stopPropagation();
-                                  void deleteHistoryRun(hId);
-                                }}
-                              >
-                                {historyDeletingId === hId
-                                  ? <Loader2 className="h-4 w-4 animate-spin" />
-                                  : <Trash2 className="h-4 w-4" />}
-                              </Button>
-                            </td>
-                            <td className="px-2 py-2 text-center text-zinc-500">{isExp ? "▲" : "▼"}</td>
-                          </tr>
-                          {isExp && (
-                            <tr className="bg-zinc-900/80">
-                              <td colSpan={8} className="px-3 py-3 space-y-3">
-                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                  <StatCard label="Win Rate" value={`${s.winRate ?? "—"}%`} color={Number(s.winRate) >= 50 ? "green" : "red"} />
-                                  <StatCard label="Return" value={`${ret >= 0 ? "+" : ""}${s.totalReturn ?? "—"}%`} color={ret >= 0 ? "green" : "red"} />
-                                  <StatCard label="Max DD" value={`${s.maxDrawdown ?? "—"}%`} color="red" />
-                                  <StatCard label="Sharpe" value={s.sharpeRatio ?? "—"} />
-                                  {s.bestTrade != null && <StatCard label="Best" value={`+${s.bestTrade}%`} color="green" />}
-                                  {s.worstTrade != null && <StatCard label="Worst" value={`${s.worstTrade}%`} color="red" />}
-                                  {s.avgHoldingDays != null && <StatCard label="Avg Hold" value={`${s.avgHoldingDays}d`} />}
-                                  {s.expectancy != null && <StatCard label="Expectancy" value={`${Number(s.expectancy) >= 0 ? "+" : ""}${s.expectancy}%`} color={Number(s.expectancy) >= 0 ? "green" : "red"} />}
-                                </div>
-
-                                {histTrades.length > 0 && (
-                                  <div>
-                                    <p className="text-[10px] text-zinc-400 font-medium mb-1">
-                                      All {histTrades.length} trades · click row to open popup
-                                    </p>
-                                    <div className="rounded border border-zinc-800 overflow-auto max-h-56">
-                                      <table className="w-full text-[11px]">
-                                        <thead className="bg-zinc-950 sticky top-0">
-                                          <tr className="text-zinc-500">
-                                            <th className="text-left px-2 py-1.5">#</th>
-                                            <th className="text-left px-2 py-1.5">Entry</th>
-                                            <th className="text-left px-2 py-1.5">Exit</th>
-                                            <th className="text-right px-2 py-1.5">Hold</th>
-                                            <th className="text-right px-2 py-1.5">Px In</th>
-                                            <th className="text-right px-2 py-1.5">Px Out</th>
-                                            <th className="text-right px-2 py-1.5">Ret%</th>
-                                            <th className="text-center px-2 py-1.5">Why</th>
-                                          </tr>
-                                        </thead>
-                                        <tbody>
-                                          {histTrades.map((t, ti) => (
-                                            <tr key={ti}
-                                              className="border-t border-zinc-800/50 cursor-pointer hover:bg-zinc-800/30 transition-colors"
-                                              onClick={e => { e.stopPropagation(); openTradeFromHistory(t, h as Record<string, unknown>); }}>
-                                              <td className="px-2 py-1.5 text-zinc-600 font-mono">{t.tradeNo ?? ti + 1}</td>
-                                              <td className="px-2 py-1.5 text-zinc-300 font-mono">{t.entryDate}</td>
-                                              <td className="px-2 py-1.5 text-zinc-300 font-mono">{t.exitDate}</td>
-                                              <td className="px-2 py-1.5 text-right text-zinc-400 font-mono">{t.holdingDays ?? "—"}</td>
-                                              <td className="px-2 py-1.5 text-right text-zinc-300 font-mono">{t.entryPrice ?? "—"}</td>
-                                              <td className="px-2 py-1.5 text-right text-zinc-300 font-mono">{t.exitPrice ?? "—"}</td>
-                                              <td className={`px-2 py-1.5 text-right font-mono font-semibold ${t.profitable ? "text-emerald-400" : "text-red-400"}`}>
-                                                {t.returnPct >= 0 ? "+" : ""}{t.returnPct}%
-                                              </td>
-                                              <td className="px-2 py-1.5 text-center"><ExitReasonBadge reason={t.exitReason ?? "unknown"} /></td>
-                                            </tr>
-                                          ))}
-                                        </tbody>
-                                      </table>
-                                    </div>
-                                  </div>
+                            <tr 
+                              className="border-t border-zinc-800/60 hover:bg-zinc-800/30 transition-colors cursor-pointer"
+                              onClick={() => setExpandedHistoryId(hId)}
+                            >
+                              <td className="px-2 py-2 text-zinc-500 font-mono">
+                                {String((h as any).created_at ?? "").slice(0, 16).replace("T", " ")}
+                              </td>
+                              <td className="px-2 py-2 text-zinc-200 font-mono">
+                                {String((h as any).symbol ?? "—")}
+                              </td>
+                              <td className="px-2 py-2 text-zinc-400 flex items-center gap-1">
+                                {String((h as any).strategy_label ?? (h as any).mode ?? "—")}
+                                {s.usedCustomConditions && (
+                                  <Badge className="bg-teal-900/60 text-teal-300 border-teal-700 text-[9px] px-1 py-0 ml-1">
+                                    CC
+                                  </Badge>
                                 )}
-
-                                <Button size="sm" variant="outline" className="border-teal-700/50 text-teal-300 text-xs"
-                                  onClick={e => {
+                              </td>
+                              <td className="px-2 py-2 text-right text-zinc-300 font-mono">
+                                {String(s.totalTrades ?? "—")}
+                              </td>
+                              <td className="px-2 py-2 text-right text-zinc-300 font-mono">
+                                {String(s.winRate ?? "—")}%
+                              </td>
+                              <td className={`px-2 py-2 text-right font-mono font-semibold ${ret >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                                {ret >= 0 ? "+" : ""}{String(s.totalReturn ?? "—")}%
+                              </td>
+                              <td className="px-2 py-2 text-center">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-8 w-8 p-0 text-zinc-500 hover:text-red-400 hover:bg-red-950/30"
+                                  title="Delete this run"
+                                  disabled={historyDeletingId === hId}
+                                  onClick={(e) => {
                                     e.stopPropagation();
-                                    const p = (h as any).params ?? {};
-                                    setSymbol(String((h as any).symbol ?? ""));
-                                    setExchange(String((h as any).exchange ?? "NSE"));
-                                    setAction(((h as any).action === "SELL" ? "SELL" : "BUY") as "BUY" | "SELL");
-                                    if (p.stop_loss_pct) setSlPct(String(p.stop_loss_pct));
-                                    if (p.take_profit_pct) setTpPct(String(p.take_profit_pct));
-                                    if (p.days) setDays(String(p.days));
-                                    if (p.display_currency === "INR" || p.display_currency === "USD") {
-                                      setDisplayCurrency(p.display_currency);
-                                    }
-                                    if (p.initial_capital != null && p.initial_capital !== "") {
-                                      setInitialCapital(String(p.initial_capital));
-                                    }
-                                    const csid = p.custom_strategy_id;
-                                    if (csid != null && String(csid).length > 0) {
-                                      setSelectedCustomId(String(csid));
-                                    }
-                                    setExpandedHistoryId(null);
-                                    toast.info("Config loaded — click Run Backtesting");
-                                  }}>
-                                  <Zap className="h-3 w-3 mr-1" /> Re-run this config
+                                    void deleteHistoryRun(hId);
+                                  }}
+                                >
+                                  {historyDeletingId === hId ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="h-4 w-4" />
+                                  )}
                                 </Button>
                               </td>
+                              <td className="px-2 py-2 text-center text-zinc-500">
+                                <ExternalLink className="h-4 w-4" />
+                              </td>
                             </tr>
-                          )}
-                        </Fragment>
-                      );
-                    })}
+                          </Fragment>
+                        );
+                      })}
                   </tbody>
                 </table>
               </div>
@@ -1731,6 +2051,12 @@ export default function BacktestingSection() {
           )}
         </div>
       </CardContent>
+
+      <Dialog open={!!expandedHistoryId} onOpenChange={(open) => !open && setExpandedHistoryId(null)}>
+        <DialogContent className="flex h-[92vh] max-h-[92vh] w-full !max-w-[95vw] mx-auto flex-col gap-0 !overflow-hidden border-zinc-800 bg-zinc-950 p-0 sm:!max-w-[98vw]">
+          {renderHistoryDetailModal()}
+        </DialogContent>
+      </Dialog>
 
       {/* Trade detail popup — shared between live result and history trades */}
       {tradePopup && (

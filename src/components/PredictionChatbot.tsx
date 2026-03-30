@@ -171,6 +171,19 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
   const bottomRef  = useRef<HTMLDivElement>(null);
   const inputRef   = useRef<HTMLInputElement>(null);
   const navigate   = useNavigate();
+  const [modalActive, setModalActive] = useState(false);
+
+  // Monitor DOM for open dialogs to hide chatbot
+  useEffect(() => {
+    const checkModal = () => {
+      const hasModal = !!document.querySelector('[role="dialog"]');
+      setModalActive(hasModal);
+    };
+    checkModal();
+    const observer = new MutationObserver(checkModal);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
 
   const scrollToBottom = useCallback(() => {
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
@@ -358,6 +371,8 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────
+  if (modalActive) return null;
+
   return (
     <>
       {/* Floating trigger */}
