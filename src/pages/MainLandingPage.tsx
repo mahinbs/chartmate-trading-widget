@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { Helmet } from "react-helmet-async";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useAffiliateRef } from "@/hooks/useAffiliateRef";
 import { useAuth } from "@/hooks/useAuth";
 import { useUserRole } from "@/hooks/useUserRole";
@@ -427,6 +427,21 @@ const MainLandingPage = () => {
               </p>
             </motion.div>
           </div>
+
+          <motion.div variants={fadeUp} className="flex flex-col sm:flex-row gap-4 mt-16 justify-center items-center">
+            <Link 
+              to="/ai-probability-engine"
+              className="px-8 py-4 bg-teal-500 text-black font-bold rounded-full hover:bg-teal-400 transition-all shadow-[0_0_20px_rgba(20,184,166,0.3)] hover:scale-105 active:scale-95 text-center min-w-[260px] font-syne"
+            >
+              AI Robot Trade
+            </Link>
+            <Link 
+              to="/ai-trading-analysis-and-back-testing"
+              className="px-8 py-4 bg-transparent border border-teal-500/50 text-teal-400 font-bold rounded-full hover:bg-teal-500/10 transition-all hover:scale-105 active:scale-95 text-center min-w-[260px] font-syne"
+            >
+              AI Trading Analysis and Back Testing
+            </Link>
+          </motion.div>
         </div>
       </motion.section>
 
