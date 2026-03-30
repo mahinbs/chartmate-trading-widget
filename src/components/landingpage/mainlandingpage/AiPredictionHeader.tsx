@@ -4,13 +4,17 @@ import { Link } from "react-router-dom";
 import logoImg from "@/assets/logo.png";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { motion, AnimatePresence } from "framer-motion";
+import { ChevronDown } from "lucide-react";
 
 const BASE_NAV_ITEMS = [
-  { id: "ai-probability-engine", label: "AI Robot Trade", isRoute: true },
-  // { id: "market-picks", label: "Daily Analysis", isRoute: true },
   { id: "affiliate-partner", label: "Affiliates", isRoute: true },
   { id: "pricing", label: "Software Pricing", isRoute: true },
-  // { id: "white-label", label: "White Label", isRoute: true },
+];
+
+const FEATURE_ITEMS = [
+  { id: "ai-probability-engine", label: "AI Robot Trade", isRoute: true },
+  { id: "ai-trading-analysis-and-back-testing", label: "AI Trading Analysis and Back Testing", isRoute: true },
 ];
 
 const scrollToSection = (id: string) => {
@@ -30,7 +34,8 @@ const scrollToSection = (id: string) => {
 const AiPredictionHeader: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [hasBlogs, setHasBlogs] = useState(false);
-  // const [hasDashboard, setHasDashboard] = useState(false);
+  const [isFeaturesOpen, setIsFeaturesOpen] = useState(false);
+  const [isMobileFeaturesOpen, setIsMobileFeaturesOpen] = useState(false);
   const { user } = useAuth();
 
   useEffect(() => {
@@ -85,6 +90,43 @@ const AiPredictionHeader: React.FC = () => {
 
           {/* Desktop nav */}
           <nav className="hidden items-center 2xl:gap-12 gap-8 text-sm font-medium text-gray-300 lg:flex">
+            {/* Features Dropdown */}
+            <div 
+              className="relative group py-4"
+              onMouseEnter={() => setIsFeaturesOpen(true)}
+              onMouseLeave={() => setIsFeaturesOpen(false)}
+            >
+              <button className="flex items-center gap-1 hover:text-white transition-colors cursor-pointer outline-none">
+                <span>Features</span>
+                <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isFeaturesOpen ? "rotate-180" : ""}`} />
+              </button>
+
+              <AnimatePresence>
+                {isFeaturesOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    transition={{ duration: 0.2 }}
+                    className="absolute left-0 top-full pt-2 w-64"
+                  >
+                    <div className="bg-zinc-900/90 backdrop-blur-2xl border border-white/10 rounded-2xl p-2 shadow-2xl">
+                      {FEATURE_ITEMS.map((subItem) => (
+                        <Link
+                          key={subItem.id}
+                          to={`/${subItem.id}`}
+                          className="flex flex-col px-4 py-3 rounded-xl hover:bg-white/5 hover:text-white transition-all group/item"
+                        >
+                          <span className="text-sm font-medium">{subItem.label}</span>
+                          <div className="h-px w-0 bg-teal-500/50 mt-1 transition-all group-hover/item:w-full" />
+                        </Link>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
             {navItems.map((item) => (
               item.isRoute ? (
                 <Link
@@ -159,6 +201,40 @@ const AiPredictionHeader: React.FC = () => {
           </div>
 
           <nav className="flex flex-col gap-2 px-6 py-4 text-sm">
+            {/* Mobile Features Accordion */}
+            <div className="flex flex-col">
+              <button 
+                onClick={() => setIsMobileFeaturesOpen(!isMobileFeaturesOpen)}
+                className="flex items-center justify-between rounded-xl px-3 py-3 text-left text-gray-200 hover:bg-white/5 hover:text-white transition-colors group"
+              >
+                <span className="text-sm font-medium">Features</span>
+                <ChevronDown className={`w-4 h-4 transition-transform ${isMobileFeaturesOpen ? "rotate-180" : ""}`} />
+              </button>
+              
+              <AnimatePresence>
+                {isMobileFeaturesOpen && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="overflow-hidden bg-white/[0.02] rounded-xl mx-2 mb-2"
+                  >
+                    {FEATURE_ITEMS.map((subItem) => (
+                      <Link
+                        key={subItem.id}
+                        to={`/${subItem.id}`}
+                        onClick={() => setIsOpen(false)}
+                        className="flex items-center gap-3 px-4 py-3 text-zinc-400 hover:text-white transition-colors"
+                      >
+                        <div className="w-1.5 h-1.5 rounded-full bg-teal-500/50" />
+                        <span className="text-xs">{subItem.label}</span>
+                      </Link>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
             {navItems.map((item) => (
               item.isRoute ? (
                 <Link
