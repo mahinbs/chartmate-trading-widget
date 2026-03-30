@@ -1578,25 +1578,33 @@ export function StrategyEntrySignalsPanel({
           <div className="min-w-0 flex-1 space-y-1">
             <CardTitle className="text-base font-semibold text-white flex items-center gap-2">
               <Target className="h-4 w-4 text-teal-400 shrink-0" />
-              Strategy scanner — live &amp; past signals
+              {symbol ? "Strategy scanner — live & past signals" : "AI Trading Analysis & History"}
             </CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Symbol: <span className="text-white/90 font-mono font-medium">{symbol}</span>
-            </p>
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              Pick a <span className="text-zinc-300 font-medium">results window</span> below (how far back entry/exit
-              points may appear — up to now). We fetch enough history for indicators, then only keep signals inside
-              that window. On intraday data when available we detect{" "}
-              <span className="text-emerald-400 font-medium">entry (BUY)</span> and{" "}
-              <span className="text-red-400 font-medium">exit (SELL)</span>, score with rules + Gemini —{" "}
-              <span className="text-zinc-300">confirm</span>, <span className="text-zinc-300">mixed signal</span>, or{" "}
-              <span className="text-zinc-300">reject</span>. Live cards use a clock; the live tag clears after{" "}
-              <span className="text-zinc-300">one chart bar</span> from the signal time (e.g. 5m feed → 5m window, daily →
-              24h), matching the scan interval. No projected &quot;upcoming&quot; entries.
-              {postAnalysis?.result ? " Your post-analysis outcome is included as extra context." : ""}
-            </p>
-            {marketNote ? <p className="text-xs text-muted-foreground mt-1">{marketNote}</p> : null}
-            {scanMeta && (
+            {symbol ? (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Symbol: <span className="text-white/90 font-mono font-medium">{symbol}</span>
+                </p>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  Pick a <span className="text-zinc-300 font-medium">results window</span> below (how far back entry/exit
+                  points may appear — up to now). We fetch enough history for indicators, then only keep signals inside
+                  that window. On intraday data when available we detect{" "}
+                  <span className="text-emerald-400 font-medium">entry (BUY)</span> and{" "}
+                  <span className="text-red-400 font-medium">exit (SELL)</span>, score with rules + Gemini —{" "}
+                  <span className="text-zinc-300">confirm</span>, <span className="text-zinc-300">mixed signal</span>, or{" "}
+                  <span className="text-zinc-300">reject</span>. Live cards use a clock; the live tag clears after{" "}
+                  <span className="text-zinc-300">one chart bar</span> from the signal time (e.g. 5m feed → 5m window, daily →
+                  24h), matching the scan interval. No projected &quot;upcoming&quot; entries.
+                  {postAnalysis?.result ? " Your post-analysis outcome is included as extra context." : ""}
+                </p>
+                {marketNote ? <p className="text-xs text-muted-foreground mt-1">{marketNote}</p> : null}
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Search for a symbol above to analyze its historical performance, detected entry/exit points, and AI-scored signals. Your previous scans are saved below for quick access.
+              </p>
+            )}
+            {scanMeta && symbol && (
               <p className="text-[11px] text-zinc-500 mt-1">
                 Data: <span className="text-zinc-400">{scanMeta.dataSource ?? "yahoo"}</span>
                 {" · "}Indicators: <span className="text-zinc-400">{scanMeta.indicatorSource ?? "computed"}</span>
@@ -1631,24 +1639,26 @@ export function StrategyEntrySignalsPanel({
               </p>
             )}
           </div>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="shrink-0 h-8 px-3 rounded-md border-teal-500/30 bg-black/40 text-teal-300 hover:bg-teal-500/10 hover:border-teal-400/50 text-xs"
-                aria-label="Open schedule popup"
-                onClick={() => setEntryAlarmsOpen(true)}
-              >
-                <Clock3 className="h-3.5 w-3.5 mr-1.5" />
-                Schedule
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="left" className="max-w-[220px]">
-              Open schedule popup: create/edit and manage existing schedules.
-            </TooltipContent>
-          </Tooltip>
+          {symbol && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 h-8 px-3 rounded-md border-teal-500/30 bg-black/40 text-teal-300 hover:bg-teal-500/10 hover:border-teal-400/50 text-xs"
+                  aria-label="Open schedule popup"
+                  onClick={() => setEntryAlarmsOpen(true)}
+                >
+                  <Clock3 className="h-3.5 w-3.5 mr-1.5" />
+                  Schedule
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="left" className="max-w-[220px]">
+                Open schedule popup: create/edit and manage existing schedules.
+              </TooltipContent>
+            </Tooltip>
+          )}
         </div>
       </CardHeader>
 
@@ -1813,161 +1823,165 @@ export function StrategyEntrySignalsPanel({
       </Sheet>
 
       <CardContent className="space-y-4">
-        <div className="rounded-lg border border-cyan-500/25 bg-cyan-950/20 p-3 space-y-2">
-          <p className="text-[11px] font-semibold text-cyan-300">Results time window</p>
-          <p className="text-[10px] text-zinc-500 leading-snug">
-            Only entry/exit points from the last <span className="text-zinc-400">{resultWindowDays} days</span> through
-            now are returned. Data fetch uses at least 60 days when needed for indicators.
-          </p>
-          <div className="flex flex-col sm:flex-row sm:items-end gap-2">
-            <div className="flex-1 min-w-0 space-y-1">
-              <p className="text-[10px] uppercase tracking-wide text-zinc-500">Preset</p>
-              <Select value={timeframePreset} onValueChange={setTimeframePreset}>
-                <SelectTrigger className="h-9 text-xs bg-black/40 border-zinc-700">
-                  <SelectValue placeholder="Window" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1d">Last 1 day</SelectItem>
-                  <SelectItem value="7d">Last 7 days</SelectItem>
-                  <SelectItem value="30d">Last 1 month (~30d)</SelectItem>
-                  <SelectItem value="90d">Last 3 months (~90d)</SelectItem>
-                  <SelectItem value="180d">Last 6 months (~180d)</SelectItem>
-                  <SelectItem value="365d">Last 1 year</SelectItem>
-                  <SelectItem value="730d">Last 2 years</SelectItem>
-                  <SelectItem value="custom">Custom (days)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {timeframePreset === "custom" ? (
-              <div className="w-full sm:w-32 space-y-1">
-                <p className="text-[10px] uppercase tracking-wide text-zinc-500">Days (1–730)</p>
-                <Input
-                  type="number"
-                  min={1}
-                  max={730}
-                  value={customWindowDays}
-                  onChange={(e) => setCustomWindowDays(e.target.value)}
-                  className="h-9 text-xs bg-black/40 border-zinc-700"
-                />
-              </div>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="rounded-lg border border-teal-500/20 bg-teal-500/5 p-3 space-y-2">
-          <p className="text-[11px] font-semibold text-teal-300">Select strategies for this scan</p>
-          <p className="text-[10px] text-zinc-400">
-            Selected: {selected.size} built-in
-            {customStrategies.length > 0 ? ` + ${selectedCustom.size} custom` : ""}
-          </p>
-          {selected.size + selectedCustom.size === 0 ? (
-            <p className="text-[10px] text-amber-300">Pick at least one strategy before running scan.</p>
-          ) : null}
-        </div>
-
-        {/* Signal counts — always visible once results exist */}
-        {counts.total > 0 && (
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            {counts.live > 0 && (
-              <Badge className="bg-teal-500/20 border border-teal-400/40 text-teal-200 hover:bg-teal-500/30 text-sm font-semibold px-2.5 py-1">
-                Live: {counts.live}
-              </Badge>
-            )}
-            <Badge className="bg-emerald-500/15 border border-emerald-500/30 text-emerald-200 hover:bg-emerald-500/20 text-sm font-medium">
-              Entry (BUY): {counts.buyTotal}
-            </Badge>
-            <Badge className="bg-red-500/15 border border-red-500/30 text-red-200 hover:bg-red-500/20 text-sm font-medium">
-              Exit (SELL): {counts.sellTotal}
-            </Badge>
-            {counts.today > 0 && (
-              <span className="text-teal-400 text-sm font-medium">Today: {counts.today}</span>
-            )}
-            {counts.history > 0 && (
-              <span className="text-zinc-400 text-sm font-medium">Past: {counts.history}</span>
-            )}
-          </div>
-        )}
-
-        {/* Strategy picker */}
-        <div className="rounded-lg border border-white/10 p-3 max-h-48 overflow-y-auto space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Built-in strategies</p>
-            <div className="flex items-center gap-1">
-              <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={selectAllBuiltIn}>
-                Select all
-              </Button>
-              <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={clearBuiltIn}>
-                Clear
-              </Button>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {STRATEGIES.map((s) => (
-              <label key={s.value} className="flex items-start gap-2 text-xs cursor-pointer">
-                <Checkbox
-                  checked={selected.has(s.value)}
-                  onCheckedChange={() => toggle(s.value)}
-                  className="mt-0.5"
-                />
-                <span>
-                  <span className="text-white font-medium">{s.label}</span>
-                  <span className="text-muted-foreground block text-[10px] leading-snug">{s.description}</span>
-                </span>
-              </label>
-            ))}
-          </div>
-        </div>
-
-        {/* User's custom algo strategies */}
-        {customStrategies.length > 0 && (
-          <div className="rounded-lg border border-purple-500/20 bg-purple-500/5 p-3 max-h-40 overflow-y-auto space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-[10px] uppercase tracking-wide text-purple-300">
-                Your custom strategies ({customStrategies.length})
+        {symbol && (
+          <>
+            <div className="rounded-lg border border-cyan-500/25 bg-cyan-950/20 p-3 space-y-2">
+              <p className="text-[11px] font-semibold text-cyan-300">Results time window</p>
+              <p className="text-[10px] text-zinc-500 leading-snug">
+                Only entry/exit points from the last <span className="text-zinc-400">{resultWindowDays} days</span> through
+                now are returned. Data fetch uses at least 60 days when needed for indicators.
               </p>
-              <div className="flex items-center gap-1">
-                <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-[10px] text-purple-200 hover:text-purple-100" onClick={selectAllCustom}>
-                  Select all
-                </Button>
-                <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-[10px] text-purple-200 hover:text-purple-100" onClick={clearCustom}>
-                  Clear
-                </Button>
+              <div className="flex flex-col sm:flex-row sm:items-end gap-2">
+                <div className="flex-1 min-w-0 space-y-1">
+                  <p className="text-[10px] uppercase tracking-wide text-zinc-500">Preset</p>
+                  <Select value={timeframePreset} onValueChange={setTimeframePreset}>
+                    <SelectTrigger className="h-9 text-xs bg-black/40 border-zinc-700">
+                      <SelectValue placeholder="Window" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1d">Last 1 day</SelectItem>
+                      <SelectItem value="7d">Last 7 days</SelectItem>
+                      <SelectItem value="30d">Last 1 month (~30d)</SelectItem>
+                      <SelectItem value="90d">Last 3 months (~90d)</SelectItem>
+                      <SelectItem value="180d">Last 6 months (~180d)</SelectItem>
+                      <SelectItem value="365d">Last 1 year</SelectItem>
+                      <SelectItem value="730d">Last 2 years</SelectItem>
+                      <SelectItem value="custom">Custom (days)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {timeframePreset === "custom" ? (
+                  <div className="w-full sm:w-32 space-y-1">
+                    <p className="text-[10px] uppercase tracking-wide text-zinc-500">Days (1–730)</p>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={730}
+                      value={customWindowDays}
+                      onChange={(e) => setCustomWindowDays(e.target.value)}
+                      className="h-9 text-xs bg-black/40 border-zinc-700"
+                    />
+                  </div>
+                ) : null}
               </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {customStrategies.map((cs) => {
-                const baseLabel = STRATEGIES.find((s) => s.value === (cs.paper_strategy_type || ""))?.label;
-                return (
-                  <label key={cs.id} className="flex items-start gap-2 text-xs cursor-pointer">
+
+            <div className="rounded-lg border border-teal-500/20 bg-teal-500/5 p-3 space-y-2">
+              <p className="text-[11px] font-semibold text-teal-300">Select strategies for this scan</p>
+              <p className="text-[10px] text-zinc-400">
+                Selected: {selected.size} built-in
+                {customStrategies.length > 0 ? ` + ${selectedCustom.size} custom` : ""}
+              </p>
+              {selected.size + selectedCustom.size === 0 ? (
+                <p className="text-[10px] text-amber-300">Pick at least one strategy before running scan.</p>
+              ) : null}
+            </div>
+
+            {/* Signal counts — always visible once results exist */}
+            {counts.total > 0 && (
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                {counts.live > 0 && (
+                  <Badge className="bg-teal-500/20 border border-teal-400/40 text-teal-200 hover:bg-teal-500/30 text-sm font-semibold px-2.5 py-1">
+                    Live: {counts.live}
+                  </Badge>
+                )}
+                <Badge className="bg-emerald-500/15 border border-emerald-500/30 text-emerald-200 hover:bg-emerald-500/20 text-sm font-medium">
+                  Entry (BUY): {counts.buyTotal}
+                </Badge>
+                <Badge className="bg-red-500/15 border border-red-500/30 text-red-200 hover:bg-red-500/20 text-sm font-medium">
+                  Exit (SELL): {counts.sellTotal}
+                </Badge>
+                {counts.today > 0 && (
+                  <span className="text-teal-400 text-sm font-medium">Today: {counts.today}</span>
+                )}
+                {counts.history > 0 && (
+                  <span className="text-zinc-400 text-sm font-medium">Past: {counts.history}</span>
+                )}
+              </div>
+            )}
+
+            {/* Strategy picker */}
+            <div className="rounded-lg border border-white/10 p-3 max-h-48 overflow-y-auto space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Built-in strategies</p>
+                <div className="flex items-center gap-1">
+                  <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={selectAllBuiltIn}>
+                    Select all
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={clearBuiltIn}>
+                    Clear
+                  </Button>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {STRATEGIES.map((s) => (
+                  <label key={s.value} className="flex items-start gap-2 text-xs cursor-pointer">
                     <Checkbox
-                      checked={selectedCustom.has(cs.id)}
-                      onCheckedChange={() => toggleCustom(cs.id)}
+                      checked={selected.has(s.value)}
+                      onCheckedChange={() => toggle(s.value)}
                       className="mt-0.5"
                     />
                     <span>
-                      <span className="text-purple-200 font-medium">{cs.name}</span>
-                      <span className="text-muted-foreground block text-[10px] leading-snug">
-                        {cs.trading_mode} · SL {cs.stop_loss_pct}% · TP {cs.take_profit_pct}%
-                        {baseLabel ? ` · based on ${baseLabel}` : ""}
-                      </span>
+                      <span className="text-white font-medium">{s.label}</span>
+                      <span className="text-muted-foreground block text-[10px] leading-snug">{s.description}</span>
                     </span>
                   </label>
-                );
-              })}
+                ))}
+              </div>
             </div>
-          </div>
-        )}
 
-        <Button
-          className="w-full bg-teal-600 hover:bg-teal-500"
-          onClick={runScan}
-          disabled={loading}
-        >
-          {loading
-            ? <Loader2 className="h-4 w-4 animate-spin mr-2" />
-            : <Sparkles className="h-4 w-4 mr-2" />}
-          Run strategy entry scan
-        </Button>
+            {/* User's custom algo strategies */}
+            {customStrategies.length > 0 && (
+              <div className="rounded-lg border border-purple-500/20 bg-purple-500/5 p-3 max-h-40 overflow-y-auto space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[10px] uppercase tracking-wide text-purple-300">
+                    Your custom strategies ({customStrategies.length})
+                  </p>
+                  <div className="flex items-center gap-1">
+                    <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-[10px] text-purple-200 hover:text-purple-100" onClick={selectAllCustom}>
+                      Select all
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-[10px] text-purple-200 hover:text-purple-100" onClick={clearCustom}>
+                      Clear
+                    </Button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {customStrategies.map((cs) => {
+                    const baseLabel = STRATEGIES.find((s) => s.value === (cs.paper_strategy_type || ""))?.label;
+                    return (
+                      <label key={cs.id} className="flex items-start gap-2 text-xs cursor-pointer">
+                        <Checkbox
+                          checked={selectedCustom.has(cs.id)}
+                          onCheckedChange={() => toggleCustom(cs.id)}
+                          className="mt-0.5"
+                        />
+                        <span>
+                          <span className="text-purple-200 font-medium">{cs.name}</span>
+                          <span className="text-muted-foreground block text-[10px] leading-snug">
+                            {cs.trading_mode} · SL {cs.stop_loss_pct}% · TP {cs.take_profit_pct}%
+                            {baseLabel ? ` · based on ${baseLabel}` : ""}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <Button
+              className="w-full bg-teal-600 hover:bg-teal-500"
+              onClick={runScan}
+              disabled={loading}
+            >
+              {loading
+                ? <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                : <Sparkles className="h-4 w-4 mr-2" />}
+              Run strategy entry scan
+            </Button>
+          </>
+        )}
 
         {loading ? (
           <div

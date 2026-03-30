@@ -678,15 +678,6 @@ export default function ActiveTradesPage() {
               </button>
             </div>
             <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => navigate("/home")}
-              className="hover:bg-white/5"
-            >
-              <Home className="h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">Home</span>
-            </Button>
-            <Button
               variant="outline"
               size="sm"
               onClick={handleRefresh}
@@ -704,7 +695,7 @@ export default function ActiveTradesPage() {
               className="shadow-[0_0_20px_rgba(20,184,166,0.2)]"
             >
               <TrendingUp className="h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">New Analysis</span>
+              <span className="hidden sm:inline">New Paper Trade</span>
             </Button>
           </div>
         </div>

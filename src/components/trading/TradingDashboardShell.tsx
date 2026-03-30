@@ -4,6 +4,7 @@ import { ArrowLeft, Loader2 } from "lucide-react";
 import BrokerSyncSection from "@/components/trading/BrokerSyncSection";
 import { EntryPointNotificationsHeaderButton } from "@/components/EntryPointNotificationsBell";
 import { ScheduledDigestClientTrigger } from "@/components/ScheduledDigestClientTrigger";
+import { DashboardShellLayout } from "../layout/DashboardShellLayout";
 
 // ── Market status (IST) — shared by algo trading pages ─────────────────────────
 
@@ -144,56 +145,60 @@ export function TradingDashboardShell({ broker, children, pageTitle }: TradingDa
   const brokerLabel = broker.charAt(0).toUpperCase() + broker.slice(1);
 
   return (
-    <div className="min-h-screen bg-black text-zinc-100">
-      <ScheduledDigestClientTrigger />
-      <header className="sticky top-0 z-50 border-b border-zinc-800 bg-black/90 backdrop-blur-xl">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3 min-w-0">
-            <Link to="/home" className="text-zinc-500 hover:text-zinc-300 transition-colors shrink-0">
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
-            <div className="min-w-0">
-              <h1 className="text-base font-bold text-white tracking-tight truncate">
-                Live Trading Dashboard
-                {pageTitle ? (
-                  <span className="text-zinc-500 font-normal"> · {pageTitle}</span>
-                ) : null}
-              </h1>
-              <p className="text-[11px] text-zinc-500">Powered by {brokerLabel} via OpenAlgo</p>
+    <DashboardShellLayout>
+      <div className="min-h-screen bg-black text-zinc-100">
+        <ScheduledDigestClientTrigger />
+        <header className="sticky top-0 z-50 border-b border-zinc-800 bg-black/90 backdrop-blur-xl">
+          <div className="container mx-auto px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-3 min-w-0">
+              <Link to="/home" className="text-zinc-500 hover:text-zinc-300 transition-colors shrink-0">
+                <ArrowLeft className="h-4 w-4" />
+              </Link>
+              <div className="min-w-0">
+                <h1 className="text-base font-bold text-white tracking-tight truncate">
+                  Live Trading Dashboard
+                  {pageTitle ? (
+                    <span className="text-zinc-500 font-normal"> · {pageTitle}</span>
+                  ) : null}
+                </h1>
+                <p className="text-[11px] text-zinc-500">Powered by {brokerLabel} via OpenAlgo</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span
+                className={`hidden sm:flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border ${market.bg} ${market.color}`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${market.dot} ${market.session === "open" ? "animate-pulse" : ""}`}
+                />
+                {market.label}
+              </span>
+              <span className="flex items-center gap-1.5 text-xs text-teal-400 bg-teal-500/10 border border-teal-500/20 px-3 py-1.5 rounded-full">
+                <span className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse" />
+                {brokerLabel} Connected
+              </span>
+              <EntryPointNotificationsHeaderButton />
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <span
-              className={`hidden sm:flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border ${market.bg} ${market.color}`}
-            >
-              <span
-                className={`w-1.5 h-1.5 rounded-full shrink-0 ${market.dot} ${market.session === "open" ? "animate-pulse" : ""}`}
-              />
-              {market.label}
-            </span>
-            <span className="flex items-center gap-1.5 text-xs text-teal-400 bg-teal-500/10 border border-teal-500/20 px-3 py-1.5 rounded-full">
-              <span className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse" />
-              {brokerLabel} Connected
-            </span>
-            <EntryPointNotificationsHeaderButton />
-          </div>
-        </div>
-      </header>
+        </header>
 
-      <main className="container mx-auto px-4 py-5">
-        <div className="mb-5">
-          <BrokerSyncSection broker={broker} />
-        </div>
-        {children}
-      </main>
-    </div>
+        <main className="container mx-auto px-4 py-5">
+          <div className="mb-5">
+            <BrokerSyncSection broker={broker} />
+          </div>
+          {children}
+        </main>
+      </div>
+    </DashboardShellLayout>
   );
 }
 
 export function TradingDashboardLoadingScreen() {
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center">
-      <Loader2 className="h-6 w-6 animate-spin text-teal-500" />
-    </div>
+    <DashboardShellLayout>
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-teal-500" />
+      </div>
+    </DashboardShellLayout>
   );
 }

@@ -99,13 +99,13 @@ export function TradingAiAnalysisPanel() {
   return (
     <div className="min-w-0 space-y-4">
       <Card className="border-zinc-800 bg-zinc-900/50">
-        <CardContent className="p-4 space-y-3">
+        <CardContent className="p-4 space-y-3 flex flex-col items-center">
           <Label className="text-xs text-zinc-400">Search stock / symbol</Label>
-          <div ref={scannerContainerRef} className="relative">
+          <div ref={scannerContainerRef} className="relative w-full">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-500 pointer-events-none" />
               <Input
-                placeholder="Search… RELIANCE, TCS, AAPL, BTC"
+                // placeholder="Search… RELIANCE, TCS, AAPL, BTC"
                 value={scannerInput}
                 onChange={handleScannerInputChange}
                 onFocus={() => scannerResults.length > 0 && setScannerDropdownOpen(true)}
@@ -147,7 +147,7 @@ export function TradingAiAnalysisPanel() {
             )}
           </div>
 
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap justify-center gap-1.5">
             {SCANNER_QUICK_PICKS.map((qp) => (
               <button
                 key={qp.symbol}
@@ -166,22 +166,10 @@ export function TradingAiAnalysisPanel() {
         </CardContent>
       </Card>
 
-      {scannerSymbol.trim() ? (
-        <StrategyEntrySignalsPanel
-          symbol={scannerSymbol.trim()}
-          initialHistoryId={historyIdFromQuery}
-        />
-      ) : (
-        <Card className="border-zinc-800 bg-zinc-900/30">
-          <CardContent className="p-8 text-center">
-            <Target className="h-8 w-8 text-zinc-600 mx-auto mb-3" />
-            <p className="text-sm text-zinc-400">Search a stock above to scan entry & exit points</p>
-            <p className="text-xs text-zinc-600 mt-1">
-              Select strategies, run the scan, and see AI-scored BUY/SELL signals with LIVE recommendations
-            </p>
-          </CardContent>
-        </Card>
-      )}
+      <StrategyEntrySignalsPanel
+        symbol={scannerSymbol.trim()}
+        initialHistoryId={historyIdFromQuery}
+      />
     </div>
   );
 }

@@ -1,5 +1,4 @@
 import { Outlet } from "react-router-dom";
-import { DashboardShellLayout } from "./DashboardShellLayout";
 import { TradingDashboardAccessGate } from "@/components/trading/TradingDashboardAccessGate";
 
 export type AlgoToolsOutletContext = { broker: string };
@@ -11,12 +10,10 @@ export type AlgoToolsOutletContext = { broker: string };
  */
 export function AlgoToolsDashboardLayout() {
   return (
-    <DashboardShellLayout>
-      <TradingDashboardAccessGate notReadyRedirect="/algo-setup">
-        {(ctx) => (
-          <Outlet context={{ broker: ctx.broker } as AlgoToolsOutletContext} />
-        )}
-      </TradingDashboardAccessGate>
-    </DashboardShellLayout>
+    <TradingDashboardAccessGate notReadyRedirect="/algo-setup">
+      {(ctx) => (
+        <Outlet context={{ broker: ctx.broker } as AlgoToolsOutletContext} />
+      )}
+    </TradingDashboardAccessGate>
   );
 }
