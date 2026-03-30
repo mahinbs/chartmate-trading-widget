@@ -1629,13 +1629,13 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
 
           {/* ── Tabs ──────────────────────────────────────────────────── */}
           <Tabs value={portfolioTab} onValueChange={setPortfolioTab} className="w-full">
-            <TabsList className="bg-zinc-800 border border-zinc-700 h-auto w-full grid grid-cols-2 sm:grid-cols-5 p-1 gap-1.5">
+            <TabsList className="bg-zinc-800 border border-zinc-700 h-auto w-full grid grid-cols-2 sm:grid-cols-4 p-1 gap-1.5">
               {[
                 { value: "positions",  label: "Positions", icon: <ArrowUpRight className="h-3 w-3 mr-0.5" />, count: brokerPositions.length },
                 { value: "holdings",   label: "Holdings",  icon: <Briefcase className="h-3 w-3 mr-0.5" />,    count: data.holdings.length },
                 { value: "orders",     label: "Orders",    icon: <ClipboardList className="h-3 w-3 mr-0.5" />, count: data.orders.length },
                 { value: "tradebook",  label: "Trades",    icon: <BookOpen className="h-3 w-3 mr-0.5" />,      count: data.tradebook.length },
-                { value: "strategies", label: "Strategies",icon: <Zap className="h-3 w-3 mr-0.5" />,          count: strategies.length },
+                // { value: "strategies", label: "Strategies",icon: <Zap className="h-3 w-3 mr-0.5" />,          count: strategies.length },
               ].map(tab => (
                 <TabsTrigger key={tab.value} value={tab.value}
                   className={`text-xs sm:text-sm h-10 px-2 data-[state=active]:bg-teal-500 data-[state=active]:text-black flex items-center justify-center gap-0.5 transition-all w-full ${tab.value === "strategies" ? "col-span-2 sm:col-span-1" : ""}`}>

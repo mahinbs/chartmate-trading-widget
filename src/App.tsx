@@ -41,6 +41,7 @@ import WhitelabelDashboardPage from "./pages/WhitelabelDashboardPage";
 import { AdminRoute } from "./components/AdminRoute";
 import { AdminLayout } from "./components/admin/AdminLayout";
 import MainLandingPage from "./pages/MainLandingPage";
+import AiTradingAnalysisPage from "./pages/AiTradingAnalysisPage";
 import ChangePasswordPage from "./pages/ChangePasswordPage";
 import AffiliateDashboard from "./pages/AffiliateDashboard";
 import { AffiliateRoute } from "./components/AffiliateRoute";
@@ -82,6 +83,7 @@ function isPublicMarketingPath(pathname: string): boolean {
     "/risk-disclaimer",
     "/privacy-policy",
     "/ai-probability-engine",
+    "/ai-trading-analysis-and-back-testing",
     "/affiliate-partner",
     "/dashboard",
     "/market-picks",
@@ -164,6 +166,7 @@ const App = () => (
               <Route path="/risk-disclaimer" element={<RiskDisclaimer />} />
               <Route path="/privacy-policy" element={<PrivacyPolicy />} />
               <Route path="/" element={<MainLandingPage />} />
+              <Route path="/ai-trading-analysis-and-back-testing" element={<AiTradingAnalysisPage />} />
               <Route path="/pricing" element={<PricingPage />} />
               <Route path="/ai-probability-engine" element={<AIPobabilityEnginePage />} />
               <Route path="/affiliate-partner" element={<AffiliatePartnerPage />} />

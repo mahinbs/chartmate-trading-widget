@@ -280,7 +280,7 @@ const MainLandingPage = () => {
         >
           <motion.h1
             variants={fadeUp}
-            className="text-4xl md:text-6xl lg:text-[3.5rem] font-black tracking-tight mb-8 leading-[1.1] text-white font-syne relative"
+            className="text-3xl sm:text-4xl md:text-5xl lg:text-[3.5rem] font-black tracking-tight mb-8 leading-[1.1] text-white font-syne relative"
           >
             {"Launch Your Own Algo Trading System ".split(" ").map((word, i) => (
               <span key={`w1-${i}`} className="hero-word inline-block mr-[0.3em] opacity-0 translate-y-10">{word}</span>
@@ -578,8 +578,8 @@ const MainLandingPage = () => {
             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-px bg-gradient-to-r from-transparent via-teal-400 to-transparent opacity-50" />
             
             <div className="mb-8">
-              <div className="text-teal-500 font-semibold tracking-widest text-sm mb-4 uppercase inline-block border border-teal-500/30 px-3 py-1 rounded-full bg-teal-500/10">One-Time Fee</div>
-              <div className="text-6xl md:text-[5rem] font-bold text-white font-syne mb-2">$149</div>
+              <div className="text-teal-500 font-semibold tracking-widest text-xs mb-4 uppercase inline-block border border-teal-500/30 px-3 py-1 rounded-full bg-teal-500/10">One-Time Fee</div>
+              <div className="text-5xl sm:text-6xl md:text-[5rem] font-bold text-white font-syne mb-2">$149</div>
             </div>
 
             <ul className="space-y-4 text-zinc-300 font-light text-left mb-10 max-w-sm mx-auto">
@@ -637,7 +637,7 @@ const MainLandingPage = () => {
             ].map((item, i) => {
               const Icon = item.icon;
               return (
-                <motion.div key={i} variants={fadeUp} className="bg-white/[0.02] backdrop-blur-xl border border-white/[0.06] p-8 rounded-3xl flex flex-col sm:flex-row gap-6 items-start hover:border-teal-500/20 transition-all duration-300 hover:bg-white/[0.05]">
+                <motion.div key={i} variants={fadeUp} className="bg-white/[0.02] backdrop-blur-xl border border-white/[0.06] p-6 md:p-8 rounded-3xl flex flex-col sm:flex-row gap-6 items-start hover:border-teal-500/20 transition-all duration-300 hover:bg-white/[0.05]">
                   <div className="w-16 h-16 rounded-2xl bg-black border border-white/[0.08] flex items-center justify-center shrink-0 shadow-inner">
                     <Icon className="w-8 h-8 text-teal-500" strokeWidth={1} />
                   </div>

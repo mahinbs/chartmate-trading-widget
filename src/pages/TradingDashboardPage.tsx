@@ -945,7 +945,7 @@ function LiveDashboard({ broker }: { broker: string }) {
             onValueChange={(v) => setActiveTab(v as "portfolio" | "statement")}
             className="w-full"
           >
-            <TabsList className="grid w-full grid-cols-2 bg-zinc-900 border border-zinc-800 h-auto gap-1 p-1 mb-3">
+            {/* <TabsList className="grid w-full grid-cols-2 bg-zinc-900 border border-zinc-800 h-auto gap-1 p-1 mb-3">
               <TabsTrigger value="portfolio" className="data-[state=active]:bg-teal-500/20 data-[state=active]:text-teal-300 text-xs sm:text-sm">
                 <BookOpen className="h-3.5 w-3.5 mr-1.5 shrink-0" />
                 Portfolio
@@ -954,15 +954,15 @@ function LiveDashboard({ broker }: { broker: string }) {
                 <ScrollText className="h-3.5 w-3.5 mr-1.5 shrink-0" />
                 Statement
               </TabsTrigger>
-            </TabsList>
+            </TabsList> */}
 
             <TabsContent value="portfolio" className="pt-0">
               <BrokerPortfolioCard key={portfolioKey} broker={broker} />
             </TabsContent>
 
-            <TabsContent value="statement" className="pt-0">
+            {/* <TabsContent value="statement" className="pt-0">
               <StatementSection />
-            </TabsContent>
+            </TabsContent> */}
           </Tabs>
         </div>
       </div>

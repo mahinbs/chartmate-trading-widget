@@ -18,6 +18,12 @@ export default {
 			}
 		},
 		extend: {
+			fontFamily: {
+				sans: ["Google Sans", "sans-serif"],
+				bebas: ["Google Sans", "sans-serif"],
+				"ibm-sans": ["Google Sans", "sans-serif"],
+				"ibm-mono": ["Google Sans", "sans-serif"],
+			},
 			colors: {
 				border: 'hsl(var(--border))',
 				input: 'hsl(var(--input))',
