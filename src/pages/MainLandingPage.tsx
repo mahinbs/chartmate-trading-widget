@@ -1,1028 +1,988 @@
-import React, { useState } from 'react';
-import { useForm, Controller } from 'react-hook-form';
-import { Helmet } from 'react-helmet-async';
-import { Link, useNavigate } from 'react-router-dom';
-import { useAffiliateRef } from '@/hooks/useAffiliateRef';
-import { useAuth } from '@/hooks/useAuth';
-import { useUserRole } from '@/hooks/useUserRole';
-import { useMyTenantMembership } from '@/hooks/useWhitelabel';
-import { supabase } from '@/integrations/supabase/client';
-import { motion, Variants } from 'framer-motion';
-import heroBg from '@/assets/premium_hero_bg.png';
-import abstractDataBg from '@/assets/abstract_data_bg.png';
+import React, { useState } from "react";
+import { useForm, Controller } from "react-hook-form";
+import { Helmet } from "react-helmet-async";
+import { useNavigate } from "react-router-dom";
+import { useAffiliateRef } from "@/hooks/useAffiliateRef";
+import { useAuth } from "@/hooks/useAuth";
+import { useUserRole } from "@/hooks/useUserRole";
+import { useMyTenantMembership } from "@/hooks/useWhitelabel";
+import { supabase } from "@/integrations/supabase/client";
+import { motion, Variants } from "framer-motion";
+import heroBg from "@/assets/premium_hero_bg.png";
 
-import {
-    FaChartLine,
-    FaNetworkWired,
-    FaBrain,
-    FaCheckCircle,
-    FaTimesCircle,
-    FaRobot,
-    FaGlobe,
-    FaChartBar,
-    FaBitcoin,
-    FaUserShield,
-    FaArrowRight,
-    FaLayerGroup,
-} from "react-icons/fa";
-import { MdTrendingUp, MdOutlinePriceChange } from "react-icons/md";
-import { BiCctv } from "react-icons/bi";
-import { BsGraphUpArrow } from "react-icons/bs";
-import {
-    Carousel,
-    CarouselContent,
-    CarouselItem,
-    type CarouselApi,
-} from "../components/ui/carousel";
+import { FaCheckCircle } from "react-icons/fa";
+import { Shield, Eye, Pause, Lock } from "lucide-react";
 import { Button } from "../components/ui/button";
+import Hero3DCanvas from "../components/landingpage/mainlandingpage/Hero3DCanvas";
+import { gsap } from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+
+gsap.registerPlugin(ScrollTrigger);
+
+const DiamondIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-teal-500 shrink-0 mt-1 diamond-icon">
+    <path d="M12 2L2 12L12 22L22 12L12 2Z" />
+  </svg>
+);
 import {
-    Dialog,
-    DialogContent,
-    DialogTitle,
-    DialogClose,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogClose,
 } from "../components/ui/dialog";
-import { X } from "lucide-react";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
 import { Label } from "../components/ui/label";
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "../components/ui/select";
 import AiPredictionHeader from "../components/landingpage/mainlandingpage/AiPredictionHeader";
 import AiPredictionFooter from "../components/landingpage/mainlandingpage/AiPredictionFooter";
-import { PRICING_PLANS } from "@/constants/pricing";
-import { toast } from "sonner";
-import { createCheckoutSession } from "@/services/stripeService";
 
 const fadeUp: Variants = {
-    hidden: { opacity: 0, y: 30 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.8, ease: "easeOut" } },
+  hidden: { opacity: 0, y: 50, filter: "blur(4px)" },
+  visible: { opacity: 1, y: 0, filter: "blur(0px)", transition: { duration: 0.8, ease: "easeOut" } },
 };
 
 const staggerContainer: Variants = {
-    hidden: { opacity: 0 },
-    visible: {
-        opacity: 1,
-        transition: { staggerChildren: 0.15 },
-    },
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.15 },
+  },
 };
 
 const MainLandingPage = () => {
-    const { affiliateId } = useAffiliateRef();
-    const { user, loading: authLoading } = useAuth();
-    const { role, loading: roleLoading } = useUserRole();
-    const { membership, loading: membershipLoading } = useMyTenantMembership(user?.id);
-    const [activeTab, setActiveTab] = useState('stocks');
-    const [isEnquiryModalOpen, setIsEnquiryModalOpen] = useState(false);
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const [isSubmitSuccess, setIsSubmitSuccess] = useState(false);
+  const { affiliateId } = useAffiliateRef();
+  const { user, loading: authLoading } = useAuth();
+  const { role, loading: roleLoading } = useUserRole();
+  const { membership, loading: membershipLoading } = useMyTenantMembership(
+    user?.id,
+  );
+  const [isEnquiryModalOpen, setIsEnquiryModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSubmitSuccess, setIsSubmitSuccess] = useState(false);
 
-    const [api, setApi] = useState<CarouselApi>();
-    const navigate = useNavigate();
+  const navigate = useNavigate();
 
-    React.useEffect(() => {
-        if (authLoading || roleLoading) return;
-        if (!user || role !== "admin") return;
-        if (membershipLoading) return;
-        const wlSlug = membership?.role === "admin" && membership?.status === "active"
-            ? membership?.tenant?.slug
-            : null;
-        if (wlSlug) navigate(`/wl/${wlSlug}/dashboard`, { replace: true });
-        else navigate("/white-label#pricing", { replace: true });
-    }, [user, role, authLoading, roleLoading, membershipLoading, membership, navigate]);
+  React.useEffect(() => {
+    if (authLoading || roleLoading) return;
+    if (!user || role !== "admin") return;
+    if (membershipLoading) return;
+    const wlSlug =
+      membership?.role === "admin" && membership?.status === "active"
+        ? membership?.tenant?.slug
+        : null;
+    if (wlSlug) navigate(`/wl/${wlSlug}/dashboard`, { replace: true });
+    else navigate("/white-label#pricing", { replace: true });
+  }, [
+    user,
+    role,
+    authLoading,
+    roleLoading,
+    membershipLoading,
+    membership,
+    navigate,
+  ]);
 
-    interface FormData {
-        name: string;
-        email: string;
-        phone: string;
-        message: string;
-        plan: string;
-        referral_code: string;
-    }
+  const cursorRef = React.useRef<HTMLDivElement>(null);
 
-    const {
-        register,
-        handleSubmit,
-        control,
-        reset,
-        setValue,
-        formState: { errors }
-    } = useForm<FormData>({
-        defaultValues: {
-            name: '',
-            email: '',
-            phone: '',
-            message: '',
-            plan: '',
-            referral_code: '',
+  React.useEffect(() => {
+    // Navbar scroll behavior
+    const handleScroll = () => {
+      const headerUrls = document.querySelectorAll('header');
+      headerUrls.forEach(h => {
+        if (window.scrollY > 80) {
+          h.classList.add('bg-black/80', 'backdrop-blur-xl', 'border-b', 'border-white/[0.06]');
+        } else {
+          h.classList.remove('bg-black/80', 'backdrop-blur-xl', 'border-b', 'border-white/[0.06]');
         }
-    });
-
-    React.useEffect(() => {
-        if (!api) {
-            return;
-        }
-
-        const intervalId = setInterval(() => {
-            api.scrollNext();
-        }, 3000);
-
-        return () => clearInterval(intervalId);
-    }, [api]);
-
-    const handleFormSubmit = async (data: FormData) => {
-        setIsSubmitting(true);
-
-        try {
-            const planNames: Record<string, string> = {
-                whiteLabel: "White Labelling Enquiry",
-            };
-
-            // Populate the plans dynamically from constants
-            PRICING_PLANS.forEach((plan) => {
-                planNames[plan.id] = `${plan.name} - $${plan.price}`;
-            });
-
-            const emailBody = `Name : ${data.name}\nEmail : ${data.email}\nPhone : ${data.phone}\nInterested Plan : ${planNames[data.plan] || data.plan}\nMessage : \n ${data.message || "N/A"}`;
-
-            await (supabase as any).from('contact_submissions').insert([{
-                name: data.name,
-                email: data.email,
-                phone: data.phone,
-                description: `Plan: ${planNames[data.plan as keyof typeof planNames] || data.plan}\n${data.message || ''}`,
-                ...(affiliateId && { affiliate_id: affiliateId }),
-                ...(data.referral_code?.trim() && { referral_code: data.referral_code.trim() }),
-            }]).then(() => { }).catch(() => { });
-
-            const response = await fetch('https://send-mail-redirect-boostmysites.vercel.app/send-email', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    body: emailBody,
-                    name: 'Tradingsmart.AI',
-                    subject: `New Enquiry from ${data.name} - ${planNames[data.plan as keyof typeof planNames] || data.plan}`,
-                    to: 'partnerships@tradingsmart.ai'
-                })
-            });
-
-            if (response.ok) {
-                reset();
-                setIsSubmitSuccess(true);
-            } else {
-                alert('Failed to submit form. Please try again.');
-            }
-        } catch (error) {
-            console.error('Error submitting form:', error);
-            alert('An error occurred. Please try again later.');
-        } finally {
-            setIsSubmitting(false);
-        }
+      });
     };
+    window.addEventListener('scroll', handleScroll);
 
-    return (
-        <div className="min-h-screen bg-black text-zinc-100 font-sans selection:bg-teal-500/30 selection:text-teal-100 overflow-x-hidden">
-            <Helmet>
-                <title>AI-Powered Algo Analysis & Paper Trading</title>
-                <meta name="description" content="Connect your trading bot, analyze strategy probability, and test trades safely with advanced AI insights." />
-            </Helmet>
-
-            <AiPredictionHeader />
-
-            {/* 1. Hero Section */}
-            <section id="hero" className="relative min-h-screen flex items-center justify-center pt-32 pb-20 px-4 overflow-hidden bg-black">
-                <div className="absolute inset-0 z-0">
-                    {/* Premium Dark Background */}
-                    <div className="absolute inset-0 bg-cover bg-center opacity-40 mix-blend-screen" style={{ backgroundImage: `url(${heroBg})` }}></div>
-
-                    {/* Deep Fade Gradients */}
-                    <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black via-black/80 to-transparent z-10"></div>
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_transparent_30%,_black_90%)] z-10"></div>
-
-                    {/* Subtle Teal Core Glow */}
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] bg-teal-600/10 rounded-full blur-[100px] z-0"></div>
-                </div>
-
-                <motion.div
-                    initial="hidden"
-                    animate="visible"
-                    variants={staggerContainer}
-                    className="container mx-auto z-20 text-center relative max-w-6xl"
-                >
-                    <motion.div
-                        variants={fadeUp}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-teal-500/20 bg-teal-500/5 backdrop-blur-sm mb-8"
-                    >
-                        <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>
-                        <span className="text-sm font-medium text-teal-300 tracking-wide uppercase">
-                            AI-Powered Algo Analysis
-                        </span>
-                    </motion.div>
-
-                    <motion.h1
-                        variants={fadeUp}
-                        className="text-5xl md:text-7xl lg:text-[5.5rem] font-black tracking-tight mb-8 leading-[1.05] text-white"
-                    >
-                        Trade Smarter with <br />
-                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-emerald-300">
-                            Strategy Intelligence.
-                        </span>
-                    </motion.h1>
-
-                    <motion.p
-                        variants={fadeUp}
-                        className="text-lg md:text-xl text-zinc-400 max-w-2xl mx-auto mb-12 font-light leading-relaxed"
-                    >
-                        Connect your trading bot, analyze strategy probability, and test
-                        trades safely with advanced AI insights and paper trading. Automate
-                        your trading intelligence without risking real capital.
-                    </motion.p>
-
-                    <motion.div
-                        variants={fadeUp}
-                        className="flex flex-col sm:flex-row gap-6 justify-center items-center mb-10"
-                    >
-                        <Button
-                            onClick={() => setIsEnquiryModalOpen(true)}
-                            className="bg-teal-500 hover:bg-teal-400 text-black font-bold text-lg px-10 py-7 rounded-xl shadow-[0_0_30px_rgba(20,184,166,0.3)] hover:shadow-[0_0_50px_rgba(20,184,166,0.5)] border border-teal-400/50 transition-all duration-300 hover:-translate-y-0.5"
-                        >
-                            Start Now
-                        </Button>
-                        <Link to="/ai-probability-engine">
-                            <Button
-                                variant="outline"
-                                className="bg-transparent border border-zinc-700 hover:border-teal-500 hover:bg-teal-500/10 text-white font-bold text-lg px-10 py-7 rounded-xl transition-all duration-300 hover:-translate-y-0.5"
-                            >
-                                AI Robot Trade
-                            </Button>
-                        </Link>
-                    </motion.div>
-
-                    <motion.div
-                        variants={fadeUp}
-                        className="flex flex-wrap justify-center gap-6 text-sm text-zinc-300 font-medium"
-                    >
-                        <span className="flex items-center gap-2">
-                            <FaCheckCircle className="text-teal-500" /> Connect Strategy
-                        </span>
-                        <span className="flex items-center gap-2">
-                            <FaCheckCircle className="text-teal-500" /> Analyze Probability
-                        </span>
-                        <span className="flex items-center gap-2">
-                            <FaCheckCircle className="text-teal-500" /> Test with Paper
-                            Trading
-                        </span>
-                    </motion.div>
-                </motion.div>
-            </section>
-
-            {/* 2. Problem Section */}
-            <motion.section
-                initial="hidden"
-                whileInView="visible"
-                viewport={{ once: true, margin: "-100px" }}
-                variants={staggerContainer}
-                id="problem"
-                className="py-16 border-t border-zinc-900 bg-black relative"
-            >
-                <div className="container mx-auto px-4 text-center relative z-10">
-                    <motion.div variants={fadeUp} className="max-w-4xl mx-auto mb-20">
-                        <h2 className="text-4xl md:text-5xl font-black mb-6 tracking-tight text-white">
-                            Most traders build or purchase algorithmic strategies but{" "}
-                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-red-400 to-orange-400">
-                                struggle
-                            </span>
-                            .
-                        </h2>
-                        <p className="text-zinc-400 text-xl font-light">
-                            Without proper analysis, even good strategies can fail.
-                        </p>
-                    </motion.div>
-
-                    <div className="grid md:grid-cols-3 gap-8 text-left">
-                        {[
-                            {
-                                icon: <FaNetworkWired />,
-                                title: "Unknown Probabilities",
-                                desc: "They don’t know the true probability of success for their specific setups and entries.",
-                            },
-                            {
-                                icon: <FaChartBar />,
-                                title: "Poor Analysis",
-                                desc: "They cannot properly analyze their strategy's performance over varied market conditions.",
-                            },
-                            {
-                                icon: <FaTimesCircle />,
-                                title: "Risky Testing",
-                                desc: "Testing with real money from day one becomes an unnecessary and dangerous risk.",
-                            },
-                        ].map((item, i) => (
-                            <motion.div
-                                variants={fadeUp}
-                                key={i}
-                                className="bg-zinc-950 p-8 rounded-3xl border border-zinc-800 transition-all duration-300 group h-full hover:-translate-y-1 hover:border-red-500/20"
-                            >
-                                <div className="p-4 bg-red-500/10 w-fit rounded-2xl mb-6 text-red-500 text-3xl group-hover:scale-110 group-hover:bg-red-500/20 transition-all">
-                                    {item.icon}
-                                </div>
-                                <h3 className="text-2xl font-bold mb-4 text-zinc-100">
-                                    {item.title}
-                                </h3>
-                                <p className="text-zinc-400 leading-relaxed font-light">
-                                    {item.desc}
-                                </p>
-                            </motion.div>
-                        ))}
-                    </div>
-                </div>
-            </motion.section>
-
-            {/* 3. Solution Section */}
-            <motion.section
-                initial="hidden"
-                whileInView="visible"
-                viewport={{ once: true, margin: "-100px" }}
-                variants={staggerContainer}
-                id="solution"
-                className="py-16 bg-zinc-950/50 border-t border-zinc-900 relative"
-            >
-                <div className="container mx-auto px-4 text-center">
-                    <motion.h2
-                        variants={fadeUp}
-                        className="text-4xl md:text-5xl font-black mb-6 tracking-tight text-white"
-                    >
-                        A Smarter Way to Evaluate Your Trading Strategy
-                    </motion.h2>
-                    <motion.p
-                        variants={fadeUp}
-                        className="text-zinc-400 text-xl font-light max-w-3xl mx-auto mb-20"
-                    >
-                        Our platform connects directly with your trading algorithm and uses
-                        AI to analyze every signal generated by your strategy. Instead of
-                        guessing, you get clear insights.
-                    </motion.p>
-
-                    <div className="flex flex-wrap justify-center gap-4">
-                        {[
-                            { title: "Entry / Exit Accuracy", icon: <FaChartLine /> },
-                            { title: "Strategy Probability", icon: <FaBrain /> },
-                            { title: "Historical Performance", icon: <BsGraphUpArrow /> },
-                            { title: "Risk Exposure", icon: <FaUserShield /> },
-                            { title: "Trade Behavior Patterns", icon: <FaNetworkWired /> },
-                        ].map((item, i) => (
-                            <motion.div
-                                variants={fadeUp}
-                                key={i}
-                                className="w-full sm:w-[calc(50%-1rem)] lg:w-[calc(20%-1rem)] group relative bg-zinc-950 p-8 rounded-3xl border border-zinc-800 hover:border-teal-500/50 transition-all duration-300 flex flex-col items-center justify-center text-center"
-                            >
-                                <div className="text-teal-500 text-4xl mb-4 group-hover:scale-110 transition-transform">
-                                    {item.icon}
-                                </div>
-                                <h3 className="text-lg font-bold text-white leading-tight">
-                                    {item.title}
-                                </h3>
-                            </motion.div>
-                        ))}
-                    </div>
-                </div>
-            </motion.section>
-
-            {/* 4. How It Works */}
-            <motion.section
-                initial="hidden"
-                whileInView="visible"
-                viewport={{ once: true, margin: "-100px" }}
-                variants={staggerContainer}
-                id="how-it-works"
-                className="py-16 bg-black border-t border-zinc-900 relative"
-            >
-                <div className="container mx-auto px-4 relative z-10">
-                    <motion.h2
-                        variants={fadeUp}
-                        className="text-4xl md:text-5xl font-black mb-24 text-center text-white tracking-tight"
-                    >
-                        How It Works
-                    </motion.h2>
-
-                    <div className="relative">
-                        <div className="hidden lg:block absolute top-10 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-teal-900 to-transparent z-0"></div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-12 relative z-10">
-                            {[
-                                {
-                                    title: "1. Connect Algo Bot",
-                                    icon: <FaNetworkWired />,
-                                    desc: "Integrate your trading algorithm or strategy with our platform securely.",
-                                },
-                                {
-                                    title: "2. AI Strategy Analysis",
-                                    icon: <FaBrain />,
-                                    desc: "Our system analyzes trade signals, entries, and win rates using advanced data models.",
-                                },
-                                {
-                                    title: "3. Probability Insights",
-                                    icon: <BsGraphUpArrow />,
-                                    desc: "Get clear probability-based insights to understand how likely your strategy is to succeed.",
-                                    highlight: true,
-                                },
-                                {
-                                    title: "4. Paper Trading",
-                                    icon: <FaUserShield />,
-                                    desc: "Test strategies in a real-market environment without risking capital.",
-                                },
-                                {
-                                    title: "5. Strategy Optimization",
-                                    icon: <FaChartLine />,
-                                    desc: "Improve and refine your strategy based on AI-generated insights.",
-                                },
-                            ].map((step, i) => (
-                                <motion.div
-                                    variants={fadeUp}
-                                    key={i}
-                                    className={`relative flex flex-col items-center text-center group sm:[&:nth-child(5)]:col-span-2 lg:[&:nth-child(5)]:col-span-1`}
-                                >
-                                    <div
-                                        className={`w-20 h-20 rounded-2xl flex items-center justify-center text-2xl mb-6 transition-all duration-300 border ${step.highlight ? "bg-zinc-900 border-teal-500 text-teal-400 shadow-[0_0_20px_rgba(20,184,166,0.2)] scale-110" : "bg-zinc-950 border-zinc-800 text-zinc-500 group-hover:border-teal-500/30 group-hover:text-teal-400 group-hover:bg-zinc-900"}`}
-                                    >
-                                        {step.icon}
-                                    </div>
-                                    <h3
-                                        className={`text-xl font-bold mb-3 ${step.highlight ? "text-teal-400" : "text-zinc-100"}`}
-                                    >
-                                        {step.title}
-                                    </h3>
-                                    <p className="text-sm text-zinc-500 leading-relaxed max-w-[200px] font-light">
-                                        {step.desc}
-                                    </p>
-                                </motion.div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            </motion.section>
-
-            {/* 5. Key Features */}
-            <motion.section
-                initial="hidden"
-                whileInView="visible"
-                viewport={{ once: true, margin: "-100px" }}
-                variants={staggerContainer}
-                className="py-16 bg-black relative border-t border-zinc-900"
-            >
-                <div
-                    className="absolute inset-0 bg-cover bg-center opacity-30 mix-blend-screen pointer-events-none"
-                    style={{ backgroundImage: `url(${abstractDataBg})` }}
-                ></div>
-                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/80 to-black z-0"></div>
-
-                <div className="container mx-auto px-4 relative z-10">
-                    <div className="grid lg:grid-cols-2 gap-16 lg:gap-20 items-center">
-                        <motion.div
-                            variants={fadeUp}
-                            className="order-2 lg:order-1 relative"
-                        >
-                            <div className="bg-zinc-950/90 backdrop-blur-xl p-8 md:p-12 rounded-3xl border border-zinc-800 shadow-[0_0_50px_rgba(0,0,0,0.5)]">
-                                <ul className="space-y-6 md:space-y-8 text-zinc-300">
-                                    {[
-                                        {
-                                            t: "Algo Bot Integration",
-                                            d: "Easily connect your trading bot or algorithmic strategy to our platform.",
-                                        },
-                                        {
-                                            t: "AI Strategy Intelligence",
-                                            d: "Understand how your strategy behaves under different market conditions.",
-                                        },
-                                        {
-                                            t: "Probability-Based Trade Insights",
-                                            d: "Get probability analysis for entries, exits, and trade outcomes.",
-                                        },
-                                        {
-                                            t: "Advanced Backtesting",
-                                            d: "Evaluate historical performance using large datasets.",
-                                        },
-                                        {
-                                            t: "Paper Trading Environment",
-                                            d: "Test strategies safely without using real funds.",
-                                        },
-                                        {
-                                            t: "Strategy Performance Dashboard",
-                                            d: "Visualize win rates, drawdowns, trade frequency, and profitability.",
-                                        },
-                                    ].map((feature, i) => (
-                                        <li key={i} className="flex gap-4 md:gap-5 group">
-                                            <div className="mt-1 flex-shrink-0 text-teal-500 group-hover:scale-110 transition-transform">
-                                                <FaCheckCircle className="text-xl" />
-                                            </div>
-                                            <div>
-                                                <h4 className="font-bold text-lg text-white mb-1">
-                                                    {feature.t}
-                                                </h4>
-                                                <p className="text-sm text-zinc-400 leading-relaxed font-light">
-                                                    {feature.d}
-                                                </p>
-                                            </div>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        </motion.div>
-
-                        <motion.div variants={fadeUp} className="order-1 lg:order-2">
-                            <h2 className="text-4xl md:text-5xl font-black mb-10 text-white tracking-tight">
-                                Key Features
-                            </h2>
-                            <p className="text-zinc-400 font-light leading-relaxed mb-8 text-xl">
-                                We've built an ecosystem specifically designed to turn your
-                                algorithmic ideas into proven, verifiable assets. Connect,
-                                evaluate, and scale up with complete confidence in your systems.
-                            </p>
-                        </motion.div>
-                    </div>
-                </div>
-            </motion.section>
-
-            {/* 6. Who This Is For & Benefits */}
-            <motion.section
-                initial="hidden"
-                whileInView="visible"
-                viewport={{ once: true, margin: "-100px" }}
-                variants={staggerContainer}
-                className="py-16 bg-zinc-950 border-t border-zinc-900"
-            >
-                <div className="container mx-auto px-4">
-                    <div className="grid lg:grid-cols-2 gap-16 md:gap-20">
-                        {/* Who this is for */}
-                        <motion.div variants={fadeUp}>
-                            <h2 className="text-3xl md:text-5xl font-black mb-10 text-white tracking-tight">
-                                Who This Is For
-                            </h2>
-                            <ul className="space-y-4">
-                                {[
-                                    "Algo traders",
-                                    "Quant traders",
-                                    "Strategy developers",
-                                    "Trading educators",
-                                    "Prop trading firms",
-                                ].map((user, i) => (
-                                    <li
-                                        key={i}
-                                        className="flex items-center justify-between gap-4 text-lg md:text-xl font-bold text-zinc-300 bg-black p-6 rounded-2xl border border-zinc-800 hover:border-teal-500/30 hover:bg-zinc-900 transition-all"
-                                    >
-                                        {user}
-                                        <FaCheckCircle className="text-teal-500 text-2xl" />
-                                    </li>
-                                ))}
-                            </ul>
-                        </motion.div>
-
-                        {/* Benefits */}
-                        <motion.div variants={fadeUp}>
-                            <h2 className="text-3xl md:text-5xl font-black mb-10 text-white tracking-tight">
-                                Benefits
-                            </h2>
-                            <div className="grid gap-6">
-                                {[
-                                    {
-                                        title: "Trade with Data",
-                                        desc: "Trade with data, not emotions.",
-                                    },
-                                    {
-                                        title: "Reduce Strategy Risk",
-                                        desc: "Reduce strategy risk before deploying real capital.",
-                                    },
-                                    {
-                                        title: "Understand True Probability",
-                                        desc: "Understand the true probability of your trading system.",
-                                    },
-                                    {
-                                        title: "Improve Strategy Performance",
-                                        desc: "Improve strategy performance fast using actionable AI insights.",
-                                    },
-                                ].map((item, i) => (
-                                    <div
-                                        key={i}
-                                        className="p-8 bg-black border border-zinc-800 rounded-3xl hover:border-teal-500/20 transition-colors"
-                                    >
-                                        <h3 className="text-xl font-bold mb-2 text-teal-400">
-                                            {item.title}
-                                        </h3>
-                                        <p className="text-zinc-400 leading-relaxed font-light">
-                                            {item.desc}
-                                        </p>
-                                    </div>
-                                ))}
-                            </div>
-                        </motion.div>
-                    </div>
-                </div>
-            </motion.section>
-
-            {/* 7. Pricing Section */}
-            <motion.section
-                initial="hidden"
-                whileInView="visible"
-                viewport={{ once: true, margin: "-100px" }}
-                variants={staggerContainer}
-                id="pricing"
-                className="py-16 bg-zinc-950 border-t border-zinc-900 relative"
-            >
-                <div className="container mx-auto px-4 relative z-10">
-                    <motion.div
-                        variants={fadeUp}
-                        className="text-center mb-16 max-w-3xl mx-auto"
-                    >
-                        <h2 className="text-4xl md:text-5xl font-black mb-6 tracking-tight text-white">
-                            Pricing Plans
-                        </h2>
-                        <p className="text-zinc-400 text-xl font-light">
-                            Use AI to analyze probabilities and automate trades with powerful
-                            algorithmic intelligence.
-                        </p>
-                    </motion.div>
-
-                    <div className="grid lg:grid-cols-3 gap-8 max-w-6xl mx-auto items-stretch">
-                        {PRICING_PLANS.map((plan, i) => (
-                            <motion.div
-                                key={plan.id}
-                                variants={fadeUp}
-                                className={`p-8 rounded-3xl flex flex-col relative transition-all shadow-lg hover:border-zinc-700 ${plan.recommended
-                                    ? "bg-gradient-to-b from-teal-950/40 to-black border border-teal-500/30 shadow-[0_0_40px_rgba(20,184,166,0.1)] lg:h-[110%] lg:-mt-[7%] lg:mb-[5%]"
-                                    : "bg-black border border-zinc-800"
-                                    }`}
-                            >
-                                {plan.recommended && (
-                                    <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-teal-500 text-black text-[10px] font-bold px-4 py-1.5 rounded-full uppercase tracking-widest">
-                                        Recommended
-                                    </div>
-                                )}
-                                <h3
-                                    className={`text-xl font-bold mb-2 ${plan.recommended ? "text-teal-400" : "text-zinc-200"}`}
-                                >
-                                    {plan.name}
-                                </h3>
-                                <div
-                                    className={`${plan.recommended ? "text-zinc-400" : "text-zinc-500"} mb-6 font-light text-sm min-h-[40px]`}
-                                >
-                                    {plan.description}
-                                </div>
-                                <div className="text-4xl font-black mb-6 tracking-tight text-white">
-                                    ${plan.price}
-                                    <span
-                                        className={`text-lg ${plan.recommended ? "text-zinc-500" : "text-zinc-600"} font-normal ml-1 tracking-normal`}
-                                    >
-                                        /{plan.period}
-                                    </span>
-                                </div>
-                                <ul
-                                    className={`space-y-4 mb-10 flex-1 text-sm ${plan.recommended ? "text-zinc-200" : "text-zinc-300"}`}
-                                >
-                                    {plan.features.map((feature, j) => (
-                                        <li key={j} className="flex gap-3 items-center">
-                                            <FaCheckCircle
-                                                className={`${plan.recommended ? "text-teal-400" : "text-teal-500"} flex-shrink-0`}
-                                            />
-                                            {feature}
-                                        </li>
-                                    ))}
-                                </ul>
-                                <Button
-                                    onClick={async () => {
-                                        const { data: { session } } = await supabase.auth.getSession();
-                                        if (!session) {
-                                            navigate('/auth?redirect=' + encodeURIComponent('/#pricing'));
-                                            return;
-                                        }
-                                        const result = await createCheckoutSession({
-                                            plan_id: plan.id,
-                                            success_url: window.location.origin + '/algo-setup?checkout=success',
-                                            cancel_url: window.location.origin + '/#pricing',
-                                        });
-                                        if (result.error) {
-                                            toast.error(result.error);
-                                            return;
-                                        }
-                                        if (result.url) window.location.href = result.url;
-                                    }}
-                                    className={
-                                        plan.recommended
-                                            ? "w-full py-6 bg-teal-500 hover:bg-teal-400 text-black font-bold rounded-xl transition-colors shadow-lg shadow-teal-500/20"
-                                            : "w-full py-6 bg-zinc-100 text-black hover:bg-zinc-300 rounded-xl font-bold transition-colors"
-                                    }
-                                >
-                                    {plan.recommended ? "Get Pro Plan" : "Get Started"}
-                                </Button>
-                            </motion.div>
-                        ))}
-                    </div>
-                </div>
-            </motion.section>
-
-            {/* 8. White Labelling Option */}
-            <motion.section
-                initial="hidden"
-                whileInView="visible"
-                viewport={{ once: true, margin: "-100px" }}
-                variants={staggerContainer}
-                id="white-label"
-                className="py-16 bg-black border-t border-zinc-900 relative"
-            >
-                <div className="container mx-auto px-4 text-center z-10 relative">
-                    <motion.h2
-                        variants={fadeUp}
-                        className="text-4xl md:text-5xl font-black mb-6 text-white tracking-tight"
-                    >
-                        White Labelling
-                    </motion.h2>
-                    <motion.p
-                        variants={fadeUp}
-                        className="text-zinc-400 text-xl font-light max-w-2xl mx-auto mb-16"
-                    >
-                        Offer our powerful analytical engine to your own users under your
-                        brand name.
-                    </motion.p>
-
-                    <motion.div
-                        variants={fadeUp}
-                        className="max-w-4xl mx-auto bg-gradient-to-br from-teal-950/40 to-black border border-teal-500/20 rounded-3xl p-10 md:p-16 relative overflow-hidden text-left shadow-[0_0_50px_rgba(20,184,166,0.1)]"
-                    >
-                        <div className="absolute top-0 right-0 p-10 opacity-5 pointer-events-none">
-                            <FaGlobe className="text-9xl text-teal-500" />
-                        </div>
-                        <h3 className="text-3xl font-bold text-white mb-6">
-                            Launch Your Own AI Trading Platform
-                        </h3>
-                        <p className="text-zinc-300 font-light mb-8 max-w-xl text-lg leading-relaxed">
-                            Integrate our advanced probability models, paper trading
-                            environment, and AI analysis directly into your ecosystem via API
-                            or a fully hosted white-label front-end.
-                        </p>
-                        <Link to="/white-label">
-                            <Button className="bg-white text-black hover:bg-zinc-200 font-bold px-8 py-6 rounded-xl transition-all hover:scale-105">
-                                Know More
-                            </Button>
-                        </Link>
-                    </motion.div>
-                </div>
-            </motion.section>
-
-            {/* 9. Call To Action */}
-            <motion.section
-                initial="hidden"
-                whileInView="visible"
-                viewport={{ once: true, margin: "-100px" }}
-                variants={staggerContainer}
-                className="py-16 relative overflow-hidden flex items-center justify-center min-h-[50vh] bg-zinc-950 border-t border-zinc-900"
-            >
-                <div className="absolute inset-0 z-0">
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-teal-600/5 rounded-full blur-[100px]"></div>
-                </div>
-
-                <div className="container mx-auto px-4 relative z-10 text-center">
-                    <motion.h2
-                        variants={fadeUp}
-                        className="text-5xl md:text-7xl font-black mb-8 text-white tracking-tight leading-none"
-                    >
-                        Start analyzing your <br />
-                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-emerald-300">
-                            trading strategy today.
-                        </span>
-                    </motion.h2>
-                    <motion.div
-                        variants={fadeUp}
-                        className="text-zinc-400 text-xl font-light mb-12 flex flex-col md:flex-row items-center justify-center gap-2 md:gap-4"
-                    >
-                        <span>Connect your algo.</span>
-                        <span className="hidden md:inline">•</span>
-                        <span>Discover its true probability.</span>
-                        <span className="hidden md:inline">•</span>
-                        <span>Trade with confidence.</span>
-                    </motion.div>
-
-                    <motion.div variants={fadeUp} className="relative inline-block group">
-                        <Button
-                            onClick={() => setIsEnquiryModalOpen(true)}
-                            className="relative bg-teal-500 text-black hover:bg-teal-400 text-lg sm:text-2xl px-12 sm:px-16 py-8 rounded-full font-bold border border-teal-400/50 shadow-[0_0_30px_rgba(20,184,166,0.2)] hover:shadow-[0_0_50px_rgba(20,184,166,0.4)] transition-all duration-300 hover:scale-105 active:scale-95 flex items-center gap-4 mx-auto"
-                        >
-                            Start Now <FaArrowRight />
-                        </Button>
-                    </motion.div>
-                </div>
-            </motion.section>
-
-            <AiPredictionFooter />
-
-            {/* Enquiry Form Modal */}
-            <Dialog open={isEnquiryModalOpen} onOpenChange={(open) => { setIsEnquiryModalOpen(open); if (!open) setIsSubmitSuccess(false); }}>
-                <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] bg-zinc-950 border border-zinc-800 text-white p-6 sm:p-8 rounded-3xl shadow-2xl overflow-y-auto">
-
-                    {isSubmitSuccess ? (
-                        <div className="flex flex-col items-center justify-center py-12 text-center gap-6">
-                            <div className="w-20 h-20 rounded-full bg-teal-500/15 flex items-center justify-center">
-                                <svg className="w-10 h-10 text-teal-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                </svg>
-                            </div>
-                            <div>
-                                <DialogTitle className="text-2xl font-black text-white mb-2">Request Submitted!</DialogTitle>
-                                <p className="text-zinc-400 font-light">Thank you! Our partnerships team will reach out to you shortly.</p>
-                            </div>
-                            <Button
-                                onClick={() => { setIsEnquiryModalOpen(false); setIsSubmitSuccess(false); }}
-                                className="bg-teal-500 hover:bg-teal-400 text-black font-bold px-8 py-3 rounded-xl"
-                            >
-                                Close
-                            </Button>
-                        </div>
-                    ) : (
-                        <>
-                            <div className="relative border-b border-zinc-800 pb-4 mb-6 pr-10">
-                                <DialogTitle className="text-3xl font-black text-white text-left tracking-tight">
-                                    Start Now
-                                </DialogTitle>
-                                <p className="text-zinc-400 text-sm mt-2 text-left font-light">
-                                    Fill out the form below and our partnerships team will reach out.
-                                </p>
-                            </div>
-
-                            <form className="space-y-6" onSubmit={handleSubmit(handleFormSubmit)}>
-                                <div className="grid md:grid-cols-2 gap-6">
-                                    {/* Name Field */}
-                                    <div className="space-y-2 text-left">
-                                        <Label htmlFor="name" className="text-zinc-300 font-medium">
-                                            Full Name <span className="text-red-500">*</span>
-                                        </Label>
-                                        <Input
-                                            id="name"
-                                            type="text"
-                                            placeholder="John Doe"
-                                            {...register("name", { required: "Full name is required" })}
-                                            className={`bg-black border-zinc-800 text-white placeholder:text-zinc-600 focus:border-teal-500 focus:ring-teal-500/20 transition-all ${errors.name ? "border-red-500" : ""}`}
-                                        />
-                                        {errors.name && (
-                                            <p className="text-red-500 text-xs mt-1">
-                                                {errors.name.message}
-                                            </p>
-                                        )}
-                                    </div>
-
-                                    {/* Email Field */}
-                                    <div className="space-y-2 text-left">
-                                        <Label htmlFor="email" className="text-zinc-300 font-medium">
-                                            Email Address <span className="text-red-500">*</span>
-                                        </Label>
-                                        <Input
-                                            id="email"
-                                            type="email"
-                                            placeholder="john@example.com"
-                                            {...register("email", {
-                                                required: "Email is required",
-                                                pattern: {
-                                                    value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-                                                    message: "Invalid email address",
-                                                },
-                                            })}
-                                            className={`bg-black border-zinc-800 text-white placeholder:text-zinc-600 focus:border-teal-500 focus:ring-teal-500/20 transition-all ${errors.email ? "border-red-500" : ""}`}
-                                        />
-                                        {errors.email && (
-                                            <p className="text-red-500 text-xs mt-1">
-                                                {errors.email.message}
-                                            </p>
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div className="grid md:grid-cols-2 gap-6">
-                                    {/* Phone Field */}
-                                    <div className="space-y-2 text-left">
-                                        <Label htmlFor="phone" className="text-zinc-300 font-medium">
-                                            Phone Number <span className="text-red-500">*</span>
-                                        </Label>
-                                        <Input
-                                            id="phone"
-                                            type="tel"
-                                            placeholder="+1 234 567 8900"
-                                            {...register("phone", {
-                                                required: "Phone number is required",
-                                                pattern: {
-                                                    value: /^\+?[0-9\s-]+$/,
-                                                    message: "Please enter a valid phone number",
-                                                },
-                                            })}
-                                            className={`bg-black border-zinc-800 text-white placeholder:text-zinc-600 focus:border-teal-500 focus:ring-teal-500/20 transition-all ${errors.phone ? "border-red-500" : ""}`}
-                                        />
-                                        {errors.phone && (
-                                            <p className="text-red-500 text-xs mt-1">
-                                                {errors.phone.message}
-                                            </p>
-                                        )}
-                                    </div>
-
-                                    {/* Plan Selection */}
-                                    <div className="space-y-2 text-left">
-                                        <Label htmlFor="plan" className="text-zinc-300 font-medium">
-                                            Interested Plan <span className="text-red-500">*</span>
-                                        </Label>
-                                        <Controller
-                                            name="plan"
-                                            control={control}
-                                            rules={{ required: "Please select a plan" }}
-                                            render={({ field }) => (
-                                                <Select value={field.value} onValueChange={field.onChange}>
-                                                    <SelectTrigger
-                                                        className={`bg-black border-zinc-800 text-white focus:border-teal-500 focus:ring-teal-500/20 ${errors.plan ? "border-red-500" : ""}`}
-                                                    >
-                                                        <SelectValue placeholder="Select a plan/option" />
-                                                    </SelectTrigger>
-                                                    <SelectContent className="bg-zinc-950 border-zinc-800 text-white">
-                                                        {PRICING_PLANS.map((plan) => (
-                                                            <SelectItem
-                                                                key={plan.id}
-                                                                value={plan.id}
-                                                                className="focus:bg-teal-500/20 focus:text-teal-400"
-                                                            >
-                                                                {plan.name} - ${plan.price}
-                                                            </SelectItem>
-                                                        ))}
-                                                        <SelectItem
-                                                            value="whiteLabel"
-                                                            className="focus:bg-teal-500/20 focus:text-teal-400"
-                                                        >
-                                                            White Labelling Enquiry
-                                                        </SelectItem>
-                                                    </SelectContent>
-                                                </Select>
-                                            )}
-                                        />
-                                        {errors.plan && (
-                                            <p className="text-red-500 text-xs mt-1">
-                                                {errors.plan.message}
-                                            </p>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Message Field */}
-                                <div className="space-y-2 text-left">
-                                    <Label htmlFor="message" className="text-zinc-300 font-medium">
-                                        Message (Optional)
-                                    </Label>
-                                    <Textarea
-                                        id="message"
-                                        placeholder="Tell us about yourself..."
-                                        rows={4}
-                                        {...register("message")}
-                                        className="bg-black border-zinc-800 text-white placeholder:text-zinc-600 focus:border-teal-500 focus:ring-teal-500/20 transition-all resize-none"
-                                    />
-                                </div>
-
-                                {/* Referral Code Field */}
-                                <div className="space-y-2 text-left">
-                                    <Label htmlFor="referral_code" className="text-zinc-300 font-medium">
-                                        Referral Code
-                                        <span className="ml-2 text-xs font-normal text-zinc-500">(Optional)</span>
-                                    </Label>
-                                    <Input
-                                        id="referral_code"
-                                        type="text"
-                                        placeholder="e.g. john2024"
-                                        {...register('referral_code')}
-                                        className="bg-black border-zinc-800 text-white placeholder:text-zinc-600 focus:border-teal-500 focus:ring-teal-500/20 transition-all"
-                                    />
-                                    <p className="text-xs text-teal-400/70">
-                                        💡 Have a referral code? Enter it for faster enquiry replies and priority support.
-                                    </p>
-                                </div>
-
-                                {/* Submit Button */}
-                                <div className="flex gap-4 pt-4">
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        onClick={() => setIsEnquiryModalOpen(false)}
-                                        className="flex-1 bg-transparent border-zinc-800 text-zinc-400 hover:bg-zinc-900 hover:text-white transition-colors h-14 rounded-xl font-bold"
-                                    >
-                                        Cancel
-                                    </Button>
-                                    <Button
-                                        type="submit"
-                                        disabled={isSubmitting}
-                                        className="flex-1 bg-teal-500 hover:bg-teal-400 text-black font-bold h-14 rounded-xl shadow-[0_0_20px_rgba(20,184,166,0.2)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                        {isSubmitting ? 'Submitting...' : 'Submit Request'}
-                                    </Button>
-                                </div>
-                            </form>
-                        </>
-                    )}
-                </DialogContent>
-            </Dialog>
-        </div>
+    // Hero headline GSAP animation
+    const tl = gsap.timeline();
+    tl.fromTo('.hero-word',
+      { opacity: 0, y: 40 },
+      { opacity: 1, y: 0, stagger: 0.08, duration: 0.8, ease: "power3.out", delay: 0.2 }
+    ).fromTo('.hero-underline',
+      { scaleX: 0 },
+      { scaleX: 1, duration: 0.6, ease: "power3.inOut" },
+      "-=0.2"
     );
+
+    // Cursor Follower
+    let mouseX = 0;
+    let mouseY = 0;
+    let cursorX = 0;
+    let cursorY = 0;
+    let animId: number;
+    const isMobile = window.innerWidth < 768;
+    
+    if (!isMobile) {
+      const handleMouseMove = (e: MouseEvent) => {
+        mouseX = e.clientX;
+        mouseY = e.clientY;
+      };
+      window.addEventListener('mousemove', handleMouseMove);
+
+      const animateCursor = () => {
+        cursorX += (mouseX - cursorX) * 0.15;
+        cursorY += (mouseY - cursorY) * 0.15;
+        if (cursorRef.current) {
+          cursorRef.current.style.transform = `translate3d(${cursorX}px, ${cursorY}px, 0) translate(-50%, -50%)`;
+        }
+        animId = requestAnimationFrame(animateCursor);
+      };
+      animId = requestAnimationFrame(animateCursor);
+
+      return () => {
+        window.removeEventListener('scroll', handleScroll);
+        window.removeEventListener('mousemove', handleMouseMove);
+        cancelAnimationFrame(animId);
+      };
+    } else {
+      return () => window.removeEventListener('scroll', handleScroll);
+    }
+  }, []);
+
+  interface FormData {
+    name: string;
+    email: string;
+    phone: string;
+    message: string;
+    plan: string;
+    referral_code: string;
+  }
+
+  const {
+    register,
+    handleSubmit,
+    control,
+    reset,
+    formState: { errors },
+  } = useForm<FormData>({
+    defaultValues: {
+      name: "",
+      email: "",
+      phone: "",
+      message: "",
+      plan: "",
+      referral_code: "",
+    },
+  });
+
+  const handleFormSubmit = async (data: FormData) => {
+    setIsSubmitting(true);
+
+    try {
+      const planNames: Record<string, string> = {
+        setup: "Setup & Strategy Development: 149 $",
+        change: "Each new change of request=19$",
+        custom: "Custom solutions available.",
+      };
+
+      const emailBody = `Name : ${data.name}\nEmail : ${data.email}\nPhone : ${data.phone}\nInterested Plan : ${planNames[data.plan] || data.plan}\nMessage : \n ${data.message || "N/A"}`;
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- table not in generated types
+      await (supabase as any)
+        .from("contact_submissions")
+        .insert([
+          {
+            name: data.name,
+            email: data.email,
+            phone: data.phone,
+            description: `Plan: ${planNames[data.plan] || data.plan}\n${data.message || ""}`,
+            ...(affiliateId && { affiliate_id: affiliateId }),
+            ...(data.referral_code?.trim() && {
+              referral_code: data.referral_code.trim(),
+            }),
+          },
+        ])
+        .then(() => {})
+        .catch(() => {});
+
+      const response = await fetch(
+        "https://send-mail-redirect-boostmysites.vercel.app/send-email",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            body: emailBody,
+            name: "Tradingsmart.AI",
+            subject: `New Enquiry from ${data.name} - ${planNames[data.plan] || data.plan}`,
+            to: "partnerships@tradingsmart.ai",
+          }),
+        },
+      );
+
+      if (response.ok) {
+        reset();
+        setIsSubmitSuccess(true);
+      } else {
+        alert("Failed to submit form. Please try again.");
+      }
+    } catch (error) {
+      console.error("Error submitting form:", error);
+      alert("An error occurred. Please try again later.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const sectionTitle =
+    "text-3xl md:text-4xl font-black mb-8 text-white tracking-tight font-syne";
+  const bodyMuted = "text-zinc-400 font-light leading-relaxed font-dm-sans";
+  const card =
+    "bg-white/[0.03] backdrop-blur-xl border border-white/[0.06] border-t-teal-500/40 border-t p-8 md:p-10 rounded-3xl transition-all duration-300 hover:border-teal-500/30 hover:shadow-[0_0_40px_rgba(20,184,166,0.08)]";
+
+  return (
+    <div className="min-h-screen bg-black text-zinc-100 font-sans selection:bg-teal-500/30 selection:text-teal-100 overflow-x-hidden relative group">
+      <div 
+        ref={cursorRef} 
+        className="fixed top-0 left-0 w-5 h-5 bg-teal-500 rounded-full blur-[4px] pointer-events-none z-[9999] opacity-0 group-hover:opacity-60 transition-opacity duration-300 hidden md:block" 
+      />
+      <Helmet>
+        <title>
+          Launch Your Own Algo Trading System Without Coding | TradingSmart.ai
+        </title>
+        <meta
+          name="description"
+          content="Build, backtest, and deploy trading strategies with AI — without writing a single line of code. Our developers build everything for you and integrate your strategy within 72 hours."
+        />
+      </Helmet>
+
+      <AiPredictionHeader />
+
+      {/* Hero */}
+      <section
+        id="hero"
+        className="relative min-h-[100svh] flex items-center justify-center pt-28 pb-20 px-4 overflow-hidden bg-black"
+      >
+        <Hero3DCanvas />
+        <div className="absolute inset-0 z-0 pointer-events-none">
+          <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black via-black/80 to-transparent z-10" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-teal-500/10 rounded-full blur-[120px] z-0" />
+        </div>
+
+        <motion.div
+          initial="hidden"
+          animate="visible"
+          variants={staggerContainer}
+          className="container mx-auto z-20 text-center relative max-w-4xl"
+        >
+          <motion.h1
+            variants={fadeUp}
+            className="text-4xl md:text-6xl lg:text-[3.5rem] font-black tracking-tight mb-8 leading-[1.1] text-white font-syne relative"
+          >
+            {"Launch Your Own Algo Trading System ".split(" ").map((word, i) => (
+              <span key={`w1-${i}`} className="hero-word inline-block mr-[0.3em] opacity-0 translate-y-10">{word}</span>
+            ))}
+            <span className="relative inline-block mt-2 sm:mt-0">
+              {"Without Coding".split(" ").map((word, i) => (
+                <span key={`w2-${i}`} className="hero-word inline-block mr-[0.3em] opacity-0 translate-y-10">{word}</span>
+              ))}
+              <span className="hero-underline absolute left-0 bottom-[-4px] h-[4px] bg-teal-500 w-[95%] origin-left scale-x-0" />
+            </span>
+          </motion.h1>
+          <motion.p
+            variants={fadeUp}
+            className={`text-lg md:text-xl ${bodyMuted} max-w-3xl mx-auto mb-12`}
+          >
+            Build, backtest, and deploy trading strategies with AI — without
+            writing a single line of code. Our developers build everything for
+            you and integrate your strategy within 72 hours.
+          </motion.p>
+          <motion.div
+            variants={fadeUp}
+            className="flex flex-col sm:flex-row gap-4 justify-center items-center"
+          >
+            <Button
+              type="button"
+              onClick={() => navigate("/auth")}
+              className="bg-teal-500 hover:bg-teal-400 text-black font-bold text-lg px-10 py-7 rounded-xl shadow-[0_0_30px_rgba(20,184,166,0.3)] border border-teal-400/50 transition-all duration-300 hover:-translate-y-0.5"
+            >
+              Get Started
+            </Button>
+            <Button
+              onClick={() => setIsEnquiryModalOpen(true)}
+              variant="outline"
+              className="bg-zinc-900/50 border border-zinc-700 hover:border-teal-500 hover:bg-teal-500/10 text-white font-bold text-lg px-10 py-7 rounded-xl transition-all duration-300 hover:-translate-y-0.5 backdrop-blur-md"
+            >
+              Book Demo
+            </Button>
+          </motion.div>
+        </motion.div>
+
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 opacity-60">
+          <div className="w-6 h-10 border-2 border-zinc-500 rounded-full flex justify-center p-1">
+            <motion.div
+              animate={{ y: [0, 12, 0] }}
+              transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}
+              className="w-1.5 h-1.5 bg-teal-500 rounded-full"
+            />
+          </div>
+          <span className="text-[10px] tracking-[0.2em] font-medium text-zinc-500 font-jetbrains">SCROLL</span>
+        </div>
+      </section>
+
+      {/* WHAT YOU GET */}
+      <motion.section
+        initial="hidden"
+        whileInView="visible"
+        viewport={{ once: true, margin: "-80px" }}
+        variants={staggerContainer}
+        id="what-you-get"
+        className="py-24 bg-black relative"
+      >
+        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-teal-500/30 to-transparent" />
+        <div className="container mx-auto px-4 max-w-7xl">
+          <motion.h2
+            variants={fadeUp}
+            className={`${sectionTitle} text-center`}
+          >
+            WHAT YOU GET
+          </motion.h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-16">
+            <motion.div variants={fadeUp} className={`${card} md:col-span-2 flex flex-col justify-center`}>
+              <h3 className="text-2xl md:text-3xl font-bold text-white mb-6 font-syne">
+                No-Code Algo Trading Integration<br/><span className="text-teal-500 text-xl font-normal">(Done For You)</span>
+              </h3>
+              <p className="text-zinc-300 mb-8 font-light text-lg">
+                Turn your idea into a fully automated trading system — built by
+                our developers.
+              </p>
+              <ul className="grid sm:grid-cols-2 gap-y-4 gap-x-8 text-zinc-300 font-light list-none">
+                <li className="flex gap-4 items-start">
+                  <DiamondIcon />
+                  <span className="leading-snug">Share your strategy or idea (even basic logic is enough)</span>
+                </li>
+                <li className="flex gap-4 items-start">
+                  <DiamondIcon />
+                  <span className="leading-snug">Our developers convert it into a working algo system</span>
+                </li>
+                <li className="flex gap-4 items-start">
+                  <DiamondIcon />
+                  <span className="leading-snug">Integrated into your broker within 72 hours</span>
+                </li>
+                <li className="flex gap-4 items-start">
+                  <DiamondIcon />
+                  <span className="leading-snug">Fully automated execution with real-time monitoring</span>
+                </li>
+                <li className="flex gap-4 items-start">
+                  <DiamondIcon />
+                  <span className="leading-snug">Modify or scale anytime</span>
+                </li>
+              </ul>
+              <div className="mt-10 p-5 rounded-2xl bg-teal-500/5 border border-teal-500/10 inline-block">
+                <p className="text-teal-50 font-medium leading-relaxed font-jetbrains text-sm">
+                  <span className="text-teal-500 mr-2">{">"}</span>You don't need coding. You don't need tech knowledge. We build everything.
+                </p>
+              </div>
+            </motion.div>
+
+            <motion.div variants={fadeUp} className={`${card} md:col-span-1 flex flex-col justify-center`}>
+              <h3 className="text-xl md:text-2xl font-bold text-white mb-6 font-syne focus:outline-none">
+                AI Backtesting +<br/>Strategy Intelligence
+              </h3>
+              <p className="text-zinc-400 mb-8 font-light text-sm">
+                Test, analyze, and refine before going live.
+              </p>
+              <ul className="space-y-4 text-zinc-300 font-light text-sm list-none">
+                <li className="flex gap-3 items-start">
+                  <DiamondIcon />
+                  <span className="leading-snug">Backtest your strategy on historical data</span>
+                </li>
+                <li className="flex gap-3 items-start">
+                  <DiamondIcon />
+                  <span className="leading-snug">AI-generated performance analysis</span>
+                </li>
+                <li className="flex gap-3 items-start">
+                  <DiamondIcon />
+                  <span className="leading-snug">Metrics: win rate, drawdown, profit factor</span>
+                </li>
+                <li className="flex gap-3 items-start">
+                  <DiamondIcon />
+                  <span className="leading-snug">Identify strengths, weaknesses, and risk zones</span>
+                </li>
+                <li className="flex gap-3 items-start">
+                  <DiamondIcon />
+                  <span className="leading-snug">Improve your strategy with data-backed insights</span>
+                </li>
+                <li className="flex gap-3 items-start">
+                  <DiamondIcon />
+                  <span className="leading-snug">Direct transition from backtesting to live deployment</span>
+                </li>
+              </ul>
+              <p className="text-teal-400/80 mt-8 font-medium italic text-sm">
+                Trade with clarity, not assumptions.
+              </p>
+            </motion.div>
+          </div>
+        </div>
+      </motion.section>
+
+      {/* HOW IT WORKS */}
+      <motion.section
+        initial="hidden"
+        whileInView="visible"
+        viewport={{ once: true, margin: "-80px" }}
+        variants={staggerContainer}
+        id="how-it-works"
+        className="py-24 bg-zinc-950 relative"
+      >
+        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-teal-500/30 to-transparent" />
+        <div className="container mx-auto px-4 max-w-3xl">
+          <motion.h2
+            variants={fadeUp}
+            className={`${sectionTitle} text-center`}
+          >
+            HOW IT WORKS
+          </motion.h2>
+          
+          <div className="relative mt-16 pl-6 md:pl-0">
+            {/* Vertical Line */}
+            <div className="absolute left-[29px] md:left-1/2 top-0 bottom-0 w-px bg-zinc-800 md:-translate-x-1/2">
+               <div className="timeline-line absolute top-0 left-0 w-full h-full bg-teal-500 origin-top scale-y-0 shadow-[0_0_10px_rgba(20,184,166,0.5)]" />
+            </div>
+
+            <motion.div variants={staggerContainer} className="space-y-12">
+              {[
+                "Sign up on Trading Smart.ai",
+                "Connect your broker securely",
+                "Share your strategy idea",
+                "Our developers build your system",
+                "Strategy integrated within 72 hours",
+                "Backtest + analyze with AI",
+                "Go live with full control"
+              ].map((step, index) => (
+                <motion.div key={index} variants={fadeUp} className={`relative flex items-center md:justify-between ${index % 2 === 0 ? 'md:flex-row-reverse' : ''}`}>
+                   <div className="md:w-5/12 hidden md:block" />
+                   
+                   <div className="absolute left-[-29px] md:left-1/2 md:-translate-x-1/2 w-12 h-12 bg-black border border-white/[0.08] rounded-full flex items-center justify-center font-jetbrains text-teal-500 font-bold z-10 shadow-[0_0_20px_rgba(0,0,0,0.8)]">
+                     {index + 1}
+                   </div>
+
+                   <div className="w-full md:w-5/12 pl-12 md:pl-0">
+                     <div className="bg-white/[0.02] backdrop-blur-md border border-white/[0.05] p-6 rounded-2xl hover:border-teal-500/20 transition-colors">
+                       <p className="text-lg text-zinc-200 font-light">{step}</p>
+                     </div>
+                   </div>
+                </motion.div>
+              ))}
+            </motion.div>
+          </div>
+        </div>
+      </motion.section>
+
+      {/* WHY THIS IS DIFFERENT & WHO IS THIS FOR */}
+      <motion.section
+        initial="hidden"
+        whileInView="visible"
+        viewport={{ once: true, margin: "-80px" }}
+        variants={staggerContainer}
+        id="why-and-who"
+        className="py-24 bg-black relative"
+      >
+        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-teal-500/30 to-transparent" />
+        <div className="container mx-auto px-4 max-w-6xl">
+          <div className="flex flex-col md:flex-row gap-0 rounded-3xl overflow-hidden border border-white/[0.06] shadow-2xl relative">
+            <div className="absolute inset-0 pointer-events-none">
+               <div className="absolute top-0 left-0 w-1/2 h-1/2 bg-teal-500/5 blur-[100px]" />
+               <div className="absolute bottom-0 right-0 w-1/2 h-1/2 bg-teal-500/5 blur-[100px]" />
+            </div>
+
+            <motion.div variants={fadeUp} className="flex-1 bg-white/[0.02] backdrop-blur-xl p-10 md:p-14 md:border-r border-white/[0.06] z-10 relative">
+              <h2 className={`${sectionTitle} text-left text-2xl md:text-3xl mb-10`}>WHY THIS IS DIFFERENT</h2>
+              <ul className="space-y-6 text-zinc-300 font-light list-none">
+                {[
+                  "100% no coding required",
+                  "Developers build your strategy for you",
+                  "Fast 72-hour integration",
+                  "AI-powered analysis engine",
+                  "Works with your custom logic",
+                  "Full control over your trading"
+                ].map((text, i) => (
+                  <motion.li 
+                    key={i} 
+                    initial={{ opacity: 0, x: -30 }} 
+                    whileInView={{ opacity: 1, x: 0 }} 
+                    transition={{ delay: i * 0.1, duration: 0.5 }}
+                    viewport={{ once: true }}
+                    className="flex gap-4 items-center"
+                  >
+                    <div className="w-1.5 h-1.5 bg-teal-500 rounded-full shrink-0 shadow-[0_0_8px_rgba(20,184,166,0.8)]" />
+                    <span>{text}</span>
+                  </motion.li>
+                ))}
+              </ul>
+            </motion.div>
+
+            <motion.div variants={fadeUp} className="flex-1 bg-white/[0.05] backdrop-blur-xl p-10 md:p-14 z-10 relative">
+              <h2 className={`${sectionTitle} text-left text-2xl md:text-3xl mb-10`}>WHO IS THIS FOR</h2>
+              <ul className="space-y-6 text-zinc-300 font-light list-none">
+                {[
+                  "Traders with ideas but no coding skills",
+                  "Beginners who want automation",
+                  "Advanced traders scaling multiple strategies",
+                  "Anyone tired of manual execution"
+                ].map((text, i) => (
+                  <motion.li 
+                    key={i} 
+                    initial={{ opacity: 0, x: 30 }} 
+                    whileInView={{ opacity: 1, x: 0 }} 
+                    transition={{ delay: i * 0.1, duration: 0.5 }}
+                    viewport={{ once: true }}
+                    className="flex gap-4 items-center"
+                  >
+                    <div className="w-1.5 h-1.5 bg-zinc-500 rounded-full shrink-0" />
+                    <span>{text}</span>
+                  </motion.li>
+                ))}
+              </ul>
+            </motion.div>
+          </div>
+        </div>
+      </motion.section>
+
+      {/* PRICING */}
+      <motion.section
+        initial="hidden"
+        whileInView="visible"
+        viewport={{ once: true, margin: "-80px" }}
+        variants={staggerContainer}
+        id="pricing"
+        className="py-24 bg-zinc-950 relative"
+      >
+        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-teal-500/30 to-transparent" />
+        <div className="container mx-auto px-4 max-w-xl text-center">
+          <motion.h2 variants={fadeUp} className={sectionTitle}>
+            PRICING
+          </motion.h2>
+
+          <motion.div
+            variants={fadeUp}
+            className="relative mt-12 bg-black/[0.8] backdrop-blur-2xl p-10 md:p-14 rounded-[2rem] border border-teal-500/30 group transition-all duration-500 hover:-translate-y-2 hover:border-teal-400/50"
+            style={{
+              boxShadow: "0 0 60px rgba(20,184,166,0.12), inset 0 0 60px rgba(20,184,166,0.03)"
+            }}
+          >
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-px bg-gradient-to-r from-transparent via-teal-400 to-transparent opacity-50" />
+            
+            <div className="mb-8">
+              <div className="text-teal-500 font-semibold tracking-widest text-sm mb-4 uppercase inline-block border border-teal-500/30 px-3 py-1 rounded-full bg-teal-500/10">One-Time Fee</div>
+              <div className="text-6xl md:text-[5rem] font-bold text-white font-syne mb-2">$149</div>
+            </div>
+
+            <ul className="space-y-4 text-zinc-300 font-light text-left mb-10 max-w-sm mx-auto">
+              <li className="flex items-center gap-3">
+                <DiamondIcon />
+                <span>Setup & Strategy Development: 149 $</span>
+              </li>
+              <li className="flex items-center gap-3 text-zinc-400">
+                <div className="w-1.5 h-1.5 bg-zinc-600 rounded-full ml-1 shrink-0" />
+                <span>Each new change of request=19$</span>
+              </li>
+              <li className="flex items-center gap-3 text-zinc-400">
+                <div className="w-1.5 h-1.5 bg-zinc-600 rounded-full ml-1 shrink-0" />
+                <span>Custom solutions available.</span>
+              </li>
+            </ul>
+
+            <Button
+              onClick={() => setIsEnquiryModalOpen(true)}
+              className="w-full bg-teal-500 hover:bg-teal-400 text-black font-bold text-xl py-8 rounded-2xl shadow-[0_0_30px_rgba(20,184,166,0.2)] transition-all duration-300"
+            >
+              Start Building Now
+            </Button>
+          </motion.div>
+        </div>
+      </motion.section>
+
+      {/* SECURITY & CONTROL */}
+      <motion.section
+        initial="hidden"
+        whileInView="visible"
+        viewport={{ once: true, margin: "-80px" }}
+        variants={staggerContainer}
+        id="security"
+        className="py-24 bg-black relative"
+      >
+        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-teal-500/30 to-transparent" />
+        <div className="container mx-auto px-4 max-w-5xl">
+          <motion.h2
+            variants={fadeUp}
+            className={`${sectionTitle} text-center`}
+          >
+            SECURITY & CONTROL
+          </motion.h2>
+
+          <motion.div
+            variants={staggerContainer}
+            className="grid sm:grid-cols-2 gap-6 mt-16"
+          >
+            {[
+              { text: "You connect your own broker", icon: Lock },
+              { text: "You control execution at all times", icon: Eye },
+              { text: "You can pause or stop anytime", icon: Pause },
+              { text: "No access to your funds", icon: Shield }
+            ].map((item, i) => {
+              const Icon = item.icon;
+              return (
+                <motion.div key={i} variants={fadeUp} className="bg-white/[0.02] backdrop-blur-xl border border-white/[0.06] p-8 rounded-3xl flex flex-col sm:flex-row gap-6 items-start hover:border-teal-500/20 transition-all duration-300 hover:bg-white/[0.05]">
+                  <div className="w-16 h-16 rounded-2xl bg-black border border-white/[0.08] flex items-center justify-center shrink-0 shadow-inner">
+                    <Icon className="w-8 h-8 text-teal-500" strokeWidth={1} />
+                  </div>
+                  <div className="flex-1 flex items-center h-full">
+                    <p className="text-xl text-zinc-200 font-light leading-tight">
+                      {item.text}
+                    </p>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </motion.div>
+        </div>
+      </motion.section>
+
+      {/* DISCLAIMER */}
+      <motion.section
+        initial="hidden"
+        whileInView="visible"
+        viewport={{ once: true, margin: "-80px" }}
+        variants={staggerContainer}
+        id="disclaimer"
+        className="py-24 bg-zinc-950 relative"
+      >
+        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-teal-500/30 to-transparent" />
+        <div className="container mx-auto px-4 max-w-4xl">
+          <motion.h2
+            variants={fadeUp}
+            className={`${sectionTitle} text-center`}
+          >
+            DISCLAIMER
+          </motion.h2>
+
+          <motion.div
+            variants={fadeUp}
+            className="mt-12 bg-black border border-zinc-800/50 rounded-2xl p-8 md:p-10 font-jetbrains text-xs md:text-sm text-zinc-400 space-y-6 shadow-2xl relative overflow-hidden"
+          >
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-zinc-800 via-teal-900 to-zinc-800" />
+            <div className="flex gap-4 items-start">
+               <span className="text-teal-500 font-bold shrink-0">{">"}</span>
+               <p className="leading-relaxed">Trading Smart.ai is a technology platform providing tools for strategy execution and analysis.</p>
+            </div>
+            <div className="flex gap-4 items-start">
+               <span className="text-teal-500 font-bold shrink-0">{">"}</span>
+               <p className="leading-relaxed">We do not provide investment advice, stock recommendations, or portfolio management services.</p>
+            </div>
+            <div className="flex gap-4 items-start">
+               <span className="text-teal-500 font-bold shrink-0">{">"}</span>
+               <p className="leading-relaxed">All strategies are defined or approved by the user, and all trading decisions are the user's responsibility.</p>
+            </div>
+          </motion.div>
+        </div>
+      </motion.section>
+
+      {/* START NOW */}
+      <motion.section
+        initial="hidden"
+        whileInView="visible"
+        viewport={{ once: true, margin: "-80px" }}
+        variants={staggerContainer}
+        id="start-now"
+        className="py-32 relative overflow-hidden bg-black border-t border-zinc-900"
+      >
+        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-teal-500/30 to-transparent" />
+        
+        <div className="absolute inset-0 z-0 flex items-center justify-center overflow-hidden pointer-events-none">
+          <div className="text-[20rem] font-syne font-black text-teal-500/5 select-none leading-none -translate-y-8 absolute hidden md:block">72</div>
+          <div className="w-[800px] h-[800px] bg-teal-500/5 rounded-full blur-[200px]" />
+        </div>
+
+        <div className="container mx-auto px-4 relative z-10 text-center max-w-4xl">
+          <motion.h2 variants={fadeUp} className={`${sectionTitle} text-5xl md:text-7xl mb-12 drop-shadow-2xl`}>
+            START NOW
+          </motion.h2>
+          <motion.p variants={fadeUp} className={`${bodyMuted} text-2xl md:text-3xl mb-16 font-light max-w-2xl mx-auto`}>
+            Build your automated trading system in the next 72 hours.
+          </motion.p>
+          <motion.div
+            variants={fadeUp}
+            className="flex flex-col sm:flex-row gap-6 justify-center items-center"
+          >
+            <Button
+              onClick={() => setIsEnquiryModalOpen(true)}
+              className="bg-teal-500 hover:bg-teal-400 text-black font-bold text-xl px-12 py-8 rounded-2xl shadow-[0_0_40px_rgba(20,184,166,0.3)] transition-all duration-300 hover:-translate-y-1 w-full sm:w-auto"
+            >
+              Get Started Now
+            </Button>
+            <Button
+              onClick={() => setIsEnquiryModalOpen(true)}
+              variant="outline"
+              className="bg-black/50 backdrop-blur-md border border-zinc-700 hover:border-teal-500/50 hover:bg-teal-500/10 text-white font-bold text-xl px-12 py-8 rounded-2xl transition-all duration-300 hover:-translate-y-1 w-full sm:w-auto"
+            >
+              Talk to Our Team
+            </Button>
+          </motion.div>
+        </div>
+      </motion.section>
+
+      <AiPredictionFooter />
+
+      <Dialog
+        open={isEnquiryModalOpen}
+        onOpenChange={(open) => {
+          setIsEnquiryModalOpen(open);
+          if (!open) setIsSubmitSuccess(false);
+        }}
+      >
+        <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] bg-zinc-950 border border-zinc-800 text-white p-6 sm:p-8 rounded-3xl shadow-2xl overflow-y-auto">
+          {isSubmitSuccess ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center gap-6">
+              <div className="w-20 h-20 rounded-full bg-teal-500/15 flex items-center justify-center">
+                <svg
+                  className="w-10 h-10 text-teal-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+              </div>
+              <div>
+                <DialogTitle className="text-2xl font-black text-white mb-2">
+                  Request Submitted!
+                </DialogTitle>
+                <p className="text-zinc-400 font-light">
+                  Thank you! Our partnerships team will reach out to you
+                  shortly.
+                </p>
+              </div>
+              <Button
+                onClick={() => {
+                  setIsEnquiryModalOpen(false);
+                  setIsSubmitSuccess(false);
+                }}
+                className="bg-teal-500 hover:bg-teal-400 text-black font-bold px-8 py-3 rounded-xl"
+              >
+                Close
+              </Button>
+            </div>
+          ) : (
+            <>
+              <div className="relative border-b border-zinc-800 pb-4 mb-6 pr-10">
+                <DialogTitle className="text-3xl font-black text-white text-left tracking-tight">
+                  Start Now
+                </DialogTitle>
+                <p className="text-zinc-400 text-sm mt-2 text-left font-light">
+                  Fill out the form below and our partnerships team will reach
+                  out.
+                </p>
+              </div>
+
+              <form
+                className="space-y-6"
+                onSubmit={handleSubmit(handleFormSubmit)}
+              >
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div className="space-y-2 text-left">
+                    <Label htmlFor="name" className="text-zinc-300 font-medium">
+                      Full Name <span className="text-red-500">*</span>
+                    </Label>
+                    <Input
+                      id="name"
+                      type="text"
+                      placeholder="John Doe"
+                      {...register("name", {
+                        required: "Full name is required",
+                      })}
+                      className={`bg-black border-zinc-800 text-white placeholder:text-zinc-600 focus:border-teal-500 focus:ring-teal-500/20 transition-all ${errors.name ? "border-red-500" : ""}`}
+                    />
+                    {errors.name && (
+                      <p className="text-red-500 text-xs mt-1">
+                        {errors.name.message}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2 text-left">
+                    <Label
+                      htmlFor="email"
+                      className="text-zinc-300 font-medium"
+                    >
+                      Email Address <span className="text-red-500">*</span>
+                    </Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="john@example.com"
+                      {...register("email", {
+                        required: "Email is required",
+                        pattern: {
+                          value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+                          message: "Invalid email address",
+                        },
+                      })}
+                      className={`bg-black border-zinc-800 text-white placeholder:text-zinc-600 focus:border-teal-500 focus:ring-teal-500/20 transition-all ${errors.email ? "border-red-500" : ""}`}
+                    />
+                    {errors.email && (
+                      <p className="text-red-500 text-xs mt-1">
+                        {errors.email.message}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div className="space-y-2 text-left">
+                    <Label
+                      htmlFor="phone"
+                      className="text-zinc-300 font-medium"
+                    >
+                      Phone Number <span className="text-red-500">*</span>
+                    </Label>
+                    <Input
+                      id="phone"
+                      type="tel"
+                      placeholder="+1 234 567 8900"
+                      {...register("phone", {
+                        required: "Phone number is required",
+                        pattern: {
+                          value: /^\+?[0-9\s-]+$/,
+                          message: "Please enter a valid phone number",
+                        },
+                      })}
+                      className={`bg-black border-zinc-800 text-white placeholder:text-zinc-600 focus:border-teal-500 focus:ring-teal-500/20 transition-all ${errors.phone ? "border-red-500" : ""}`}
+                    />
+                    {errors.phone && (
+                      <p className="text-red-500 text-xs mt-1">
+                        {errors.phone.message}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2 text-left">
+                    <Label htmlFor="plan" className="text-zinc-300 font-medium">
+                      Interested Plan <span className="text-red-500">*</span>
+                    </Label>
+                    <Controller
+                      name="plan"
+                      control={control}
+                      rules={{ required: "Please select a plan" }}
+                      render={({ field }) => (
+                        <Select
+                          value={field.value}
+                          onValueChange={field.onChange}
+                        >
+                          <SelectTrigger
+                            className={`bg-black border-zinc-800 text-white focus:border-teal-500 focus:ring-teal-500/20 ${errors.plan ? "border-red-500" : ""}`}
+                          >
+                            <SelectValue placeholder="Select a plan/option" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-zinc-950 border-zinc-800 text-white">
+                            <SelectItem
+                              value="setup"
+                              className="focus:bg-teal-500/20 focus:text-teal-400"
+                            >
+                              Setup & Strategy Development: 149 $
+                            </SelectItem>
+                            <SelectItem
+                              value="change"
+                              className="focus:bg-teal-500/20 focus:text-teal-400"
+                            >
+                              Each new change of request=19$
+                            </SelectItem>
+                            <SelectItem
+                              value="custom"
+                              className="focus:bg-teal-500/20 focus:text-teal-400"
+                            >
+                              Custom solutions available.
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                    {errors.plan && (
+                      <p className="text-red-500 text-xs mt-1">
+                        {errors.plan.message}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2 text-left">
+                  <Label
+                    htmlFor="message"
+                    className="text-zinc-300 font-medium"
+                  >
+                    Message (Optional)
+                  </Label>
+                  <Textarea
+                    id="message"
+                    placeholder="Tell us about yourself..."
+                    rows={4}
+                    {...register("message")}
+                    className="bg-black border-zinc-800 text-white placeholder:text-zinc-600 focus:border-teal-500 focus:ring-teal-500/20 transition-all resize-none"
+                  />
+                </div>
+
+                <div className="space-y-2 text-left">
+                  <Label
+                    htmlFor="referral_code"
+                    className="text-zinc-300 font-medium"
+                  >
+                    Referral Code
+                    <span className="ml-2 text-xs font-normal text-zinc-500">
+                      (Optional)
+                    </span>
+                  </Label>
+                  <Input
+                    id="referral_code"
+                    type="text"
+                    placeholder="e.g. john2024"
+                    {...register("referral_code")}
+                    className="bg-black border-zinc-800 text-white placeholder:text-zinc-600 focus:border-teal-500 focus:ring-teal-500/20"
+                  />
+                </div>
+
+                <div className="flex gap-4 pt-4">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsEnquiryModalOpen(false)}
+                    className="flex-1 bg-transparent border-zinc-800 text-zinc-400 hover:bg-zinc-900 hover:text-white transition-colors h-14 rounded-xl font-bold"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="flex-1 bg-teal-500 hover:bg-teal-400 text-black font-bold h-14 rounded-xl shadow-[0_0_20px_rgba(20,184,166,0.2)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSubmitting ? "Submitting..." : "Submit Request"}
+                  </Button>
+                </div>
+              </form>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
 };
 
 export default MainLandingPage;

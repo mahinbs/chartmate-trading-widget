@@ -61,19 +61,19 @@ function useDashboardNavLinks(): DashboardNavLink[] {
   return useMemo(() => {
     const next: DashboardNavLink[] = [
       { to: "/home", label: "Dashboard", icon: LayoutDashboard },
-      {
-        to: hasAnalysisAccess ? "/predict" : "/pricing?feature=analysis",
-        label: "New Analysis",
-        icon: LineChart,
-        locked: !hasAnalysisAccess,
-      },
-      {
-        to: hasAnalysisAccess ? "/predictions" : "/pricing?feature=analysis",
-        label: "Past Analyses",
-        icon: Activity,
-        iconOpacity: "",
-        locked: !hasAnalysisAccess,
-      },
+      // {
+      //   to: hasAnalysisAccess ? "/predict" : "/pricing?feature=analysis",
+      //   label: "New Analysis",
+      //   icon: LineChart,
+      //   locked: !hasAnalysisAccess,
+      // },
+      // {
+      //   to: hasAnalysisAccess ? "/predictions" : "/pricing?feature=analysis",
+      //   label: "Past Analyses",
+      //   icon: Activity,
+      //   iconOpacity: "",
+      //   locked: !hasAnalysisAccess,
+      // },
       {
         to: hasAnalysisAccess
           ? "/active-trades?tab=performance"
