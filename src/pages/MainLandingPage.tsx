@@ -321,7 +321,7 @@ const MainLandingPage = () => {
           </motion.div>
         </motion.div>
 
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 opacity-60">
+        <div className="absolute bottom-0 md:bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 opacity-60">
           <div className="w-6 h-10 border-2 border-zinc-500 rounded-full flex justify-center p-1">
             <motion.div
               animate={{ y: [0, 12, 0] }}
