@@ -32,6 +32,13 @@ import {
 import { toast } from "sonner";
 import PlaceOrderPanel from "@/components/trading/PlaceOrderPanel";
 import { STRATEGIES } from "@/components/trading/StrategySelectionDialog";
+import {
+  deriveMaxHoldDaysFromExit,
+  entryConditionsConfigured,
+  mergeSnapshotWithBacktestRun,
+  resolveEngineStrategyIdForCustom,
+  type FullCustomStrategy,
+} from "@/lib/backtestVectorbtPayload";
 import { getStrategyParams } from "@/constants/strategyParams";
 import AlgoStrategyBuilder from "@/components/trading/AlgoStrategyBuilder";
 
@@ -524,6 +531,8 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
   const [modifyQty, setModifyQty]     = useState("");
   const [modifyType, setModifyType]   = useState("LIMIT");
   const [showOrderModal, setShowOrderModal] = useState(false);
+  /** Portfolio sub-tab (positions / orders / strategies / …) — used to deep-link from strategy hints */
+  const [portfolioTab, setPortfolioTab] = useState("positions");
 
   // ── Strategy state ─────────────────────────────────────────────────────────
   const [strategies, setStrategies]       = useState<Strategy[]>([]);
@@ -578,7 +587,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
       maxDrawdown?: number; profitFactor?: number; backtestPeriod?: string; strategyAchieved?: boolean; achievementReason?: string;
       sampleTrades?: { entryDate: string; exitDate: string; returnPct: number; profitable: boolean }[];
       currentIndicators?: { price?: number; sma20?: number | null; rsi14?: number | null; high20d?: number; low20d?: number };
-      engine?: string; dataSource?: string; sharpeRatio?: number;
+      engine?: string; dataSource?: string; sharpeRatio?: number; usedCustomConditions?: boolean;
     } | null; backtestLoading?: boolean; backtestAiAnalysis?: string | null; backtestAiLoading?: boolean;
     lastFired?: { action: "BUY" | "SELL"; symbol: string; exchange: string; quantity: string; product: string };
   }>>({});
@@ -693,42 +702,120 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
     };
     const sym = fs.symbol.trim().toUpperCase();
     if (!sym) { toast.error("Enter a symbol first"); return; }
-    const strat = String(strategy.paper_strategy_type ?? "trend_following");
+    const exchange = String(fs.exchange || "NSE").trim().toUpperCase() || "NSE";
     const sid = strategy.id;
     setFireState(sid, { backtestLoading: true, backtestResult: null, backtestAiAnalysis: null });
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const auth = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
-      const res = await supabase.functions.invoke("backtest-strategy", {
-        body: { symbol: sym, strategy: strat, action: "BUY", exchange: fs.exchange || "NSE" },
+
+      const runSl = Number(strategy.stop_loss_pct) > 0 ? Number(strategy.stop_loss_pct) : 2;
+      const runTp = Number(strategy.take_profit_pct) > 0 ? Number(strategy.take_profit_pct) : 4;
+
+      const cs: FullCustomStrategy = {
+        id: strategy.id,
+        name: strategy.name,
+        description: strategy.description ?? null,
+        is_active: strategy.is_active,
+        trading_mode: strategy.trading_mode,
+        is_intraday: strategy.is_intraday,
+        start_time: strategy.start_time,
+        end_time: strategy.end_time,
+        squareoff_time: strategy.squareoff_time,
+        risk_per_trade_pct: strategy.risk_per_trade_pct,
+        stop_loss_pct: strategy.stop_loss_pct,
+        take_profit_pct: strategy.take_profit_pct,
+        market_type: strategy.market_type ?? null,
+        paper_strategy_type: strategy.paper_strategy_type ?? null,
+        symbols: strategy.symbols as unknown as FullCustomStrategy["symbols"],
+        execution_days: strategy.execution_days ?? null,
+        entry_conditions: strategy.entry_conditions ?? null,
+        exit_conditions: strategy.exit_conditions ?? null,
+        position_config: strategy.position_config ?? null,
+        risk_config: strategy.risk_config ?? null,
+        chart_config: strategy.chart_config ?? null,
+      };
+
+      const customEntryConditions = cs.entry_conditions ?? null;
+      const customExitConditions = cs.exit_conditions ?? null;
+      const hasCustomConds = entryConditionsConfigured(customEntryConditions);
+      const customSnapshot = mergeSnapshotWithBacktestRun(cs, sym, exchange, runSl, runTp);
+      const engineStrategy = resolveEngineStrategyIdForCustom(strategy.paper_strategy_type);
+      const derivedMaxHold = deriveMaxHoldDaysFromExit(customExitConditions);
+      const action = strategy.trading_mode === "SHORT" ? "SELL" : "BUY";
+
+      const backtestBody: Record<string, unknown> = {
+        symbol: sym,
+        exchange,
+        strategy: engineStrategy,
+        action,
+        days: 365,
+        stop_loss_pct: runSl,
+        take_profit_pct: runTp,
+        entry_conditions: hasCustomConds ? customEntryConditions : null,
+        exit_conditions: hasCustomConds ? customExitConditions : null,
+        custom_strategy_name: strategy.name,
+        custom_strategy_id: strategy.id,
+        custom_strategy_snapshot: customSnapshot,
+        execution_days:
+          Array.isArray(strategy.execution_days) && strategy.execution_days.length > 0
+            ? strategy.execution_days
+            : null,
+      };
+      if (derivedMaxHold != null) backtestBody.max_hold_days = derivedMaxHold;
+
+      const res = await supabase.functions.invoke("backtest-vectorbt", {
+        body: backtestBody,
         headers: auth,
       });
-      const d = res.data as any;
+      const d = res.data as {
+        error?: string;
+        totalTrades?: number;
+        wins?: number;
+        losses?: number;
+        winRate?: number;
+        totalReturn?: number;
+        maxDrawdown?: number;
+        profitFactor?: number;
+        backtestPeriod?: string;
+        strategyAchieved?: boolean;
+        achievementReason?: string;
+        sampleTrades?: { entryDate: string; exitDate: string; returnPct: number; profitable: boolean }[];
+        currentIndicators?: { price?: number; sma20?: number | null; rsi14?: number | null; high20d?: number; low20d?: number };
+        engine?: string;
+        dataSource?: string;
+        usedCustomConditions?: boolean;
+      };
       if (res.error || d?.error) {
-        toast.error(d?.error ?? "Backtest failed");
+        toast.error(String(d.error ?? "Backtest failed"));
         setFireState(sid, { backtestLoading: false });
         return;
       }
+      const nTrades = Number(d.totalTrades ?? 0);
       setFireState(sid, {
         backtestLoading: false,
         backtestResult: {
-          totalTrades: d.totalTrades ?? 0,
-          wins: d.wins ?? 0,
-          losses: d.losses ?? 0,
-          winRate: d.winRate ?? 0,
-          totalReturn: d.totalReturn ?? 0,
+          totalTrades: nTrades,
+          wins: Number(d.wins ?? 0),
+          losses: Number(d.losses ?? 0),
+          winRate: Number(d.winRate ?? 0),
+          totalReturn: Number(d.totalReturn ?? 0),
           maxDrawdown: d.maxDrawdown,
           profitFactor: d.profitFactor,
           backtestPeriod: d.backtestPeriod,
           strategyAchieved: d.strategyAchieved,
           achievementReason: d.achievementReason,
-          sampleTrades: d.sampleTrades,
+          sampleTrades: Array.isArray(d.sampleTrades) ? d.sampleTrades : undefined,
           currentIndicators: d.currentIndicators,
-          engine: "edge",
+          engine: d.engine ?? "vectorbt",
           dataSource: d.dataSource,
+          usedCustomConditions: d.usedCustomConditions,
         },
       });
-      toast.success(`Backtest (${d.dataSource ?? "?"}): ${d.totalTrades} trades · use Algo → Backtesting for VectorBT`);
+      const ruleNote = d.usedCustomConditions
+        ? " — same full snapshot + rules as Algo → Backtesting"
+        : " — preset model (add entry rules in the builder for full parity)";
+      toast.success(`VectorBT backtest: ${nTrades} trades${ruleNote}`);
     } catch {
       setFireState(strategy.id, { backtestLoading: false });
       toast.error("Backtest failed");
@@ -917,7 +1004,10 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
         toast.error(String(togErr ?? tog.error?.message ?? "Could not activate strategy"));
         return;
       }
-      toast.success(`"${goLive.strategy.name}" is live — ${sym} × ${qty} (${goLive.exchange})`);
+      toast.success(
+        `"${goLive.strategy.name}" is armed (${sym} × ${qty}). Open Actions → DEPLOY BUY or DEPLOY SELL so the app waits for your strategy’s entry rules before placing an order.`,
+        { duration: 11000 },
+      );
       setGoLive(null);
       await loadStrategies();
     } finally {
@@ -972,7 +1062,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
 
   const fireSignal = async (strategy: Strategy, action: "BUY" | "SELL") => {
     if (!strategy.is_active) {
-      toast.error("Activate strategy first to deploy/execute trades.");
+      toast.error("Activate strategy first to open Actions or deploy.");
       return;
     }
     const fs  = getFireState(strategy.id);
@@ -1304,6 +1394,9 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
   const openOrders     = data.orders.filter(o => CANCELLABLE.includes(getOrderStatus(o).toLowerCase()));
   const completedToday = data.orders.filter(o => getOrderStatus(o).toLowerCase() === "complete").length;
 
+  const activeStrategyCount = strategies.filter((s) => s.is_active).length;
+  const pendingDeployCount = Object.values(deployStateByStrategy).filter((d) => d?.status === "pending").length;
+
   // Pie chart data for positions P&L
   const pieData = openPositions.map(p => ({
     name: getSymbol(p) || (p.tradingsymbol ?? ""),
@@ -1325,9 +1418,17 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
       <Card className="bg-zinc-900 border-zinc-800">
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between flex-wrap gap-2">
-            <CardTitle className="text-base font-bold text-white flex items-center gap-2">
+            <CardTitle className="text-base font-bold text-white flex items-center gap-2 flex-wrap">
               <BarChart3 className="h-4 w-4 text-teal-400" />
               {(data.broker ?? "Broker").charAt(0).toUpperCase() + (data.broker ?? "broker").slice(1)} Account
+              {activeStrategyCount > 0 && (
+                <Badge
+                  className="bg-purple-500/20 text-purple-200 border border-purple-500/40 text-[10px] font-bold px-2 py-0.5"
+                  title="Strategies are armed for webhooks, Deploy (auto), or optional manual orders — not the same as an open position"
+                >
+                  {activeStrategyCount} strateg{activeStrategyCount === 1 ? "y" : "ies"} active
+                </Badge>
+              )}
             </CardTitle>
             <div className="flex items-center gap-1.5 flex-wrap">
               {data.token_expired && (
@@ -1407,6 +1508,64 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
             ))}
           </div>
 
+          {(activeStrategyCount > 0 || pendingDeployCount > 0) && (
+            <Alert className="bg-purple-500/5 border-purple-500/25 text-zinc-200">
+              <Zap className="h-4 w-4 text-purple-400 shrink-0" />
+              <AlertDescription className="text-xs sm:text-sm leading-relaxed space-y-2">
+                <p>
+                  <strong className="text-purple-200">What &quot;active&quot; means:</strong> your strategy is{" "}
+                  <strong>armed</strong> only — the app is allowed to trade for this strategy. The symbol and quantity you
+                  confirmed at activation are saved, but the app still does{" "}
+                  <strong>not</strong> watch the market for your 6-step builder rules until you{" "}
+                  <strong className="text-amber-200">Deploy BUY</strong> or{" "}
+                  <strong className="text-amber-200">Deploy SELL</strong> (condition-based entry), use a{" "}
+                  <strong>webhook</strong>, or place a <strong className="text-teal-200">manual</strong> order in{" "}
+                  <strong>Actions</strong>.
+                </p>
+                <p className="text-zinc-400 text-xs border-t border-purple-500/20 pt-2 mt-2">
+                  <strong className="text-zinc-300">Fully automatic entry:</strong> open <strong>Actions</strong> on the strategy →{" "}
+                  <strong className="text-amber-300">DEPLOY BUY</strong> or <strong className="text-amber-300">DEPLOY SELL</strong>.{" "}
+                  You should see <strong>LIVE DEPLOYED · PENDING</strong>, then <strong>EXECUTED</strong> when an entry fires.{" "}
+                  <strong className="text-zinc-300">Exits:</strong> if auto-exit is on for that deploy, square-offs still show in{" "}
+                  <button type="button" onClick={() => setPortfolioTab("orders")} className="text-teal-400 underline font-semibold">Orders</button>{" "}
+                  and <button type="button" onClick={() => setPortfolioTab("positions")} className="text-teal-400 underline font-semibold">Positions</button>.
+                </p>
+                <p className="text-zinc-400">
+                  <strong className="text-zinc-300">See real orders:</strong>{" "}
+                  <button
+                    type="button"
+                    onClick={() => setPortfolioTab("orders")}
+                    className="text-teal-400 hover:text-teal-300 underline font-semibold"
+                  >
+                    Orders
+                  </button>{" "}
+                  tab (working / filled) and{" "}
+                  <button
+                    type="button"
+                    onClick={() => setPortfolioTab("tradebook")}
+                    className="text-teal-400 hover:text-teal-300 underline font-semibold"
+                  >
+                    Trades
+                  </button>{" "}
+                  tab (executed fills). Watch <strong className="text-zinc-300">Filled Today</strong> above.{" "}
+                  <button
+                    type="button"
+                    onClick={() => setPortfolioTab("strategies")}
+                    className="text-purple-300 hover:text-purple-200 underline font-semibold"
+                  >
+                    Strategies
+                  </button>{" "}
+                  shows live deploy status (pending / executed) per strategy.
+                </p>
+                {pendingDeployCount > 0 && (
+                  <p className="text-amber-400/95 text-xs font-medium">
+                    {pendingDeployCount} live deploy{pendingDeployCount === 1 ? "" : "s"} waiting for entry conditions…
+                  </p>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+
           {/* ── P&L Chart (positions) ──────────────────────────────────── */}
           {pieData.length > 0 && (
             <div className="bg-zinc-800/40 rounded-xl border border-zinc-700/50 p-3">
@@ -1469,7 +1628,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
           )}
 
           {/* ── Tabs ──────────────────────────────────────────────────── */}
-          <Tabs defaultValue="positions" className="w-full">
+          <Tabs value={portfolioTab} onValueChange={setPortfolioTab} className="w-full">
             <TabsList className="bg-zinc-800 border border-zinc-700 h-auto w-full grid grid-cols-2 sm:grid-cols-5 p-1 gap-1.5">
               {[
                 { value: "positions",  label: "Positions", icon: <ArrowUpRight className="h-3 w-3 mr-0.5" />, count: brokerPositions.length },
@@ -1913,8 +2072,9 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                           >
                             <LineChart className="h-3.5 w-3.5" /> Edit
                           </button>
-                          {/* Fire Signal */}
+                          {/* Deploy + manual order panel */}
                           <button
+                            type="button"
                             onClick={() => {
                               const opening = !fs.open;
                               const ec = s.entry_conditions;
@@ -1937,9 +2097,13 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold border transition-all ${
                               fs.open ? "bg-teal-500/20 border-teal-500/40 text-teal-300" : "border-zinc-700 text-zinc-500 hover:border-teal-500/40 hover:text-teal-400"
                             } disabled:opacity-50 disabled:cursor-not-allowed`}
-                            title={s.is_active ? "Execute" : "Activate strategy first"}
+                            title={
+                              s.is_active
+                                ? "Open: DEPLOY = wait for strategy conditions; green/red = one immediate order (optional)"
+                                : "Activate strategy first"
+                            }
                           >
-                            <Zap className="h-3.5 w-3.5" /> Execute
+                            <Zap className="h-3.5 w-3.5" /> Actions
                           </button>
                           {/* Active toggle */}
                           <button
@@ -1967,7 +2131,13 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                         <div className="flex items-center gap-1.5 flex-wrap px-3 pb-2.5">
                           <span className={`text-xs px-2 py-0.5 rounded font-bold tracking-tight ${
                             s.is_active ? "bg-purple-500/15 text-purple-300 border border-purple-500/20" : "bg-zinc-800 text-zinc-500 border border-zinc-700/30"
-                          }`}>{s.is_active ? "● ACTIVE" : "○ INACTIVE"}</span>
+                          }`}
+                            title={
+                              s.is_active
+                                ? "Armed: use Actions → DEPLOY for auto entry, or optional instant BUY/SELL. Webhooks also work. Check Orders / Trades when something fills."
+                                : "Turn on to allow Actions (deploy / manual), webhooks, and live deploy."
+                            }
+                          >{s.is_active ? "● ACTIVE" : "○ INACTIVE"}</span>
                           {dep?.status === "pending" && (
                             <span className="text-xs px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30 font-bold">
                               LIVE DEPLOYED · PENDING
@@ -1990,11 +2160,15 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                           {s.take_profit_pct && <span className="text-xs font-bold text-green-500/80">TP {s.take_profit_pct}%</span>}
                         </div>
 
-                        {/* Fire Signal panel */}
+                        {/* Trade tools panel (deploy + manual) */}
                         {fs.open && (
                           <div className="mx-3 mb-3 rounded-lg border border-teal-500/20 bg-zinc-950 p-3 space-y-3">
                             <p className="text-sm font-bold text-teal-400 flex items-center gap-2">
-                              <Zap className="h-4 w-4" /> Fire Signal — {s.name}
+                              <Zap className="h-4 w-4" /> Trade tools — {s.name}
+                            </p>
+                            <p className="text-[10px] text-zinc-500 leading-relaxed -mt-1">
+                              <strong className="text-amber-400/90">DEPLOY</strong> = automatic: waits until your strategy conditions match, then places one entry order.{" "}
+                              <strong className="text-teal-400/90">BUY / SELL</strong> below = optional one-shot market order (not required for algo mode).
                             </p>
                             <div className="grid grid-cols-2 gap-3">
                               <div className="space-y-1.5">
@@ -2095,10 +2269,12 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                             {/* Backtest option — available for every order and strategy including custom */}
                             <div className="rounded-lg border border-amber-900/50 bg-amber-950/20 p-3 space-y-2.5">
                               <p className="text-xs font-bold text-amber-500 flex items-center gap-1.5">
-                                <BarChart3 className="h-3.5 w-3.5" /> Quick backtest (Edge)
+                                <BarChart3 className="h-3.5 w-3.5" /> Quick backtest (VectorBT)
                               </p>
                               <p className="text-[11px] text-zinc-500 leading-tight">
-                                VectorBT + SL/TP timing review → <span className="text-teal-500/90 font-medium">Algo Trading → Backtesting</span>
+                                Same <code className="text-zinc-400">backtest-vectorbt</code> path as{" "}
+                                <span className="text-teal-500/90 font-medium">Algo Trading → Backtesting</span>
+                                — full strategy snapshot and entry/exit rules when your builder has them.
                               </p>
                               <div className="flex flex-wrap items-end gap-2">
                                 <div className="flex-1 min-w-[160px]">
@@ -2165,6 +2341,16 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                               </div>
                               {fs.backtestResult && (
                                 <div className="text-xs space-y-2.5">
+                                  {fs.backtestResult.usedCustomConditions === true && (
+                                    <p className="text-emerald-500/90 text-[11px] font-medium">
+                                      Custom entry/exit rules from this strategy were sent to the engine (parity with Backtesting tab).
+                                    </p>
+                                  )}
+                                  {fs.backtestResult.usedCustomConditions === false && (
+                                    <p className="text-zinc-500 text-[11px]">
+                                      No builder entry rules detected — ran as preset model. Add Entry in the strategy builder for rule-level backtests.
+                                    </p>
+                                  )}
                                   {fs.backtestResult.dataSource && (
                                     <p className="text-zinc-500 text-[11px]">
                                       Data source: <span className="text-teal-400/90 font-medium">{fs.backtestResult.dataSource}</span>
@@ -2202,35 +2388,47 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                                 onCheckedChange={(v) => setFireState(s.id, { aiOverride: v })}
                               />
                             </div>
-                            <div className="grid grid-cols-2 gap-2">
-                              <button
-                                onClick={() => deployStrategy(s, "BUY")} disabled={Boolean(fs.firing || deployLoading === s.id)}
-                                className="py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50"
-                              >
-                                {deployLoading === s.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
-                                DEPLOY BUY
-                              </button>
-                              <button
-                                onClick={() => deployStrategy(s, "SELL")} disabled={Boolean(fs.firing || deployLoading === s.id)}
-                                className="py-2 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50"
-                              >
-                                {deployLoading === s.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
-                                DEPLOY SELL
-                              </button>
+                            <div className="rounded-lg border border-amber-900/40 bg-amber-950/15 p-2 space-y-2">
+                              <p className="text-[10px] font-bold text-amber-400 uppercase tracking-wide">1 · Automatic entry (algo)</p>
+                              <p className="text-[9px] text-zinc-500 leading-snug">Watches the market; one order when rules match. Badge: PENDING → EXECUTED.</p>
+                              <div className="grid grid-cols-2 gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => deployStrategy(s, "BUY")} disabled={Boolean(fs.firing || deployLoading === s.id)}
+                                  className="py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50"
+                                >
+                                  {deployLoading === s.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+                                  DEPLOY BUY
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => deployStrategy(s, "SELL")} disabled={Boolean(fs.firing || deployLoading === s.id)}
+                                  className="py-2 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50"
+                                >
+                                  {deployLoading === s.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+                                  DEPLOY SELL
+                                </button>
+                              </div>
                             </div>
-                            <div className="grid grid-cols-2 gap-2">
-                              <button
-                                onClick={() => fireSignal(s, "BUY")} disabled={fs.firing}
-                                className="py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50"
-                              >
-                                {fs.firing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><TrendingUp className="h-3.5 w-3.5" /> BUY</>}
-                              </button>
-                              <button
-                                onClick={() => fireSignal(s, "SELL")} disabled={fs.firing}
-                                className="py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50"
-                              >
-                                {fs.firing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><TrendingDown className="h-3.5 w-3.5" /> SELL</>}
-                              </button>
+                            <div className="rounded-lg border border-zinc-700 bg-zinc-900/40 p-2 space-y-2">
+                              <p className="text-[10px] font-bold text-teal-500/90 uppercase tracking-wide">2 · Manual (optional)</p>
+                              <p className="text-[9px] text-zinc-500 leading-snug">One immediate market order — skip condition wait. For testing or discretion.</p>
+                              <div className="grid grid-cols-2 gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => fireSignal(s, "BUY")} disabled={fs.firing}
+                                  className="py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50"
+                                >
+                                  {fs.firing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><TrendingUp className="h-3.5 w-3.5" /> BUY now</>}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => fireSignal(s, "SELL")} disabled={fs.firing}
+                                  className="py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50"
+                                >
+                                  {fs.firing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><TrendingDown className="h-3.5 w-3.5" /> SELL now</>}
+                                </button>
+                              </div>
                             </div>
                             {fs.lastFired && (
                               <button
@@ -2250,7 +2448,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                               </button>
                             )}
                             <p className="text-[11px] text-zinc-600 font-medium text-center italic">
-                              Option to backtest every order and strategy (including custom). Fire executes immediately.
+                              Backtest above is optional. DEPLOY = wait for conditions; BUY now / SELL now = instant only.
                             </p>
                           </div>
                         )}

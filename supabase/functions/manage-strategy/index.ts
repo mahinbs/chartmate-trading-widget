@@ -124,14 +124,15 @@ Deno.serve(async (req: Request) => {
         .eq("is_active", true)
         .maybeSingle();
 
-      const openalgoUsername = (integration as any)?.openalgo_username ?? "";
-      const hasActiveBroker = Boolean(openalgoUsername);
+      const openalgoUsername = String((integration as any)?.openalgo_username ?? "").trim();
+      const openalgoApiKeyCreate = String((integration as any)?.openalgo_api_key ?? "").trim();
+      const hasActiveBroker = Boolean(openalgoUsername) || Boolean(openalgoApiKeyCreate);
 
       // Create strategy in OpenAlgo (if configured)
       let openalgoStrategyId: number | null = null;
       let openalgoWebhookId: string | null  = null;
 
-      if (OPENALGO_URL && OPENALGO_APP_KEY && openalgoUsername) {
+      if (OPENALGO_URL && OPENALGO_APP_KEY && openalgoUsername.length > 0) {
         const res = await fetch(`${OPENALGO_URL}/api/v1/platform/create-strategy`, {
           method: "POST",
           headers: {
@@ -328,12 +329,14 @@ Deno.serve(async (req: Request) => {
       if (enabling) {
         const { data: integration } = await supabase
           .from("user_trading_integration")
-          .select("openalgo_username")
+          .select("openalgo_username, openalgo_api_key")
           .eq("user_id", user.id)
           .eq("is_active", true)
           .maybeSingle();
-        const openalgoUsername = (integration as any)?.openalgo_username ?? "";
-        if (!openalgoUsername) {
+        const openalgoUsername = String((integration as any)?.openalgo_username ?? "").trim();
+        const openalgoApiKey = String((integration as any)?.openalgo_api_key ?? "").trim();
+        // Must match client + get-portfolio-data / fire-strategy-signal: many users only have api_key after OAuth/provision.
+        if (!openalgoUsername && !openalgoApiKey) {
           return new Response(
             JSON.stringify({ error: "Connect broker first to deploy/activate this strategy." }),
             { status: 400, headers },

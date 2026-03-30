@@ -45,6 +45,13 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { fetchUsdInr } from "@/lib/fxRates";
+import {
+  deriveMaxHoldDaysFromExit,
+  entryConditionsConfigured,
+  resolveEngineStrategyIdForCustom,
+  mergeSnapshotWithBacktestRun,
+  type FullCustomStrategy,
+} from "@/lib/backtestVectorbtPayload";
 
 const EXCHANGES = ["NSE", "BSE", "GLOBAL", "NFO", "MCX", "CDS"];
 
@@ -52,30 +59,6 @@ const EXCHANGES = ["NSE", "BSE", "GLOBAL", "NFO", "MCX", "CDS"];
 const EXEC_DAY_LABELS: Record<number, string> = {
   0: "Sun", 1: "Mon", 2: "Tue", 3: "Wed", 4: "Thu", 5: "Fri", 6: "Sat",
 };
-
-/** Map time-based exit (minutes) to a coarse day count for daily VectorBT runs. */
-function deriveMaxHoldDaysFromExit(xc: unknown): number | null {
-  if (!xc || typeof xc !== "object") return null;
-  const e = xc as Record<string, unknown>;
-  if (e.timeBasedExit === true && typeof e.exitAfterMinutes === "number" && e.exitAfterMinutes > 0) {
-    return Math.max(1, Math.min(365, Math.ceil(Number(e.exitAfterMinutes) / (60 * 24))));
-  }
-  return null;
-}
-
-/** True when custom entry rules should be sent to VectorBT (matches strategy-entry-signals idea). */
-function entryConditionsConfigured(ec: unknown): boolean {
-  if (!ec || typeof ec !== "object") return false;
-  const cfg = ec as Record<string, unknown>;
-  const st = String(cfg.strategySubtype ?? "").toLowerCase();
-  if (st === "time_based" || st === "hybrid") return true;
-  const groups = Array.isArray(cfg.groups) ? cfg.groups : [];
-  const hasVisual = groups.some(
-    (g: { conditions?: unknown[] }) => Array.isArray(g?.conditions) && g.conditions.length > 0,
-  );
-  const hasRaw = typeof cfg.rawExpression === "string" && cfg.rawExpression.trim().length > 0;
-  return hasVisual || hasRaw;
-}
 
 function defaultDisplayCurrency(exchange: string, sym: string): "INR" | "USD" {
   const u = sym.toUpperCase();
@@ -184,81 +167,6 @@ type BacktestResult = {
     macd: number; macdSignal: number; high20d: number; low20d: number;
   };
 };
-
-type FullCustomStrategy = {
-  id: string;
-  name: string;
-  description?: string | null;
-  is_active?: boolean;
-  trading_mode?: string;
-  is_intraday?: boolean;
-  start_time?: string | null;
-  end_time?: string | null;
-  squareoff_time?: string | null;
-  risk_per_trade_pct?: number | null;
-  stop_loss_pct?: number | null;
-  take_profit_pct?: number | null;
-  entry_conditions?: any;
-  exit_conditions?: any;
-  market_type?: string | null;
-  paper_strategy_type?: string | null;
-  symbols?: any[];
-  execution_days?: number[] | null;
-  position_config?: Record<string, unknown> | null;
-  risk_config?: Record<string, unknown> | null;
-  chart_config?: Record<string, unknown> | null;
-};
-
-const PRESET_ENGINE_STRATEGY_IDS = new Set(STRATEGIES.map(s => s.value));
-
-function resolveEngineStrategyIdForCustom(paperStrategyType: string | null | undefined): string {
-  const v = String(paperStrategyType ?? "").trim().toLowerCase();
-  if (v && PRESET_ENGINE_STRATEGY_IDS.has(v)) return v;
-  return "trend_following";
-}
-
-/** Saved strategy row (no secrets) — base for VectorBT payload. */
-function buildCustomStrategySnapshot(cs: FullCustomStrategy): Record<string, unknown> {
-  return {
-    id: cs.id,
-    name: cs.name,
-    description: cs.description ?? null,
-    trading_mode: cs.trading_mode ?? null,
-    is_intraday: cs.is_intraday ?? null,
-    start_time: cs.start_time ?? null,
-    end_time: cs.end_time ?? null,
-    squareoff_time: cs.squareoff_time ?? null,
-    risk_per_trade_pct: cs.risk_per_trade_pct ?? null,
-    stop_loss_pct: cs.stop_loss_pct ?? null,
-    take_profit_pct: cs.take_profit_pct ?? null,
-    market_type: cs.market_type ?? null,
-    paper_strategy_type: cs.paper_strategy_type ?? null,
-    symbols: cs.symbols ?? null,
-    execution_days: cs.execution_days ?? null,
-    entry_conditions: cs.entry_conditions ?? null,
-    exit_conditions: cs.exit_conditions ?? null,
-    position_config: cs.position_config ?? null,
-    risk_config: cs.risk_config ?? null,
-    chart_config: cs.chart_config ?? null,
-    is_active: cs.is_active ?? null,
-  };
-}
-
-/** Snapshot with this run’s symbol / SL / TP (form overrides what was saved on the strategy). */
-function mergeSnapshotWithBacktestRun(
-  cs: FullCustomStrategy,
-  runSymbol: string,
-  runExchange: string,
-  runSlPct: number,
-  runTpPct: number,
-): Record<string, unknown> {
-  const base = buildCustomStrategySnapshot(cs);
-  base.stop_loss_pct = runSlPct;
-  base.take_profit_pct = runTpPct;
-  base.backtest_symbol = runSymbol;
-  base.backtest_exchange = runExchange;
-  return base;
-}
 
 /** First instrument from saved strategy `symbols` jsonb (strings or { symbol, exchange } rows). */
 function firstSymbolAndExchangeFromStrategy(cs: FullCustomStrategy): { symbol: string; exchange: string } | null {
@@ -1136,18 +1044,21 @@ export default function BacktestingSection() {
 
   // Summarise what conditions a custom strategy has (visual + raw + time/hybrid)
   const customConditionsSummary = (() => {
-    const ec = selectedCustom?.entry_conditions;
-    if (!ec) return null;
+    const ecRaw = selectedCustom?.entry_conditions;
+    if (!ecRaw || typeof ecRaw !== "object") return null;
+    const ec = ecRaw as Record<string, unknown>;
     const st = String(ec.strategySubtype ?? "").toLowerCase();
     if (st === "time_based") return "Time-based entry (wall-clock) — sent to backtest engine";
     if (st === "hybrid") return "Hybrid (time + indicators) — sent to backtest engine";
-    const nVis = Array.isArray(ec.groups)
-      ? ec.groups.reduce((a: number, g: { conditions?: unknown[] }) => a + (Array.isArray(g?.conditions) ? g.conditions.length : 0), 0)
-      : 0;
+    const groups = Array.isArray(ec.groups) ? ec.groups as { conditions?: unknown[] }[] : [];
+    const nVis = groups.reduce(
+      (a, g) => a + (Array.isArray(g?.conditions) ? g.conditions.length : 0),
+      0,
+    );
     const raw = typeof ec.rawExpression === "string" && ec.rawExpression.trim().length > 0;
     if (ec.mode === "raw" && raw) return "Raw expression entry — sent to backtest engine";
     if (nVis > 0) {
-      return `${ec.groups?.length ?? 0} group(s), ${nVis} condition(s) — ${ec.groupLogic ?? "AND"} logic`;
+      return `${groups.length} group(s), ${nVis} condition(s) — ${String(ec.groupLogic ?? "AND")} logic`;
     }
     if (raw) return "Raw expression (check builder mode) — sent if expression is non-empty";
     return null;
