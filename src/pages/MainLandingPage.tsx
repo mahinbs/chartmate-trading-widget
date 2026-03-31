@@ -42,6 +42,7 @@ import {
 } from "../components/ui/select";
 import AiPredictionHeader from "../components/landingpage/mainlandingpage/AiPredictionHeader";
 import AiPredictionFooter from "../components/landingpage/mainlandingpage/AiPredictionFooter";
+import { TradingSmartPricingMatrix } from "../components/landingpage/TradingSmartPricingMatrix";
 
 const fadeUp: Variants = {
   hidden: { opacity: 0, y: 50, filter: "blur(4px)" },
@@ -575,51 +576,20 @@ const MainLandingPage = () => {
         viewport={{ once: true, margin: "-80px" }}
         variants={staggerContainer}
         id="pricing"
-        className="py-24 bg-zinc-950 relative"
+        className="py-24 bg-zinc-950 relative border-b border-zinc-900"
       >
         <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-teal-500/30 to-transparent" />
-        <div className="container mx-auto px-4 max-w-xl text-center">
-          <motion.h2 variants={fadeUp} className={sectionTitle}>
-            PRICING
-          </motion.h2>
-
-          <motion.div
-            variants={fadeUp}
-            className="relative mt-12 bg-black/[0.8] backdrop-blur-2xl p-10 md:p-14 rounded-[2rem] border border-teal-500/30 group transition-all duration-500 hover:-translate-y-2 hover:border-teal-400/50"
-            style={{
-              boxShadow: "0 0 60px rgba(20,184,166,0.12), inset 0 0 60px rgba(20,184,166,0.03)"
-            }}
+        <motion.div variants={fadeUp}>
+          <TradingSmartPricingMatrix />
+        </motion.div>
+        <motion.div variants={fadeUp} className="container mx-auto px-4 max-w-6xl pb-4">
+          <Button
+            onClick={() => setIsEnquiryModalOpen(true)}
+            className="w-full max-w-md mx-auto flex bg-teal-500 hover:bg-teal-400 text-black font-bold text-lg py-6 rounded-2xl shadow-[0_0_30px_rgba(20,184,166,0.2)] transition-all duration-300"
           >
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-px bg-gradient-to-r from-transparent via-teal-400 to-transparent opacity-50" />
-            
-            <div className="mb-8">
-              <div className="text-teal-500 font-semibold tracking-widest text-xs mb-4 uppercase inline-block border border-teal-500/30 px-3 py-1 rounded-full bg-teal-500/10">One-Time Fee</div>
-              <div className="text-5xl sm:text-6xl md:text-[5rem] font-bold text-white font-syne mb-2">$149</div>
-            </div>
-
-            <ul className="space-y-4 text-zinc-300 font-light text-left mb-10 max-w-sm mx-auto">
-              <li className="flex items-center gap-3">
-                <DiamondIcon />
-                <span>Setup & Strategy Development: 149 $</span>
-              </li>
-              <li className="flex items-center gap-3 text-zinc-400">
-                <div className="w-1.5 h-1.5 bg-zinc-600 rounded-full ml-1 shrink-0" />
-                <span>Each new change of request=19$</span>
-              </li>
-              <li className="flex items-center gap-3 text-zinc-400">
-                <div className="w-1.5 h-1.5 bg-zinc-600 rounded-full ml-1 shrink-0" />
-                <span>Custom solutions available.</span>
-              </li>
-            </ul>
-
-            <Button
-              onClick={() => setIsEnquiryModalOpen(true)}
-              className="w-full bg-teal-500 hover:bg-teal-400 text-black font-bold text-xl py-8 rounded-2xl shadow-[0_0_30px_rgba(20,184,166,0.2)] transition-all duration-300"
-            >
-              Start Building Now
-            </Button>
-          </motion.div>
-        </div>
+            Start Building Now
+          </Button>
+        </motion.div>
       </motion.section>
 
       {/* SECURITY & CONTROL */}
