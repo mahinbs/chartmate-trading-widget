@@ -3,15 +3,16 @@ import { Navigate } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/useAuth";
 import { useSubscription } from "@/hooks/useSubscription";
-import { isManualFullAccessEmail } from "@/lib/manualSubscriptionBypass";
+import { isManualFullAccessEmail, isAnalysisExceptionEmail } from "@/lib/manualSubscriptionBypass";
 
 /**
  * Requires $99 / $129 (probability or pro) for predict, saved analyses, intraday, etc.
+ * Also grants access to accounts in ANALYSIS_EXCEPTION_EMAILS.
  */
 export function AnalysisFeatureGate({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const { loading, hasAnalysisAccess } = useSubscription();
-  const bypass = isManualFullAccessEmail(user?.email);
+  const bypass = isManualFullAccessEmail(user?.email) || isAnalysisExceptionEmail(user?.email);
 
   if (user && bypass) {
     return <>{children}</>;

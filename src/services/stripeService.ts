@@ -63,9 +63,15 @@ export async function createBillingPortalSession(return_url?: string): Promise<
 }
 
 export async function getSubscription(): Promise<UserSubscription | null> {
+  // Resolve the current user explicitly so the query always has a user_id filter,
+  // avoiding timing edge-cases where auth.uid() isn't yet set in the RLS context.
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.id) return null;
+
   const { data, error } = await (supabase as any)
     .from("user_subscriptions")
     .select("*")
+    .eq("user_id", user.id)
     .maybeSingle();
 
   if (error || !data) return null;

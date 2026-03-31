@@ -35,6 +35,19 @@ import { supabase } from "@/integrations/supabase/client";
 import { DashboardShellLayout } from "@/components/layout/DashboardShellLayout";
 import { useSubscription } from "@/hooks/useSubscription";
 import { cn } from "@/lib/utils";
+import { SymbolSearch, SymbolData } from "@/components/SymbolSearch";
+import { StrategySelectionDialog, STRATEGIES } from "@/components/trading/StrategySelectionDialog";
+import { getStrategyParams } from "@/constants/strategyParams";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 interface BrokerOrder {
   id: string;
@@ -109,6 +122,14 @@ export default function ActiveTradesPage() {
   const [brokerOrders, setBrokerOrders] = useState<BrokerOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersSyncing, setOrdersSyncing] = useState(false);
+  const [showQuickPaperDialog, setShowQuickPaperDialog] = useState(false);
+  const [showPaperStrategyDialog, setShowPaperStrategyDialog] = useState(false);
+  const [paperSymbolValue, setPaperSymbolValue] = useState("");
+  const [paperSymbolData, setPaperSymbolData] = useState<SymbolData | null>(null);
+  const [paperQuantity, setPaperQuantity] = useState<string>("1");
+  const [paperEntryPrice, setPaperEntryPrice] = useState<number | null>(null);
+  const [paperPriceLoading, setPaperPriceLoading] = useState(false);
+  const [paperCreating, setPaperCreating] = useState(false);
   const yahooWsRef = useRef<WebSocket | null>(null);
   const yahooReconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Track trade IDs already auto-exited this session to avoid duplicate orders
@@ -340,6 +361,156 @@ export default function ActiveTradesPage() {
       setFxLoading(false);
     }
   };
+
+  const resolveLatestPrice = useCallback(async (symbol: string) => {
+    const { data, error } = await supabase.functions.invoke("get-chart-data", {
+      body: { symbol, interval: "1d", range: "1mo" },
+    });
+    if (error) throw new Error(error.message);
+    const metaPrice = Number((data as any)?.meta?.regularMarketPrice);
+    if (Number.isFinite(metaPrice) && metaPrice > 0) return metaPrice;
+    const candles = Array.isArray((data as any)?.candles) ? (data as any).candles : [];
+    const lastClose = Number(candles[candles.length - 1]?.close);
+    if (Number.isFinite(lastClose) && lastClose > 0) return lastClose;
+    throw new Error("Could not fetch current market price for selected symbol");
+  }, []);
+
+  const handleOpenQuickPaperTrade = useCallback(() => {
+    setPaperSymbolValue("");
+    setPaperSymbolData(null);
+    setPaperQuantity("1");
+    setPaperEntryPrice(null);
+    setShowQuickPaperDialog(true);
+  }, []);
+
+  const handleContinuePaperSetup = useCallback(async () => {
+    const symbol = paperSymbolData?.full_symbol || paperSymbolValue;
+    const qty = Number(paperQuantity);
+    if (!symbol) {
+      toast({
+        title: "Symbol required",
+        description: "Select a symbol before continuing.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!Number.isFinite(qty) || qty <= 0) {
+      toast({
+        title: "Invalid quantity",
+        description: "Enter a quantity greater than 0.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setPaperPriceLoading(true);
+      const px = await resolveLatestPrice(symbol);
+      setPaperEntryPrice(px);
+      setShowQuickPaperDialog(false);
+      setShowPaperStrategyDialog(true);
+    } catch (e: any) {
+      toast({
+        title: "Price lookup failed",
+        description: e?.message || "Unable to fetch latest price for selected symbol.",
+        variant: "destructive",
+      });
+    } finally {
+      setPaperPriceLoading(false);
+    }
+  }, [paperSymbolData, paperSymbolValue, paperQuantity, resolveLatestPrice, toast]);
+
+  const handleCreatePaperTrade = useCallback(
+    async (
+      strategyCode: string,
+      product: string,
+      action: "BUY" | "SELL",
+      sellPosition?: { entryPrice: number; shares: number },
+    ) => {
+      const symbol = paperSymbolData?.full_symbol || paperSymbolValue;
+      const qty = Number(paperQuantity);
+      if (!symbol || !Number.isFinite(qty) || qty <= 0) return;
+
+      setPaperCreating(true);
+      try {
+        let stopLossPct = getStrategyParams(strategyCode).stopLossPercentage;
+        let takeProfitPct = getStrategyParams(strategyCode).targetProfitPercentage;
+
+        // For custom strategies, prefer saved SL/TP from user_strategies.
+        if (!STRATEGIES.some((s) => s.value === strategyCode)) {
+          const { data: customRow } = await (supabase as any)
+            .from("user_strategies")
+            .select("stop_loss_pct,take_profit_pct")
+            .eq("id", strategyCode)
+            .maybeSingle();
+          if (customRow?.stop_loss_pct != null) stopLossPct = Number(customRow.stop_loss_pct);
+          if (customRow?.take_profit_pct != null) takeProfitPct = Number(customRow.take_profit_pct);
+        }
+
+        const shares =
+          action === "SELL" && sellPosition?.shares
+            ? sellPosition.shares
+            : Math.max(1, Math.round(qty));
+        // Entry at market snapshot when user confirms — not the price from the earlier “Continue” step.
+        const liveAtConfirm = await resolveLatestPrice(symbol);
+        const entryPrice =
+          action === "SELL" && sellPosition?.entryPrice
+            ? sellPosition.entryPrice
+            : liveAtConfirm;
+        const investmentAmount = Math.max(1, entryPrice * shares);
+        const brokerOrderId = `PAPER-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
+
+        const response = await tradeTrackingService.startTradeSession({
+          symbol,
+          action,
+          confidence: 75,
+          riskGrade: "MEDIUM",
+          entryPrice,
+          shares,
+          investmentAmount,
+          exchange: paperSymbolData?.exchange || "NSE",
+          product,
+          brokerOrderId,
+          strategyType: strategyCode,
+          stopLossPercentage: stopLossPct,
+          targetProfitPercentage: takeProfitPct,
+          holdingPeriod: "Same day",
+          aiRecommendedHoldPeriod: "Same day",
+          isPaperTrade: true,
+        });
+
+        if (response.error) {
+          toast({
+            title: "Paper trade failed",
+            description: response.error,
+            variant: "destructive",
+          });
+          return;
+        }
+
+        const newTradeId = (response.data as { trade?: { id?: string } } | null)?.trade?.id;
+        toast({
+          title: "Paper trade started",
+          description: `${action} ${symbol} (${shares}) is now tracked.`,
+        });
+        setShowPaperStrategyDialog(false);
+        loadTrades();
+        if (newTradeId) {
+          navigate(`/trade/${newTradeId}`);
+        }
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : "Could not complete paper trade.";
+        toast({
+          title: "Paper trade failed",
+          description: msg,
+          variant: "destructive",
+        });
+      } finally {
+        setPaperCreating(false);
+      }
+    },
+    [paperSymbolData, paperSymbolValue, paperQuantity, resolveLatestPrice, toast, navigate],
+  );
 
   useEffect(() => {
     loadTrades();
@@ -691,7 +862,7 @@ export default function ActiveTradesPage() {
             </Button>
             <Button
               size="sm"
-              onClick={() => navigate("/predict")}
+              onClick={handleOpenQuickPaperTrade}
               className="shadow-[0_0_20px_rgba(20,184,166,0.2)]"
             >
               <TrendingUp className="h-4 w-4 sm:mr-2" />
@@ -1414,6 +1585,65 @@ export default function ActiveTradesPage() {
             <PerformanceDashboard />
           </TabsContent>
         </Tabs>
+
+        <Dialog open={showQuickPaperDialog} onOpenChange={setShowQuickPaperDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Start New Paper Trade</DialogTitle>
+              <DialogDescription>
+                Enter symbol and quantity. In the next step, you can choose any strategy and run AI analysis across built-in and your custom strategies.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Symbol</Label>
+                <SymbolSearch
+                  value={paperSymbolValue}
+                  onValueChange={setPaperSymbolValue}
+                  onSelectSymbol={setPaperSymbolData}
+                  placeholder="Search symbol (NSE, BSE, crypto, forex)"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="paper-qty">Quantity</Label>
+                <Input
+                  id="paper-qty"
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={paperQuantity}
+                  onChange={(e) => setPaperQuantity(e.target.value)}
+                  placeholder="e.g. 10"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowQuickPaperDialog(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleContinuePaperSetup} disabled={paperPriceLoading}>
+                {paperPriceLoading ? "Loading price..." : "Continue to Strategy"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <StrategySelectionDialog
+          open={showPaperStrategyDialog}
+          onOpenChange={setShowPaperStrategyDialog}
+          currentStrategy="trend_following"
+          symbol={paperSymbolData?.full_symbol || paperSymbolValue}
+          action="BUY"
+          investment={
+            paperEntryPrice && Number(paperQuantity) > 0
+              ? paperEntryPrice * Number(paperQuantity)
+              : 10000
+          }
+          timeframe="1d"
+          currentPrice={paperEntryPrice ?? undefined}
+          isPaperTrade={true}
+          onConfirm={handleCreatePaperTrade}
+        />
       </div>
     </DashboardShellLayout>
   );

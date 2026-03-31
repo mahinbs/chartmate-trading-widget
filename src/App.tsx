@@ -239,7 +239,7 @@ const App = () => (
                   </ProtectedRoute>
                 }
               />
-              {/* <Route
+              <Route
                 path="/predict"
                 element={
                   <ProtectedRoute>
@@ -258,7 +258,7 @@ const App = () => (
                     </AnalysisFeatureGate>
                   </ProtectedRoute>
                 }
-              /> */}
+              />
               <Route
                 path="/predictions/:predictionId/full"
                 element={

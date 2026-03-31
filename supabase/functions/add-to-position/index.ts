@@ -13,11 +13,35 @@ const corsHeaders = {
 
 interface AddToPositionRequest {
   tradeId: string;
-  additionalAmount: number;
+  additionalAmount?: number;
   currentPrice: number;
-  /** If crypto, allow fractional shares */
+  /** When set with marketPrice, adds this many units at marketPrice (investment += qty * marketPrice) */
+  quantity?: number;
+  marketPrice?: number;
   allowFractional?: boolean;
 }
+
+/** DB: current_pnl_percentage is DECIMAL(8,4) → max |value| 9999.9999 */
+const clampPct = (n: number): number => {
+  if (!Number.isFinite(n)) return 0;
+  const max = 9999.9999;
+  return Math.max(-max, Math.min(max, n));
+};
+
+const roundPrice = (n: number): number => {
+  if (!Number.isFinite(n)) throw new Error("Invalid price (non-finite)");
+  return Math.round(n * 1e4) / 1e4;
+};
+
+const roundMoney = (n: number): number => {
+  if (!Number.isFinite(n)) throw new Error("Invalid money amount (non-finite)");
+  return Math.round(n * 1e2) / 1e2;
+};
+
+const roundShares = (n: number, frac: boolean): number => {
+  if (!Number.isFinite(n) || n <= 0) throw new Error("Invalid shares (non-finite or non-positive)");
+  return frac ? Math.round(n * 1e8) / 1e8 : Math.floor(n);
+};
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -49,11 +73,22 @@ serve(async (req) => {
     }
 
     const body: AddToPositionRequest = await req.json();
-    const { tradeId, additionalAmount, currentPrice, allowFractional } = body;
+    const { tradeId, additionalAmount, currentPrice, quantity, marketPrice, allowFractional } = body;
 
-    if (!tradeId || additionalAmount <= 0 || !currentPrice || currentPrice <= 0) {
+    const hasQtyPrice =
+      quantity != null &&
+      Number(quantity) > 0 &&
+      marketPrice != null &&
+      Number(marketPrice) > 0;
+    const hasLegacyAmount =
+      additionalAmount != null && Number(additionalAmount) > 0 && currentPrice > 0;
+
+    if (!tradeId || (!hasQtyPrice && !hasLegacyAmount)) {
       return new Response(
-        JSON.stringify({ error: "tradeId, additionalAmount (> 0), and currentPrice required" }),
+        JSON.stringify({
+          error:
+            "Provide tradeId and either (quantity > 0 and marketPrice > 0) or (additionalAmount > 0 and currentPrice > 0)",
+        }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -81,10 +116,30 @@ serve(async (req) => {
 
     const isCrypto = /BTC|ETH|-USD|CRYPTO/i.test(trade.symbol ?? "");
     const frac = allowFractional ?? isCrypto;
-    const addShares = frac ? additionalAmount / currentPrice : Math.floor(additionalAmount / currentPrice);
+
+    let addShares: number;
+    let addNotional: number;
+    let priceForAvg: number;
+    let markPrice: number;
+
+    if (hasQtyPrice) {
+      const q = Number(quantity);
+      const px = Number(marketPrice);
+      addShares = frac ? q : Math.floor(q);
+      priceForAvg = px;
+      markPrice = px;
+      addNotional = addShares * px;
+    } else {
+      const amt = Number(additionalAmount);
+      const px = Number(currentPrice);
+      addShares = frac ? amt / px : Math.floor(amt / px);
+      priceForAvg = px;
+      markPrice = px;
+      addNotional = amt;
+    }
 
     if (addShares <= 0) {
-      return new Response(JSON.stringify({ error: "Additional amount too small for at least 1 share" }), {
+      return new Response(JSON.stringify({ error: "Quantity too small — need at least one share (or increase amount)" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -97,8 +152,8 @@ serve(async (req) => {
     const tpPct = parseFloat(trade.target_profit_percentage ?? 10);
 
     const newShares = oldShares + addShares;
-    const newInvestment = oldInvestment + additionalAmount;
-    const newAvgEntry = (oldEntry * oldShares + currentPrice * addShares) / newShares;
+    const newInvestment = oldInvestment + addNotional;
+    const newAvgEntry = (oldEntry * oldShares + priceForAvg * addShares) / newShares;
     const isSell = trade.action === "SELL";
     const newStopLoss = isSell
       ? newAvgEntry * (1 + slPct / 100)
@@ -106,32 +161,68 @@ serve(async (req) => {
     const newTakeProfit = isSell
       ? newAvgEntry * (1 - tpPct / 100)
       : newAvgEntry * (1 + tpPct / 100);
-    const signedPnl = (currentPrice - newAvgEntry) * newShares * (isSell ? -1 : 1);
-    const signedPnlPct = newAvgEntry > 0
-      ? ((currentPrice - newAvgEntry) / newAvgEntry) * 100 * (isSell ? -1 : 1)
+    const signedPnl = (markPrice - newAvgEntry) * newShares * (isSell ? -1 : 1);
+    const rawPct = newAvgEntry > 0
+      ? ((markPrice - newAvgEntry) / newAvgEntry) * 100 * (isSell ? -1 : 1)
       : 0;
+    const signedPnlPct = clampPct(rawPct);
 
-    const { error: updateErr } = await supabase
+    let sharesOut: number;
+    let investmentOut: number;
+    let entryOut: number;
+    let slOut: number;
+    let tpOut: number;
+    let markOut: number;
+    let pnlOut: number;
+    try {
+      sharesOut = roundShares(frac ? newShares : Math.floor(newShares), frac);
+      investmentOut = roundMoney(newInvestment);
+      entryOut = roundPrice(newAvgEntry);
+      slOut = roundPrice(newStopLoss);
+      tpOut = roundPrice(newTakeProfit);
+      markOut = roundPrice(markPrice);
+      pnlOut = roundMoney(signedPnl);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Numeric validation failed";
+      console.error("add-to-position numeric error:", msg, { newShares, newInvestment, newAvgEntry });
+      return new Response(JSON.stringify({ error: msg }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const { data: updatedRows, error: updateErr } = await supabase
       .from("active_trades")
       .update({
-        shares: frac ? newShares : Math.floor(newShares),
-        investment_amount: newInvestment,
-        entry_price: newAvgEntry,
-        stop_loss_price: newStopLoss,
-        take_profit_price: newTakeProfit,
-        current_price: currentPrice,
-        current_pnl: signedPnl,
+        shares: sharesOut,
+        investment_amount: investmentOut,
+        entry_price: entryOut,
+        stop_loss_price: slOut,
+        take_profit_price: tpOut,
+        current_price: markOut,
+        current_pnl: pnlOut,
         current_pnl_percentage: signedPnlPct,
         last_price_update: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
       })
       .eq("id", tradeId)
-      .eq("user_id", user.id);
+      .eq("user_id", user.id)
+      .select("id");
 
     if (updateErr) {
-      console.error("add-to-position update error:", updateErr);
-      return new Response(JSON.stringify({ error: "Failed to update trade" }), {
-        status: 500,
+      console.error("add-to-position update error:", JSON.stringify(updateErr));
+      return new Response(
+        JSON.stringify({
+          error: "Failed to update trade",
+          details: updateErr.message,
+          code: (updateErr as { code?: string }).code,
+        }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    if (!updatedRows?.length) {
+      return new Response(JSON.stringify({ error: "No row updated (trade missing or access denied)" }), {
+        status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -141,11 +232,11 @@ serve(async (req) => {
         success: true,
         message: "Position updated",
         updated: {
-          shares: frac ? newShares : Math.floor(newShares),
-          investmentAmount: newInvestment,
-          avgEntryPrice: newAvgEntry,
-          stopLossPrice: newStopLoss,
-          takeProfitPrice: newTakeProfit,
+          shares: sharesOut,
+          investmentAmount: investmentOut,
+          avgEntryPrice: entryOut,
+          stopLossPrice: slOut,
+          takeProfitPrice: tpOut,
         },
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
