@@ -320,6 +320,129 @@ function applyRowLiveWindow(row: SignalRow, nowMs: number, liveWindowMs: number)
   };
 }
 
+/**
+ * Cash equities that follow a Mon–Fri calendar (Sat/Sun off in the venue timezone).
+ * Does not include Sun–Thu markets (e.g. Tel Aviv); those rely on Yahoo `marketState` only.
+ * Keep in sync with `get-market-status` edge function (MON_FRI_CASH_EXCHANGE_HINTS + rules).
+ */
+const MON_FRI_CASH_EXCHANGE_HINTS = [
+  "NSE",
+  "BSE",
+  "BOM",
+  "CNX",
+  "INDNSE",
+  "INDBOM",
+  "NYSE",
+  "NMS",
+  "NAS",
+  "NYQ",
+  "PCX",
+  "NGM",
+  "LSE",
+  "LNR",
+  "HKEX",
+  "HKG",
+  "TSE",
+  "JPX",
+  "ASX",
+  "TSX",
+  "VAN",
+];
+
+function equityUsesMonFriWeekends(row: Record<string, unknown>): boolean {
+  const sym = String(row.symbol ?? "").toUpperCase();
+  if (sym.endsWith(".NS") || sym.endsWith(".BO")) return true;
+  if (sym.endsWith(".L") || sym.endsWith(".HK") || sym.endsWith(".T") || sym.endsWith(".AX")) return true;
+  const ex = String(row.exchange ?? "").toUpperCase();
+  return MON_FRI_CASH_EXCHANGE_HINTS.some((h) => ex === h || ex.startsWith(h));
+}
+
+/** Venue timezone for weekend check; must match exchange hours conventions. */
+function equityWeekendCheckTimeZone(row: Record<string, unknown>): string | null {
+  const sym = String(row.symbol ?? "").toUpperCase();
+  if (sym.endsWith(".NS") || sym.endsWith(".BO")) return "Asia/Kolkata";
+  if (sym.endsWith(".L")) return "Europe/London";
+  if (sym.endsWith(".HK")) return "Asia/Hong_Kong";
+  if (sym.endsWith(".T")) return "Asia/Tokyo";
+  if (sym.endsWith(".AX")) return "Australia/Sydney";
+  const tz = row.exchangeTimezoneName;
+  return typeof tz === "string" && tz.length > 0 ? tz : null;
+}
+
+function isSatOrSunInTimeZone(nowMs: number, timeZone: string): boolean {
+  try {
+    const wd = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short" }).format(new Date(nowMs));
+    return wd === "Sat" || wd === "Sun";
+  } catch {
+    return false;
+  }
+}
+
+/** True when local weekend for a Mon–Fri cash venue — Live UI should stay off even if a feed mislabels session. */
+function isEquityWeekendClosed(row: Record<string, unknown>, nowMs: number): boolean {
+  const qt = String(row.quoteType ?? "").toUpperCase();
+  if (qt !== "EQUITY" && qt !== "ETF" && qt !== "MUTUALFUND") return false;
+  if (!equityUsesMonFriWeekends(row)) return false;
+  const tz = equityWeekendCheckTimeZone(row);
+  if (!tz) return false;
+  return isSatOrSunInTimeZone(nowMs, tz);
+}
+
+/** Approximate FX spot weekend: closed Fri ~5pm ET through Sun ~5pm ET (same framing as venue copy). */
+function isForexSpotSessionOpen(now: Date): boolean {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    hour: "numeric",
+    minute: "numeric",
+    hour12: false,
+  }).formatToParts(now);
+  const wd = parts.find((p) => p.type === "weekday")?.value ?? "";
+  const hour = Number(parts.find((p) => p.type === "hour")?.value);
+  const minute = Number(parts.find((p) => p.type === "minute")?.value);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return true;
+  const mins = hour * 60 + minute;
+  if (wd === "Sat") return false;
+  if (wd === "Sun") return mins >= 17 * 60;
+  if (wd === "Fri") return mins < 17 * 60;
+  return true;
+}
+
+/**
+ * Same rule-set as `computeLiveSignalsAllowed` in `get-market-status` (client uses local clock).
+ */
+function allowsLiveEntryExitUIComputed(row: Record<string, unknown>, nowMs: number): boolean {
+  const ms = String(row.marketState ?? "").toUpperCase();
+  if (ms === "LIVE_24_7") return true;
+  if (ms === "LIVE_24_5") return isForexSpotSessionOpen(new Date(nowMs));
+  const qt = String(row.quoteType ?? "").toUpperCase();
+  if (qt === "CRYPTOCURRENCY") return true;
+  if (qt === "CURRENCY" || qt === "FOREX") return isForexSpotSessionOpen(new Date(nowMs));
+  if (isEquityWeekendClosed(row, nowMs)) return false;
+  if (ms === "REGULAR" || ms === "PRE" || ms === "POST") return true;
+  if (ms === "CLOSED") return false;
+  return row.isRegularOpen === true;
+}
+
+/**
+ * Live badge + countdown only when venue session rules pass locally (clock-aware) and the
+ * edge function agrees when it sends `liveSignalsAllowed` — avoids showing Live on stale quotes.
+ */
+function allowsLiveEntryExitUI(marketStatus: unknown, nowMs: number): boolean {
+  if (!marketStatus || typeof marketStatus !== "object") return false;
+  const row = marketStatus as Record<string, unknown>;
+  const local = allowsLiveEntryExitUIComputed(row, nowMs);
+  if (typeof row.liveSignalsAllowed === "boolean") {
+    return local && row.liveSignalsAllowed;
+  }
+  return local;
+}
+
+function stripLiveWhenVenueClosed(row: SignalRow, venueAllowsLive: boolean): SignalRow {
+  if (venueAllowsLive) return row;
+  return { ...row, isLive: false, liveUiExpiresAtMs: null };
+}
+
 /** 12-hour times for scanner cards (not minute-truncated — uses full Date when formatting). */
 const SCAN_DATETIME_OPTS: Intl.DateTimeFormatOptions = {
   year: "numeric",
@@ -962,19 +1085,38 @@ export function StrategyEntrySignalsPanel({
     [resultWindowDays],
   );
 
-  // Fetch market status
+  const symbolRef = useRef(symbol);
+  symbolRef.current = symbol;
+
+  const fetchMarketStatus = useCallback(async () => {
+    const sym = symbolRef.current?.trim();
+    if (!sym) {
+      setMarketStatus(null);
+      return;
+    }
+    try {
+      const { data } = await supabase.functions.invoke("get-market-status", { body: { symbol: sym } });
+      if (symbolRef.current?.trim() !== sym) return;
+      setMarketStatus(data ?? null);
+    } catch {
+      if (symbolRef.current?.trim() !== sym) return;
+      setMarketStatus(null);
+    }
+  }, []);
+
+  /** Initial fetch, every 3m while mounted, and when the tab wakes — keeps Yahoo session/holiday state fresh. */
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const { data } = await supabase.functions.invoke("get-market-status", { body: { symbol } });
-        if (!cancelled) setMarketStatus(data ?? null);
-      } catch {
-        if (!cancelled) setMarketStatus(null);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [symbol]);
+    void fetchMarketStatus();
+    const interval = setInterval(() => void fetchMarketStatus(), 3 * 60_000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") void fetchMarketStatus();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [symbol, fetchMarketStatus]);
 
   // Fetch user's custom strategies
   useEffect(() => {
@@ -1151,11 +1293,20 @@ export function StrategyEntrySignalsPanel({
   const marketNote = useMemo(() => {
     if (!marketStatus) return "Scans intraday candles (with daily fallback) for both entry & exit points.";
     const qt = (marketStatus?.quoteType ?? "").toString().toUpperCase();
-    if (qt === "CRYPTOCURRENCY") return "Crypto runs 24/7 — intraday timestamps are live.";
-    if (qt === "FOREX" || qt === "CURRENCY") return "FX runs 24/5 — intraday timestamps are live.";
-    if (marketStatus?.isRegularOpen) return "Market is open — using intraday candles for real-time entry & exit detection.";
-    return "Market is closed — using recent intraday candles for last valid entry & exit points.";
-  }, [marketStatus]);
+    const venueAllowsLive = allowsLiveEntryExitUI(marketStatus, nowMs);
+    if (qt === "CRYPTOCURRENCY") {
+      return "Crypto runs 24/7 — Live tags only when the signal bar is still inside the one-bar window.";
+    }
+    if (qt === "FOREX" || qt === "CURRENCY") {
+      return venueAllowsLive
+        ? "FX session open (approx. Sun 5pm–Fri 5pm ET) — Live tags apply on the latest bar when scored. Uses FX weekend rules in US Eastern Time, not your browser timezone."
+        : "FX weekend / session break — last valid signals shown without Live entry/exit tags until the market reopens (ET-based FX week).";
+    }
+    if (venueAllowsLive) {
+      return "Trading session active (regular, pre-, or after-hours) — Live tags apply when the signal bar is still inside the one-bar window. Open/closed follows the listing exchange clock (e.g. IST for NSE/BSE), not only your device timezone.";
+    }
+    return "Market closed (weekend for your venue, or holiday / off-hours from the quote feed) — last bars shown; Live tags stay off until the venue is open. Closure is evaluated in the exchange timezone (e.g. India for .NS/.BO), independent of where you are browsing from.";
+  }, [marketStatus, nowMs]);
 
   const toggle = (value: string) => {
     setSelected((prev) => {
@@ -1399,9 +1550,11 @@ export function StrategyEntrySignalsPanel({
             : undefined,
       });
 
-      const live = list.filter((s) => s.isLive);
+      const allowLiveUi = allowsLiveEntryExitUI(marketStatus, Date.now());
+      const isEffectiveLive = (s: SignalRow) => allowLiveUi && !!s.isLive;
+      const live = list.filter(isEffectiveLive);
       const todaysCount = list.filter((s) => s.entryDate === todayKey).length;
-      const historical = list.filter((s) => !s.isLive && s.entryDate !== todayKey).length;
+      const historical = list.filter((s) => !isEffectiveLive(s) && s.entryDate !== todayKey).length;
 
       if (!list.length) {
         const onlyCustom = selected.size === 0 && selectedCustom.size > 0;
@@ -1456,6 +1609,7 @@ export function StrategyEntrySignalsPanel({
     fetchDays,
     resultWindowDays,
     intradayLookbackMinutes,
+    marketStatus,
   ]);
 
   const verdictVariant = (v: string) => {
@@ -1520,14 +1674,18 @@ export function StrategyEntrySignalsPanel({
 
   const visibleSignals = useMemo(() => {
     const w = liveWindowMsMain;
-    const mapped = signals.map((row) => applyRowLiveWindow(row, nowMs, w)).filter((s) => !s.isPredicted);
+    const venueAllowsLive = allowsLiveEntryExitUI(marketStatus, nowMs);
+    const mapped = signals
+      .map((row) => applyRowLiveWindow(row, nowMs, w))
+      .map((row) => stripLiveWhenVenueClosed(row, venueAllowsLive))
+      .filter((s) => !s.isPredicted);
     return mapped.sort((a, b) => {
       if (a.isLive !== b.isLive) return a.isLive ? -1 : 1;
       const ta = entryBarMs(a) ?? 0;
       const tb = entryBarMs(b) ?? 0;
       return tb - ta;
     });
-  }, [signals, nowMs, liveWindowMsMain]);
+  }, [signals, nowMs, liveWindowMsMain, marketStatus]);
 
   useEffect(() => {
     setMainResultsPage(1);
@@ -1556,10 +1714,12 @@ export function StrategyEntrySignalsPanel({
 
   const historySignals = useMemo(() => {
     const w = liveWindowMsHistory;
+    const venueAllowsLive = allowsLiveEntryExitUI(marketStatus, nowMs);
     return (historyDetail?.signals ?? [])
       .filter((s) => !s.isPredicted)
-      .map((row) => applyRowLiveWindow(row, nowMs, w));
-  }, [historyDetail, nowMs, liveWindowMsHistory]);
+      .map((row) => applyRowLiveWindow(row, nowMs, w))
+      .map((row) => stripLiveWhenVenueClosed(row, venueAllowsLive));
+  }, [historyDetail, nowMs, liveWindowMsHistory, marketStatus]);
   const historySignalTotalPages = Math.max(1, Math.ceil(historySignals.length / DETAIL_SIGNALS_PAGE_SIZE));
   const effectiveHistorySignalPage = Math.min(historySignalPage, historySignalTotalPages);
   const pagedHistorySignals = useMemo(() => {
