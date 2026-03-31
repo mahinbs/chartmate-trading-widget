@@ -11,26 +11,29 @@ interface GateState {
   loading: boolean;
   provisioned: boolean;
   broker: string | null;
-  /** Where to send the user once loading finishes. */
   redirectTo: string | null;
 }
 
 export interface TradingDashboardAccessGateProps {
   children: (ctx: { broker: string }) => React.ReactNode;
-  /**
-   * If the user has algo entitlement but onboarding/broker isn’t ready yet.
-   * @default "/algo-setup"
-   */
+  /** Where to redirect if the user has algo entitlement but hasn't finished onboarding. */
   notReadyRedirect?: string;
+  /**
+   * Skip the onboarding-provisioned check entirely.
+   * Use for pages like AI Analysis + Backtesting that only require an active algo-tier
+   * subscription, not a fully provisioned OpenAlgo account.
+   */
+  skipProvisioningCheck?: boolean;
 }
 
 /**
- * Signed-in users only. Unpaid → pricing. Paid Probability-only ($99) → subscription (no live algo).
- * Bot/Pro with algo tier but not provisioned → algo-setup (or `notReadyRedirect`).
+ * Signed-in users only. Unpaid → pricing. Paid Probability-only ($99) → subscription.
+ * Bot/Pro not yet provisioned → algo-setup (or notReadyRedirect), unless skipProvisioningCheck.
  */
 export function TradingDashboardAccessGate({
   children,
   notReadyRedirect = "/algo-setup",
+  skipProvisioningCheck = false,
 }: TradingDashboardAccessGateProps) {
   const { pathname, search } = useLocation();
   const { user, loading: authLoading } = useAuth();
@@ -44,12 +47,7 @@ export function TradingDashboardAccessGate({
   useEffect(() => {
     if (!user?.id) return;
     if (isManualFullAccessEmail(user.email)) {
-      setStatus({
-        loading: false,
-        provisioned: true,
-        broker: null,
-        redirectTo: null,
-      });
+      setStatus({ loading: false, provisioned: true, broker: null, redirectTo: null });
       return;
     }
     (async () => {
@@ -64,22 +62,18 @@ export function TradingDashboardAccessGate({
       const planId = (row?.plan_id as string) ?? null;
 
       if (!subActive) {
-        setStatus({
-          loading: false,
-          provisioned: false,
-          broker: null,
-          redirectTo: "/pricing",
-        });
+        setStatus({ loading: false, provisioned: false, broker: null, redirectTo: "/pricing" });
         return;
       }
 
       if (!planAllowsAlgo(planId)) {
-        setStatus({
-          loading: false,
-          provisioned: false,
-          broker: null,
-          redirectTo: "/subscription?feature=algo",
-        });
+        setStatus({ loading: false, provisioned: false, broker: null, redirectTo: "/subscription?feature=algo" });
+        return;
+      }
+
+      // AI Analysis + Backtesting only need an active algo-tier subscription — no broker needed.
+      if (skipProvisioningCheck) {
+        setStatus({ loading: false, provisioned: true, broker: null, redirectTo: null });
         return;
       }
 
@@ -88,7 +82,8 @@ export function TradingDashboardAccessGate({
         .select("status")
         .eq("user_id", user.id)
         .maybeSingle();
-      const isProvisioned = onboarding?.status === "provisioned" || onboarding?.status === "active";
+      const isProvisioned =
+        onboarding?.status === "provisioned" || onboarding?.status === "active";
 
       const { data: integration } = await (supabase as any)
         .from("user_trading_integration")
@@ -104,7 +99,7 @@ export function TradingDashboardAccessGate({
         redirectTo: isProvisioned ? null : notReadyRedirect,
       });
     })();
-  }, [user?.id, notReadyRedirect]);
+  }, [user?.id, notReadyRedirect, skipProvisioningCheck]);
 
   if (authLoading || status.loading) {
     return <TradingDashboardLoadingScreen />;

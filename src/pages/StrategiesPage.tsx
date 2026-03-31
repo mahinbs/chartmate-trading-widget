@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
+import { isAnalysisExceptionEmail } from "@/lib/manualSubscriptionBypass";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -147,6 +149,8 @@ const EMPTY_FORM = {
 
 export default function StrategiesPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const canOpenPredictFlow = isAnalysisExceptionEmail(user?.email);
   const [strategies, setStrategies]     = useState<UserStrategy[]>([]);
   const [loading, setLoading]           = useState(true);
   const [expanded, setExpanded]         = useState<Record<string, boolean>>({});
@@ -586,17 +590,19 @@ export default function StrategiesPage() {
                         </div>
                       )}
 
-                      {/* Use this strategy */}
-                      <div className="flex justify-end pt-2">
-                        <Button
-                          size="sm"
-                          onClick={() => navigate(`/predict?strategy=${s.id}`)}
-                          className="bg-teal-500 hover:bg-teal-400 text-black font-bold text-xs"
-                        >
-                          Use Strategy
-                          <ChevronRight className="h-3.5 w-3.5 ml-1" />
-                        </Button>
-                      </div>
+                      {/* Use this strategy — predict flow only for exception accounts */}
+                      {canOpenPredictFlow && (
+                        <div className="flex justify-end pt-2">
+                          <Button
+                            size="sm"
+                            onClick={() => navigate(`/predict?strategy=${s.id}`)}
+                            className="bg-teal-500 hover:bg-teal-400 text-black font-bold text-xs"
+                          >
+                            Use Strategy
+                            <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                          </Button>
+                        </div>
+                      )}
                     </CardContent>
                   )}
                 </Card>

@@ -33,7 +33,8 @@ import { useToast } from "@/hooks/use-toast";
 import { toast as sonnerToast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { DashboardShellLayout } from "@/components/layout/DashboardShellLayout";
-import { useSubscription } from "@/hooks/useSubscription";
+import { useAuth } from "@/hooks/useAuth";
+import { isAnalysisExceptionEmail } from "@/lib/manualSubscriptionBypass";
 import { cn } from "@/lib/utils";
 import { SymbolSearch, SymbolData } from "@/components/SymbolSearch";
 import { StrategySelectionDialog, STRATEGIES } from "@/components/trading/StrategySelectionDialog";
@@ -137,15 +138,14 @@ export default function ActiveTradesPage() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { hasAnalysisAccess } = useSubscription();
+  const { user } = useAuth();
+  const canLinkToPredict = isAnalysisExceptionEmail(user?.email);
 
   const rawTab = searchParams.get("tab") || "active";
   const tabValue = useMemo(() => {
-    const allowed = hasAnalysisAccess
-      ? ["active", "completed", "orders", "performance"]
-      : ["active", "orders"];
+    const allowed = ["active", "completed", "orders", "performance"];
     return allowed.includes(rawTab) ? rawTab : "active";
-  }, [rawTab, hasAnalysisAccess]);
+  }, [rawTab]);
 
   const onTabChange = useCallback(
     (v: string) => {
@@ -1030,38 +1030,27 @@ export default function ActiveTradesPage() {
           }}
         >
           <div className="overflow-x-auto pb-1">
-            <TabsList
-              className={cn(
-                "grid w-full max-w-3xl",
-                hasAnalysisAccess
-                  ? "min-w-[360px] grid-cols-4"
-                  : "min-w-[200px] grid-cols-2",
-              )}
-            >
+            <TabsList className="grid w-full max-w-3xl min-w-[360px] grid-cols-4">
               <TabsTrigger value="active" className="text-xs sm:text-sm">
                 <Activity className="h-3.5 w-3.5 mr-1" />
                 <span>Active ({activeTrades.length})</span>
               </TabsTrigger>
-              {hasAnalysisAccess && (
-                <TabsTrigger value="completed" className="text-xs sm:text-sm">
-                  <CheckCircle className="h-3.5 w-3.5 mr-1" />
-                  <span className="hidden sm:inline">Completed</span>
-                  <span className="sm:hidden">Done</span>
-                  <span> ({completedTrades.length})</span>
-                </TabsTrigger>
-              )}
+              <TabsTrigger value="completed" className="text-xs sm:text-sm">
+                <CheckCircle className="h-3.5 w-3.5 mr-1" />
+                <span className="hidden sm:inline">Completed</span>
+                <span className="sm:hidden">Done</span>
+                <span> ({completedTrades.length})</span>
+              </TabsTrigger>
               <TabsTrigger value="orders" className="text-xs sm:text-sm">
                 <History className="h-3.5 w-3.5 mr-1" />
                 <span className="hidden sm:inline">Broker Orders</span>
                 <span className="sm:hidden">Orders</span>
               </TabsTrigger>
-              {hasAnalysisAccess && (
-                <TabsTrigger value="performance" className="text-xs sm:text-sm">
-                  <BarChart3 className="h-3.5 w-3.5 mr-1" />
-                  <span className="hidden sm:inline">Performance</span>
-                  <span className="sm:hidden">Perf.</span>
-                </TabsTrigger>
-              )}
+              <TabsTrigger value="performance" className="text-xs sm:text-sm">
+                <BarChart3 className="h-3.5 w-3.5 mr-1" />
+                <span className="hidden sm:inline">Performance</span>
+                <span className="sm:hidden">Perf.</span>
+              </TabsTrigger>
             </TabsList>
           </div>
 
@@ -1071,14 +1060,23 @@ export default function ActiveTradesPage() {
               <Alert className="border-white/10 bg-white/5">
                 <Bell className="h-4 w-4 text-primary" />
                 <AlertDescription>
-                  No active trades. Start by making a{" "}
-                  <a
-                    href="/predict"
-                    className="underline font-medium text-primary"
-                  >
-                    new analysis
-                  </a>{" "}
-                  and clicking &quot;Start Tracking&quot;.
+                  No active trades.{" "}
+                  {canLinkToPredict ? (
+                    <>
+                      Start by making a{" "}
+                      <a
+                        href="/predict"
+                        className="underline font-medium text-primary"
+                      >
+                        new analysis
+                      </a>{" "}
+                      and clicking &quot;Start Tracking&quot;, or use{" "}
+                    </>
+                  ) : (
+                    <>Use </>
+                  )}
+                  <span className="font-medium text-primary">New Paper Trade</span> above to open a
+                  paper position.
                 </AlertDescription>
               </Alert>
             ) : (

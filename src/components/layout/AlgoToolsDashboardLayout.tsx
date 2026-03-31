@@ -4,13 +4,13 @@ import { TradingDashboardAccessGate } from "@/components/trading/TradingDashboar
 export type AlgoToolsOutletContext = { broker: string };
 
 /**
- * One dashboard shell + one `TradingDashboardAccessGate` around an `Outlet`, so switching
- * between `/ai-trading-analysis` and `/backtest` does not remount the gate (avoids a loading
- * flash and keeps provision checks from re-running on every click).
+ * Layout for /ai-trading-analysis and /backtest.
+ * Requires an active algo-tier subscription but does NOT require a provisioned OpenAlgo account —
+ * these are analysis/research tools, not live-trading screens.
  */
 export function AlgoToolsDashboardLayout() {
   return (
-    <TradingDashboardAccessGate notReadyRedirect="/algo-setup">
+    <TradingDashboardAccessGate skipProvisioningCheck={true}>
       {(ctx) => (
         <Outlet context={{ broker: ctx.broker } as AlgoToolsOutletContext} />
       )}
