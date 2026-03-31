@@ -20,7 +20,6 @@ export default function ProfilePage() {
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [country, setCountry] = useState("");
-  const [email, setEmail] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
 
   const [currentPassword, setCurrentPassword] = useState("");
@@ -30,7 +29,6 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (!user) return;
-    setEmail(user.email ?? "");
     const meta = user.user_metadata as Record<string, string> | undefined;
     setFullName(
       profile?.full_name?.trim() ||
@@ -48,20 +46,8 @@ export default function ProfilePage() {
       toast.error("Please enter your full name (at least 2 characters).");
       return;
     }
-    const nextEmail = email.trim().toLowerCase();
-    const currentEmail = (user.email ?? "").toLowerCase();
     setSavingProfile(true);
     try {
-      if (nextEmail && nextEmail !== currentEmail) {
-        const { error: emailErr } = await supabase.auth.updateUser({
-          email: nextEmail,
-        });
-        if (emailErr) throw emailErr;
-        toast.success(
-          "If required, check your inbox to confirm the new email address.",
-        );
-      }
-
       const { error: upErr } = await supabase.auth.updateUser({
         data: {
           full_name: name,
@@ -152,8 +138,8 @@ export default function ProfilePage() {
           <CardHeader>
             <CardTitle className="text-lg">Personal details</CardTitle>
             <CardDescription>
-              Email sign-in address, phone, and country/region. Saving updates your account and
-              signup profile.
+              Your sign-in email is fixed. You can update name, phone, and country — saving updates
+              your account and signup profile.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -183,13 +169,15 @@ export default function ProfilePage() {
                     id="profile-email"
                     type="email"
                     autoComplete="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
+                    value={user?.email ?? ""}
+                    readOnly
+                    disabled
+                    tabIndex={-1}
+                    className="cursor-not-allowed bg-muted/50 opacity-100"
                   />
                   <p className="text-xs text-muted-foreground">
-                    Changing email may send a confirmation link, depending on your project&apos;s
-                    auth settings.
+                    Email cannot be changed here. Contact support if you need to update your sign-in
+                    address.
                   </p>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">

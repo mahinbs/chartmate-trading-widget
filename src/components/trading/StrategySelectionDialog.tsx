@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
@@ -32,6 +32,39 @@ export const STRATEGIES: { value: string; label: string; description: string; pr
   { value: "options_selling",    label: "Options Selling",       description: "Sell options premium — collect theta. High probability, needs margin.",            product: "NRML" },
   { value: "pairs_trading",      label: "Pairs Trading",         description: "Go long one stock, short a correlated one. Market-neutral strategy.",             product: "CNC"  },
 ];
+
+type StrategyOption = {
+  value: string;
+  label: string;
+  description: string;
+  product: string;
+  isCustom?: boolean;
+  stopLossPct?: number | null;
+  takeProfitPct?: number | null;
+  customConfig?: Record<string, unknown> | null;
+};
+
+type CustomStrategyRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  paper_strategy_type: string | null;
+  trading_mode: string | null;
+  stop_loss_pct: number | null;
+  take_profit_pct: number | null;
+  is_intraday: boolean | null;
+  entry_conditions: Record<string, unknown> | null;
+  exit_conditions: Record<string, unknown> | null;
+  position_config: Record<string, unknown> | null;
+  risk_config: Record<string, unknown> | null;
+  chart_config: Record<string, unknown> | null;
+  execution_days: number[] | null;
+  start_time: string | null;
+  end_time: string | null;
+  squareoff_time: string | null;
+  risk_per_trade_pct: number | null;
+  market_type: string | null;
+};
 
 // Static fallback details per strategy
 export const STRATEGY_DETAILS: Record<string, { whenToUse: string; pros: string[]; cons: string[]; inTrendWhen: string }> = {
@@ -325,6 +358,11 @@ export function StrategySelectionDialog({
   const [aiError,          setAiError]           = useState<string | null>(null);
   const [histLoading,      setHistLoading]       = useState(true);
   const [selected,         setSelected]          = useState(currentStrategy || "trend_following");
+  const [customStrategies, setCustomStrategies]  = useState<StrategyOption[]>([]);
+  /** Which analyze mode was last chosen — null until user clicks an AI button (no pre-selected look). */
+  const [aiScope,          setAiScope]           = useState<"all" | "selected" | null>(null);
+  /** User tapped a strategy card — required before "AI Analyze Selected Only" is enabled. */
+  const [strategyChosenForSelectedAi, setStrategyChosenForSelectedAi] = useState(false);
   const [expandedDetails,  setExpandedDetails]   = useState<string | null>(null);
 
   // User-selected entry direction — starts from the prop but can be overridden in the dialog
@@ -348,9 +386,15 @@ export function StrategySelectionDialog({
     setSelected(currentStrategy || "trend_following");
     setSelectedAction(action);
     setSellMode("short");
+    setAiScope(null);
+    setStrategyChosenForSelectedAi(false);
     setExpandedDetails(null);
     setSellBuyPrice("");
     setSellNumShares("");
+    setAiResult(null);
+    setAiError(null);
+    setAiLoading(false);
+    loadCustomStrategies();
     loadHistory();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -360,42 +404,47 @@ export function StrategySelectionDialog({
   const actionLabel =
     selectedAction === "SELL" && sellMode === "normal" ? "SELL (Normal)" : selectedAction;
 
-  // ── Reload AI analysis whenever dialog opens or action direction changes ─────
-  useEffect(() => {
-    if (!open) return;
-    const cacheKey = `${symbol}|${investment}|${timeframe}|${effectiveAction}`;
-    const cached = aiCacheRef.current[cacheKey];
-    setAiError(null);
-    setBacktestResult(null);
-    setBacktestError(null);
-    if (cached) {
-      setAiResult(cached);
-      setAiLoading(false);
-      return;
-    }
-    setAiResult(null);
-    loadAiAnalysis(effectiveAction);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, effectiveAction, symbol, investment, timeframe]);
+  const selectStrategy = useCallback((value: string) => {
+    setSelected(value);
+    setStrategyChosenForSelectedAi(true);
+  }, []);
 
   // Auto-run backtest whenever selected strategy or action direction changes (debounced 600ms)
+  const builtInStrategyIds = useMemo(
+    () => new Set(STRATEGIES.map((s) => s.value)),
+    [],
+  );
+  const requiresBacktest = !isPaperTrade && builtInStrategyIds.has(selected);
   useEffect(() => {
-    if (!open || !selected) return;
+    if (!open || !selected || !requiresBacktest) {
+      setBacktestResult(null);
+      setBacktestError(null);
+      return;
+    }
     if (backtestTimerRef.current) clearTimeout(backtestTimerRef.current);
     backtestTimerRef.current = setTimeout(() => {
       runBacktest(selected, effectiveAction);
     }, 600);
     return () => { if (backtestTimerRef.current) clearTimeout(backtestTimerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, open, effectiveAction]);
+  }, [selected, open, effectiveAction, requiresBacktest]);
 
   // ── Load user's personal trade history ───────────────────────────────────────
   const loadHistory = useCallback(async () => {
     setHistLoading(true);
     try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        setUserStats({});
+        setBestHistory(null);
+        return;
+      }
       const { data } = await (supabase as any)
         .from("active_trades")
         .select("strategy_type, actual_pnl, actual_pnl_percentage, status")
+        .eq("user_id", user.id)
         .in("status", ["completed", "stopped_out", "target_hit", "cancelled"]);
 
       const map: Record<string, { pnls: number[]; pnlPcts: number[] }> = {};
@@ -409,7 +458,7 @@ export function StrategySelectionDialog({
       const computed: Record<string, StrategyStats> = {};
       let bestWinRate = -1, bestKey: string | null = null;
 
-      STRATEGIES.forEach(({ value }) => {
+      [...STRATEGIES.map((s) => s.value), ...customStrategies.map((s) => s.value)].forEach((value) => {
         const d = map[value];
         if (!d || d.pnls.length === 0) {
           computed[value] = { strategy: value, total: 0, wins: 0, losses: 0, winRate: 0, avgPnlPct: 0, totalPnl: 0 };
@@ -432,35 +481,160 @@ export function StrategySelectionDialog({
     } finally {
       setHistLoading(false);
     }
+  }, [customStrategies]);
+
+  const loadCustomStrategies = useCallback(async () => {
+    try {
+      const { data: rows, error } = await (supabase as any)
+        .from("user_strategies")
+        .select("id,name,description,paper_strategy_type,trading_mode,stop_loss_pct,take_profit_pct,is_intraday,entry_conditions,exit_conditions,position_config,risk_config,chart_config,execution_days,start_time,end_time,squareoff_time,risk_per_trade_pct,market_type")
+        .order("updated_at", { ascending: false });
+      if (error) throw error;
+
+      const mapped: StrategyOption[] = ((rows ?? []) as CustomStrategyRow[]).map((row) => {
+        const product = String((row.position_config as any)?.orderProduct ?? "CNC").toUpperCase();
+        return {
+          value: row.id,
+          label: row.name,
+          description: row.description || `Custom strategy (${row.paper_strategy_type ?? "rule based"})`,
+          product,
+          isCustom: true,
+          stopLossPct: row.stop_loss_pct,
+          takeProfitPct: row.take_profit_pct,
+          customConfig: row,
+        };
+      });
+      setCustomStrategies(mapped);
+    } catch (e) {
+      console.error("Failed to load custom strategies", e);
+      setCustomStrategies([]);
+    }
   }, []);
 
-  // ── Call Gemini via the edge function ────────────────────────────────────────
-  const loadAiAnalysis = useCallback(async (actionOverride: "BUY" | "SELL") => {
+  // ── Call Gemini / signal scan — only when user clicks an analyze button ─────
+  const loadAiAnalysis = useCallback(async (
+    actionOverride: "BUY" | "SELL",
+    options?: { scope?: "all" | "selected" },
+  ) => {
+    const scope = options?.scope ?? aiScope ?? "all";
+    const cacheKey = `${symbol}|${investment}|${timeframe}|${actionOverride}|${scope}|${scope === "selected" ? selected : "all"}`;
+    const cached = aiCacheRef.current[cacheKey];
+    if (cached) {
+      setAiResult(cached);
+      setAiLoading(false);
+      return;
+    }
     setAiLoading(true);
     setAiError(null);
     try {
-      const { data, error } = await supabase.functions.invoke("suggest-strategy", {
-        body: { symbol, action: actionOverride, investment, timeframe },
-      });
-      if (error) {
-        setAiError(error.message);
+      const allStrategies: StrategyOption[] = [...STRATEGIES, ...customStrategies];
+      const selectedOption = allStrategies.find((s) => s.value === selected);
+      const scopedStrategies = scope === "selected" && selectedOption ? [selectedOption] : allStrategies;
+      const builtInForScan = scopedStrategies.filter((s) => !s.isCustom).map((s) => s.value);
+      const customForScan = scopedStrategies
+        .filter((s) => s.isCustom && s.customConfig)
+        .map((s) => {
+          const cfg = s.customConfig as CustomStrategyRow;
+          return {
+            id: cfg.id,
+            name: cfg.name,
+            baseType: cfg.paper_strategy_type || "trend_following",
+            tradingMode: cfg.trading_mode || "BOTH",
+            stopLossPct: cfg.stop_loss_pct,
+            takeProfitPct: cfg.take_profit_pct,
+            isIntraday: cfg.is_intraday ?? true,
+            entryConditions: cfg.entry_conditions ?? null,
+            exitConditions: cfg.exit_conditions ?? null,
+            positionConfig: cfg.position_config ?? null,
+            riskConfig: cfg.risk_config ?? null,
+            chartConfig: cfg.chart_config ?? null,
+            executionDays: Array.isArray(cfg.execution_days) ? cfg.execution_days : [],
+            marketType: cfg.market_type || "stocks",
+            startTime: cfg.start_time || undefined,
+            endTime: cfg.end_time || undefined,
+            squareoffTime: cfg.squareoff_time || undefined,
+            riskPerTradePct: cfg.risk_per_trade_pct ?? undefined,
+            description: cfg.description || undefined,
+          };
+        });
+
+      const [scanRes, suggestRes] = await Promise.all([
+        supabase.functions.invoke("strategy-entry-signals", {
+          body: {
+            symbol,
+            strategies: builtInForScan,
+            action: actionOverride,
+            days: 365,
+            maxSignalAgeDays: 90,
+            customStrategies: customForScan,
+          },
+        }),
+        supabase.functions.invoke("suggest-strategy", {
+          body: { symbol, action: actionOverride, investment, timeframe },
+        }),
+      ]);
+
+      if (scanRes.error) {
+        setAiError(scanRes.error.message);
         return;
       }
-      if (!data) { setAiError("No AI data returned"); return; }
-      if ((data as any).aiError) setAiError((data as any).aiError as string);
-      if (data.ranked && data.ranked.length > 0) {
-        const next = data as AiResult;
-        const cacheKey = `${symbol}|${investment}|${timeframe}|${actionOverride}`;
-        aiCacheRef.current[cacheKey] = next;
-        setAiResult(next);
-        if (data.topPick?.strategy) setSelected(data.topPick.strategy);
+
+      const scanSignals = Array.isArray((scanRes.data as any)?.signals)
+        ? ((scanRes.data as any).signals as any[])
+        : [];
+      const rankedMap = new Map<string, any>();
+      for (const sig of scanSignals) {
+        const sid = String(sig.strategyId ?? "");
+        if (!sid) continue;
+        const prev = rankedMap.get(sid);
+        const next = {
+          strategy: sid,
+          label: String(sig.strategyLabel ?? sid),
+          probabilityScore: Number(sig.probabilityScore ?? 50),
+          verdict: (String(sig.verdict ?? "neutral").toLowerCase() as "great" | "good" | "neutral" | "poor" | "avoid"),
+          whyNow: String(sig.whyThisScore ?? sig.rationale ?? ""),
+          riskWarning: String(sig.rejectionDetail ?? ""),
+          isLive: Boolean(sig.isLive),
+        };
+        if (!prev || (next.isLive && !prev.isLive) || next.probabilityScore > prev.probabilityScore) {
+          rankedMap.set(sid, next);
+        }
       }
+
+      const ranked = Array.from(rankedMap.values())
+        .sort((a, b) => {
+          if (a.isLive !== b.isLive) return a.isLive ? -1 : 1;
+          return b.probabilityScore - a.probabilityScore;
+        })
+        .map(({ isLive, ...rest }) => rest);
+
+      const top = ranked[0];
+      const suggestData = suggestRes.error ? null : (suggestRes.data as any);
+      if (suggestRes.error) {
+        console.warn("suggest-strategy failed, continuing with strategy-entry-signals only", suggestRes.error.message);
+      }
+      const next: AiResult = {
+        marketContext: suggestData?.marketContext ?? {
+          regime: "neutral",
+          summary: `AI scored ${ranked.length} strategy signals for ${symbol}${top ? `; top score ${top.probabilityScore}%` : ""}.`,
+          globalMacro: "Live strategy scores are based on current indicator and candle conditions.",
+          newsSentiment: "neutral",
+          riskWarnings: [],
+        },
+        topPick: top
+          ? { strategy: top.strategy, reason: top.whyNow || "Highest probability strategy for current conditions." }
+          : (suggestData?.topPick ?? { strategy: selected, reason: "No live signals found; using current selection." }),
+        ranked,
+      };
+
+      aiCacheRef.current[cacheKey] = next;
+      setAiResult(next);
     } catch (e: any) {
       setAiError(e?.message ?? "AI analysis failed.");
     } finally {
       setAiLoading(false);
     }
-  }, [symbol, investment, timeframe]);
+  }, [symbol, investment, timeframe, customStrategies, aiScope, selected]);
 
   // ── Run backtest for selected strategy ───────────────────────────────────────
   const runBacktest = useCallback(async (strategyCode: string, actionOverride: "BUY" | "SELL") => {
@@ -486,31 +660,33 @@ export function StrategySelectionDialog({
     (aiResult?.ranked ?? []).map(r => [r.strategy, r])
   );
 
+  const allStrategyOptions: StrategyOption[] = useMemo(
+    () => [...STRATEGIES, ...customStrategies],
+    [customStrategies],
+  );
+
   // Sort strategies: AI ranked first (best score first), then rest
-  const sortedStrategies = aiResult?.ranked?.length
-    ? aiResult.ranked
-        .map(r => STRATEGIES.find(s => s.value === r.strategy))
-        .filter(Boolean) as typeof STRATEGIES
-    : STRATEGIES;
+  const sortedStrategies: StrategyOption[] = aiResult?.ranked?.length
+    ? [
+        ...aiResult.ranked
+          .map((r) => allStrategyOptions.find((s) => s.value === r.strategy))
+          .filter(Boolean) as StrategyOption[],
+        ...allStrategyOptions.filter((s) => !(aiResult.ranked ?? []).some((r) => r.strategy === s.value)),
+      ]
+    : allStrategyOptions;
 
   const mc = aiResult?.marketContext;
   const selectedAI = aiByStrategy[selected];
 
   // ── Order placement gate logic ────────────────────────────────────────────────
-  // Rule 1: AI analysis must ALWAYS finish before strategy grid unlocks (paper OR real).
-  //         The grid is useless without AI ranking — user must wait.
-  // Rule 2: For REAL trades — strategy backtest conditions must be met in the market.
-  // Rule 3: For REAL trades — AI verdict must not be "poor" or "avoid".
-  // Rule 4: For REAL trades — backtest must complete.
-  // PAPER TRADE: only Rule 1 applies (no capital at risk, so rules 2-4 are informational only).
-  const aiAnalysisPending   = aiLoading || (!aiResult && !aiError);          // always — paper or real
-  const strategyNotAchieved = !isPaperTrade && backtestResult != null && !backtestResult.strategyAchieved;
+  // While AI is running (all or selected-only), order placement is blocked.
+  const strategyNotAchieved = requiresBacktest && backtestResult != null && !backtestResult.strategyAchieved;
   const aiVerdictBlocked    = !isPaperTrade && (selectedAI?.verdict === "poor" || selectedAI?.verdict === "avoid");
-  const backtestPending     = !isPaperTrade && (backtestLoading || (!backtestResult && !backtestError));
-  const orderBlocked        = aiAnalysisPending || strategyNotAchieved || aiVerdictBlocked || backtestPending;
+  const backtestPending     = requiresBacktest && (backtestLoading || (!backtestResult && !backtestError));
+  const orderBlocked        = aiLoading || strategyNotAchieved || aiVerdictBlocked || backtestPending;
 
   const getBlockReason = (): string | null => {
-    if (aiAnalysisPending) return "AI is analysing live market conditions — strategy selection is locked until this completes.";
+    if (aiLoading) return "AI analysis is still running — wait until it finishes before placing an order.";
     if (backtestPending)   return "Running historical backtest on real price data… please wait.";
     if (strategyNotAchieved) return `Strategy conditions not currently met in the market: ${backtestResult?.achievementReason}`;
     if (aiVerdictBlocked) return `AI rates this strategy "${selectedAI?.verdict}" for current market conditions — order blocked to protect your capital. Choose a strategy rated Good or Great.`;
@@ -524,9 +700,9 @@ export function StrategySelectionDialog({
     ?? `Once the order is placed, the system will automatically ${effectiveAction === "BUY" ? "SELL" : "BUY"} when strategy exit conditions are met.`;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open={open} onOpenChange={onOpenChange}>
       {/* Fixed height dialog — ONE single scroll inside */}
-      <DialogContent className="sm:max-w-2xl mx-auto max-h-[92vh] flex flex-col p-0 gap-0">
+        <DialogContent className="sm:max-w-2xl mx-auto max-h-[92vh] flex flex-col p-0 gap-0 z-[1000]">
 
         {/* ── Fixed header ─────────────────────────────────────────────────── */}
         <DialogHeader className="shrink-0 px-6 pt-6 pb-3 border-b space-y-0">
@@ -548,8 +724,8 @@ export function StrategySelectionDialog({
           </div>
           <DialogDescription className="text-xs mt-2">
             {isPaperTrade
-              ? "No real money. Choose your entry direction, pick a strategy, then track in real-time. Auto-exit fires when the strategy target is reached."
-              : "AI ranks strategies for live market. Choose your entry direction first, then select the strategy that suits it."
+              ? "No real money. Pick direction, choose a strategy, then place the order. AI is optional — while it runs, placing an order stays disabled until analysis completes."
+              : "Pick direction and strategy. AI scoring is optional. Any time AI is running, you must wait for it to finish before placing an order."
             }
           </DialogDescription>
         </DialogHeader>
@@ -696,104 +872,21 @@ export function StrategySelectionDialog({
             {aiLoading && <Loader2 className="h-3 w-3 animate-spin ml-1" />}
           </p>
 
-          {/* ── Live AI Market Context ── */}
-          <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
-            <h4 className="font-semibold flex items-center gap-2 text-sm">
-              <Globe className="h-4 w-4" />
-              Live Market Analysis (AI)
-              {aiLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground ml-1" />}
-            </h4>
-
-            {aiLoading && (
-              <p className="text-xs text-muted-foreground animate-pulse">
-                AI is fetching live price, RSI, MACD, news &amp; global macro for <strong>{symbol}</strong> ({selectedAction} strategies)…
-              </p>
-            )}
-            {aiError && <p className="text-xs text-destructive">{aiError}</p>}
-
-            {mc && !aiLoading && (
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs font-medium text-muted-foreground">Regime:</span>
-                  {regimeBadge(mc.regime)}
-                  <span className="text-xs font-medium text-muted-foreground ml-2">News:</span>
-                  <Badge variant="outline" className={cn("text-xs capitalize",
-                    mc.newsSentiment === "bullish" ? "border-green-500 text-green-700" :
-                    mc.newsSentiment === "bearish" ? "border-red-500 text-red-700" : ""
-                  )}>
-                    {mc.newsSentiment}
-                  </Badge>
-                </div>
-                <p className="text-xs text-muted-foreground leading-relaxed">{mc.summary}</p>
-                {mc.globalMacro && (
-                  <p className="text-xs text-muted-foreground italic"><strong>Macro:</strong> {mc.globalMacro}</p>
-                )}
-                {mc.riskWarnings?.length > 0 && (
-                  <div className="flex flex-wrap gap-1 pt-0.5">
-                    {mc.riskWarnings.map((w, i) => (
-                      <Badge key={i} variant="outline" className="text-xs border-orange-400 text-orange-700">⚠ {w}</Badge>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {!mc && !aiLoading && (
-              <p className="text-xs text-muted-foreground">
-                {bestHistory
-                  ? <>Best strategy from your history: <button className="underline text-primary font-medium" onClick={() => setSelected(bestHistory)}>{STRATEGIES.find(s => s.value === bestHistory)?.label}</button> ({userStats[bestHistory]?.winRate.toFixed(0)}% win rate).</>
-                  : "No trade history yet. Choose based on market conditions."}
-              </p>
-            )}
-          </div>
-
-          {/* ── AI Top Pick Banner ── */}
-          {aiResult?.topPick && !aiLoading && (
-            <Alert className="border-green-500 bg-green-500/10">
-              <Lightbulb className="h-4 w-4 text-green-600" />
-              <AlertDescription className="text-green-700 text-sm">
-                <strong>AI Top Pick for {selectedAction}:</strong>{" "}
-                <button className="underline font-semibold" onClick={() => setSelected(aiResult.topPick.strategy)}>
-                  {STRATEGIES.find(s => s.value === aiResult.topPick.strategy)?.label}
-                </button>
-                {" — "}{aiResult.topPick.reason}
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {/* ── AI Analysis In Progress — inline banner (no blocking overlay) ── */}
-          {aiAnalysisPending && (
-            <div className="flex items-center gap-3 rounded-lg border-2 border-dashed border-primary/40 bg-primary/5 p-3">
-              <Loader2 className="h-5 w-5 animate-spin text-primary shrink-0" />
-              <div>
-                <p className="text-sm font-semibold">AI Analysis in Progress</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Fetching live RSI, MACD, news sentiment &amp; global macro for <strong>{symbol}</strong> ({selectedAction}).
-                  Strategy selection is locked until analysis completes.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* ── Strategy grid — 2-col ── */}
-          <div className={cn(
-            "grid sm:grid-cols-2 gap-2",
-            aiAnalysisPending && "pointer-events-none select-none opacity-40",
-          )}>
-            {(histLoading ? STRATEGIES : sortedStrategies).map(s => {
+          {/* ── Strategy grid first (pick before “selected only” AI) ── */}
+          <div className="grid sm:grid-cols-2 gap-2">
+            {(histLoading ? allStrategyOptions : sortedStrategies).map(s => {
               const st  = userStats[s.value];
               const ai  = aiByStrategy[s.value];
               const isTopPick = aiResult?.topPick?.strategy === s.value;
               const isBlocked = ai?.verdict === "poor" || ai?.verdict === "avoid";
               const dirHint = STRATEGY_DIRECTION[s.value];
-              // Dim strategies that don't match the chosen direction
               const mismatch = dirHint !== "both" && dirHint !== selectedAction.toLowerCase();
 
               return (
                 <button
+                  type="button"
                   key={s.value}
-                  disabled={aiAnalysisPending}
-                  onClick={() => { if (!aiAnalysisPending) setSelected(s.value); }}
+                  onClick={() => selectStrategy(s.value)}
                   className={cn(
                     "text-left p-3 rounded-lg border-2 transition-all",
                     selected === s.value
@@ -831,7 +924,12 @@ export function StrategySelectionDialog({
                       )}
                       {ai && verdictLabel(ai.verdict)}
                       {(() => {
-                        const sp = getStrategyParams(s.value);
+                        const sp = s.isCustom
+                          ? {
+                              stopLossPercentage: Number(s.stopLossPct ?? 5),
+                              targetProfitPercentage: Number(s.takeProfitPct ?? 10),
+                            }
+                          : getStrategyParams(s.value);
                         return (
                           <span className="text-[10px] text-muted-foreground">
                             SL {sp.stopLossPercentage}% · TP {sp.targetProfitPercentage}%
@@ -909,20 +1007,145 @@ export function StrategySelectionDialog({
             })}
           </div>
 
-          {/* ── Backtest Results Panel ── */}
-          <div>
-            <p className="text-xs font-semibold text-muted-foreground mb-1.5 flex items-center gap-1">
-              <Activity className="h-3.5 w-3.5" />
-              Backtest & Strategy Validation —{" "}
-              <span className="text-primary">{STRATEGIES.find(s => s.value === selected)?.label}</span>
-              <span className={cn("ml-1", selectedAction === "BUY" ? "text-green-700" : "text-red-700")}>
-                ({actionLabel})
-              </span>
+          {/* ── AI actions (after strategy pick — “selected only” needs a card tap) ── */}
+          <div className="rounded-lg border border-muted p-3 space-y-3">
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              Run AI when you want. <strong>Analyze Selected Only</strong> scores the strategy you tapped in the grid above (pick a card first). While either analysis runs, <strong>Place order</strong> stays disabled until it finishes.
             </p>
-            <BacktestPanel result={backtestResult} loading={backtestLoading} error={backtestError} />
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={aiScope === "all" ? "default" : "outline"}
+                disabled={aiLoading}
+                onClick={() => {
+                  setAiScope("all");
+                  void loadAiAnalysis(effectiveAction, { scope: "all" });
+                }}
+                className="text-xs"
+              >
+                {aiLoading && aiScope === "all" ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                AI Analyze All Strategies
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={aiScope === "selected" ? "default" : "outline"}
+                disabled={aiLoading || !strategyChosenForSelectedAi}
+                onClick={() => {
+                  setAiScope("selected");
+                  void loadAiAnalysis(effectiveAction, { scope: "selected" });
+                }}
+                className="text-xs"
+                title={!strategyChosenForSelectedAi ? "Select a strategy in the grid first" : undefined}
+              >
+                {aiLoading && aiScope === "selected" ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                AI Analyze Selected Only
+              </Button>
+            </div>
+            {!strategyChosenForSelectedAi && (
+              <p className="text-[11px] text-amber-700 dark:text-amber-500/90">
+                Tap a strategy card above to enable <strong>Analyze Selected Only</strong>.
+              </p>
+            )}
           </div>
 
-          {/* ── Auto-exit info — always shown once AI is done ── */}
+          {/* ── Live AI Market Context ── */}
+          <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+            <h4 className="font-semibold flex items-center gap-2 text-sm">
+              <Globe className="h-4 w-4" />
+              Live Market Analysis (AI)
+              {aiLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground ml-1" />}
+            </h4>
+
+            {aiLoading && (
+              <p className="text-xs text-muted-foreground animate-pulse">
+                AI is fetching live price, RSI, MACD, news &amp; global macro for <strong>{symbol}</strong> ({selectedAction} strategies)…
+              </p>
+            )}
+            {aiError && <p className="text-xs text-destructive">{aiError}</p>}
+
+            {mc && !aiLoading && (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-medium text-muted-foreground">Regime:</span>
+                  {regimeBadge(mc.regime)}
+                  <span className="text-xs font-medium text-muted-foreground ml-2">News:</span>
+                  <Badge variant="outline" className={cn("text-xs capitalize",
+                    mc.newsSentiment === "bullish" ? "border-green-500 text-green-700" :
+                    mc.newsSentiment === "bearish" ? "border-red-500 text-red-700" : ""
+                  )}>
+                    {mc.newsSentiment}
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed">{mc.summary}</p>
+                {mc.globalMacro && (
+                  <p className="text-xs text-muted-foreground italic"><strong>Macro:</strong> {mc.globalMacro}</p>
+                )}
+                {mc.riskWarnings?.length > 0 && (
+                  <div className="flex flex-wrap gap-1 pt-0.5">
+                    {mc.riskWarnings.map((w, i) => (
+                      <Badge key={i} variant="outline" className="text-xs border-orange-400 text-orange-700">⚠ {w}</Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!mc && !aiLoading && (
+              <p className="text-xs text-muted-foreground">
+                {bestHistory
+                  ? <>Tip: <button type="button" className="underline text-primary font-medium" onClick={() => selectStrategy(bestHistory)}>{allStrategyOptions.find(s => s.value === bestHistory)?.label}</button> from your history ({userStats[bestHistory]?.winRate.toFixed(0)}% win rate). Then use the AI buttons under the grid.</>
+                  : "No trade history yet. Pick a strategy in the grid, then run AI from the buttons below it."}
+              </p>
+            )}
+          </div>
+
+          {/* ── AI Top Pick Banner ── */}
+          {aiResult?.topPick && !aiLoading && (
+            <Alert className="border-green-500 bg-green-500/10">
+              <Lightbulb className="h-4 w-4 text-green-600" />
+              <AlertDescription className="text-green-700 text-sm">
+                <strong>AI Top Pick for {selectedAction}:</strong>{" "}
+                <button type="button" className="underline font-semibold" onClick={() => selectStrategy(aiResult.topPick.strategy)}>
+                  {allStrategyOptions.find(s => s.value === aiResult.topPick.strategy)?.label}
+                </button>
+                {" — "}{aiResult.topPick.reason}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {aiLoading && (
+            <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
+              <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
+              <p className="text-xs text-muted-foreground">
+                AI is running for <strong>{symbol}</strong>. <strong>Place order</strong> is disabled until this completes.
+              </p>
+            </div>
+          )}
+
+          {/* ── Backtest Results Panel ── */}
+          {requiresBacktest ? (
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground mb-1.5 flex items-center gap-1">
+                <Activity className="h-3.5 w-3.5" />
+                Backtest & Strategy Validation —{" "}
+                <span className="text-primary">{allStrategyOptions.find(s => s.value === selected)?.label}</span>
+                <span className={cn("ml-1", selectedAction === "BUY" ? "text-green-700" : "text-red-700")}>
+                  ({actionLabel})
+                </span>
+              </p>
+              <BacktestPanel result={backtestResult} loading={backtestLoading} error={backtestError} />
+            </div>
+          ) : (
+            <Alert className="border-primary/30 bg-primary/10">
+              <AlertDescription className="text-xs">
+                Custom strategies use live condition scanning with AI scoring in this dialog. Historical backtest card is shown for built-in templates only.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* ── Auto-exit info when placement is allowed ── */}
           {!orderBlocked && (
             <div className="space-y-2">
               <div className="flex items-start gap-2 rounded-lg border border-blue-500/30 bg-blue-500/10 p-3 text-xs text-blue-800">
@@ -984,9 +1207,9 @@ export function StrategySelectionDialog({
 
         {/* ── Sticky confirm footer ─────────────────────────────────────────── */}
         <div className="shrink-0 border-t px-6 py-3 space-y-2 bg-background">
-          {orderBlocked && !aiAnalysisPending && !backtestPending && (
+          {(strategyNotAchieved || aiVerdictBlocked) && !backtestPending && (
             <p className="text-xs text-center text-muted-foreground">
-              Select a strategy rated <span className="font-semibold text-green-700">AI: Good</span> or <span className="font-semibold text-green-700">AI: Great</span> with conditions met to unlock order placement.
+              For live orders: backtest must finish and strategy conditions must be met; avoid strategies rated AI Poor/Avoid when analysis has been run.
             </p>
           )}
           <div className="flex gap-2">
@@ -1006,7 +1229,7 @@ export function StrategySelectionDialog({
               disabled={orderBlocked}
               onClick={() => {
                 if (orderBlocked) return;
-                const product = STRATEGIES.find(s => s.value === selected)?.product ?? "CNC";
+                const product = allStrategyOptions.find(s => s.value === selected)?.product ?? "CNC";
                 const sellPosition = selectedAction === "SELL" ? {
                   entryPrice: sellBuyPrice
                     ? parseFloat(sellBuyPrice)
@@ -1020,8 +1243,8 @@ export function StrategySelectionDialog({
                 onOpenChange(false);
               }}
             >
-              {aiAnalysisPending ? (
-                <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Awaiting AI Analysis…</>
+              {aiLoading ? (
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Awaiting AI analysis…</>
               ) : backtestPending ? (
                 <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Running Backtest…</>
               ) : strategyNotAchieved ? (
@@ -1029,7 +1252,7 @@ export function StrategySelectionDialog({
               ) : aiVerdictBlocked ? (
                 <><Lock className="h-4 w-4 mr-2" />Blocked — Choose Better Strategy</>
               ) : isPaperTrade ? (
-                <><FlaskConical className="h-4 w-4 mr-2" />Start Paper {actionLabel} Trade</>
+                <><FlaskConical className="h-4 w-4 mr-2" />Place order</>
               ) : (
                 <><CheckCircle2 className="h-4 w-4 mr-2" />Place {actionLabel} Order</>
               )}

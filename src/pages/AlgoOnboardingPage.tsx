@@ -186,10 +186,10 @@ export default function AlgoOnboardingPage() {
 
       setUserId(session.user.id);
 
-      // Grab plan from user_subscriptions
+      // Grab plan from user_subscriptions — need status + current_period_end for hasActiveSubscription
       const { data: sub } = await (supabase as any)
         .from("user_subscriptions")
-        .select("plan_id")
+        .select("plan_id, status, current_period_end, stripe_customer_id, stripe_subscription_id")
         .eq("user_id", session.user.id)
         .maybeSingle();
 
@@ -433,17 +433,17 @@ export default function AlgoOnboardingPage() {
                 {isProvisioned
                   ? "Your algo trading account is ready. Connect your broker below to start placing live orders."
                   : done
-                    ? "Our team will configure your algo trading account within 24 hours."
-                    : "We already have your details. You can track current onboarding status below."}
+                    ? "Our team will review and activate your algo trading account within 24 hours. You'll be notified once approved."
+                    : "Your form has been submitted. Our team will activate your algo trading account within 24 hours. Live trading dashboard unlocks after approval."}
               </p>
             </div>
             <div className={`text-xs font-semibold px-4 py-2 rounded-full border ${statusTone}`}>
               Onboarding status: {statusLabel}
             </div>
             {!isProvisioned && (
-              <div className="flex items-center gap-1 text-xs text-teal-400 border border-teal-500/30 bg-teal-500/10 rounded-full px-4 py-2">
+              <div className="flex items-center gap-1 text-xs text-amber-400 border border-amber-500/30 bg-amber-500/10 rounded-full px-4 py-2">
                 <Zap className="h-3.5 w-3.5 mr-1" />
-                Algo Trade access active for 1 year
+                Our team will activate your account within 24 hours
               </div>
             )}
           </div>
@@ -462,14 +462,23 @@ export default function AlgoOnboardingPage() {
             </>
           )}
 
-          <Button
-            onClick={() => navigate("/trading-dashboard")}
-            disabled={isProvisioned && !hasBrokerIntegration}
-            className="w-full bg-teal-500 hover:bg-teal-400 text-black font-bold px-8 rounded-xl"
-          >
-            {isProvisioned && !hasBrokerIntegration ? "Connect Broker to Continue" : "Go to Trading Dashboard"}
-            <ChevronRight className="h-4 w-4 ml-1" />
-          </Button>
+          {isProvisioned ? (
+            <Button
+              onClick={() => navigate("/trading-dashboard")}
+              disabled={!hasBrokerIntegration}
+              className="w-full bg-teal-500 hover:bg-teal-400 text-black font-bold px-8 rounded-xl"
+            >
+              {!hasBrokerIntegration ? "Connect Broker to Continue" : "Go to Trading Dashboard"}
+              <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+          ) : (
+            <Button
+              disabled
+              className="w-full bg-zinc-700 text-zinc-400 font-bold px-8 rounded-xl cursor-not-allowed"
+            >
+              Awaiting admin approval…
+            </Button>
+          )}
         </div>
       </div>
     );

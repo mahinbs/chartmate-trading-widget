@@ -21,6 +21,7 @@ import logo from "@/assets/logo.png";
 import { useAuth } from "@/hooks/useAuth";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useSubscription } from "@/hooks/useSubscription";
+import { isAnalysisExceptionEmail } from "@/lib/manualSubscriptionBypass";
 import { supabase } from "@/integrations/supabase/client";
 import type { DashboardNavLink } from "./dashboard-nav-types";
 import { isDashboardNavActive } from "./dashboard-nav-types";
@@ -37,6 +38,7 @@ function useDashboardNavLinks(): DashboardNavLink[] {
   const { isAdmin } = useAdmin();
   const { hasAlgoAccess, hasAnalysisAccess } = useSubscription();
   const { user } = useAuth();
+  const canSeeAnalysisTabs = isAnalysisExceptionEmail(user?.email) || hasAnalysisAccess;
   const [algoStatus, setAlgoStatus] = useState<string | null>(null);
 
   useEffect(() => {
@@ -61,19 +63,20 @@ function useDashboardNavLinks(): DashboardNavLink[] {
   return useMemo(() => {
     const next: DashboardNavLink[] = [
       { to: "/home", label: "Dashboard", icon: LayoutDashboard },
-      // {
-      //   to: hasAnalysisAccess ? "/predict" : "/pricing?feature=analysis",
-      //   label: "New Analysis",
-      //   icon: LineChart,
-      //   locked: !hasAnalysisAccess,
-      // },
-      // {
-      //   to: hasAnalysisAccess ? "/predictions" : "/pricing?feature=analysis",
-      //   label: "Past Analyses",
-      //   icon: Activity,
-      //   iconOpacity: "",
-      //   locked: !hasAnalysisAccess,
-      // },
+      ...(canSeeAnalysisTabs
+        ? [
+            {
+              to: "/predict",
+              label: "New Analysis",
+              icon: LineChart,
+            } as DashboardNavLink,
+            {
+              to: "/predictions",
+              label: "Past Analyses",
+              icon: Activity,
+            } as DashboardNavLink,
+          ]
+        : []),
       {
         to: hasAnalysisAccess
           ? "/active-trades?tab=performance"
