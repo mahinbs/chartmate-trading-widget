@@ -10,7 +10,10 @@
  *  - Historical "what-if": what would have happened if you ran this
  *    same strategy 1w / 1m / 3m / 6m / 1y ago
  */
-import { useEffect, useState, useCallback, Fragment } from "react";
+import { useEffect, useState, useCallback, Fragment, useRef } from "react";
+import { createPortal } from "react-dom";
+import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ComposedChart, AreaChart, Area, Bar, XAxis, YAxis,
@@ -276,6 +279,19 @@ function SymbolSearchInput({ value, onChange, onSelect }: {
   );
 }
 
+/** Plain label for tables / PDF export */
+function exitReasonPdfLabel(reason: string): string {
+  const m: Record<string, string> = {
+    stop_loss: "Stop loss",
+    take_profit: "Take profit",
+    max_hold: "Max hold",
+    trailing_stop: "Trailing stop",
+    indicator_exit: "Indicator",
+    end_of_data: "End of data",
+  };
+  return m[reason] ?? reason;
+}
+
 function ExitReasonBadge({ reason }: { reason: string }) {
   if (reason === "stop_loss") return <Badge className="bg-red-900/60 text-red-300 border-red-700 text-[10px] px-1.5 py-0">SL</Badge>;
   if (reason === "take_profit") return <Badge className="bg-emerald-900/60 text-emerald-300 border-emerald-700 text-[10px] px-1.5 py-0">TP</Badge>;
@@ -299,6 +315,38 @@ function StatCard({ label, value, sub, color }: {
       {sub && <p className="text-[10px] text-zinc-600 mt-0.5">{sub}</p>}
     </div>
   );
+}
+
+/** Slice a tall canvas into A4-height pages in a jsPDF document. */
+function addCanvasToPdfPaginated(
+  canvas: HTMLCanvasElement,
+  pdf: jsPDF,
+  marginPt: number,
+): void {
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  const usableW = pageW - 2 * marginPt;
+  const imgHpt = (canvas.height * usableW) / canvas.width;
+  const pageContentH = pageH - 2 * marginPt;
+  let srcY = 0;
+  let first = true;
+  while (srcY < canvas.height - 0.5) {
+    if (!first) pdf.addPage();
+    first = false;
+    const srcH = Math.min(
+      canvas.height - srcY,
+      Math.max(1, (pageContentH / imgHpt) * canvas.height),
+    );
+    const slice = document.createElement("canvas");
+    slice.width = canvas.width;
+    slice.height = Math.ceil(srcH);
+    const ctx = slice.getContext("2d");
+    if (!ctx) break;
+    ctx.drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, srcH);
+    const destHpt = (srcH / canvas.height) * imgHpt;
+    pdf.addImage(slice.toDataURL("image/png"), "PNG", marginPt, marginPt, usableW, destHpt);
+    srcY += srcH;
+  }
 }
 
 // ─── Trade detail popup ───────────────────────────────────────────────────────
@@ -436,104 +484,192 @@ function TradeDetailPopup({
                   <div className="rounded-xl border border-zinc-800 bg-black/40 p-4 shadow-inner">
                     <div className="flex items-center justify-between mb-4">
                       <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">Price Evolution & Indicators</p>
-                      <div className="flex items-center gap-3 text-[9px] text-zinc-600">
-                        <span className="flex items-center gap-1"><div className="w-2 h-1 bg-amber-500/80" /> SMA20</span>
-                        <span className="flex items-center gap-1"><div className="w-2 h-1 bg-emerald-500/80" /> ENTRY</span>
-                        <span className="flex items-center gap-1"><div className="w-2 h-1 bg-red-500/80" /> EXIT</span>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] text-zinc-600">
+                        <span className="flex items-center gap-1.5">
+                          <span className="inline-block w-4 border-t-2 border-dashed border-amber-500/90" />
+                          SMA20
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="inline-block w-4 border-t-2 border-dashed border-emerald-500" />
+                          ENTRY
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="inline-block w-4 border-t-2 border-dashed border-red-500" />
+                          EXIT
+                        </span>
                       </div>
                     </div>
-                    <ResponsiveContainer width="100%" height={280}>
-                      <ComposedChart data={trade.candles} margin={{ top: 15, right: 10, bottom: 0, left: 0 }}>
-                        <defs>
-                          <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#3f3f46" stopOpacity={0.2} />
-                            <stop offset="95%" stopColor="#3f3f46" stopOpacity={0} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
-                        <XAxis
-                          dataKey="date"
-                          tick={{ fill: "#52525b", fontSize: 9 }}
-                          tickFormatter={(v: string) => v.slice(5)}
-                          axisLine={false}
-                          tickLine={false}
-                          padding={{ left: 10, right: 10 }}
-                        />
-                        <YAxis
-                          domain={[minP, maxP]}
-                          tick={{ fill: "#52525b", fontSize: 9 }}
-                          tickFormatter={(v: number) => v.toLocaleString()}
-                          width={45}
-                          axisLine={false}
-                          tickLine={false}
-                          orientation="right"
-                        />
-                        <Tooltip
-                          contentStyle={{ background: "#09090b", border: "1px solid #27272a", borderRadius: 8, fontSize: 11, color: "#fff" }}
-                          itemStyle={{ padding: 0 }}
-                          cursor={{ stroke: "#3f3f46" }}
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="close"
-                          stroke="#71717a"
-                          strokeWidth={2}
-                          fill="url(#priceGrad)"
-                          name="Price"
-                          isAnimationActive={false}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="sma20"
-                          stroke="#f59e0b"
-                          dot={false}
-                          strokeWidth={1.5}
-                          strokeDasharray="4 4"
-                          name="SMA 20"
-                          opacity={0.7}
-                        />
-                        <ReferenceLine
-                          x={trade.entryDate}
-                          stroke="#10b981"
-                          strokeWidth={2}
-                          strokeDasharray="5 5"
-                          label={{ value: "Entry", fill: "#10b981", fontSize: 10, position: "top", fontWeight: "bold" }}
-                        />
-                        <ReferenceLine
-                          x={trade.exitDate}
-                          stroke={profitable ? "#10b981" : "#ef4444"}
-                          strokeWidth={2}
-                          strokeDasharray="5 5"
-                          label={{ value: "Exit", fill: profitable ? "#10b981" : "#ef4444", fontSize: 10, position: "top", fontWeight: "bold" }}
-                        />
-                      </ComposedChart>
-                    </ResponsiveContainer>
+                    <div className="flex flex-col gap-0">
+                      <div className="flex min-h-0 gap-1">
+                        <div className="h-[280px] min-w-0 flex-1">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <ComposedChart data={trade.candles} margin={{ top: 12, right: 4, bottom: 22, left: 8 }}>
+                              <defs>
+                                <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#3f3f46" stopOpacity={0.2} />
+                                  <stop offset="95%" stopColor="#3f3f46" stopOpacity={0} />
+                                </linearGradient>
+                              </defs>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                              <XAxis
+                                dataKey="date"
+                                tick={{ fill: "#52525b", fontSize: 8 }}
+                                tickFormatter={(v: string) => formatEquityChartDate(String(v))}
+                                axisLine={false}
+                                tickLine={false}
+                                minTickGap={32}
+                                padding={{ left: 0, right: 0 }}
+                              />
+                              <YAxis
+                                domain={[minP, maxP]}
+                                tick={{ fill: "#52525b", fontSize: 9, dx: 2 }}
+                                tickFormatter={(v: number) => v.toLocaleString()}
+                                width={50}
+                                axisLine={false}
+                                tickLine={false}
+                                orientation="right"
+                              />
+                              <Tooltip
+                                contentStyle={{ background: "#09090b", border: "1px solid #27272a", borderRadius: 8, fontSize: 11, color: "#fff" }}
+                                itemStyle={{ padding: 0 }}
+                                cursor={{ stroke: "#3f3f46" }}
+                                labelFormatter={(label) => formatEquityChartDate(String(label))}
+                              />
+                              <Area
+                                type="monotone"
+                                dataKey="close"
+                                stroke="#71717a"
+                                strokeWidth={2}
+                                fill="url(#priceGrad)"
+                                name="Close"
+                                isAnimationActive={false}
+                              />
+                              <Line
+                                type="monotone"
+                                dataKey="sma20"
+                                stroke="#f59e0b"
+                                dot={false}
+                                strokeWidth={1.5}
+                                strokeDasharray="4 4"
+                                name="SMA 20"
+                                opacity={0.7}
+                              />
+                              <ReferenceLine
+                                x={trade.entryDate}
+                                stroke="#10b981"
+                                strokeWidth={2}
+                                strokeDasharray="5 5"
+                                label={{ value: "Entry", fill: "#10b981", fontSize: 10, position: "top", fontWeight: "bold" }}
+                              />
+                              <ReferenceLine
+                                x={trade.exitDate}
+                                stroke="#ef4444"
+                                strokeWidth={2}
+                                strokeDasharray="5 5"
+                                label={{ value: "Exit", fill: "#ef4444", fontSize: 10, position: "top", fontWeight: "bold" }}
+                              />
+                            </ComposedChart>
+                          </ResponsiveContainer>
+                        </div>
+                        <div
+                          className="relative h-[280px] w-11 shrink-0 overflow-visible border-l border-zinc-800/50"
+                          aria-hidden
+                        >
+                          <span className="pointer-events-none absolute left-1/2 top-1/2 w-max max-w-[220px] -translate-x-1/2 -translate-y-1/2 -rotate-90 text-center text-[10px] font-medium leading-tight text-zinc-400 select-none">
+                            Close & SMA20 ({displayCurrency})
+                          </span>
+                        </div>
+                      </div>
+                      <p className="text-center text-[10px] font-medium tracking-wide text-zinc-400 pt-1">Date</p>
+                    </div>
                   </div>
 
                   {/* RSI component */}
                   {trade.candles.some(c => c.rsi14 !== null) && (
                     <div className="rounded-xl border border-zinc-800 bg-black/20 p-4">
-                      <p className="text-[10px] font-semibold text-zinc-500 mb-3 uppercase tracking-widest">RSI (14)</p>
-                      <ResponsiveContainer width="100%" height={80}>
-                        <LineChart data={trade.candles} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
-                          <YAxis domain={[0, 100]} hide />
-                          <Tooltip
-                            contentStyle={{ background: "#09090b", border: "1px solid #27272a", borderRadius: 6, fontSize: 10 }}
-                            formatter={(v: number) => [v?.toFixed?.(1), "RSI"]}
-                          />
-                          <ReferenceLine y={70} stroke="#ef4444" strokeDasharray="3 3" opacity={0.4} />
-                          <ReferenceLine y={30} stroke="#10b981" strokeDasharray="3 3" opacity={0.4} />
-                          <ReferenceLine y={50} stroke="#52525b" strokeDasharray="1 1" opacity={0.2} />
-                          <Line
-                            type="monotone"
-                            dataKey="rsi14"
-                            stroke="#8b5cf6"
-                            dot={false}
-                            strokeWidth={2}
-                            isAnimationActive={false}
-                          />
-                        </LineChart>
-                      </ResponsiveContainer>
+                      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">RSI (14)</p>
+                        <div className="flex flex-wrap gap-x-3 gap-y-1 text-[9px] text-zinc-600">
+                          <span className="flex items-center gap-1.5">
+                            <span className="inline-block h-2 w-2 rounded-sm bg-violet-500/90" />
+                            RSI line
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <span className="inline-block w-4 border-t border-dashed border-red-500/70" />
+                            70 overbought
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <span className="inline-block w-4 border-t border-dashed border-emerald-500/70" />
+                            30 oversold
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-0">
+                        <div className="flex min-h-0 gap-1">
+                          <div className="h-[132px] min-w-0 flex-1">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <LineChart data={trade.candles} margin={{ top: 6, right: 2, bottom: 20, left: 6 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                                <XAxis
+                                  dataKey="date"
+                                  tick={{ fill: "#52525b", fontSize: 7 }}
+                                  tickFormatter={(v: string) => formatEquityChartDate(String(v))}
+                                  axisLine={false}
+                                  tickLine={false}
+                                  minTickGap={40}
+                                  padding={{ left: 0, right: 0 }}
+                                />
+                                <YAxis
+                                  domain={[0, 100]}
+                                  tick={{ fill: "#52525b", fontSize: 8, dx: 2 }}
+                                  tickFormatter={(v: number) => String(v)}
+                                  width={28}
+                                  ticks={[0, 30, 50, 70, 100]}
+                                  axisLine={false}
+                                  tickLine={false}
+                                  orientation="right"
+                                />
+                                <Tooltip
+                                  contentStyle={{
+                                    background: "#09090b",
+                                    border: "1px solid #27272a",
+                                    borderRadius: 6,
+                                    fontSize: 10,
+                                  }}
+                                  formatter={(v: number | undefined) => [
+                                    v != null && Number.isFinite(v) ? v.toFixed(1) : "—",
+                                    "RSI (14)",
+                                  ]}
+                                  labelFormatter={(label) => formatEquityChartDate(String(label))}
+                                  labelStyle={{ color: "#a1a1aa", marginBottom: 2 }}
+                                />
+                                <ReferenceLine y={70} stroke="#ef4444" strokeDasharray="3 3" opacity={0.45} />
+                                <ReferenceLine y={30} stroke="#10b981" strokeDasharray="3 3" opacity={0.45} />
+                                <ReferenceLine y={50} stroke="#52525b" strokeDasharray="1 1" opacity={0.25} />
+                                <Line
+                                  type="monotone"
+                                  dataKey="rsi14"
+                                  stroke="#a78bfa"
+                                  dot={false}
+                                  strokeWidth={2}
+                                  name="RSI"
+                                  isAnimationActive={false}
+                                  connectNulls
+                                />
+                              </LineChart>
+                            </ResponsiveContainer>
+                          </div>
+                          <div
+                            className="relative h-[132px] w-9 shrink-0 overflow-visible border-l border-zinc-800/50"
+                            aria-hidden
+                          >
+                            <span className="pointer-events-none absolute left-1/2 top-1/2 w-max -translate-x-1/2 -translate-y-1/2 -rotate-90 text-[10px] font-medium text-zinc-400 select-none">
+                              RSI (0–100)
+                            </span>
+                          </div>
+                        </div>
+                        <p className="text-center text-[10px] font-medium tracking-wide text-zinc-400 pt-1">Date</p>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -671,6 +807,63 @@ function TradeDetailPopup({
 
 // ─── Charts ───────────────────────────────────────────────────────────────────
 
+const EQUITY_MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"] as const;
+
+/** Calendar-safe: parse YYYY-MM-DD prefix without timezone shift. */
+function formatEquityChartDate(raw: string): string {
+  const m = raw.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) {
+    const yyyy = Number(m[1]);
+    const mo = Number(m[2]) - 1;
+    const dd = Number(m[3]);
+    const mon = EQUITY_MONTHS[mo] ?? "";
+    return `${String(dd).padStart(2, "0")} ${mon} ${yyyy}`;
+  }
+  const d = new Date(raw);
+  if (!Number.isNaN(d.getTime())) {
+    return `${String(d.getUTCDate()).padStart(2, "0")} ${EQUITY_MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+  }
+  return raw;
+}
+
+/** UTC midnight ms for equity curve x-position (same calendar day as YYYY-MM-DD string). */
+function parseEquityDateMs(raw: string): number | null {
+  const m = raw.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return null;
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
+function formatEquityChartTickMs(ms: number): string {
+  const d = new Date(ms);
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  const mon = EQUITY_MONTHS[d.getUTCMonth()] ?? "";
+  return `${dd} ${mon} ${d.getUTCFullYear()}`;
+}
+
+/** Money-scale epsilon: ignore float / micro drift when detecting a flat equity tail. */
+function equityFlatEps(v: number): number {
+  const a = Math.abs(v);
+  return Math.max(0.01, a * 1e-5);
+}
+
+/**
+ * Trim all trailing points whose value still matches the final portfolio level (within eps).
+ * Index-based vs pop+plateau avoids bugs when the running last value drifts from the original plateau.
+ */
+function trimTrailingFlatEquity<T extends { value: number }>(arr: T[]): T[] {
+  if (arr.length <= 2) return arr;
+  const plateau = arr[arr.length - 1]!.value;
+  const eps = equityFlatEps(plateau);
+  let k = arr.length - 1;
+  while (k > 0 && Math.abs(arr[k - 1]!.value - plateau) < eps) {
+    k--;
+  }
+  const out = arr.slice(0, k + 1);
+  return out.length >= 2 ? out : arr.slice(0, 2);
+}
+
 function EquityCurveChart({
   data,
   initialCapital,
@@ -683,7 +876,16 @@ function EquityCurveChart({
   if (!data || data.length === 0) return null;
   const base0 = data[0]?.value;
   const scale = base0 && Number.isFinite(base0) && base0 !== 0 ? initialCapital / base0 : 1;
-  const scaled = data.map(d => ({ ...d, value: d.value * scale }));
+  const scaled = trimTrailingFlatEquity(
+    data
+      .map(d => {
+        const ts = parseEquityDateMs(d.date);
+        const v = d.value * scale;
+        return ts != null && Number.isFinite(v) ? { date: d.date, ts, value: v } : null;
+      })
+      .filter((row): row is { date: string; ts: number; value: number } => row != null)
+      .sort((a, b) => a.ts - b.ts),
+  );
   const startV = scaled[0]?.value ?? initialCapital;
   const endV = scaled[scaled.length - 1]?.value ?? startV;
   const isPos = endV >= startV;
@@ -710,55 +912,79 @@ function EquityCurveChart({
       </div>
       
       <div className="rounded-xl border border-zinc-800 bg-black/40 p-4 shadow-inner">
-        <ResponsiveContainer width="100%" height={260}>
-          <AreaChart data={scaled} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
-            <defs>
-              <linearGradient id="eqGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={isPos ? "#10b981" : "#ef4444"} stopOpacity={0.25} />
-                <stop offset="95%" stopColor={isPos ? "#10b981" : "#ef4444"} stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
-            <XAxis 
-              dataKey="date" 
-              tick={{ fill: "#52525b", fontSize: 9 }} 
-              tickFormatter={(v: string) => v.slice(2, 10)} 
-              axisLine={false}
-              tickLine={false}
-              interval="preserveStartEnd"
-            />
-            <YAxis 
-              tick={{ fill: "#52525b", fontSize: 9 }} 
-              tickFormatter={fmtK} 
-              width={50} 
-              axisLine={false}
-              tickLine={false}
-              orientation="right"
-              domain={['auto', 'auto']}
-            />
-            <Tooltip 
-              contentStyle={{ background: "#09090b", border: "1px solid #27272a", borderRadius: 8, fontSize: 11 }}
-              formatter={(v: number) => [fmtFull(Number(v)), "Portfolio Value"]} 
-              labelStyle={{ color: "#71717a", marginBottom: 4 }}
-            />
-            <ReferenceLine 
-              y={initialCapital} 
-              stroke="#52525b" 
-              strokeDasharray="4 4" 
-              strokeWidth={1}
-              label={{ value: "Initial Capital", position: "left", fill: "#52525b", fontSize: 10 }}
-            />
-            <Area 
-              type="monotone" 
-              dataKey="value" 
-              stroke={isPos ? "#10b981" : "#ef4444"} 
-              fill="url(#eqGrad)" 
-              strokeWidth={2.5} 
-              dot={false}
-              activeDot={{ r: 4, strokeWidth: 0, fill: isPos ? "#10b981" : "#ef4444" }}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
+        <div className="flex flex-col gap-0">
+          <div className="flex min-h-0 gap-1">
+            <div className="h-[280px] min-w-0 flex-1">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={scaled} margin={{ top: 12, right: 4, bottom: 32, left: 8 }}>
+                  <defs>
+                    <linearGradient id="eqGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={isPos ? "#10b981" : "#ef4444"} stopOpacity={0.25} />
+                      <stop offset="95%" stopColor={isPos ? "#10b981" : "#ef4444"} stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                  <XAxis
+                    type="number"
+                    dataKey="ts"
+                    domain={["dataMin", "dataMax"]}
+                    scale="time"
+                    tick={{ fill: "#52525b", fontSize: 9 }}
+                    tickFormatter={(v: number) => formatEquityChartTickMs(v)}
+                    axisLine={false}
+                    tickLine={false}
+                    minTickGap={28}
+                    padding={{ left: 0, right: 0 }}
+                  />
+                  <YAxis
+                    tick={{ fill: "#52525b", fontSize: 9, dx: 2 }}
+                    tickFormatter={fmtK}
+                    width={58}
+                    axisLine={false}
+                    tickLine={false}
+                    orientation="right"
+                    domain={["auto", "auto"]}
+                  />
+                  <Tooltip
+                    contentStyle={{ background: "#09090b", border: "1px solid #27272a", borderRadius: 8, fontSize: 11 }}
+                    formatter={(v: number) => [fmtFull(Number(v)), "Portfolio value"]}
+                    labelFormatter={(label) =>
+                      formatEquityChartTickMs(typeof label === "number" ? label : Number(label))
+                    }
+                    labelStyle={{ color: "#71717a", marginBottom: 4 }}
+                  />
+                  <ReferenceLine
+                    y={initialCapital}
+                    stroke="#52525b"
+                    strokeDasharray="4 4"
+                    strokeWidth={1}
+                    label={{ value: "Initial Capital", position: "left", fill: "#52525b", fontSize: 10 }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="value"
+                    stroke={isPos ? "#10b981" : "#ef4444"}
+                    fill="url(#eqGrad)"
+                    strokeWidth={2.5}
+                    dot={false}
+                    activeDot={{ r: 4, strokeWidth: 0, fill: isPos ? "#10b981" : "#ef4444" }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+            <div
+              className="relative h-[280px] w-12 shrink-0 overflow-visible border-l border-zinc-800/60"
+              aria-hidden
+            >
+              <span className="pointer-events-none absolute left-1/2 top-1/2 w-max max-w-none -translate-x-1/2 -translate-y-1/2 -rotate-90 text-[10px] font-medium text-zinc-400 select-none">
+                {displayCurrency === "INR" ? "Portfolio value (INR)" : "Portfolio value (USD)"}
+              </span>
+            </div>
+          </div>
+          <p className="text-center text-[10px] font-medium tracking-wide text-zinc-400 pt-1.5">
+            Date
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -777,47 +1003,64 @@ function TradeReturnsChart({ trades }: { trades: Trade[] }) {
       </div>
 
       <div className="rounded-xl border border-zinc-800 bg-black/20 p-4">
-        <ResponsiveContainer width="100%" height={200}>
-          <ComposedChart data={data} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
-            <XAxis 
-              dataKey="name" 
-              tick={{ fill: "#52525b", fontSize: 9 }} 
-              axisLine={false}
-              tickLine={false}
-            />
-            <YAxis 
-              tick={{ fill: "#52525b", fontSize: 9 }} 
-              tickFormatter={(v: number) => `${v}%`} 
-              width={40} 
-              axisLine={false}
-              tickLine={false}
-              orientation="right"
-            />
-            <Tooltip 
-              contentStyle={{ background: "#09090b", border: "1px solid #27272a", borderRadius: 8, fontSize: 11 }}
-              formatter={(v: number) => [`${v >= 0 ? "+" : ""}${v.toFixed(2)}%`, "Trade Return"]} 
-              labelStyle={{ color: "#71717a", marginBottom: 4 }}
-            />
-            <ReferenceLine y={0} stroke="#52525b" strokeWidth={1} />
-            <ReferenceLine 
-              y={avgRet} 
-              stroke="#71717a" 
-              strokeDasharray="3 3" 
-              label={{ value: "Average", position: "left", fill: "#71717a", fontSize: 9 }} 
-            />
-            <Bar dataKey="ret" radius={[3, 3, 0, 0]}>
-              {data.map((d, i) => (
-                <Cell 
-                  key={i} 
-                  fill={d.ret > 0 ? "#10b981" : "#ef4444"} 
-                  fillOpacity={0.7} 
-                  className="transition-all hover:fill-opacity-100"
-                />
-              ))}
-            </Bar>
-          </ComposedChart>
-        </ResponsiveContainer>
+        <div className="flex flex-col gap-0">
+          <div className="flex min-h-0 gap-1">
+            <div className="h-[200px] min-w-0 flex-1">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={data} margin={{ top: 10, right: 4, bottom: 24, left: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                  <XAxis
+                    dataKey="name"
+                    tick={{ fill: "#52525b", fontSize: 9 }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    tick={{ fill: "#52525b", fontSize: 9, dx: 2 }}
+                    tickFormatter={(v: number) => `${v}%`}
+                    width={44}
+                    axisLine={false}
+                    tickLine={false}
+                    orientation="right"
+                  />
+                  <Tooltip
+                    contentStyle={{ background: "#09090b", border: "1px solid #27272a", borderRadius: 8, fontSize: 11 }}
+                    formatter={(v: number) => [`${v >= 0 ? "+" : ""}${v.toFixed(2)}%`, "Trade return"]}
+                    labelStyle={{ color: "#71717a", marginBottom: 4 }}
+                  />
+                  <ReferenceLine y={0} stroke="#52525b" strokeWidth={1} />
+                  <ReferenceLine
+                    y={avgRet}
+                    stroke="#71717a"
+                    strokeDasharray="3 3"
+                    label={{ value: "Average", position: "left", fill: "#71717a", fontSize: 9 }}
+                  />
+                  <Bar dataKey="ret" radius={[3, 3, 0, 0]}>
+                    {data.map((d, i) => (
+                      <Cell
+                        key={i}
+                        fill={d.ret > 0 ? "#10b981" : "#ef4444"}
+                        fillOpacity={0.7}
+                        className="transition-all hover:fill-opacity-100"
+                      />
+                    ))}
+                  </Bar>
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+            <div
+              className="relative h-[200px] w-10 shrink-0 overflow-visible border-l border-zinc-800/50"
+              aria-hidden
+            >
+              <span className="pointer-events-none absolute left-1/2 top-1/2 w-max -translate-x-1/2 -translate-y-1/2 -rotate-90 text-[10px] font-medium text-zinc-400 select-none">
+                Return (%)
+              </span>
+            </div>
+          </div>
+          <p className="text-center text-[10px] font-medium tracking-wide text-zinc-400 pt-1">
+            Trade #
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -831,47 +1074,126 @@ function DailyPortfolioReturnsChart({ data }: { data: Array<{ date: string; retu
       </div>
     );
   }
-  const chart = data.map(d => ({ name: d.date.slice(5), ret: d.returnPct }));
+
+  const series = data
+    .map(d => {
+      const ts = parseEquityDateMs(d.date);
+      return ts != null && Number.isFinite(d.returnPct) ? { ts, ret: d.returnPct, date: d.date } : null;
+    })
+    .filter((r): r is { ts: number; ret: number; date: string } => r != null)
+    .sort((a, b) => a.ts - b.ts);
+
+  if (series.length === 0) {
+    return (
+      <div className="h-40 flex items-center justify-center border border-dashed border-zinc-800 rounded-xl text-zinc-600 text-xs italic">
+        Daily return series not available
+      </div>
+    );
+  }
+
+  const n = series.length;
+  const avg = series.reduce((s, x) => s + x.ret, 0) / n;
+  const best = Math.max(...series.map(x => x.ret));
+  const worst = Math.min(...series.map(x => x.ret));
+  const winDays = series.filter(x => x.ret > 0).length;
+  const winPct = (winDays / n) * 100;
+
+  const fmtDay = (r: number) => `${r >= 0 ? "+" : ""}${r.toFixed(2)}%`;
+
   return (
-    <div className="space-y-3">
-      <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">Daily Portfolio Volatility (%)</p>
-      <div className="rounded-xl border border-zinc-800 bg-black/20 p-4">
-        <ResponsiveContainer width="100%" height={240}>
-          <ComposedChart data={chart} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
-            <XAxis 
-              dataKey="name" 
-              tick={{ fill: "#52525b", fontSize: 8 }} 
-              interval="preserveStartEnd" 
-              axisLine={false}
-              tickLine={false}
-            />
-            <YAxis 
-              tick={{ fill: "#52525b", fontSize: 9 }} 
-              tickFormatter={(v: number) => `${v}%`} 
-              width={40} 
-              axisLine={false}
-              tickLine={false}
-              orientation="right"
-            />
-            <Tooltip 
-              contentStyle={{ background: "#09090b", border: "1px solid #27272a", borderRadius: 8, fontSize: 11 }}
-              formatter={(v: number) => [`${Number(v) >= 0 ? "+" : ""}${Number(v).toFixed(3)}%`, "Bar Return"]} 
-              labelStyle={{ color: "#71717a", marginBottom: 4 }}
-            />
-            <ReferenceLine y={0} stroke="#52525b" strokeWidth={1} />
-            <Bar dataKey="ret" radius={[1, 1, 0, 0]}>
-              {chart.map((d, i) => (
-                <Cell 
-                  key={i} 
-                  fill={d.ret > 0 ? "#10b981" : "#ef4444"} 
-                  fillOpacity={0.6} 
-                  className="transition-all hover:fill-opacity-100"
-                />
-              ))}
-            </Bar>
-          </ComposedChart>
-        </ResponsiveContainer>
+    <div className="space-y-4">
+      <div className="space-y-1">
+        <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">Daily returns</p>
+        <p className="text-[10px] text-zinc-500 leading-relaxed max-w-xl">
+          Each point is how much the portfolio moved from one day's close to the next. The horizontal line at{" "}
+          <span className="text-zinc-400">0%</span> separates up days from down days.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="rounded-lg border border-zinc-800/90 bg-zinc-950/60 px-3 py-2.5">
+          <p className="text-[9px] font-medium uppercase tracking-wider text-zinc-500">Average / day</p>
+          <p className={`mt-0.5 text-sm font-mono font-semibold tabular-nums ${avg >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+            {fmtDay(avg)}
+          </p>
+        </div>
+        <div className="rounded-lg border border-zinc-800/90 bg-zinc-950/60 px-3 py-2.5">
+          <p className="text-[9px] font-medium uppercase tracking-wider text-zinc-500">Up days</p>
+          <p className="mt-0.5 text-sm font-mono font-semibold tabular-nums text-zinc-200">{winPct.toFixed(0)}%</p>
+          <p className="text-[9px] text-zinc-600 mt-0.5">
+            {winDays} of {n} days
+          </p>
+        </div>
+        <div className="rounded-lg border border-zinc-800/90 bg-zinc-950/60 px-3 py-2.5">
+          <p className="text-[9px] font-medium uppercase tracking-wider text-zinc-500">Best day</p>
+          <p className="mt-0.5 text-sm font-mono font-semibold tabular-nums text-emerald-400">{fmtDay(best)}</p>
+        </div>
+        <div className="rounded-lg border border-zinc-800/90 bg-zinc-950/60 px-3 py-2.5">
+          <p className="text-[9px] font-medium uppercase tracking-wider text-zinc-500">Worst day</p>
+          <p className="mt-0.5 text-sm font-mono font-semibold tabular-nums text-red-400">{fmtDay(worst)}</p>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-zinc-800 bg-black/35 p-4">
+        <div className="flex flex-col gap-0">
+          <div className="flex min-h-0 gap-1">
+            <div className="h-[240px] min-w-0 flex-1">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={series} margin={{ top: 8, right: 4, bottom: 28, left: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                  <XAxis
+                    type="number"
+                    dataKey="ts"
+                    domain={["dataMin", "dataMax"]}
+                    scale="time"
+                    tick={{ fill: "#71717a", fontSize: 9 }}
+                    tickFormatter={(v: number) => formatEquityChartTickMs(v)}
+                    axisLine={false}
+                    tickLine={false}
+                    minTickGap={36}
+                    padding={{ left: 0, right: 0 }}
+                  />
+                  <YAxis
+                    tick={{ fill: "#71717a", fontSize: 9, dx: 2 }}
+                    tickFormatter={(v: number) => `${v}%`}
+                    width={48}
+                    axisLine={false}
+                    tickLine={false}
+                    orientation="right"
+                    domain={["auto", "auto"]}
+                  />
+                  <Tooltip
+                    contentStyle={{ background: "#09090b", border: "1px solid #27272a", borderRadius: 8, fontSize: 11 }}
+                    formatter={(v: number) => [
+                      `${Number(v) >= 0 ? "+" : ""}${Number(v).toFixed(3)}%`,
+                      "That day's return",
+                    ]}
+                    labelFormatter={(label) => formatEquityChartTickMs(typeof label === "number" ? label : Number(label))}
+                    labelStyle={{ color: "#a1a1aa", marginBottom: 4 }}
+                  />
+                  <ReferenceLine y={0} stroke="#52525b" strokeWidth={1} />
+                  <Line
+                    type="linear"
+                    dataKey="ret"
+                    stroke="#2dd4bf"
+                    strokeWidth={1.75}
+                    dot={false}
+                    activeDot={{ r: 4, strokeWidth: 0, fill: "#5eead4" }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <div
+              className="relative h-[240px] w-10 shrink-0 overflow-visible border-l border-zinc-800/50"
+              aria-hidden
+            >
+              <span className="pointer-events-none absolute left-1/2 top-1/2 w-max -translate-x-1/2 -translate-y-1/2 -rotate-90 text-[10px] font-medium text-zinc-400 select-none">
+                Daily return (%)
+              </span>
+            </div>
+          </div>
+          <p className="text-center text-[10px] font-medium tracking-wide text-zinc-400 pt-1">Date</p>
+        </div>
       </div>
     </div>
   );
@@ -923,6 +1245,8 @@ export default function BacktestingSection() {
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"trades" | "equity" | "returns" | "daily">("trades");
   const [resultPopupOpen, setResultPopupOpen] = useState(false);
+  const [pdfExporting, setPdfExporting] = useState(false);
+  const backtestPdfRef = useRef<HTMLDivElement>(null);
 
   const selectedCustom = customStrategies.find(s => s.id === selectedCustomId) ?? null;
   const stratLabel =
@@ -1234,6 +1558,40 @@ export default function BacktestingSection() {
   const pagedTrades = result ? (result.trades ?? []).slice((tradesPage - 1) * tradesPerPage, tradesPage * tradesPerPage) : [];
   const totalTradePages = result ? Math.max(1, Math.ceil((result.trades ?? []).length / tradesPerPage)) : 1;
 
+  const reportNotional = Math.max(1000, parseFloat(initialCapital) || 100000);
+
+  const handleExportBacktestPdf = useCallback(async () => {
+    const el = backtestPdfRef.current;
+    if (!result || !el) {
+      toast.error("Nothing to export.");
+      return;
+    }
+    setPdfExporting(true);
+    await new Promise<void>(resolve => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+    try {
+      const canvas = await html2canvas(el, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: "#ffffff",
+        windowWidth: el.scrollWidth,
+        windowHeight: el.scrollHeight,
+      });
+      const pdf = new jsPDF({ orientation: "p", unit: "pt", format: "a4" });
+      addCanvasToPdfPaginated(canvas, pdf, 36);
+      const safeSymbol = String(result.symbol ?? "backtest").replace(/[^\w.-]+/g, "_");
+      pdf.save(`backtest-report_${safeSymbol}_${new Date().toISOString().slice(0, 10)}.pdf`);
+      toast.success("PDF report downloaded.");
+    } catch (e) {
+      console.error(e);
+      toast.error("Could not generate PDF.");
+    } finally {
+      setPdfExporting(false);
+    }
+  }, [result]);
+
   // Summarise what conditions a custom strategy has (visual + raw + time/hybrid)
   const customConditionsSummary = (() => {
     const ecRaw = selectedCustom?.entry_conditions;
@@ -1268,7 +1626,7 @@ export default function BacktestingSection() {
         <div className="shrink-0 border-b border-zinc-800 px-5 py-4">
           <DialogHeader className="space-y-1">
             <DialogTitle className="text-white text-lg flex items-center gap-2">
-               Backtest details: <span className="font-mono text-teal-400">{(h as any).symbol}</span>
+               Backtest Details: <span className="font-mono text-teal-400 capitalize">{(h as any).symbol}</span>
             </DialogTitle>
             <div className="text-zinc-500 text-xs flex items-center gap-3">
               <span>{(h as any).strategy_label ?? (h as any).mode}</span>
@@ -1383,7 +1741,10 @@ export default function BacktestingSection() {
     );
   };
 
+  const strategyTitleForPdf = mode === "strategy" ? stratLabel : `Simple ${action}`;
+
   return (
+    <>
     <Card className="bg-zinc-900 border-zinc-800">
       <CardHeader className="pb-2">
         <CardTitle className="text-base text-white flex items-center gap-2">
@@ -1667,10 +2028,6 @@ export default function BacktestingSection() {
                             <Badge className="bg-teal-500/10 text-teal-300 border-teal-500/30 text-[9px] px-2 py-0">CUSTOM LOGIC</Badge>
                           )}
                         </div>
-                        <p className="text-zinc-500 text-xs flex items-center gap-2">
-                          <span className="w-1 h-1 rounded-full bg-zinc-700" />
-                          Tested with engine {result.strategy}
-                        </p>
                       </div>
                       <div className="flex items-center gap-8">
                         <div className="text-right">
@@ -1719,7 +2076,7 @@ export default function BacktestingSection() {
                               : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
                           }`}
                         >
-                          {tab === "trades" ? `Trade Log (${result.totalTrades})` : tab === "equity" ? "Equity Curve" : tab === "returns" ? "Return Distribution" : "Daily Volatility"}
+                          {tab === "trades" ? `Trade Log (${result.totalTrades})` : tab === "equity" ? "Equity Curve" : tab === "returns" ? "Return Distribution" : "Daily Returns"}
                         </button>
                       ))}
                     </div>
@@ -1864,16 +2221,11 @@ export default function BacktestingSection() {
                   </div>
 
                   {/* Compliance & Footnote */}
-                   <div className="pt-10 border-t border-zinc-900/50 flex flex-col sm:flex-row justify-between items-center gap-6">
+                   <div className="border-t border-zinc-900/50 flex flex-col sm:flex-row justify-between items-center gap-6">
                      <div className="flex items-center gap-6">
                        <div className="space-y-1">
                          <p className="text-[10px] text-zinc-600 uppercase font-bold tracking-[0.2em]">Data Origin</p>
                          <p className="text-xs text-zinc-400 font-mono">{result.exchange}:{result.symbol}</p>
-                       </div>
-                       <div className="w-px h-6 bg-zinc-900" />
-                       <div className="space-y-1">
-                         <p className="text-[10px] text-zinc-600 uppercase font-bold tracking-[0.2em]">Strategy ID</p>
-                         <p className="text-xs text-zinc-400 font-mono">{result.strategy}</p>
                        </div>
                      </div>
                      <p className="text-[10px] text-zinc-600 italic text-center sm:text-right max-w-sm">
@@ -1893,8 +2245,14 @@ export default function BacktestingSection() {
                 <Button variant="outline" size="sm" onClick={() => setResultPopupOpen(false)} className="flex-1 sm:flex-none border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-900">
                   Close Analysis
                 </Button>
-                <Button size="sm" className="flex-1 sm:flex-none bg-teal-600 hover:bg-teal-500 shadow-lg shadow-teal-500/10" onClick={() => window.print()}>
-                  <Download className="h-3.5 w-3.5 mr-2" /> Export PDF Report
+                <Button
+                  size="sm"
+                  className="flex-1 sm:flex-none bg-teal-600 hover:bg-teal-500 shadow-lg shadow-teal-500/10"
+                  disabled={pdfExporting}
+                  onClick={() => void handleExportBacktestPdf()}
+                >
+                  {pdfExporting ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <Download className="h-3.5 w-3.5 mr-2" />}
+                  {pdfExporting ? "Building PDF…" : "Export PDF Report"}
                 </Button>
               </div>
             </div>
@@ -2076,5 +2434,156 @@ export default function BacktestingSection() {
         />
       )}
     </Card>
+
+    {result && resultPopupOpen && typeof document !== "undefined" && createPortal(
+      <div
+        ref={backtestPdfRef}
+        className="box-border bg-white p-8 text-zinc-900 antialiased"
+        style={{ position: "fixed", left: "-14000px", top: 0, width: 760, zIndex: -1, pointerEvents: "none" }}
+      >
+        <header className="border-b border-zinc-300 pb-4 mb-6">
+          <h1 className="text-[22px] font-bold tracking-tight text-zinc-900">Backtest analysis report</h1>
+          <p className="mt-1 font-mono text-[10px] text-zinc-600">
+            {result.symbol} · {result.exchange} · {result.backtestPeriod}
+          </p>
+          <p className="mt-1 text-[9px] text-zinc-500">Generated {new Date().toLocaleString()}</p>
+        </header>
+
+        <section className="mb-6">
+          <h2 className="mb-3 text-[11px] font-bold uppercase tracking-wider text-zinc-600">1. Performance summary</h2>
+          <div className="flex flex-wrap items-start justify-between gap-4 rounded-lg border border-zinc-200 bg-zinc-50 p-4">
+            <div>
+              <p className="text-lg font-bold text-teal-700">{strategyTitleForPdf}</p>
+              {result.usedCustomConditions && (
+                <p className="mt-1 text-[9px] font-semibold uppercase tracking-wide text-teal-600">Custom logic</p>
+              )}
+            </div>
+            <div className="flex gap-8 text-right">
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">Net return</p>
+                <p className={`text-2xl font-black font-mono ${result.totalReturn >= 0 ? "text-emerald-700" : "text-red-700"}`}>
+                  {result.totalReturn >= 0 ? "+" : ""}{result.totalReturn}%
+                </p>
+              </div>
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">Win rate</p>
+                <p className={`text-2xl font-black font-mono ${result.winRate >= 50 ? "text-emerald-700" : "text-amber-700"}`}>
+                  {result.winRate}%
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="mb-6">
+          <h2 className="mb-3 text-[11px] font-bold uppercase tracking-wider text-zinc-600">2. Key metrics</h2>
+          <div className="grid grid-cols-2 gap-2 text-[10px]">
+            <div className="rounded border border-zinc-200 p-2">
+              <p className="text-[8px] font-bold uppercase text-zinc-500">Executed trades</p>
+              <p className="font-mono text-sm font-bold">{result.totalTrades}</p>
+              <p className="text-zinc-500">{result.wins}W / {result.losses}L</p>
+            </div>
+            <div className="rounded border border-zinc-200 p-2">
+              <p className="text-[8px] font-bold uppercase text-zinc-500">Profit factor</p>
+              <p className="font-mono text-sm font-bold">{result.profitFactor}</p>
+            </div>
+            <div className="rounded border border-zinc-200 p-2">
+              <p className="text-[8px] font-bold uppercase text-zinc-500">Avg. return (expectancy)</p>
+              <p className="font-mono text-sm font-bold">
+                {result.expectancy >= 0 ? "+" : ""}{result.expectancy}%
+              </p>
+            </div>
+            <div className="rounded border border-zinc-200 p-2">
+              <p className="text-[8px] font-bold uppercase text-zinc-500">Max drawdown</p>
+              <p className="font-mono text-sm font-bold text-red-700">{result.maxDrawdown}%</p>
+            </div>
+            <div className="rounded border border-zinc-200 p-2">
+              <p className="text-[8px] font-bold uppercase text-zinc-500">Sharpe ratio</p>
+              <p className="font-mono text-sm font-bold">{result.sharpeRatio}</p>
+            </div>
+            <div className="rounded border border-zinc-200 p-2">
+              <p className="text-[8px] font-bold uppercase text-zinc-500">Avg hold time</p>
+              <p className="font-mono text-sm font-bold">{result.avgHoldingDays}d</p>
+            </div>
+            <div className="rounded border border-zinc-200 p-2">
+              <p className="text-[8px] font-bold uppercase text-zinc-500">Best trade</p>
+              <p className="font-mono text-sm font-bold text-emerald-700">+{result.bestTrade}%</p>
+            </div>
+            <div className="rounded border border-zinc-200 p-2">
+              <p className="text-[8px] font-bold uppercase text-zinc-500">Worst trade</p>
+              <p className="font-mono text-sm font-bold text-red-700">{result.worstTrade}%</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="mb-6">
+          <h2 className="mb-3 text-[11px] font-bold uppercase tracking-wider text-zinc-600">3. Complete trade journal</h2>
+          <p className="mb-2 text-[9px] text-zinc-500">All {(result.trades ?? []).length} trades (same columns as on-screen journal).</p>
+          <div className="overflow-hidden rounded-lg border border-zinc-300">
+            <table className="w-full border-collapse text-[8px]">
+              <thead>
+                <tr className="border-b border-zinc-300 bg-zinc-100 text-left text-zinc-600">
+                  <th className="px-2 py-2 font-bold">#</th>
+                  <th className="px-2 py-2 font-bold">Entry → exit</th>
+                  <th className="px-2 py-2 text-right font-bold">Hold</th>
+                  <th className="px-2 py-2 text-right font-bold">Prices in → out</th>
+                  <th className="px-2 py-2 text-right font-bold">Return</th>
+                  <th className="px-2 py-2 font-bold">Exit</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(result.trades ?? []).map(t => (
+                  <tr key={t.tradeNo} className="border-t border-zinc-200">
+                    <td className="px-2 py-1.5 font-mono font-semibold text-zinc-700">#{t.tradeNo}</td>
+                    <td className="px-2 py-1.5 font-mono text-zinc-800">
+                      {t.entryDate} → {t.exitDate}
+                    </td>
+                    <td className="px-2 py-1.5 text-right font-mono text-zinc-600">{t.holdingDays ?? "—"}d</td>
+                    <td className="px-2 py-1.5 text-right font-mono text-zinc-600">
+                      {t.entryPrice?.toLocaleString() ?? "—"} → {t.exitPrice?.toLocaleString() ?? "—"}
+                    </td>
+                    <td className={`px-2 py-1.5 text-right font-mono font-bold ${t.profitable ? "text-emerald-700" : "text-red-700"}`}>
+                      {t.returnPct >= 0 ? "+" : ""}{t.returnPct}%
+                    </td>
+                    <td className="px-2 py-1.5 text-zinc-700">{exitReasonPdfLabel(t.exitReason)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="mb-6 rounded-xl border border-zinc-800 bg-zinc-950 p-4 text-white">
+          <h2 className="mb-3 text-[11px] font-bold uppercase tracking-wider text-zinc-400">4. Equity curve</h2>
+          <EquityCurveChart
+            data={result.equityCurve}
+            initialCapital={reportNotional}
+            displayCurrency={displayCurrency}
+          />
+        </section>
+
+        <section className="mb-6 rounded-xl border border-zinc-800 bg-zinc-950 p-4 text-white">
+          <h2 className="mb-3 text-[11px] font-bold uppercase tracking-wider text-zinc-400">5. Return per trade</h2>
+          <TradeReturnsChart trades={result.trades} />
+        </section>
+
+        <section className="mb-6 rounded-xl border border-zinc-800 bg-zinc-950 p-4 text-white">
+          <h2 className="mb-3 text-[11px] font-bold uppercase tracking-wider text-zinc-400">6. Daily returns</h2>
+          <DailyPortfolioReturnsChart data={result.dailyReturns || []} />
+        </section>
+
+        <footer className="border-t border-zinc-300 pt-4 text-[8px] text-zinc-600">
+          <p className="mb-2 font-mono">
+            <span className="font-bold uppercase tracking-wide text-zinc-500">Data origin </span>
+            {result.exchange}:{result.symbol}
+          </p>
+          <p className="italic leading-relaxed">
+            Hypothetical performance results have inherent limitations. No representation is being made that any account will achieve profits similar to those shown.
+          </p>
+        </footer>
+      </div>,
+      document.body,
+    )}
+    </>
   );
 }
