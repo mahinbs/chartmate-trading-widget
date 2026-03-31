@@ -1305,7 +1305,6 @@ export function StrategyEntrySignalsPanel({
     if (venueAllowsLive) {
       return "Trading session active (regular, pre-, or after-hours) — Live tags apply when the signal bar is still inside the one-bar window. Open/closed follows the listing exchange clock (e.g. IST for NSE/BSE), not only your device timezone.";
     }
-    return "Market closed (weekend for your venue, or holiday / off-hours from the quote feed) — last bars shown; Live tags stay off until the venue is open. Closure is evaluated in the exchange timezone (e.g. India for .NS/.BO), independent of where you are browsing from.";
   }, [marketStatus, nowMs]);
 
   const toggle = (value: string) => {
@@ -1734,24 +1733,12 @@ export function StrategyEntrySignalsPanel({
           <div className="min-w-0 flex-1 space-y-1">
             <CardTitle className="text-base font-semibold text-white flex items-center gap-2">
               <Target className="h-4 w-4 text-teal-400 shrink-0" />
-              {symbol ? "Strategy scanner — live & past signals" : "AI Trading Analysis & History"}
+              {symbol ? "Strategy scanner " : "AI Trading Analysis & History"}
             </CardTitle>
             {symbol ? (
               <>
                 <p className="text-sm text-muted-foreground">
                   Symbol: <span className="text-white/90 font-mono font-medium">{symbol}</span>
-                </p>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  Pick a <span className="text-zinc-300 font-medium">results window</span> below (how far back entry/exit
-                  points may appear — up to now). We fetch enough history for indicators, then only keep signals inside
-                  that window. On intraday data when available we detect{" "}
-                  <span className="text-emerald-400 font-medium">entry (BUY)</span> and{" "}
-                  <span className="text-red-400 font-medium">exit (SELL)</span>, score with rules + Gemini —{" "}
-                  <span className="text-zinc-300">confirm</span>, <span className="text-zinc-300">mixed signal</span>, or{" "}
-                  <span className="text-zinc-300">reject</span>. Live cards use a clock; the live tag clears after{" "}
-                  <span className="text-zinc-300">one chart bar</span> from the signal time (e.g. 5m feed → 5m window, daily →
-                  24h), matching the scan interval. No projected &quot;upcoming&quot; entries.
-                  {postAnalysis?.result ? " Your post-analysis outcome is included as extra context." : ""}
                 </p>
                 {marketNote ? <p className="text-xs text-muted-foreground mt-1">{marketNote}</p> : null}
               </>
