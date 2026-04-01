@@ -18,42 +18,22 @@ export function TradingSmartPricingMatrix() {
                 FEATURES
               </th>
 
-              <th className="py-6 px-6 text-center w-1/4 align-bottom">
+              <th className="py-6 px-6 text-center w-1/4">
                 <div className="font-bebas text-3xl text-white">Starter</div>
                 <div className="font-ibm-mono text-teal-400 mt-1">49$ /month</div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="mt-4 w-full max-w-[200px] mx-auto font-ibm-mono text-xs uppercase tracking-wider border-teal-500/40 text-teal-400 hover:bg-teal-500/10 hover:text-teal-300"
-                >
-                  Subscribe
-                </Button>
               </th>
 
-              <th className="py-6 px-6 text-center w-1/4 bg-amber-400/[0.03] border-x border-t border-amber-400/20 relative align-bottom">
+              <th className="py-6 px-6 text-center w-1/4 bg-amber-400/[0.03] border-x border-t border-amber-400/20 relative">
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2 font-ibm-mono text-[10px] bg-amber-400 text-black px-3 py-1 font-bold">
                   POPULAR
                 </div>
                 <div className="font-bebas text-3xl text-white">Growth</div>
                 <div className="font-ibm-mono text-amber-400 mt-1">99$ /month</div>
-                <Button
-                  type="button"
-                  className="mt-4 w-full max-w-[200px] mx-auto font-ibm-mono text-xs uppercase tracking-wider bg-amber-400 text-black hover:bg-amber-300"
-                >
-                  Subscribe
-                </Button>
               </th>
 
-              <th className="py-6 px-6 text-center w-1/4 align-bottom">
+              <th className="py-6 px-6 text-center w-1/4">
                 <div className="font-bebas text-3xl text-white">Professional</div>
                 <div className="font-ibm-mono text-teal-400 mt-1">199$ /month</div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="mt-4 w-full max-w-[200px] mx-auto font-ibm-mono text-xs uppercase tracking-wider border-teal-500/40 text-teal-400 hover:bg-teal-500/10 hover:text-teal-300"
-                >
-                  Subscribe
-                </Button>
               </th>
             </tr>
           </thead>
@@ -95,18 +75,47 @@ export function TradingSmartPricingMatrix() {
             <tr className="border-b border-zinc-800/50 hover:bg-white/[0.01]">
               <td className="py-5 px-4 font-light text-zinc-400 text-sm">Processing Speed</td>
               <td className="py-5 px-6 text-center text-zinc-700">—</td>
-              <td className="py-5 px-6 text-center bg-amber-400/[0.03] border-x border-b border-amber-400/20 font-ibm-mono text-sm">
+              <td className="py-5 px-6 text-center bg-amber-400/[0.03] border-x border-amber-400/20 font-ibm-mono text-sm">
                 Faster processing
               </td>
               <td className="py-5 px-6 text-center font-ibm-mono text-sm text-teal-400">
                 Faster config cycles
               </td>
             </tr>
-            <tr className="hover:bg-white/[0.01]">
+            <tr className="border-b border-zinc-800/50 hover:bg-white/[0.01]">
               <td className="py-5 px-4 font-light text-zinc-400 text-sm">Support Level</td>
               <td className="py-5 px-6 text-center font-ibm-mono text-sm">Standard support</td>
               <td className="py-5 px-6 text-center font-ibm-mono text-sm">Priority support</td>
               <td className="py-5 px-6 text-center font-ibm-mono text-sm text-teal-400">Dedicated support</td>
+            </tr>
+            <tr className="border-b border-zinc-800">
+              <td className="py-6 px-4 align-middle" aria-hidden />
+              <td className="py-6 px-6 text-center align-middle">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full max-w-[200px] mx-auto font-ibm-mono text-xs uppercase tracking-wider border-teal-500/40 text-teal-400 hover:bg-teal-500/10 hover:text-teal-300"
+                >
+                  Subscribe
+                </Button>
+              </td>
+              <td className="py-6 px-6 text-center align-middle bg-amber-400/[0.03] border-x border-b border-amber-400/20">
+                <Button
+                  type="button"
+                  className="w-full max-w-[200px] mx-auto font-ibm-mono text-xs uppercase tracking-wider bg-amber-400 text-black hover:bg-amber-300"
+                >
+                  Subscribe
+                </Button>
+              </td>
+              <td className="py-6 px-6 text-center align-middle">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full max-w-[200px] mx-auto font-ibm-mono text-xs uppercase tracking-wider border-teal-500/40 text-teal-400 hover:bg-teal-500/10 hover:text-teal-300"
+                >
+                  Subscribe
+                </Button>
+              </td>
             </tr>
           </tbody>
         </table>
