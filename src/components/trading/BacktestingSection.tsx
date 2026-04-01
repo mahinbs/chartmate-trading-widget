@@ -10,7 +10,7 @@
  *  - Historical "what-if": what would have happened if you ran this
  *    same strategy 1w / 1m / 3m / 6m / 1y ago
  */
-import { useEffect, useState, useCallback, Fragment, useRef } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
@@ -44,7 +44,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import {
-  BarChart3, Brain, ChevronLeft, ChevronRight, Download, ExternalLink,
+  BarChart3, Brain, ChevronLeft, ChevronRight, Download,
   Eye, ListFilter, Loader2, LineChart as LineChartIcon, Search, ShieldCheck, 
   Trash2, TrendingUp, X, Zap,
 } from "lucide-react";
@@ -172,6 +172,71 @@ type BacktestResult = {
     macd: number; macdSignal: number; high20d: number; low20d: number;
   };
 };
+
+/** Prefer `result_snapshot` (full run); else rebuild from summary + trades (equity curve may be empty). */
+function backtestResultFromHistoryRow(h: Record<string, unknown>): BacktestResult | null {
+  const snap = h.result_snapshot;
+  if (snap && typeof snap === "object" && snap !== null) {
+    const o = snap as Partial<BacktestResult>;
+    if (Array.isArray(o.trades)) return o as BacktestResult;
+  }
+  const trades = Array.isArray(h.trades) ? (h.trades as Trade[]) : [];
+  const s = (h.summary ?? {}) as Record<string, unknown>;
+  if (trades.length === 0 && Number(s.totalTrades ?? 0) === 0) return null;
+  const dailyReturns = Array.isArray(h.returns)
+    ? (h.returns as Array<{ date: string; returnPct: number }>)
+    : [];
+  const wins = trades.filter((t) => t.profitable).length;
+  const losses = Math.max(0, trades.length - wins);
+  return {
+    engine: "vectorbt",
+    action: String(h.action ?? "BUY"),
+    backtestPeriod: String(s.backtestPeriod ?? "—"),
+    symbol: String(h.symbol ?? ""),
+    exchange: String(h.exchange ?? "NSE"),
+    strategy: "",
+    usedCustomConditions: Boolean(s.usedCustomConditions),
+    totalTrades: Number(s.totalTrades ?? trades.length),
+    wins,
+    losses,
+    winRate: Number(s.winRate ?? (trades.length ? (wins / trades.length) * 100 : 0)),
+    totalReturn: Number(s.totalReturn ?? 0),
+    avgReturn: Number(s.avgReturn ?? s.expectancy ?? 0),
+    maxDrawdown: Number(s.maxDrawdown ?? 0),
+    profitFactor: Number(s.profitFactor ?? 0),
+    sharpeRatio: Number(s.sharpeRatio ?? 0),
+    bestTrade: Number(s.bestTrade ?? 0),
+    worstTrade: Number(s.worstTrade ?? 0),
+    avgHoldingDays: Number(s.avgHoldingDays ?? 0),
+    avgWin: Number(s.avgWin ?? 0),
+    avgLoss: Number(s.avgLoss ?? 0),
+    expectancy: Number(s.expectancy ?? 0),
+    maxWinStreak: Number(s.maxWinStreak ?? 0),
+    maxLossStreak: Number(s.maxLossStreak ?? 0),
+    exitReasonCounts:
+      s.exitReasonCounts && typeof s.exitReasonCounts === "object"
+        ? (s.exitReasonCounts as Record<string, number>)
+        : {},
+    trades,
+    equityCurve: [],
+    dailyReturns,
+    executionDaysApplied: null,
+    historicalSnapshots: Array.isArray(h.historical_snapshots)
+      ? (h.historical_snapshots as HistoricalSnapshot[])
+      : [],
+    strategyAchieved: Boolean(s.strategyAchieved),
+    achievementReason: "",
+    currentIndicators: {
+      price: 0,
+      sma20: 0,
+      rsi14: 0,
+      macd: 0,
+      macdSignal: 0,
+      high20d: 0,
+      low20d: 0,
+    },
+  };
+}
 
 /** First instrument from saved strategy `symbols` jsonb (strings or { symbol, exchange } rows). */
 function firstSymbolAndExchangeFromStrategy(cs: FullCustomStrategy): { symbol: string; exchange: string } | null {
@@ -778,7 +843,15 @@ function TradeDetailPopup({
                         <XAxis dataKey="label" tick={{ fill: "#52525b", fontSize: 9 }} axisLine={false} tickLine={false} />
                         <YAxis hide domain={['auto', 'auto']} />
                         <Tooltip
-                          contentStyle={{ background: "#09090b", border: "1px solid #27272a", borderRadius: 8, fontSize: 10 }}
+                          contentStyle={{
+                            background: "#09090b",
+                            border: "1px solid #27272a",
+                            borderRadius: 8,
+                            fontSize: 10,
+                            color: "#e4e4e7",
+                          }}
+                          itemStyle={{ color: "#e4e4e7" }}
+                          labelStyle={{ color: "#a1a1aa" }}
                           formatter={(v: number) => [`${v >= 0 ? "+" : ""}${v}%`, "Return"]}
                         />
                         <Bar dataKey="totalReturn" radius={[4, 4, 0, 0]}>
@@ -946,12 +1019,19 @@ function EquityCurveChart({
                     domain={["auto", "auto"]}
                   />
                   <Tooltip
-                    contentStyle={{ background: "#09090b", border: "1px solid #27272a", borderRadius: 8, fontSize: 11 }}
+                    contentStyle={{
+                      background: "#09090b",
+                      border: "1px solid #27272a",
+                      borderRadius: 8,
+                      fontSize: 11,
+                      color: "#e4e4e7",
+                    }}
+                    itemStyle={{ color: "#e4e4e7" }}
                     formatter={(v: number) => [fmtFull(Number(v)), "Portfolio value"]}
                     labelFormatter={(label) =>
                       formatEquityChartTickMs(typeof label === "number" ? label : Number(label))
                     }
-                    labelStyle={{ color: "#71717a", marginBottom: 4 }}
+                    labelStyle={{ color: "#a1a1aa", marginBottom: 4 }}
                   />
                   <ReferenceLine
                     y={initialCapital}
@@ -1024,9 +1104,16 @@ function TradeReturnsChart({ trades }: { trades: Trade[] }) {
                     orientation="right"
                   />
                   <Tooltip
-                    contentStyle={{ background: "#09090b", border: "1px solid #27272a", borderRadius: 8, fontSize: 11 }}
+                    contentStyle={{
+                      background: "#09090b",
+                      border: "1px solid #27272a",
+                      borderRadius: 8,
+                      fontSize: 11,
+                      color: "#e4e4e7",
+                    }}
+                    itemStyle={{ color: "#e4e4e7" }}
                     formatter={(v: number) => [`${v >= 0 ? "+" : ""}${v.toFixed(2)}%`, "Trade return"]}
-                    labelStyle={{ color: "#71717a", marginBottom: 4 }}
+                    labelStyle={{ color: "#a1a1aa", marginBottom: 4 }}
                   />
                   <ReferenceLine y={0} stroke="#52525b" strokeWidth={1} />
                   <ReferenceLine
@@ -1163,7 +1250,14 @@ function DailyPortfolioReturnsChart({ data }: { data: Array<{ date: string; retu
                     domain={["auto", "auto"]}
                   />
                   <Tooltip
-                    contentStyle={{ background: "#09090b", border: "1px solid #27272a", borderRadius: 8, fontSize: 11 }}
+                    contentStyle={{
+                      background: "#09090b",
+                      border: "1px solid #27272a",
+                      borderRadius: 8,
+                      fontSize: 11,
+                      color: "#e4e4e7",
+                    }}
+                    itemStyle={{ color: "#e4e4e7" }}
                     formatter={(v: number) => [
                       `${Number(v) >= 0 ? "+" : ""}${Number(v).toFixed(3)}%`,
                       "That day's return",
@@ -1242,8 +1336,17 @@ export default function BacktestingSection() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyPage, setHistoryPage] = useState(1);
   const historyPerPage = 10;
-  const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"trades" | "equity" | "returns" | "daily">("trades");
+  /** When set, the analysis dialog uses saved run metadata (not the current form). */
+  const [resultViewContext, setResultViewContext] = useState<{
+    mode: "strategy" | "simple";
+    stratLabel: string;
+    action: "BUY" | "SELL";
+    reportNotional: number;
+    displayCurrency: "INR" | "USD";
+    historyId: string | null;
+    savedAt?: string;
+  } | null>(null);
   const [resultPopupOpen, setResultPopupOpen] = useState(false);
   const [pdfExporting, setPdfExporting] = useState(false);
   const backtestPdfRef = useRef<HTMLDivElement>(null);
@@ -1341,8 +1444,14 @@ export default function BacktestingSection() {
     try {
       const { error } = await supabase.from("backtest_runs" as any).delete().eq("id", id);
       if (error) throw error;
-      setExpandedHistoryId(cur => (cur === id ? null : cur));
       setTradePopup(null);
+      if (resultViewContext?.historyId === id) {
+        setResultViewContext(null);
+        setResultPopupOpen(false);
+        setResult(null);
+      } else {
+        setResultViewContext((c) => (c?.historyId === id ? null : c));
+      }
       const n = await loadHistory();
       setHistoryPage(p => Math.min(p, Math.max(1, Math.ceil(n / historyPerPage))));
       toast.success("Removed from history");
@@ -1351,7 +1460,7 @@ export default function BacktestingSection() {
     } finally {
       setHistoryDeletingId(null);
     }
-  }, [loadHistory, historyPerPage]);
+  }, [loadHistory, historyPerPage, resultViewContext?.historyId]);
 
   const clearAllBacktestHistory = useCallback(async () => {
     setHistoryClearing(true);
@@ -1363,7 +1472,9 @@ export default function BacktestingSection() {
       }
       const { error } = await supabase.from("backtest_runs" as any).delete().eq("user_id", user.id);
       if (error) throw error;
-      setExpandedHistoryId(null);
+      setResultViewContext(null);
+      setResultPopupOpen(false);
+      setResult(null);
       setTradePopup(null);
       await loadHistory();
       setHistoryPage(1);
@@ -1387,6 +1498,58 @@ export default function BacktestingSection() {
       snapshots: d.historicalSnapshots ?? [],
       allTrades: d.trades ?? [],
     });
+  }, []);
+
+  const openHistoryBacktest = useCallback((h: Record<string, unknown>) => {
+    const restored = backtestResultFromHistoryRow(h);
+    if (!restored) {
+      toast.error("Could not load this backtest");
+      return;
+    }
+    const p = (h.params ?? {}) as Record<string, unknown>;
+    const cap =
+      p.initial_capital != null && p.initial_capital !== ""
+        ? Math.max(1000, parseFloat(String(p.initial_capital)) || 100000)
+        : 100000;
+    const cur = p.display_currency === "USD" ? "USD" : "INR";
+    const act = String(h.action ?? "BUY").toUpperCase() === "SELL" ? "SELL" : "BUY";
+    const hid = String(h.id ?? "");
+    setResultViewContext({
+      mode: h.mode === "simple" ? "simple" : "strategy",
+      stratLabel: String(h.strategy_label ?? "Backtest"),
+      action: act,
+      reportNotional: cap,
+      displayCurrency: cur,
+      historyId: hid.length > 0 ? hid : null,
+      savedAt: String(h.created_at ?? ""),
+    });
+    setResult(restored);
+    setTradesPage(1);
+    setActiveTab("trades");
+    setTradePopup(null);
+    setResultPopupOpen(true);
+  }, []);
+
+  const applyConfigFromHistoryRow = useCallback((h: Record<string, unknown>) => {
+    const p = (h.params ?? {}) as Record<string, unknown>;
+    setSymbol(String(h.symbol ?? ""));
+    setExchange(String(h.exchange ?? "NSE"));
+    setAction((String(h.action ?? "BUY").toUpperCase() === "SELL" ? "SELL" : "BUY") as "BUY" | "SELL");
+    if (p.stop_loss_pct != null) setSlPct(String(p.stop_loss_pct));
+    if (p.take_profit_pct != null) setTpPct(String(p.take_profit_pct));
+    if (p.days != null) setDays(String(p.days));
+    if (p.display_currency === "INR" || p.display_currency === "USD") {
+      setDisplayCurrency(p.display_currency);
+    }
+    if (p.initial_capital != null && p.initial_capital !== "") {
+      setInitialCapital(String(p.initial_capital));
+    }
+    const csid = p.custom_strategy_id;
+    if (csid != null && String(csid).length > 0) {
+      setSelectedCustomId(String(csid));
+    }
+    setResultPopupOpen(false);
+    toast.info("Config loaded — click Run Backtesting");
   }, []);
 
   const openTradeFromHistory = useCallback((t: Trade, row: Record<string, unknown>) => {
@@ -1471,6 +1634,15 @@ export default function BacktestingSection() {
       setLastBacktestClientMs(Math.round(performance.now() - runStarted));
       if (res.error || d?.error) { toast.error(String(d?.error ?? "Backtest failed")); return; }
       setResult(d);
+      setResultViewContext({
+        mode,
+        stratLabel,
+        action: selectedCustom?.trading_mode === "SHORT" ? "SELL" : action,
+        reportNotional: Math.max(1000, parseFloat(initialCapital) || 100000),
+        displayCurrency,
+        historyId: null,
+        savedAt: undefined,
+      });
       setResultPopupOpen(true);
 
       // Save to history
@@ -1506,6 +1678,7 @@ export default function BacktestingSection() {
             trades: Array.isArray(d.trades) ? d.trades : [],
             historical_snapshots: Array.isArray(d.historicalSnapshots) ? d.historicalSnapshots : [],
             returns: Array.isArray(d.dailyReturns) ? d.dailyReturns : [],
+            result_snapshot: d,
           });
           loadHistory();
         }
@@ -1614,134 +1787,13 @@ export default function BacktestingSection() {
     return null;
   })();
 
-  const renderHistoryDetailModal = () => {
-    const h = history.find(it => String((it as any).id) === expandedHistoryId);
-    if (!h) return <div className="p-8 text-center text-zinc-500">History record not found.</div>;
-    const s = (h as any).summary ?? {};
-    const ret = Number(s.totalReturn ?? 0);
-    const histTrades: Trade[] = Array.isArray((h as any).trades) ? (h as any).trades : [];
-
-    return (
-      <div className="flex min-h-0 flex-1 flex-col w-full">
-        <div className="shrink-0 border-b border-zinc-800 px-5 py-4">
-          <DialogHeader className="space-y-1">
-            <DialogTitle className="text-white text-lg flex items-center gap-2">
-               Backtest Details: <span className="font-mono text-teal-400 capitalize">{(h as any).symbol}</span>
-            </DialogTitle>
-            <div className="text-zinc-500 text-xs flex items-center gap-3">
-              <span>{(h as any).strategy_label ?? (h as any).mode}</span>
-              <span>•</span>
-              <span>{new Date((h as any).created_at).toLocaleString()}</span>
-            </div>
-          </DialogHeader>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 space-y-4">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <StatCard label="Win Rate" value={`${s.winRate ?? "—"}%`} color={Number(s.winRate) >= 50 ? "green" : "red"} />
-            <StatCard label="Return" value={`${ret >= 0 ? "+" : ""}${s.totalReturn ?? "—"}%`} color={ret >= 0 ? "green" : "red"} />
-            <StatCard label="Max DD" value={`${s.maxDrawdown ?? "—"}%`} color="red" />
-            <StatCard label="Sharpe" value={s.sharpeRatio ?? "—"} />
-            {s.bestTrade != null && <StatCard label="Best" value={`+${s.bestTrade}%`} color="green" />}
-            {s.worstTrade != null && <StatCard label="Worst" value={`${s.worstTrade}%`} color="red" />}
-            {s.avgHoldingDays != null && <StatCard label="Avg Hold" value={`${s.avgHoldingDays}d`} />}
-            {s.expectancy != null && <StatCard label="Expectancy" value={`${Number(s.expectancy) >= 0 ? "+" : ""}${s.expectancy}%`} color={Number(s.expectancy) >= 0 ? "green" : "red"} />}
-          </div>
-
-          <DailyPortfolioReturnsChart data={(h as any).returns || []} />
-
-          {histTrades.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Trade history ({histTrades.length})</p>
-              <div className="rounded-lg border border-zinc-800 overflow-hidden bg-black/20">
-                <table className="w-full text-xs">
-                  <thead className="bg-zinc-900 border-b border-zinc-800 sticky top-0">
-                    <tr className="text-zinc-500">
-                      <th className="text-left px-3 py-2">#</th>
-                      <th className="text-left px-3 py-2">Entry</th>
-                      <th className="text-left px-3 py-2">Exit</th>
-                      <th className="text-right px-3 py-2">Hold</th>
-                      <th className="text-right px-3 py-2">Px In</th>
-                      <th className="text-right px-3 py-2">Px Out</th>
-                      <th className="text-right px-3 py-2">Ret%</th>
-                      <th className="text-center px-3 py-2">Why</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {histTrades.map((t, ti) => (
-                      <tr key={ti}
-                        className="border-t border-zinc-800/50 cursor-pointer hover:bg-zinc-800/40 transition-colors"
-                        onClick={e => { e.stopPropagation(); openTradeFromHistory(t, h as Record<string, unknown>); }}>
-                        <td className="px-3 py-2.5 text-zinc-600 font-mono">{t.tradeNo ?? ti + 1}</td>
-                        <td className="px-3 py-2.5 text-zinc-300 font-mono">{t.entryDate}</td>
-                        <td className="px-3 py-2.5 text-zinc-300 font-mono">{t.exitDate}</td>
-                        <td className="px-3 py-2.5 text-right text-zinc-400 font-mono">{t.holdingDays ?? "—"}</td>
-                        <td className="px-3 py-2.5 text-right text-zinc-300 font-mono">{t.entryPrice ?? "—"}</td>
-                        <td className="px-3 py-2.5 text-right text-zinc-300 font-mono">{t.exitPrice ?? "—"}</td>
-                        <td className={`px-3 py-2.5 text-right font-mono font-semibold ${t.profitable ? "text-emerald-400" : "text-red-400"}`}>
-                          {t.returnPct >= 0 ? "+" : ""}{t.returnPct}%
-                        </td>
-                        <td className="px-3 py-2.5 text-center"><ExitReasonBadge reason={t.exitReason ?? "unknown"} /></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="flex shrink-0 items-center justify-between gap-3 border-t border-zinc-800 bg-zinc-950 px-5 py-3 pr-14 sm:pr-5">
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" className="border-teal-700/50 text-teal-300 text-xs"
-              onClick={e => {
-                e.stopPropagation();
-                const p = (h as any).params ?? {};
-                setSymbol(String((h as any).symbol ?? ""));
-                setExchange(String((h as any).exchange ?? "NSE"));
-                setAction(((h as any).action === "SELL" ? "SELL" : "BUY") as "BUY" | "SELL");
-                if (p.stop_loss_pct) setSlPct(String(p.stop_loss_pct));
-                if (p.take_profit_pct) setTpPct(String(p.take_profit_pct));
-                if (p.days) setDays(String(p.days));
-                if (p.display_currency === "INR" || p.display_currency === "USD") {
-                  setDisplayCurrency(p.display_currency);
-                }
-                if (p.initial_capital != null && p.initial_capital !== "") {
-                  setInitialCapital(String(p.initial_capital));
-                }
-                const csid = p.custom_strategy_id;
-                if (csid != null && String(csid).length > 0) {
-                  setSelectedCustomId(String(csid));
-                }
-                setExpandedHistoryId(null);
-                toast.info("Config loaded — click Run Backtesting");
-              }}>
-              <Zap className="h-3 w-3 mr-1" /> Re-run this config
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="border-red-900/30 text-zinc-500 hover:text-red-400 hover:bg-red-950/20"
-              disabled={historyDeletingId === expandedHistoryId}
-              onClick={e => {
-                e.stopPropagation();
-                if (expandedHistoryId) void deleteHistoryRun(expandedHistoryId);
-              }}
-            >
-               {historyDeletingId === expandedHistoryId
-                ? <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                : <Trash2 className="h-4 w-4 mr-2" />}
-               Delete run
-            </Button>
-          </div>
-          <Button variant="ghost" size="sm" onClick={() => setExpandedHistoryId(null)}>Close</Button>
-        </div>
-      </div>
-    );
-  };
-
-  const strategyTitleForPdf = mode === "strategy" ? stratLabel : `Simple ${action}`;
+  const rv = resultViewContext;
+  const rvMode = rv?.mode ?? mode;
+  const rvStrat = rv?.stratLabel ?? stratLabel;
+  const rvAction = rv?.action ?? action;
+  const rvNotional = rv?.reportNotional ?? reportNotional;
+  const rvCurrency = rv?.displayCurrency ?? displayCurrency;
+  const strategyTitleForPdf = rvMode === "strategy" ? rvStrat : `Simple ${rvAction}`;
 
   return (
     <>
@@ -2001,6 +2053,11 @@ export default function BacktestingSection() {
                 {result && (
                   <p className="text-zinc-500 text-[10px] sm:text-xs font-mono">
                     {result.symbol} · {result.exchange} · {result.backtestPeriod}
+                    {resultViewContext?.historyId && resultViewContext.savedAt ? (
+                      <span className="block text-zinc-600 mt-1">
+                        Saved run · {new Date(resultViewContext.savedAt).toLocaleString()}
+                      </span>
+                    ) : null}
                   </p>
                 )}
               </DialogHeader>
@@ -2022,7 +2079,7 @@ export default function BacktestingSection() {
                       <div>
                         <div className="flex items-center gap-3 mb-2">
                           <h2 className="text-teal-400 font-bold text-xl tracking-tight">
-                            {mode === "strategy" ? stratLabel : `Simple ${action}`}
+                            {rvMode === "strategy" ? rvStrat : `Simple ${rvAction}`}
                           </h2>
                           {result.usedCustomConditions && (
                             <Badge className="bg-teal-500/10 text-teal-300 border-teal-500/30 text-[9px] px-2 py-0">CUSTOM LOGIC</Badge>
@@ -2197,11 +2254,17 @@ export default function BacktestingSection() {
 
                         {activeTab === "equity" && (
                           <div className="max-w-5xl mx-auto py-4">
-                            <EquityCurveChart
-                              data={result.equityCurve}
-                              initialCapital={Number(initialCapital)}
-                              displayCurrency={displayCurrency}
-                            />
+                            {result.equityCurve && result.equityCurve.length > 0 ? (
+                              <EquityCurveChart
+                                data={result.equityCurve}
+                                initialCapital={rvNotional}
+                                displayCurrency={rvCurrency}
+                              />
+                            ) : (
+                              <p className="text-sm text-zinc-500 text-center py-12 border border-dashed border-zinc-800 rounded-xl">
+                                Equity curve was not stored for this run (older history). Run a new backtest to save the full chart.
+                              </p>
+                            )}
                           </div>
                         )}
 
@@ -2236,24 +2299,59 @@ export default function BacktestingSection() {
               )}
             </div>
 
-            <div className="shrink-0 border-t border-zinc-900 p-5 bg-zinc-950 flex flex-col sm:flex-row justify-between items-center gap-4">
-              <div className="flex items-center gap-2 text-zinc-600 text-[10px] uppercase font-bold tracking-widest">
-                <ShieldCheck className="h-3.5 w-3.5 text-teal-600/50" />
-                Verified Backtest Service
-              </div>
-              <div className="flex gap-3 w-full sm:w-auto">
-                <Button variant="outline" size="sm" onClick={() => setResultPopupOpen(false)} className="flex-1 sm:flex-none border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-900">
-                  Close Analysis
-                </Button>
-                <Button
-                  size="sm"
-                  className="flex-1 sm:flex-none bg-teal-600 hover:bg-teal-500 shadow-lg shadow-teal-500/10"
-                  disabled={pdfExporting}
-                  onClick={() => void handleExportBacktestPdf()}
-                >
-                  {pdfExporting ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <Download className="h-3.5 w-3.5 mr-2" />}
-                  {pdfExporting ? "Building PDF…" : "Export PDF Report"}
-                </Button>
+            <div className="shrink-0 border-t border-zinc-900 p-5 bg-zinc-950 flex flex-col gap-3">
+              {resultViewContext?.historyId ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="border-teal-700/50 text-teal-300 text-xs"
+                    onClick={() => {
+                      const row = history.find((it) => String((it as { id?: string }).id) === resultViewContext.historyId);
+                      if (row) applyConfigFromHistoryRow(row as Record<string, unknown>);
+                    }}
+                  >
+                    <Zap className="h-3 w-3 mr-1" /> Re-run this config
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="border-red-900/40 text-zinc-400 hover:text-red-400"
+                    disabled={historyDeletingId === resultViewContext.historyId}
+                    onClick={() => {
+                      if (resultViewContext.historyId) void deleteHistoryRun(resultViewContext.historyId);
+                    }}
+                  >
+                    {historyDeletingId === resultViewContext.historyId ? (
+                      <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-3.5 w-3.5 mr-2" />
+                    )}
+                    Remove from history
+                  </Button>
+                </div>
+              ) : null}
+              <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                <div className="flex items-center gap-2 text-zinc-600 text-[10px] uppercase font-bold tracking-widest">
+                  <ShieldCheck className="h-3.5 w-3.5 text-teal-600/50" />
+                  Verified Backtest Service
+                </div>
+                <div className="flex gap-3 w-full sm:w-auto">
+                  <Button variant="outline" size="sm" onClick={() => setResultPopupOpen(false)} className="flex-1 sm:flex-none border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-900">
+                    Close Analysis
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="flex-1 sm:flex-none bg-teal-600 hover:bg-teal-500 shadow-lg shadow-teal-500/10"
+                    disabled={pdfExporting}
+                    onClick={() => void handleExportBacktestPdf()}
+                  >
+                    {pdfExporting ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <Download className="h-3.5 w-3.5 mr-2" />}
+                    {pdfExporting ? "Building PDF…" : "Export PDF Report"}
+                  </Button>
+                </div>
               </div>
             </div>
           </DialogContent>
@@ -2310,85 +2408,57 @@ export default function BacktestingSection() {
             <p className="text-xs text-zinc-600">No backtests saved yet.</p>
           ) : (
             <>
-              <div className="rounded border border-zinc-800 overflow-hidden">
-                <table className="w-full text-[11px]">
-                  <thead className="bg-zinc-950 sticky top-0">
-                    <tr className="text-zinc-500">
-                      <th className="text-left px-2 py-2">Time</th>
-                      <th className="text-left px-2 py-2">Symbol</th>
-                      <th className="text-left px-2 py-2">Strategy</th>
-                      <th className="text-right px-2 py-2">Trades</th>
-                      <th className="text-right px-2 py-2">WR</th>
-                      <th className="text-right px-2 py-2">Return</th>
-                      <th className="text-center px-2 py-2 w-10"> </th>
-                      <th className="text-center px-2 py-2">▾</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {history.slice((historyPage - 1) * historyPerPage, historyPage * historyPerPage).map(h => {
-                      const s = (h as any).summary ?? {};
-                      const ret = Number(s.totalReturn ?? 0);
-                      const hId = String((h as any).id);
-                      const isExp = expandedHistoryId === hId;
-                      const histTrades: Trade[] = Array.isArray((h as any).trades) ? (h as any).trades : [];
-                      return (
-                        <Fragment key={hId}>
-                            <tr 
-                              className="border-t border-zinc-800/60 hover:bg-zinc-800/30 transition-colors cursor-pointer"
-                              onClick={() => setExpandedHistoryId(hId)}
-                            >
-                              <td className="px-2 py-2 text-zinc-500 font-mono">
-                                {String((h as any).created_at ?? "").slice(0, 16).replace("T", " ")}
-                              </td>
-                              <td className="px-2 py-2 text-zinc-200 font-mono">
-                                {String((h as any).symbol ?? "—")}
-                              </td>
-                              <td className="px-2 py-2 text-zinc-400 flex items-center gap-1">
-                                {String((h as any).strategy_label ?? (h as any).mode ?? "—")}
-                                {s.usedCustomConditions && (
-                                  <Badge className="bg-teal-900/60 text-teal-300 border-teal-700 text-[9px] px-1 py-0 ml-1">
-                                    CC
-                                  </Badge>
-                                )}
-                              </td>
-                              <td className="px-2 py-2 text-right text-zinc-300 font-mono">
-                                {String(s.totalTrades ?? "—")}
-                              </td>
-                              <td className="px-2 py-2 text-right text-zinc-300 font-mono">
-                                {String(s.winRate ?? "—")}%
-                              </td>
-                              <td className={`px-2 py-2 text-right font-mono font-semibold ${ret >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                                {ret >= 0 ? "+" : ""}{String(s.totalReturn ?? "—")}%
-                              </td>
-                              <td className="px-2 py-2 text-center">
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-8 w-8 p-0 text-zinc-500 hover:text-red-400 hover:bg-red-950/30"
-                                  title="Delete this run"
-                                  disabled={historyDeletingId === hId}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    void deleteHistoryRun(hId);
-                                  }}
-                                >
-                                  {historyDeletingId === hId ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <Trash2 className="h-4 w-4" />
-                                  )}
-                                </Button>
-                              </td>
-                              <td className="px-2 py-2 text-center text-zinc-500">
-                                <ExternalLink className="h-4 w-4" />
-                              </td>
-                            </tr>
-                          </Fragment>
-                        );
-                      })}
-                  </tbody>
-                </table>
+              <p className="text-[10px] text-zinc-600">
+                Tap a row to open the same full analysis view as after a fresh run (trades, equity, return distribution, daily returns).
+              </p>
+              <div className="space-y-1.5">
+                {history.slice((historyPage - 1) * historyPerPage, historyPage * historyPerPage).map((h) => {
+                  const s = (h as { summary?: Record<string, unknown> }).summary ?? {};
+                  const ret = Number(s.totalReturn ?? 0);
+                  const hId = String((h as { id?: string }).id);
+                  const when = String((h as { created_at?: string }).created_at ?? "").slice(0, 16).replace("T", " ");
+                  const sym = String((h as { symbol?: string }).symbol ?? "—");
+                  const strat = String((h as { strategy_label?: string; mode?: string }).strategy_label ?? (h as { mode?: string }).mode ?? "—");
+                  return (
+                    <div key={hId} className="flex items-stretch gap-1 rounded-lg border border-zinc-800/80 bg-zinc-950/40 hover:border-teal-500/25 transition-colors">
+                      <button
+                        type="button"
+                        className="min-w-0 flex-1 text-left px-3 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-1"
+                        onClick={() => openHistoryBacktest(h as Record<string, unknown>)}
+                      >
+                        <span className="text-[10px] text-zinc-500 font-mono shrink-0">{when}</span>
+                        <span className="text-xs font-mono text-zinc-200 shrink-0">{sym}</span>
+                        <span className="text-[11px] text-zinc-400 min-w-0 truncate flex items-center gap-1">
+                          {strat}
+                          {s.usedCustomConditions ? (
+                            <Badge className="bg-teal-900/60 text-teal-300 border-teal-700 text-[9px] px-1 py-0 shrink-0">CC</Badge>
+                          ) : null}
+                        </span>
+                        <span className="text-[11px] text-zinc-500 font-mono ml-auto shrink-0">
+                          {String(s.totalTrades ?? "—")} trades · WR {String(s.winRate ?? "—")}%
+                          <span className={`ml-2 font-semibold ${ret >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                            {ret >= 0 ? "+" : ""}
+                            {String(s.totalReturn ?? "—")}%
+                          </span>
+                        </span>
+                      </button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-auto px-2 rounded-l-none text-zinc-500 hover:text-red-400 hover:bg-red-950/30 shrink-0"
+                        title="Delete this run"
+                        disabled={historyDeletingId === hId}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void deleteHistoryRun(hId);
+                        }}
+                      >
+                        {historyDeletingId === hId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                  );
+                })}
               </div>
 
               <div className="flex items-center justify-between pt-1">
@@ -2409,12 +2479,6 @@ export default function BacktestingSection() {
           )}
         </div>
       </CardContent>
-
-      <Dialog open={!!expandedHistoryId} onOpenChange={(open) => !open && setExpandedHistoryId(null)}>
-        <DialogContent className="flex h-[92vh] max-h-[92vh] w-full !max-w-[95vw] mx-auto flex-col gap-0 !overflow-hidden border-zinc-800 bg-zinc-950 p-0 sm:!max-w-[98vw]">
-          {renderHistoryDetailModal()}
-        </DialogContent>
-      </Dialog>
 
       {/* Trade detail popup — shared between live result and history trades */}
       {tradePopup && (
@@ -2555,11 +2619,15 @@ export default function BacktestingSection() {
 
         <section className="mb-6 rounded-xl border border-zinc-800 bg-zinc-950 p-4 text-white">
           <h2 className="mb-3 text-[11px] font-bold uppercase tracking-wider text-zinc-400">4. Equity curve</h2>
-          <EquityCurveChart
-            data={result.equityCurve}
-            initialCapital={reportNotional}
-            displayCurrency={displayCurrency}
-          />
+          {result.equityCurve && result.equityCurve.length > 0 ? (
+            <EquityCurveChart
+              data={result.equityCurve}
+              initialCapital={rvNotional}
+              displayCurrency={rvCurrency}
+            />
+          ) : (
+            <p className="text-[10px] text-zinc-500">Equity curve not available for this export.</p>
+          )}
         </section>
 
         <section className="mb-6 rounded-xl border border-zinc-800 bg-zinc-950 p-4 text-white">

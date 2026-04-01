@@ -34,6 +34,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useTradingIntegration } from "@/hooks/useTradingIntegration";
 import { TradingIntegrationModal } from "@/components/trading/TradingIntegrationModal";
 import { useSubscription } from "@/hooks/useSubscription";
+import { isAnalysisExceptionEmail } from "@/lib/manualSubscriptionBypass";
 import YahooChartPanel from "@/components/YahooChartPanel";
 import { DashboardShellLayout } from "@/components/layout/DashboardShellLayout";
 
@@ -76,6 +77,8 @@ export default function HomePage() {
     : isAlgoProvisioned
       ? "/trading-dashboard"
       : "/algo-setup";
+
+  const canSeePredictPast = isAnalysisExceptionEmail(user?.email);
 
   useEffect(() => {
     const fetchRecentNews = async () => {
@@ -420,45 +423,30 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* SECONDARY ROW (2 Col) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Link
-                to={
-                  hasAnalysisAccess
-                    ? "/predictions"
-                    : "/pricing?feature=analysis"
-                }
-                className="block outline-none group"
-              >
-                <div
-                  className={`glass-card-premium p-6 transition-all h-full flex flex-col justify-center shadow-md shadow-background/10 relative overflow-hidden ${
-                    hasAnalysisAccess
-                      ? "hover:border-primary/30 group-hover:bg-white/10"
-                      : "opacity-80 border-dashed border-muted-foreground/25"
-                  }`}
-                >
-                  <div className="absolute inset-0 w-[40%] h-[40%] blur-3xl bg-secondary opacity-50 transition-opacity duration-700 -translate-x-1/2 left-1/2 top-1/2"></div>
-                  <div className="relative z-[2] flex items-center gap-5">
-                    <div className="p-3 bg-muted border border-border/50 rounded-xl shrink-0 group-hover:bg-muted/80 transition-colors shadow-sm">
-                      <Activity className="h-5 w-5 text-foreground/80 group-hover:text-primary transition-colors" />
-                    </div>
-                    <div>
-                      <p className="font-bold text-foreground text-[17px] tracking-tight">
-                        Past Analyses
-                        {!hasAnalysisAccess && (
-                          <span className="ml-2 text-xs font-normal text-muted-foreground">
-                            (Probability / Pro)
-                          </span>
-                        )}
-                      </p>
-                      <p className="text-[13px] font-medium text-muted-foreground/80 mt-1">
-                        Review your complete analysis history and AI
-                        performance.
-                      </p>
+            {/* SECONDARY ROW — Past Analyses only for exception accounts; Paper Trade for analysis tier */}
+            <div
+              className={`grid grid-cols-1 gap-6 ${canSeePredictPast ? "md:grid-cols-2" : ""}`}
+            >
+              {canSeePredictPast && (
+                <Link to="/predictions" className="block outline-none group">
+                  <div className="glass-card-premium p-6 transition-all h-full flex flex-col justify-center shadow-md shadow-background/10 relative overflow-hidden hover:border-primary/30 group-hover:bg-white/10">
+                    <div className="absolute inset-0 w-[40%] h-[40%] blur-3xl bg-secondary opacity-50 transition-opacity duration-700 -translate-x-1/2 left-1/2 top-1/2" />
+                    <div className="relative z-[2] flex items-center gap-5">
+                      <div className="p-3 bg-muted border border-border/50 rounded-xl shrink-0 group-hover:bg-muted/80 transition-colors shadow-sm">
+                        <Activity className="h-5 w-5 text-foreground/80 group-hover:text-primary transition-colors" />
+                      </div>
+                      <div>
+                        <p className="font-bold text-foreground text-[17px] tracking-tight">
+                          Past Analyses
+                        </p>
+                        <p className="text-[13px] font-medium text-muted-foreground/80 mt-1">
+                          Review your complete analysis history and AI performance.
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </Link>
+                </Link>
+              )}
               <Link
                 to={
                   hasAnalysisAccess

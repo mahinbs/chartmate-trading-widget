@@ -15,6 +15,7 @@ import AuthPage from "./pages/AuthPage";
 import BrokerCallbackPage from "./pages/BrokerCallbackPage";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AnalysisFeatureGate } from "./components/AnalysisFeatureGate";
+import { PredictPastAnalysisGate } from "./components/PredictPastAnalysisGate";
 import { TradesHubGate } from "./components/TradesHubGate";
 import LandingPage from "./pages/LandingPage";
 import WhiteLabelPage from "./pages/WhiteLabelPage";
@@ -239,13 +240,13 @@ const App = () => (
                   </ProtectedRoute>
                 }
               />
-              {/* <Route
+              <Route
                 path="/predict"
                 element={
                   <ProtectedRoute>
-                    <AnalysisFeatureGate>
+                    <PredictPastAnalysisGate>
                       <PredictPage />
-                    </AnalysisFeatureGate>
+                    </PredictPastAnalysisGate>
                   </ProtectedRoute>
                 }
               />
@@ -253,19 +254,19 @@ const App = () => (
                 path="/predictions"
                 element={
                   <ProtectedRoute>
-                    <AnalysisFeatureGate>
+                    <PredictPastAnalysisGate>
                       <PredictionsPage />
-                    </AnalysisFeatureGate>
+                    </PredictPastAnalysisGate>
                   </ProtectedRoute>
                 }
-              /> */}
+              />
               <Route
                 path="/predictions/:predictionId/full"
                 element={
                   <ProtectedRoute>
-                    <AnalysisFeatureGate>
+                    <PredictPastAnalysisGate>
                       <SavedAnalysisRedirect />
-                    </AnalysisFeatureGate>
+                    </PredictPastAnalysisGate>
                   </ProtectedRoute>
                 }
               />

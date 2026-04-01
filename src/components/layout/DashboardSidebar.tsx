@@ -21,6 +21,7 @@ import logo from "@/assets/logo.png";
 import { useAuth } from "@/hooks/useAuth";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useSubscription } from "@/hooks/useSubscription";
+import { isAnalysisExceptionEmail } from "@/lib/manualSubscriptionBypass";
 import { supabase } from "@/integrations/supabase/client";
 import type { DashboardNavLink } from "./dashboard-nav-types";
 import { isDashboardNavActive } from "./dashboard-nav-types";
@@ -35,8 +36,10 @@ export interface DashboardSidebarProps {
 
 function useDashboardNavLinks(): DashboardNavLink[] {
   const { isAdmin } = useAdmin();
-  const { hasAlgoAccess, hasAnalysisAccess } = useSubscription();
+  const { hasAlgoAccess } = useSubscription();
   const { user } = useAuth();
+  /** New Analysis + Past Analyses — exception list only (not all Pro / Probability users). */
+  const canSeePredictPastTabs = isAnalysisExceptionEmail(user?.email);
   const [algoStatus, setAlgoStatus] = useState<string | null>(null);
 
   useEffect(() => {
@@ -61,26 +64,24 @@ function useDashboardNavLinks(): DashboardNavLink[] {
   return useMemo(() => {
     const next: DashboardNavLink[] = [
       { to: "/home", label: "Dashboard", icon: LayoutDashboard },
-      // {
-      //   to: hasAnalysisAccess ? "/predict" : "/pricing?feature=analysis",
-      //   label: "New Analysis",
-      //   icon: LineChart,
-      //   locked: !hasAnalysisAccess,
-      // },
-      // {
-      //   to: hasAnalysisAccess ? "/predictions" : "/pricing?feature=analysis",
-      //   label: "Past Analyses",
-      //   icon: Activity,
-      //   iconOpacity: "",
-      //   locked: !hasAnalysisAccess,
-      // },
+      ...(canSeePredictPastTabs
+        ? [
+            {
+              to: "/predict",
+              label: "New Analysis",
+              icon: LineChart,
+            } as DashboardNavLink,
+            {
+              to: "/predictions",
+              label: "Past Analyses",
+              icon: Activity,
+            } as DashboardNavLink,
+          ]
+        : []),
       {
-        to: hasAnalysisAccess
-          ? "/active-trades?tab=performance"
-          : "/pricing?feature=analysis",
+        to: "/active-trades?tab=performance",
         label: "Paper Trade Performance",
         icon: BarChart3,
-        locked: !hasAnalysisAccess,
       },
       { to: "/news", label: "News Feed", icon: Newspaper },
     ];
@@ -111,21 +112,17 @@ function useDashboardNavLinks(): DashboardNavLink[] {
       });
     }
 
-    const aiTo = canUseAlgoTools ? "/ai-trading-analysis" : "/pricing";
-    const backtestTo = canUseAlgoTools ? "/backtest" : "/pricing";
     next.push({
-      to: aiTo,
+      to: "/ai-trading-analysis",
       label: "AI Trading Analysis",
       icon: Target,
       iconColor: "text-primary opacity-80",
-      ...(canUseAlgoTools ? {} : { matchActive: false }),
     });
     next.push({
-      to: backtestTo,
+      to: "/backtest",
       label: "Backtesting",
       icon: LineChart,
       iconColor: "text-primary opacity-80",
-      ...(canUseAlgoTools ? {} : { matchActive: false }),
     });
 
     next.push({
@@ -145,7 +142,7 @@ function useDashboardNavLinks(): DashboardNavLink[] {
     }
 
     return next;
-  }, [isAdmin, hasAlgoAccess, hasAnalysisAccess, canUseAlgoTools]);
+  }, [isAdmin, hasAlgoAccess, canUseAlgoTools, canSeePredictPastTabs]);
 }
 
 export function DashboardSidebar({

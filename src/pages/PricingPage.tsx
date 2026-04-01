@@ -11,6 +11,7 @@ import { PRICING_PLANS } from "@/constants/pricing";
 import { useAuth } from "@/hooks/useAuth";
 import { useSubscription } from "@/hooks/useSubscription";
 import { isMidTierEligibleForProOnlyUpgrade } from "@/lib/subscriptionEntitlements";
+import { isAnalysisExceptionEmail } from "@/lib/manualSubscriptionBypass";
 import { supabase } from "@/integrations/supabase/client";
 import {
   createBillingPortalSession,
@@ -61,14 +62,17 @@ const PricingPage = () => {
     const f = searchParams.get("feature");
 
     if (user?.id && f === "analysis" && hasAnalysisAccess) {
-      navigate("/predict", { replace: true });
+      navigate(
+        isAnalysisExceptionEmail(user.email) ? "/predict" : "/home",
+        { replace: true },
+      );
       return;
     }
     if (user?.id && f === "algo" && hasAlgoAccess) {
       navigate("/trading-dashboard", { replace: true });
       return;
     }
-    if (user?.id && f === "trades" && (hasAlgoAccess || hasAnalysisAccess)) {
+    if (user?.id && f === "trades") {
       navigate("/active-trades", { replace: true });
       return;
     }

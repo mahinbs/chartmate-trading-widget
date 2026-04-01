@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Check, ChevronsUpDown, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,27 @@ export function SymbolSearch({
   const [searchQuery, setSearchQuery] = useState("");
   const [symbols, setSymbols] = useState<SymbolData[]>([]);
   const [loading, setLoading] = useState(false);
+
+  const handleOpenChange = useCallback(
+    (next: boolean) => {
+      setOpen(next);
+      if (next) {
+        setSearchQuery(value || "");
+      } else {
+        setSearchQuery("");
+      }
+    },
+    [value]
+  );
+
+  // Keep parent value in sync while typing (e.g. modal Continue uses value before pick).
+  useEffect(() => {
+    if (!open) return;
+    const id = window.setTimeout(() => {
+      onValueChange(searchQuery);
+    }, 200);
+    return () => window.clearTimeout(id);
+  }, [searchQuery, open, onValueChange]);
 
   // Search symbols using Supabase edge function for global market coverage
   const searchSymbols = async (query: string): Promise<SymbolData[]> => {
@@ -85,29 +106,43 @@ export function SymbolSearch({
   const selectedSymbol = symbols.find(s => s.full_symbol === value) || visibleSymbols.find(s => s.full_symbol === value);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange} modal>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className="w-full justify-between hover:bg-background focus:bg-background data-[state=open]:bg-background data-[state=open]:ring-2 data-[state=open]:ring-primary/40 min-w-0"
+          className="w-full justify-between hover:bg-background focus:bg-background data-[state=open]:bg-background data-[state=open]:ring-2 data-[state=open]:ring-primary/40 min-w-0 font-normal"
         >
-          {selectedSymbol ? (
+          {open ? (
+            <span
+              className={cn(
+                "truncate text-left flex-1 text-sm min-w-0",
+                searchQuery ? "text-foreground" : "text-muted-foreground"
+              )}
+            >
+              {searchQuery || placeholder}
+            </span>
+          ) : selectedSymbol ? (
             <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
-              <span className="font-medium shrink-0">{selectedSymbol.symbol}</span>
+              <span className="font-medium shrink-0 text-foreground">{selectedSymbol.symbol}</span>
               <Badge variant="outline" className={cn("shrink-0 hidden sm:inline-flex", getTypeColor(selectedSymbol.type))}>
                 {selectedSymbol.type}
               </Badge>
               <span className="text-muted-foreground truncate text-sm">{selectedSymbol.description}</span>
             </div>
+          ) : value ? (
+            <span className="text-foreground truncate text-left flex-1 text-sm min-w-0">{value}</span>
           ) : (
             <span className="text-muted-foreground truncate text-left flex-1 text-sm min-w-0">{placeholder}</span>
           )}
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border border-white/10 shadow-xl z-50" align="start">
+      <PopoverContent
+        className="w-[var(--radix-popover-trigger-width)] p-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border border-white/10 shadow-xl z-[1100]"
+        align="start"
+      >
         <Command>
           <CommandInput
             placeholder="Search stocks, crypto, forex..."
@@ -133,8 +168,10 @@ export function SymbolSearch({
                     value={symbol.full_symbol}
                     className="px-2 md:px-4 py-3 cursor-pointer hover:!bg-accent/50"
                     onSelect={(currentValue) => {
-                      onValueChange(currentValue === value ? "" : currentValue);
+                      const next = currentValue === value ? "" : currentValue;
+                      onValueChange(next);
                       onSelectSymbol?.(symbol);
+                      setSearchQuery("");
                       setOpen(false);
                     }}
                   >

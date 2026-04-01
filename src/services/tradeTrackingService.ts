@@ -61,6 +61,14 @@ export interface TradeNotification {
 }
 
 class TradeTrackingService {
+  private async getCurrentUserId(): Promise<string | null> {
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser();
+    if (error || !user) return null;
+    return user.id;
+  }
   
   /**
    * Start a new trade tracking session
@@ -107,9 +115,13 @@ class TradeTrackingService {
    */
   async getActiveTrades() {
     try {
+      const userId = await this.getCurrentUserId();
+      if (!userId) return { data: [], error: null };
+
       const { data, error } = await supabase
         .from('active_trades')
         .select('*')
+        .eq('user_id', userId)
         .in('status', ['active', 'monitoring', 'exit_zone'])
         .order('entry_time', { ascending: false });
 
@@ -134,9 +146,13 @@ class TradeTrackingService {
    */
   async getCompletedTrades(limit: number = 50) {
     try {
+      const userId = await this.getCurrentUserId();
+      if (!userId) return { data: [], error: null };
+
       const { data, error } = await supabase
         .from('active_trades')
         .select('*')
+        .eq('user_id', userId)
         .in('status', ['completed', 'stopped_out', 'target_hit', 'cancelled'])
         .order('exit_time', { ascending: false })
         .limit(limit);
@@ -156,9 +172,13 @@ class TradeTrackingService {
    */
   async getLastUsedStrategy(): Promise<{ strategyType: string; product: string } | null> {
     try {
+      const userId = await this.getCurrentUserId();
+      if (!userId) return null;
+
       const { data, error } = await supabase
         .from('active_trades')
         .select('strategy_type, product, entry_time')
+        .eq('user_id', userId)
         .order('entry_time', { ascending: false })
         .limit(1);
 
@@ -178,10 +198,14 @@ class TradeTrackingService {
    */
   async getTrade(tradeId: string) {
     try {
+      const userId = await this.getCurrentUserId();
+      if (!userId) return { data: null, error: "Unauthorized" };
+
       const { data, error } = await supabase
         .from('active_trades')
         .select('*')
         .eq('id', tradeId)
+        .eq('user_id', userId)
         .single();
 
       if (error) throw error;
@@ -199,16 +223,25 @@ class TradeTrackingService {
    */
   async addToPosition(params: {
     tradeId: string;
-    additionalAmount: number;
+    /** Legacy: notional added at currentPrice */
+    additionalAmount?: number;
+    /** Mark / execution price for P&L and averaging */
     currentPrice: number;
+    /** Preferred: explicit quantity and price per unit (same strategy; recalculates avg entry) */
+    quantity?: number;
+    marketPrice?: number;
     allowFractional?: boolean;
   }) {
     try {
       const { data, error } = await supabase.functions.invoke('add-to-position', {
         body: params,
       });
+      const body = data as { error?: string; details?: string; code?: string } | null;
+      if (body?.error) {
+        const msg = [body.error, body.details].filter(Boolean).join(' — ');
+        throw new Error(msg || body.error);
+      }
       if (error) throw error;
-      if ((data as any)?.error) throw new Error((data as any).error);
       return { data, error: null };
     } catch (error: any) {
       console.error('Error adding to position:', error);

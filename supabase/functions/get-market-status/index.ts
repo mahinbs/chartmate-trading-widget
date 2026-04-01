@@ -6,6 +6,109 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+/** Must stay aligned with `allowsLiveEntryExitUI` in StrategyEntrySignalsPanel.tsx */
+const MON_FRI_CASH_EXCHANGE_HINTS = [
+  'NSE', 'BSE', 'BOM', 'CNX', 'INDNSE', 'INDBOM',
+  'NYSE', 'NMS', 'NAS', 'NYQ', 'PCX', 'NGM',
+  'LSE', 'LNR', 'HKEX', 'HKG', 'TSE', 'JPX', 'ASX', 'TSX', 'VAN',
+];
+
+function isForexSpotSessionOpen(now: Date): boolean {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    weekday: 'short',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false,
+  }).formatToParts(now);
+  const wd = parts.find((p) => p.type === 'weekday')?.value ?? '';
+  const hour = Number(parts.find((p) => p.type === 'hour')?.value);
+  const minute = Number(parts.find((p) => p.type === 'minute')?.value);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return true;
+  const mins = hour * 60 + minute;
+  if (wd === 'Sat') return false;
+  if (wd === 'Sun') return mins >= 17 * 60;
+  if (wd === 'Fri') return mins < 17 * 60;
+  return true;
+}
+
+function equityUsesMonFriWeekends(symbol: string, exchange: string): boolean {
+  const sym = symbol.toUpperCase();
+  if (sym.endsWith('.NS') || sym.endsWith('.BO')) return true;
+  if (sym.endsWith('.L') || sym.endsWith('.HK') || sym.endsWith('.T') || sym.endsWith('.AX')) return true;
+  const ex = exchange.toUpperCase();
+  return MON_FRI_CASH_EXCHANGE_HINTS.some((h) => ex === h || ex.startsWith(h));
+}
+
+function equityWeekendCheckTimeZone(symbol: string, exchangeTimezoneName: string | undefined): string | null {
+  const sym = symbol.toUpperCase();
+  if (sym.endsWith('.NS') || sym.endsWith('.BO')) return 'Asia/Kolkata';
+  if (sym.endsWith('.L')) return 'Europe/London';
+  if (sym.endsWith('.HK')) return 'Asia/Hong_Kong';
+  if (sym.endsWith('.T')) return 'Asia/Tokyo';
+  if (sym.endsWith('.AX')) return 'Australia/Sydney';
+  if (exchangeTimezoneName && exchangeTimezoneName.length > 0) return exchangeTimezoneName;
+  return null;
+}
+
+function isSatOrSunInTimeZone(nowMs: number, timeZone: string): boolean {
+  try {
+    const wd = new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'short' }).format(new Date(nowMs));
+    return wd === 'Sat' || wd === 'Sun';
+  } catch {
+    return false;
+  }
+}
+
+function isEquityWeekendClosed(
+  symbol: string,
+  exchange: string,
+  exchangeTimezoneName: string | undefined,
+  quoteType: string,
+  nowMs: number,
+): boolean {
+  const qt = quoteType.toUpperCase();
+  if (qt !== 'EQUITY' && qt !== 'ETF' && qt !== 'MUTUALFUND') return false;
+  if (!equityUsesMonFriWeekends(symbol, exchange)) return false;
+  const tz = equityWeekendCheckTimeZone(symbol, exchangeTimezoneName);
+  if (!tz) return false;
+  return isSatOrSunInTimeZone(nowMs, tz);
+}
+
+type LiveAllowInput = {
+  symbol?: string;
+  exchange?: string;
+  exchangeTimezoneName?: string;
+  marketState?: string;
+  quoteType?: string;
+  isRegularOpen?: boolean;
+};
+
+/** Single rule-set for whether intraday “Live” entry/exit UI should be allowed. */
+function computeLiveSignalsAllowed(r: LiveAllowInput, nowMs: number): boolean {
+  const ms = String(r.marketState ?? '').toUpperCase();
+  const symbol = String(r.symbol ?? '');
+  const exchange = String(r.exchange ?? '');
+  const tz = r.exchangeTimezoneName;
+
+  if (ms === 'LIVE_24_7') return true;
+  if (ms === 'LIVE_24_5') return isForexSpotSessionOpen(new Date(nowMs));
+
+  const qt = String(r.quoteType ?? '').toUpperCase();
+  if (qt === 'CRYPTOCURRENCY') return true;
+  if (qt === 'CURRENCY' || qt === 'FOREX') return isForexSpotSessionOpen(new Date(nowMs));
+
+  if (isEquityWeekendClosed(symbol, exchange, tz, qt, nowMs)) return false;
+  if (ms === 'REGULAR' || ms === 'PRE' || ms === 'POST') return true;
+  if (ms === 'CLOSED') return false;
+  return r.isRegularOpen === true;
+}
+
+function attachLiveSignalsAllowed<T extends Record<string, unknown>>(result: T, nowMs: number): T {
+  (result as Record<string, unknown>).liveSignalsAllowed = computeLiveSignalsAllowed(result as LiveAllowInput, nowMs);
+  return result;
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -98,7 +201,7 @@ serve(async (req) => {
 
       // Handle crypto
       if (type === 'cryptocurrency' || symbol.includes('BTC') || symbol.includes('ETH') || symbol.includes('-USD')) {
-        return {
+        return attachLiveSignalsAllowed({
           symbol,
           exchange: exchange || 'Crypto Exchange',
           exchangeTimezoneName: 'UTC',
@@ -111,25 +214,26 @@ serve(async (req) => {
           todayRegularOpen: new Date().toISOString(),
           todayRegularClose: new Date().toISOString(),
           timestamp: new Date().toISOString()
-        };
+        }, Date.now());
       }
 
       // Handle forex
       if (type === 'currency' || symbol.includes('USD') || symbol.includes('EUR') || symbol.includes('=X')) {
-        return {
+        const fxOpen = isForexSpotSessionOpen(new Date());
+        return attachLiveSignalsAllowed({
           symbol,
           exchange: exchange || 'Forex Market',
           exchangeTimezoneName: 'UTC',
-          marketState: 'LIVE_24_5',
+          marketState: fxOpen ? 'LIVE_24_5' : 'CLOSED',
           quoteType: 'CURRENCY',
-          label: 'Live 24/5',
+          label: fxOpen ? 'Live 24/5 (session open)' : 'FX closed (weekend break)',
           regularHours: 'Sunday 5 PM – Friday 5 PM ET',
-          isRegularOpen: true,
+          isRegularOpen: fxOpen,
           nextRegularOpen: new Date().toISOString(),
           todayRegularOpen: new Date().toISOString(),
           todayRegularClose: new Date().toISOString(),
           timestamp: new Date().toISOString()
-        };
+        }, Date.now());
       }
 
       // Handle stocks - determine market status based on current time and exchange
@@ -142,7 +246,7 @@ serve(async (req) => {
       const regularHours = exchangeHours[exchange || 'NYSE'] || 'Regular hours vary by venue';
       const marketHours = calculateMarketHours(exchange || 'NYSE', exchangeTimezone, 'EQUITY');
       
-      return {
+      return attachLiveSignalsAllowed({
         symbol,
         exchange: exchange || 'Unknown',
         exchangeTimezoneName: exchangeTimezone,
@@ -152,7 +256,7 @@ serve(async (req) => {
         regularHours,
         ...marketHours,
         timestamp: new Date().toISOString()
-      };
+      }, Date.now());
     };
 
     let result;
@@ -216,11 +320,12 @@ serve(async (req) => {
               todayRegularClose: new Date().toISOString(),
             };
           } else if (quoteType === 'CURRENCY' || quoteType === 'FOREX') {
-            status = 'LIVE_24_5';
-            label = 'Live 24/5';
+            const fxOpen = isForexSpotSessionOpen(new Date());
+            status = fxOpen ? 'LIVE_24_5' : 'CLOSED';
+            label = fxOpen ? 'Live 24/5 (session open)' : 'FX closed (weekend break)';
             regularHours = 'Sunday 5 PM – Friday 5 PM ET';
             marketHours = {
-              isRegularOpen: true,
+              isRegularOpen: fxOpen,
               nextRegularOpen: new Date().toISOString(),
               todayRegularOpen: new Date().toISOString(),
               todayRegularClose: new Date().toISOString(),
@@ -249,7 +354,7 @@ serve(async (req) => {
             }
           }
 
-          result = {
+          result = attachLiveSignalsAllowed({
             symbol: returnSymbol,
             exchange: yahooExchange,
             exchangeTimezoneName,
@@ -259,7 +364,7 @@ serve(async (req) => {
             regularHours,
             ...marketHours,
             timestamp: new Date().toISOString()
-          };
+          }, Date.now());
         } else {
           // No quote data - use fallback
           console.log('No quote data from Yahoo Finance, using fallback');
@@ -294,7 +399,8 @@ serve(async (req) => {
       quoteType: 'EQUITY',
       label: 'Market status unavailable',
       regularHours: 'Regular hours vary by venue',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      liveSignalsAllowed: false as boolean,
     };
 
     return new Response(JSON.stringify(fallbackResult), {

@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { tradeTrackingService, ActiveTrade } from "@/services/tradeTrackingService";
 import { isUsdDenominatedSymbol } from "@/lib/tradingview-symbols";
+import { supabase } from "@/integrations/supabase/client";
 import YahooChartPanel from "@/components/YahooChartPanel";
 import {
     ArrowLeft, Loader2, TrendingDown, TrendingUp, Target,
@@ -37,8 +38,10 @@ export default function ActiveTradeDetailsPage() {
     const [closing, setClosing] = useState(false);
     const [cancelling, setCancelling] = useState(false);
     const [addToPositionOpen, setAddToPositionOpen] = useState(false);
-    const [addAmount, setAddAmount] = useState("");
+    const [addQuantity, setAddQuantity] = useState("");
     const [adding, setAdding] = useState(false);
+    /** Latest quote in quote currency (same as DB). Updated on every tick so "Add" uses the price at click time. */
+    const latestQuoteRef = useRef<number | null>(null);
 
     useEffect(() => {
         const loadTrade = async () => {
@@ -67,7 +70,9 @@ export default function ActiveTradeDetailsPage() {
         loadFx();
     }, [trade, usdPerInr]);
 
-    const handleLivePrice = (price: number) => {
+    const applyLiveQuote = useCallback((price: number) => {
+        if (!Number.isFinite(price) || price <= 0) return;
+        latestQuoteRef.current = price;
         setTrade((prev) => {
             if (!prev) return prev;
             const pnl = (price - prev.entryPrice) * prev.shares * (prev.action === "SELL" ? -1 : 1);
@@ -80,7 +85,38 @@ export default function ActiveTradeDetailsPage() {
                 lastPriceUpdate: new Date().toISOString(),
             };
         });
-    };
+    }, []);
+
+    useEffect(() => {
+        if (!trade) return;
+        const p = trade.currentPrice ?? trade.entryPrice;
+        if (p != null && p > 0) latestQuoteRef.current = p;
+    }, [trade?.id, trade?.currentPrice, trade?.entryPrice]);
+
+    // While "Add" is open, poll quotes so the modal price keeps moving even if chart WS is quiet behind the overlay.
+    useEffect(() => {
+        if (!addToPositionOpen || !trade?.symbol) return;
+        let cancelled = false;
+        const poll = async () => {
+            if (cancelled) return;
+            try {
+                const { data, error } = await supabase.functions.invoke("get-chart-data", {
+                    body: { symbol: trade.symbol, interval: "1m", range: "1d" },
+                });
+                if (cancelled || error) return;
+                const p = Number((data as { meta?: { regularMarketPrice?: number } })?.meta?.regularMarketPrice);
+                if (Number.isFinite(p) && p > 0) applyLiveQuote(p);
+            } catch {
+                /* ignore */
+            }
+        };
+        void poll();
+        const id = window.setInterval(poll, 2000);
+        return () => {
+            cancelled = true;
+            window.clearInterval(id);
+        };
+    }, [addToPositionOpen, trade?.symbol, applyLiveQuote]);
 
     const convertAmount = (value: number | undefined) => {
         const v = value ?? 0;
@@ -121,30 +157,6 @@ export default function ActiveTradeDetailsPage() {
             }
         }
         setClosing(false);
-    };
-
-    const handleAddToPosition = async () => {
-        if (!trade || !addAmount || parseFloat(addAmount) <= 0) return;
-        const amount = parseFloat(addAmount);
-        const price = trade.currentPrice || trade.entryPrice;
-        setAdding(true);
-        const { data, error } = await tradeTrackingService.addToPosition({
-            tradeId: trade.id,
-            additionalAmount: amount,
-            currentPrice: price,
-            allowFractional: isUsdDenominatedSymbol(trade.symbol),
-        });
-        setAdding(false);
-        if (!error && data) {
-            const sym = isUsdDenominatedSymbol(trade.symbol) ? "$" : "₹";
-            toast({ title: "Position Updated", description: `Added ${sym}${amount.toFixed(2)}. Cumulative: ${sym}${(trade.investmentAmount + amount).toFixed(2)}` });
-            setAddToPositionOpen(false);
-            setAddAmount("");
-            const { data: updated } = await tradeTrackingService.getTrade(trade.id);
-            if (updated) setTrade(updated);
-        } else {
-            toast({ title: "Error", description: error || "Failed to add to position", variant: "destructive" });
-        }
     };
 
     // Stop Tracking (cancel / remove the trade record)
@@ -189,6 +201,47 @@ export default function ActiveTradeDetailsPage() {
         ? trade.strategyType.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
         : "Not specified";
     const isPaperTrade = trade.brokerOrderId?.startsWith("PAPER-") ?? false;
+
+    const handleAddToPosition = async () => {
+        const qty = parseFloat(addQuantity);
+        // Prefer ref (last tick / poll) so we never use a stale render; fallback to state.
+        const px =
+            latestQuoteRef.current ??
+            trade.currentPrice ??
+            trade.entryPrice;
+        if (!Number.isFinite(qty) || qty <= 0) return;
+        if (!Number.isFinite(px) || px <= 0) {
+            toast({
+                title: "No live price",
+                description: "Wait for the chart to load a live price, then try again.",
+                variant: "destructive",
+            });
+            return;
+        }
+        setAdding(true);
+        const { data, error } = await tradeTrackingService.addToPosition({
+            tradeId: trade.id,
+            quantity: qty,
+            marketPrice: px,
+            currentPrice: px,
+            allowFractional: isUsdDenominatedSymbol(trade.symbol),
+        });
+        setAdding(false);
+        if (!error && data) {
+            const sym = currencySymbol;
+            const addNotional = qty * px;
+            toast({
+                title: "Position updated",
+                description: `Added ${qty} at ${sym}${formatPrice(px)}. Average entry updated. Total ~${sym}${(trade.investmentAmount + addNotional).toFixed(2)}.`,
+            });
+            setAddToPositionOpen(false);
+            setAddQuantity("");
+            const { data: updated } = await tradeTrackingService.getTrade(trade.id);
+            if (updated) setTrade(updated);
+        } else {
+            toast({ title: "Error", description: error || "Failed to add to position", variant: "destructive" });
+        }
+    };
 
     // Action panel (shared between desktop inline and mobile drawer)
     const ActionPanel = () => (
@@ -319,7 +372,7 @@ export default function ActiveTradeDetailsPage() {
                             <YahooChartPanel
                                 symbol={trade.symbol}
                                 displayName={trade.symbol}
-                                onLivePrice={handleLivePrice}
+                                onLivePrice={applyLiveQuote}
                             />
                         </div>
 
@@ -515,45 +568,70 @@ export default function ActiveTradeDetailsPage() {
                 </Drawer>
 
                 {/* Add to Position Dialog */}
-                <Dialog open={addToPositionOpen} onOpenChange={setAddToPositionOpen}>
+                <Dialog
+                    open={addToPositionOpen}
+                    onOpenChange={(open) => {
+                        setAddToPositionOpen(open);
+                        if (open) setAddQuantity("");
+                    }}
+                >
                     <DialogContent className="bg-[#1a1b1e] text-white border-white/10 sm:max-w-md">
                         <DialogHeader>
                             <DialogTitle>{trade.action === "SELL" ? "Add to Short Position" : "Add to Position"}</DialogTitle>
-                            <DialogDescription className="text-slate-400">
-                                Add more capital at the current market price to this {trade.action} position. New average entry &amp; shares will be calculated.
-                                Current: {currencySymbol}{convertAmount(trade.investmentAmount).toFixed(2)} · {trade.shares} shares @ {currencySymbol}{formatPrice(convertAmount(trade.entryPrice))}
+                            <DialogDescription className="sr-only">
+                                Enter quantity to add. Fill uses live price when you confirm.
                             </DialogDescription>
                         </DialogHeader>
-                        <div className="space-y-4 py-4">
+                        <div className="space-y-5 py-2">
+                            <div className="rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-center">
+                                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Live price</p>
+                                <p className="text-xl font-semibold text-[#1db152] tabular-nums transition-colors duration-150">
+                                    {trade.currentPrice != null && trade.currentPrice > 0
+                                        ? `${currencySymbol}${formatPrice(convertAmount(trade.currentPrice))}`
+                                        : trade.entryPrice > 0
+                                            ? `${currencySymbol}${formatPrice(convertAmount(trade.entryPrice))}`
+                                            : "—"}
+                                </p>
+                                <p className="text-[10px] text-slate-500 mt-2">
+                                    Updates with the chart and every 2s while this dialog is open. Add uses the latest value at the moment you tap Add.
+                                </p>
+                            </div>
                             <div>
-                                <Label htmlFor="add-amount" className="text-slate-300">{trade.action === "SELL" ? "Additional short amount" : "Additional amount"} ({assetCurrency})</Label>
+                                <Label htmlFor="add-qty" className="text-slate-300">Quantity to add</Label>
                                 <Input
-                                    id="add-amount"
+                                    id="add-qty"
                                     type="number"
-                                    min="0.01"
-                                    step="0.01"
-                                    placeholder="e.g. 1000"
-                                    value={addAmount}
-                                    onChange={(e) => setAddAmount(e.target.value)}
+                                    min="0.00000001"
+                                    step={isUsdDenominatedSymbol(trade.symbol) ? "0.000001" : "1"}
+                                    placeholder="e.g. 1"
+                                    value={addQuantity}
+                                    onChange={(e) => setAddQuantity(e.target.value)}
                                     className="mt-2 bg-white/5 border-white/10 text-white"
                                 />
                             </div>
-                            {addAmount && parseFloat(addAmount) > 0 && (
-                                <p className="text-sm text-slate-400">
-                                    At {currencySymbol}{formatPrice(convertAmount(trade.currentPrice || trade.entryPrice))}/share → ~{(parseFloat(addAmount) / (trade.currentPrice || trade.entryPrice)).toFixed(isUsdDenominatedSymbol(trade.symbol) ? 6 : 0)} new shares.
-                                    Cumulative investment: {(isUsdDenominatedSymbol(trade.symbol) ? "$" : "₹")}{(trade.investmentAmount + parseFloat(addAmount)).toFixed(2)}
-                                </p>
-                            )}
                         </div>
                         <DialogFooter>
-                            <Button variant="ghost" onClick={() => { setAddToPositionOpen(false); setAddAmount(""); }}>Cancel</Button>
+                            <Button
+                                variant="ghost"
+                                onClick={() => {
+                                    setAddToPositionOpen(false);
+                                    setAddQuantity("");
+                                }}
+                            >
+                                Cancel
+                            </Button>
                             <Button
                                 onClick={handleAddToPosition}
-                                disabled={!addAmount || parseFloat(addAmount) <= 0 || adding}
+                                disabled={
+                                    !addQuantity ||
+                                    parseFloat(addQuantity) <= 0 ||
+                                    adding ||
+                                    !(latestQuoteRef.current ?? trade.currentPrice ?? trade.entryPrice)
+                                }
                                 className="bg-teal-600 hover:bg-teal-500"
                             >
                                 {adding ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                                Add {currencySymbol}{addAmount ? parseFloat(addAmount).toFixed(2) : "0"}
+                                Add {addQuantity ? parseFloat(addQuantity).toFixed(isUsdDenominatedSymbol(trade.symbol) ? 6 : 0) : "0"} @ live
                             </Button>
                         </DialogFooter>
                     </DialogContent>

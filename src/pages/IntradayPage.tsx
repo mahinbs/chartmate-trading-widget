@@ -30,6 +30,8 @@ import {
 } from 'lucide-react';
 import { Container } from '@/components/layout/Container';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useAuth } from '@/hooks/useAuth';
+import { isAnalysisExceptionEmail } from '@/lib/manualSubscriptionBypass';
 import IntradayPredictionService from '@/services/intradayPredictionService';
 import type { IntradayPrediction } from '@/services/intradayPredictionService';
 import { SymbolSearch } from '@/components/SymbolSearch';
@@ -38,6 +40,8 @@ import { TimingDisplay } from '@/components/market/TimingDisplay';
 
 export default function IntradayPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const showAnalysisHistory = isAnalysisExceptionEmail(user?.email);
   const isMobile = useIsMobile();
   const [selectedSymbol, setSelectedSymbol] = useState('AAPL');
   const [selectedSymbolData, setSelectedSymbolData] = useState<SymbolData | null>(null);
@@ -156,16 +160,18 @@ export default function IntradayPage() {
               <ArrowRight className="h-4 w-4 rotate-180" />
               <span>Home</span>
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate('/predictions')}
-              className="flex items-center gap-2 border-white/10 hover:bg-white/5"
-            >
-              <BarChart3 className="h-4 w-4" />
-              <span className="hidden sm:inline">Analysis History</span>
-              <span className="sm:hidden">History</span>
-            </Button>
+            {showAnalysisHistory && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate('/predictions')}
+                className="flex items-center gap-2 border-white/10 hover:bg-white/5"
+              >
+                <BarChart3 className="h-4 w-4" />
+                <span className="hidden sm:inline">Analysis History</span>
+                <span className="sm:hidden">History</span>
+              </Button>
+            )}
           </div>
 
           <div className="text-center space-y-1">
