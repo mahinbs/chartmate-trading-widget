@@ -85,7 +85,7 @@ export function TradingSmartPricingMatrix() {
             <tr className="border-b border-zinc-800/50 hover:bg-white/[0.01]">
               <td className="py-5 px-4 font-light text-zinc-400 text-sm">Support Level</td>
               <td className="py-5 px-6 text-center font-ibm-mono text-sm">Standard support</td>
-              <td className="py-5 px-6 text-center font-ibm-mono text-sm">Priority support</td>
+              <td className="py-5 px-6 text-center bg-amber-400/[0.03] border-x border-amber-400/20 font-ibm-mono text-sm">Priority support</td>
               <td className="py-5 px-6 text-center font-ibm-mono text-sm text-teal-400">Dedicated support</td>
             </tr>
             <tr className="border-b border-zinc-800">
