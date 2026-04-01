@@ -15,6 +15,7 @@ const BASE_NAV_ITEMS = [
 const FEATURE_ITEMS = [
   { id: "ai-probability-engine", label: "AI Robot Trade", isRoute: true },
   { id: "ai-trading-analysis-and-back-testing", label: "AI Trading Analysis and Back Testing", isRoute: true },
+  {id: "white-label", label: "White Label", isRoute: true },
 ];
 
 const scrollToSection = (id: string) => {

@@ -8,7 +8,7 @@ const BASE_NAV_ITEMS = [
   // { id: "market-picks", label: "Daily Analysis", isRoute: true },
   { id: "ai-trading-analysis-and-back-testing", label: "AI Trading Analysis and Back Testing", isRoute: true },
   { id: "pricing", label: "Software Pricing", isRoute: true },
-  // { id: "white-label", label: "White Label", isRoute: true },
+  { id: "white-label", label: "White Label", isRoute: true },
 ];
 
 const scrollToSection = (id: string) => {
