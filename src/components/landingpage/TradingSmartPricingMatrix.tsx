@@ -1,3 +1,5 @@
+import { Button } from "@/components/ui/button";
+
 /**
  * Shared pricing matrix (Starter / Growth / Professional + one-time fee)
  * for AI trading analysis landing and main marketing page.
@@ -16,22 +18,42 @@ export function TradingSmartPricingMatrix() {
                 FEATURES
               </th>
 
-              <th className="py-6 px-6 text-center w-1/4">
+              <th className="py-6 px-6 text-center w-1/4 align-bottom">
                 <div className="font-bebas text-3xl text-white">Starter</div>
                 <div className="font-ibm-mono text-teal-400 mt-1">49$ /month</div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="mt-4 w-full max-w-[200px] mx-auto font-ibm-mono text-xs uppercase tracking-wider border-teal-500/40 text-teal-400 hover:bg-teal-500/10 hover:text-teal-300"
+                >
+                  Subscribe
+                </Button>
               </th>
 
-              <th className="py-6 px-6 text-center w-1/4 bg-amber-400/[0.03] border-x border-t border-amber-400/20 relative">
+              <th className="py-6 px-6 text-center w-1/4 bg-amber-400/[0.03] border-x border-t border-amber-400/20 relative align-bottom">
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2 font-ibm-mono text-[10px] bg-amber-400 text-black px-3 py-1 font-bold">
                   POPULAR
                 </div>
                 <div className="font-bebas text-3xl text-white">Growth</div>
                 <div className="font-ibm-mono text-amber-400 mt-1">99$ /month</div>
+                <Button
+                  type="button"
+                  className="mt-4 w-full max-w-[200px] mx-auto font-ibm-mono text-xs uppercase tracking-wider bg-amber-400 text-black hover:bg-amber-300"
+                >
+                  Subscribe
+                </Button>
               </th>
 
-              <th className="py-6 px-6 text-center w-1/4">
+              <th className="py-6 px-6 text-center w-1/4 align-bottom">
                 <div className="font-bebas text-3xl text-white">Professional</div>
                 <div className="font-ibm-mono text-teal-400 mt-1">199$ /month</div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="mt-4 w-full max-w-[200px] mx-auto font-ibm-mono text-xs uppercase tracking-wider border-teal-500/40 text-teal-400 hover:bg-teal-500/10 hover:text-teal-300"
+                >
+                  Subscribe
+                </Button>
               </th>
             </tr>
           </thead>
