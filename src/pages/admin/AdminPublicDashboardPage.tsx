@@ -7,7 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Loader2, PlusCircle, Save, Trash2, Pencil, ChevronDown, ChevronUp, BarChart3, TrendingUp, Activity, LayoutDashboard, Users, Globe, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { Loader2, PlusCircle, Save, Trash2, Pencil, ChevronDown, ChevronUp, BarChart3, TrendingUp, Activity, LayoutDashboard, Users, Globe, ChevronLeft, ChevronRight, Search, Link2 } from "lucide-react";
+import {
+  readStoredPublicAffiliates,
+  writeStoredPublicAffiliates,
+  notifyPublicDashboardAffiliatesChanged,
+  isValidAffiliateJoinDate,
+  type PublicDashboardAffiliateSeed,
+} from "@/lib/publicDashboardAffiliateStorage";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
 const CHART_TYPES = ["area", "line", "bar"] as const;
@@ -64,6 +71,97 @@ function autoGenPoints(key: string, currentValue: number): ChartPoint[] {
 function parseNumeric(v: string) {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
+}
+
+const DEFAULT_SALES_WEIGHTS = [20, 24, 18, 28, 26, 22, 30, 24];
+
+/** Generate random sales weights that sum to userCount */
+function generateRandomSalesWeights(userCount: number, seed: number): number[] {
+  const random = (s: number) => {
+    const x = Math.sin(s) * 43758.5453123;
+    return x - Math.floor(x);
+  };
+  
+  const weights = Array.from({ length: 8 }, (_, i) => 0.3 + random(seed + i * 100) * 0.7);
+  const sumWeights = weights.reduce((a, b) => a + b, 0);
+  const normalized = weights.map(w => (w / sumWeights) * userCount);
+  
+  const integers = normalized.map(n => Math.floor(n));
+  let remaining = userCount - integers.reduce((a, b) => a + b, 0);
+  
+  const fractionals = normalized.map((n, i) => ({ index: i, frac: n - Math.floor(n) }));
+  fractionals.sort((a, b) => b.frac - a.frac);
+  
+  for (let i = 0; i < fractionals.length && remaining > 0; i++) {
+    integers[fractionals[i].index]++;
+    remaining--;
+  }
+  
+  return integers;
+}
+
+function parseSalesWeightsInput(s: string, userCount: number): { weights: number[], error?: string } {
+  const trimmed = s.trim();
+  if (!trimmed) {
+    return { weights: generateRandomSalesWeights(userCount, Date.now()) };
+  }
+  
+  const parts = trimmed
+    .split(/[\s,]+/)
+    .filter(Boolean)
+    .map((x) => Math.max(0, Number(x) || 0));
+  
+  if (parts.length === 0) {
+    return { weights: generateRandomSalesWeights(userCount, Date.now()) };
+  }
+  
+  const weights = Array.from({ length: 8 }, (_, i) => parts[i] ?? 0);
+  const sum = weights.reduce((a, b) => a + b, 0);
+  
+  if (sum > userCount) {
+    return { 
+      weights: [], 
+      error: `Chart weights total (${sum}) exceeds referred users (${userCount})` 
+    };
+  }
+  
+  return { weights };
+}
+
+function calculateAffiliateProfit(userCount: number, profitShare: string): number {
+  const p = profitShare.trim();
+  const share = p === "70%" ? 0.7 : p === "50%" ? 0.5 : 0.3;
+  return Math.round(userCount * 49 * share);
+}
+
+function formatAffiliatePayoutPreview(userCount: number, profitShare: string): string {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(
+    calculateAffiliateProfit(userCount, profitShare)
+  );
+}
+
+const AFF_DATE_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+
+function toAffiliateDisplayDateFromInput(inputDate: string): string {
+  const m = inputDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return "";
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return "";
+  if (month < 1 || month > 12 || day < 1 || day > 31) return "";
+  return `${String(day).padStart(2, "0")} ${AFF_DATE_MONTHS[month - 1]} ${year}`;
+}
+
+function toDateInputValue(displayDate: string): string {
+  const m = displayDate.trim().match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})$/);
+  if (!m) return "";
+  const day = Number(m[1]);
+  const mon = m[2][0].toUpperCase() + m[2].slice(1).toLowerCase();
+  const year = Number(m[3]);
+  const monthIdx = AFF_DATE_MONTHS.indexOf(mon as (typeof AFF_DATE_MONTHS)[number]);
+  if (monthIdx < 0) return "";
+  return `${year}-${String(monthIdx + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 function toFlag(code: string): string {
@@ -173,6 +271,88 @@ export default function AdminPublicDashboardPage() {
   const [newSub, setNewSub] = useState({ name: "", country: "", email: "", payment_id: "", subscribed_at: "" });
   const [editingSub, setEditingSub] = useState<Subscriber | null>(null);
   const [editForm, setEditForm] = useState({ name: "", country: "", email: "", payment_id: "", subscribed_at: "" });
+
+  const [customAffiliates, setCustomAffiliates] = useState<PublicDashboardAffiliateSeed[]>(() => readStoredPublicAffiliates() ?? []);
+  const [newAffiliate, setNewAffiliate] = useState({
+    name: "",
+    trackingId: "",
+    userCount: "",
+    profitShare: "30%",
+    joiningDate: "",
+    lastPayoutDate: "",
+    salesWeights: "",
+  });
+
+  const persistCustomAffiliates = (rows: PublicDashboardAffiliateSeed[]) => {
+    writeStoredPublicAffiliates(rows);
+    notifyPublicDashboardAffiliatesChanged();
+    setCustomAffiliates(rows);
+  };
+
+  const addCustomAffiliate = () => {
+    const name = newAffiliate.name.trim();
+    const trackingId = newAffiliate.trackingId.trim();
+    const userCount = Math.max(0, Math.floor(parseNumeric(newAffiliate.userCount)));
+    if (!name || !trackingId) {
+      toast.error("Name and tracking ID are required");
+      return;
+    }
+    if (userCount < 1) {
+      toast.error("User count must be at least 1");
+      return;
+    }
+    const joiningDate = newAffiliate.joiningDate.trim();
+    const lastPayoutDate = newAffiliate.lastPayoutDate.trim();
+    if (!isValidAffiliateJoinDate(joiningDate) || !isValidAffiliateJoinDate(lastPayoutDate)) {
+      toast.error('Use joining and payout dates like "01 Mar 2026" (DD Mon YYYY)');
+      return;
+    }
+    const parsed = parseSalesWeightsInput(newAffiliate.salesWeights, userCount);
+    if (parsed.error) {
+      toast.error(parsed.error);
+      return;
+    }
+    const salesWeights = parsed.weights;
+    const profitShare = newAffiliate.profitShare.trim() || "30%";
+    const profit = calculateAffiliateProfit(userCount, profitShare);
+    const row: PublicDashboardAffiliateSeed = {
+      id: `af-${typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Date.now()}`,
+      name,
+      trackingId,
+      userCount,
+      profitShare,
+      payout: formatAffiliatePayoutPreview(userCount, profitShare),
+      joiningDate,
+      totalEarnings: new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(profit),
+      lastPayoutDate,
+      salesWeights,
+    };
+    const next = [...customAffiliates, row];
+    persistCustomAffiliates(next);
+    setNewAffiliate({
+      name: "",
+      trackingId: "",
+      userCount: "",
+      profitShare: "30%",
+      joiningDate: "",
+      lastPayoutDate: "",
+      salesWeights: "",
+    });
+    toast.success("Affiliate added — public dashboard will use this list");
+  };
+
+  const removeCustomAffiliate = (id: string) => {
+    const next = customAffiliates.filter((a) => a.id !== id);
+    persistCustomAffiliates(next);
+    toast.success(next.length === 0 ? "Restored default demo affiliates" : "Affiliate removed");
+  };
+
+  const resetCustomAffiliates = () => {
+    if (customAffiliates.length === 0) return;
+    if (!confirm("Remove all custom affiliates and restore the built-in demo list on the public dashboard?")) return;
+    persistCustomAffiliates([]);
+    toast.success("Default demo affiliates restored");
+  };
 
   const loadMetrics = async () => {
     try {
@@ -573,6 +753,187 @@ export default function AdminPublicDashboardPage() {
               </div>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Custom demo affiliates — override public dashboard affiliate table */}
+      <Card className="glass-panel border-white/10">
+        <CardHeader>
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <CardTitle className="text-xl text-white flex items-center gap-2">
+                <Link2 className="h-5 w-5 text-primary" />
+                Public dashboard affiliates
+              </CardTitle>
+              <CardDescription className="text-zinc-400 mt-1">
+                Add affiliates here to replace the built-in demo rows on the live public dashboard. Stored in this browser only (
+                <code className="text-zinc-500">localStorage</code>
+                ). Open the public dashboard preview or home dashboard to see changes; same-tab updates apply instantly.
+              </CardDescription>
+            </div>
+            {customAffiliates.length > 0 && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="border-white/20 text-zinc-300 hover:bg-white/10"
+                onClick={resetCustomAffiliates}
+              >
+                Restore defaults
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {customAffiliates.length === 0 ? (
+            <p className="text-sm text-zinc-500 border border-dashed border-white/10 rounded-xl px-4 py-6 text-center bg-white/[0.02]">
+              No custom affiliates — the public dashboard shows the default 15 demo partners. Add at least one row below to override.
+            </p>
+          ) : (
+            <div className="rounded-xl border border-white/10 overflow-hidden bg-zinc-950/30">
+              <Table>
+                <TableHeader className="bg-white/5">
+                  <TableRow className="border-white/10 hover:bg-transparent">
+                    <TableHead className="text-zinc-400 font-medium text-xs">Name</TableHead>
+                    <TableHead className="text-zinc-400 font-medium text-xs">Tracking ID</TableHead>
+                    <TableHead className="text-zinc-400 font-medium text-xs">Users</TableHead>
+                    <TableHead className="text-zinc-400 font-medium text-xs">Share</TableHead>
+                    <TableHead className="text-zinc-400 font-medium text-xs">Payout</TableHead>
+                    <TableHead className="text-zinc-400 font-medium text-xs">Joined</TableHead>
+                    <TableHead className="text-zinc-400 font-medium text-xs">Last payout</TableHead>
+                    <TableHead className="w-[56px]" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {customAffiliates.map((a) => (
+                    <TableRow key={a.id} className="border-white/5 hover:bg-white/5 transition-colors">
+                      <TableCell className="text-sm text-white font-medium">{a.name}</TableCell>
+                      <TableCell>
+                        <code className="text-xs font-mono text-zinc-300 bg-white/5 px-1.5 py-0.5 rounded">{a.trackingId}</code>
+                      </TableCell>
+                      <TableCell className="text-xs tabular-nums text-zinc-400">{a.userCount.toLocaleString()}</TableCell>
+                      <TableCell className="text-xs text-zinc-400">{a.profitShare}</TableCell>
+                      <TableCell className="text-xs tabular-nums text-zinc-300">{a.payout}</TableCell>
+                      <TableCell className="text-xs text-zinc-400">{a.joiningDate}</TableCell>
+                      <TableCell className="text-xs text-zinc-400">{a.lastPayoutDate}</TableCell>
+                      <TableCell>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-zinc-500 hover:text-red-400 hover:bg-red-500/10"
+                          onClick={() => removeCustomAffiliate(a.id)}
+                          aria-label={`Remove ${a.name}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+
+          <div className="border border-white/10 rounded-xl p-4 bg-white/[0.02] space-y-4">
+            <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider flex items-center gap-2">
+              <PlusCircle className="h-3.5 w-3.5 text-primary" /> Add affiliate
+            </p>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-zinc-500">Name *</Label>
+                <Input
+                  value={newAffiliate.name}
+                  onChange={(e) => setNewAffiliate((p) => ({ ...p, name: e.target.value }))}
+                  placeholder="Partner name"
+                  className="h-8 text-sm bg-zinc-950/50 border-white/10"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-zinc-500">Tracking ID *</Label>
+                <Input
+                  value={newAffiliate.trackingId}
+                  onChange={(e) => setNewAffiliate((p) => ({ ...p, trackingId: e.target.value }))}
+                  placeholder="e.g. AFF-US-01"
+                  className="h-8 text-sm bg-zinc-950/50 border-white/10"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-zinc-500">Referred users *</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={newAffiliate.userCount}
+                  onChange={(e) => setNewAffiliate((p) => ({ ...p, userCount: e.target.value }))}
+                  placeholder="e.g. 1200"
+                  className="h-8 text-sm bg-zinc-950/50 border-white/10"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-zinc-500">Profit share *</Label>
+                <Select
+                  value={newAffiliate.profitShare}
+                  onValueChange={(v) => setNewAffiliate((p) => ({ ...p, profitShare: v }))}
+                >
+                  <SelectTrigger className="h-8 bg-zinc-950/50 border-white/10 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="30%">30%</SelectItem>
+                    <SelectItem value="50%">50%</SelectItem>
+                    <SelectItem value="70%">70%</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-zinc-500">Joining date *</Label>
+                <Input
+                  type="date"
+                  value={toDateInputValue(newAffiliate.joiningDate)}
+                  onChange={(e) =>
+                    setNewAffiliate((p) => ({
+                      ...p,
+                      joiningDate: toAffiliateDisplayDateFromInput(e.target.value),
+                    }))
+                  }
+                  className="h-8 text-sm bg-zinc-950/50 border-white/10"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-zinc-500">Last payout date *</Label>
+                <Input
+                  type="date"
+                  value={toDateInputValue(newAffiliate.lastPayoutDate)}
+                  onChange={(e) =>
+                    setNewAffiliate((p) => ({
+                      ...p,
+                      lastPayoutDate: toAffiliateDisplayDateFromInput(e.target.value),
+                    }))
+                  }
+                  className="h-8 text-sm bg-zinc-950/50 border-white/10"
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-zinc-500">Sales chart weights (optional)</Label>
+              <Input
+                value={newAffiliate.salesWeights}
+                onChange={(e) => setNewAffiliate((p) => ({ ...p, salesWeights: e.target.value }))}
+                placeholder="Eight comma-separated numbers, e.g. 28, 34, 22, 41, 36, 19, 44, 38"
+                className="h-8 text-sm bg-zinc-950/50 border-white/10 font-mono"
+              />
+              <p className="text-[10px] text-zinc-500">
+                Leave blank to auto-generate random chart data. Must not exceed the total referred users count.
+              </p>
+            </div>
+            <div className="flex justify-end">
+              <Button type="button" onClick={addCustomAffiliate} className="bg-white/10 hover:bg-white/20 text-white border border-white/10">
+                <PlusCircle className="h-4 w-4 mr-2" /> Add affiliate
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 

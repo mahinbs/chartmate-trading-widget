@@ -24,6 +24,11 @@ import {
 } from "recharts";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PublicDailyPerformanceChart } from "@/components/public-dashboard/PublicDailyPerformanceChart";
+import {
+  readStoredPublicAffiliates,
+  PUBLIC_DASHBOARD_AFFILIATES_CHANGED_EVENT,
+  type PublicDashboardAffiliateSeed as DemoAffiliateSeed,
+} from "@/lib/publicDashboardAffiliateStorage";
 
 interface Subscriber {
   id: string;
@@ -64,9 +69,6 @@ interface DashboardAffiliate {
   lastPayoutDate: string;
   monthlySales: AffiliateSalesPoint[];
 }
-
-/** Seed row: {@link buildDemoAffiliates} fills `monthlySales` from {@link salesWeights} and today’s date. */
-type DemoAffiliateSeed = Omit<DashboardAffiliate, "monthlySales"> & { salesWeights: number[] };
 
 interface DashboardWhitelabel {
   id: string;
@@ -721,22 +723,32 @@ const DEMO_AFFILIATES_BASE: DemoAffiliateSeed[] = [
   },
 ];
 
-function buildDemoAffiliates(excludeLower: Set<string>, salesChartAsOf: Date): DashboardAffiliate[] {
+function buildDemoAffiliates(
+  base: DemoAffiliateSeed[],
+  excludeLower: Set<string>,
+  salesChartAsOf: Date
+): DashboardAffiliate[] {
   const blocked = new Set<string>(excludeLower);
   for (const n of RESERVED_DEMO_PERSON_NAMES) blocked.add(n.toLowerCase());
-  return DEMO_AFFILIATES_BASE.map((row) => {
+  return base.map((row) => {
     const { salesWeights, ...rest } = row;
     let name = row.name;
     if (blocked.has(name.toLowerCase())) {
       name = `${row.name} · Partner`;
     }
     const shareFrac = parseAffiliateProfitShareFraction(row.profitShare);
-    const model = demoAffiliateSalesModel(row.id, shareFrac);
+    
+    // Use the actual userCount and totalEarnings from the row
+    const totalUnits = row.userCount;
+    const grossUsd = totalUnits * PAYOUT_BASE_PER_USER_USD;
+    const profitUsd = Math.round(grossUsd * shareFrac);
+    
     return {
       ...rest,
       name,
-      totalEarnings: formatUsd0(model.profitUsd),
-      monthlySales: affiliateDemoDailySales(salesWeights, salesChartAsOf, row.joiningDate, model.totalUnits),
+      totalEarnings: row.totalEarnings || formatUsd0(profitUsd),
+      payout: formatUsd0(profitUsd),
+      monthlySales: affiliateDemoDailySales(salesWeights, salesChartAsOf, row.joiningDate, totalUnits),
     };
   });
 }
@@ -1068,10 +1080,19 @@ export default function PublicDashboardPage({ embedInAdmin = false }: PublicDash
     return d;
   }, []);
 
-  const affiliateRows = useMemo(
-    () => buildDemoAffiliates(subscriberNamesLower, affiliateSalesChartAsOf),
-    [subscriberNamesLower, affiliateSalesChartAsOf]
-  );
+  const [affiliateStorageRev, setAffiliateStorageRev] = useState(0);
+  useEffect(() => {
+    const onAffiliatesStorage = () => setAffiliateStorageRev((n) => n + 1);
+    window.addEventListener(PUBLIC_DASHBOARD_AFFILIATES_CHANGED_EVENT, onAffiliatesStorage);
+    return () => window.removeEventListener(PUBLIC_DASHBOARD_AFFILIATES_CHANGED_EVENT, onAffiliatesStorage);
+  }, []);
+
+  const affiliateRows = useMemo(() => {
+    void affiliateStorageRev;
+    const stored = readStoredPublicAffiliates();
+    const base = stored ?? DEMO_AFFILIATES_BASE;
+    return buildDemoAffiliates(base, subscriberNamesLower, affiliateSalesChartAsOf);
+  }, [subscriberNamesLower, affiliateSalesChartAsOf, affiliateStorageRev]);
 
   const whitelabelExcludeLower = useMemo(() => {
     const s = new Set(subscriberNamesLower);
