@@ -45,8 +45,8 @@ const RESERVED_DEMO_PERSON_NAMES = new Set([
 ]);
 
 /**
- * One bar on the affiliate demo sales chart: x-axis shows {@link day} (day of month, or `6 Apr` if disambiguated);
- * {@link fullLabel} is the full calendar date. Sum of `sales` across the series ≤ {@link AFFILIATE_SALES_SERIES_TOTAL_MAX}.
+ * One bar on the affiliate demo sales chart: x-axis shows {@link day} (e.g. `1 Mar` — day + short month);
+ * {@link fullLabel} is the full calendar date. Sum of `sales` matches demo profit at $49/unit gross and profit share.
  */
 type AffiliateSalesPoint = { day: string; sales: number; fullLabel?: string };
 
@@ -81,9 +81,11 @@ type PartnerPayoutDialogTarget =
   | { kind: "whitelabel"; row: DashboardWhitelabel };
 
 const AFFILIATE_TABLE_PAGE_SIZE = 15;
-const AFFILIATE_SALES_CHART_MAX = 50;
-/** Max sum of all bars in one affiliate’s demo sales series (strictly below 50). */
-const AFFILIATE_SALES_SERIES_TOTAL_MAX = 49;
+/** Upper bound when sanitizing pasted JSON in DevTools (chart scales to data). */
+const AFFILIATE_SALES_JSON_MAX = 1_000_000;
+/** Demo “Total earnings” / profit column and graph popup profit line (USD). */
+const DEMO_AFFILIATE_PROFIT_MIN_USD = 5000;
+const DEMO_AFFILIATE_PROFIT_MAX_USD = 20000;
 /**
  * End date for affiliate demo sales bars (local midnight). Set to `null` to use the visitor’s real calendar “today”.
  * Fixed here so the public dashboard matches campaign dates (e.g. 2 Apr 2026) regardless of device clock.
@@ -383,15 +385,33 @@ function allIndexPairs(lenA: number, lenB: number): [number, number][] {
   return pairs;
 }
 
-/**
- * Demo “total earnings”: scales with profit share only, capped by demo chart volume
- * (≤{@link AFFILIATE_SALES_SERIES_TOTAL_MAX} units × {@link PAYOUT_BASE_PER_USER_USD}), not `userCount`.
- */
-function demoAffiliateTotalEarningsDisplay(affiliateId: string, shareFrac: number): string {
-  const grossMax = PAYOUT_BASE_PER_USER_USD * AFFILIATE_SALES_SERIES_TOTAL_MAX;
+/** Target profit before tying to whole units (still in [{@link DEMO_AFFILIATE_PROFIT_MIN_USD}, {@link DEMO_AFFILIATE_PROFIT_MAX_USD}]). */
+function demoAffiliateProfitTargetUsd(affiliateId: string, shareFrac: number): number {
   const n = parseInt(affiliateId.replace(/\D/g, ""), 10) || 1;
-  const spread = 0.52 + ((n * 23) % 44) / 100;
-  return formatUsd0(Math.round(grossMax * spread * shareFrac));
+  const width = DEMO_AFFILIATE_PROFIT_MAX_USD - DEMO_AFFILIATE_PROFIT_MIN_USD + 1;
+  const mix = (n * 11003 + Math.round(shareFrac * 1000)) % width;
+  return DEMO_AFFILIATE_PROFIT_MIN_USD + mix;
+}
+
+/**
+ * Demo units + gross + profit so table, chart, and popup agree: profit = round(units × price × share),
+ * units chosen from the target profit band.
+ */
+function demoAffiliateSalesModel(affiliateId: string, shareFrac: number): {
+  profitUsd: number;
+  totalUnits: number;
+  grossUsd: number;
+} {
+  const share = Math.max(0.05, shareFrac);
+  const targetProfit = demoAffiliateProfitTargetUsd(affiliateId, shareFrac);
+  const totalUnits = Math.max(1, Math.round(targetProfit / (PAYOUT_BASE_PER_USER_USD * share)));
+  const grossUsd = totalUnits * PAYOUT_BASE_PER_USER_USD;
+  const profitUsd = Math.round(grossUsd * share);
+  return { profitUsd, totalUnits, grossUsd };
+}
+
+function demoAffiliateTotalEarningsDisplay(affiliateId: string, shareFrac: number): string {
+  return formatUsd0(demoAffiliateSalesModel(affiliateId, shareFrac).profitUsd);
 }
 
 const MS_PER_DAY = 86400000;
@@ -402,36 +422,46 @@ function stripCalendarDate(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
-/** March 1 of the same calendar year as `d`, or March 1 of the previous year if `d` is before Mar 1. */
-function marchFirstOnOrBefore(d: Date): Date {
-  const y = d.getFullYear();
-  const mar1 = new Date(y, 2, 1);
-  return stripCalendarDate(d) < mar1 ? new Date(y - 1, 2, 1) : mar1;
-}
-
 function formatAffiliateSaleFullLabel(d: Date): string {
   return `${d.getDate()} ${AFF_SALE_MONTH_SHORT[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-/** X-axis tick: day of month, or `6 Apr` style if another bar shares the same day-of-month in a different month. */
-function affiliateSaleXTick(d: Date, idx: number, all: Date[]): string {
-  const dom = d.getDate();
-  const clash = all.some(
-    (o, j) =>
-      j !== idx &&
-      o.getDate() === dom &&
-      (o.getMonth() !== d.getMonth() || o.getFullYear() !== d.getFullYear())
-  );
-  return clash ? `${dom} ${AFF_SALE_MONTH_SHORT[d.getMonth()]}` : String(dom);
+/** Parses affiliate table strings like `01 Mar 2026`. */
+function parseDemoAffiliateJoinDate(s: string): Date | null {
+  const m = s.trim().match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})$/);
+  if (!m) return null;
+  const monStr = m[2]![0]!.toUpperCase() + m[2]!.slice(1).toLowerCase();
+  const mi = (AFF_SALE_MONTH_SHORT as readonly string[]).indexOf(monStr);
+  if (mi < 0) return null;
+  const day = parseInt(m[1]!, 10);
+  const y = parseInt(m[3]!, 10);
+  if (day < 1 || day > 31) return null;
+  return stripCalendarDate(new Date(y, mi, day));
+}
+
+/** X-axis tick label: `1 Mar`, `2 Apr`, etc. */
+function affiliateSaleXTick(d: Date): string {
+  return `${d.getDate()} ${AFF_SALE_MONTH_SHORT[d.getMonth()]}`;
 }
 
 /**
- * Eight sample calendar days from Mar 1 through `asOf` (today, date-only)—never after `asOf`.
- * Weights are relative; integer `sales` sum to {@link AFFILIATE_SALES_SERIES_TOTAL_MAX} and each ≤ {@link AFFILIATE_SALES_CHART_MAX}.
+ * Eight sample calendar days from {@link joiningDateStr} through `asOf` (never after `asOf`).
+ * Bar `sales` are integer units whose sum matches gross implied by demo profit:
+ * Bar heights sum to {@link totalUnits} from {@link demoAffiliateSalesModel}.
  */
-function affiliateDemoDailySales(weights: number[], asOf: Date): AffiliateSalesPoint[] {
+function affiliateDemoDailySales(
+  weights: number[],
+  asOf: Date,
+  joiningDateStr: string,
+  totalUnits: number
+): AffiliateSalesPoint[] {
   const today = stripCalendarDate(asOf);
-  const start = marchFirstOnOrBefore(today);
+  const parsedJoin = parseDemoAffiliateJoinDate(joiningDateStr);
+  let start = parsedJoin ? stripCalendarDate(parsedJoin) : today;
+  if (start > today) start = new Date(today);
+
+  const totalCap = Math.max(1, totalUnits);
+
   let daySpan = Math.round((today.getTime() - start.getTime()) / MS_PER_DAY);
   if (daySpan < 0) daySpan = 0;
 
@@ -455,29 +485,25 @@ function affiliateDemoDailySales(weights: number[], asOf: Date): AffiliateSalesP
   }
 
   const n = dates.length;
-  const cap = AFFILIATE_SALES_CHART_MAX;
-  const totalCap = AFFILIATE_SALES_SERIES_TOTAL_MAX;
   const w = Array.from({ length: n }, (_, i) => Math.max(0, weights[i] ?? 0));
   const sumW = w.reduce((a, b) => a + b, 0) || 1;
   const raw = w.map((x) => (totalCap * x) / sumW);
-  const ints = raw.map((x) => Math.min(cap, Math.floor(x)));
+  const ints = raw.map((x) => Math.floor(x));
   let rem = totalCap - ints.reduce((a, b) => a + b, 0);
   const order = raw
     .map((x, i) => ({ i, r: x - Math.floor(x) }))
     .sort((a, b) => b.r - a.r);
   const out = [...ints];
   let guard = 0;
-  while (rem > 0 && guard < 200) {
+  while (rem > 0 && guard < 2000) {
     const j = order[guard % n]!.i;
-    if (out[j]! < cap) {
-      out[j]! += 1;
-      rem -= 1;
-    }
+    out[j]! += 1;
+    rem -= 1;
     guard += 1;
   }
 
   return dates.map((dt, i) => ({
-    day: affiliateSaleXTick(dt, i, dates),
+    day: affiliateSaleXTick(dt),
     fullLabel: formatAffiliateSaleFullLabel(dt),
     sales: out[i]!,
   }));
@@ -492,7 +518,7 @@ function parseAffiliateSalesJson(raw: string): AffiliateSalesPoint[] | null {
       const item = parsed[i];
       if (!item || typeof item !== "object") continue;
       const o = item as Record<string, unknown>;
-      const sales = Math.min(AFFILIATE_SALES_CHART_MAX, Math.max(0, Number(o.sales) || 0));
+      const sales = Math.min(AFFILIATE_SALES_JSON_MAX, Math.max(0, Number(o.sales) || 0));
       const day =
         typeof o.day === "string" ? o.day : typeof o.month === "string" ? o.month : String(i + 1);
       const fullLabel = typeof o.fullLabel === "string" ? o.fullLabel : undefined;
@@ -704,10 +730,13 @@ function buildDemoAffiliates(excludeLower: Set<string>, salesChartAsOf: Date): D
     if (blocked.has(name.toLowerCase())) {
       name = `${row.name} · Partner`;
     }
+    const shareFrac = parseAffiliateProfitShareFraction(row.profitShare);
+    const model = demoAffiliateSalesModel(row.id, shareFrac);
     return {
       ...rest,
       name,
-      monthlySales: affiliateDemoDailySales(salesWeights, salesChartAsOf),
+      totalEarnings: formatUsd0(model.profitUsd),
+      monthlySales: affiliateDemoDailySales(salesWeights, salesChartAsOf, row.joiningDate, model.totalUnits),
     };
   });
 }
@@ -1657,12 +1686,16 @@ export default function PublicDashboardPage({ embedInAdmin = false }: PublicDash
         </DialogContent>
       </Dialog>
 
-      {/* ── Affiliate total sales (demo chart; max Y = AFFILIATE_SALES_CHART_MAX) ── */}
+      {/* ── Affiliate total sales (demo chart; Y-axis from data) ── */}
       <Dialog open={affiliateSalesRow !== null} onOpenChange={(open) => !open && setAffiliateSalesRow(null)}>
         <DialogContent className="max-w-lg sm:max-w-xl">
           {affiliateSalesRow && (() => {
             const affiliateChartTotalUnits = affiliateSalesRow.monthlySales.reduce((s, p) => s + p.sales, 0);
             const affiliateChartRevenueUsd = affiliateChartTotalUnits * PAYOUT_BASE_PER_USER_USD;
+            const affiliateChartMaxBar = affiliateSalesRow.monthlySales.reduce((m, p) => Math.max(m, p.sales), 0);
+            const affiliateChartYMax = Math.max(8, Math.ceil(affiliateChartMaxBar * 1.12));
+            const affiliateChartPeriodEnd =
+              affiliateSalesRow.monthlySales[affiliateSalesRow.monthlySales.length - 1]?.fullLabel ?? "";
             return (
             <>
               <DialogHeader>
@@ -1693,24 +1726,40 @@ export default function PublicDashboardPage({ embedInAdmin = false }: PublicDash
                       height={48}
                     />
                     <YAxis
-                      domain={[0, AFFILIATE_SALES_CHART_MAX]}
+                      domain={[0, affiliateChartYMax]}
                       tick={{ fontSize: 11 }}
                       tickLine={false}
                       axisLine={false}
                       className="text-muted-foreground"
-                      width={36}
+                      width={44}
                     />
                     <Tooltip
-                      contentStyle={{
-                        background: "hsl(var(--card))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: "8px",
-                        fontSize: 12,
-                      }}
-                      formatter={(value: number) => [value, "Sales"]}
-                      labelFormatter={(_label, payload) => {
-                        const p = payload?.[0]?.payload as AffiliateSalesPoint | undefined;
-                        return p?.fullLabel ?? String(_label);
+                      content={({ active, payload }) => {
+                        if (!active || !payload?.[0]) return null;
+                        const row = payload[0].payload as AffiliateSalesPoint;
+                        const daySales = Number(payload[0].value);
+                        const periodUnits = affiliateSalesRow.monthlySales.reduce((s, p) => s + p.sales, 0);
+                        const periodGross = periodUnits * PAYOUT_BASE_PER_USER_USD;
+                        return (
+                          <div
+                            className="rounded-lg border border-border bg-card px-3 py-2 text-xs shadow-md"
+                            style={{ fontSize: 12 }}
+                          >
+                            <p className="font-medium text-foreground">{row.fullLabel ?? row.day}</p>
+                            <p className="mt-0.5 text-muted-foreground">
+                              This day: <span className="tabular-nums text-foreground">{daySales}</span> units
+                            </p>
+                            <p className="mt-1.5 border-t border-border/60 pt-1.5 text-muted-foreground">
+                              Chart period:{" "}
+                              <span className="tabular-nums text-foreground">{periodUnits}</span> units ·{" "}
+                              <span className="tabular-nums text-foreground">{formatUsd0(periodGross)}</span>{" "}
+                              gross
+                            </p>
+                            <p className="mt-1 font-semibold text-foreground">
+                              Profit earned: {affiliateSalesRow.totalEarnings}
+                            </p>
+                          </div>
+                        );
                       }}
                     />
                     <Bar dataKey="sales" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} maxBarSize={40} />
@@ -1722,12 +1771,17 @@ export default function PublicDashboardPage({ embedInAdmin = false }: PublicDash
                   <span className="text-muted-foreground">Total units</span>
                   <span className="tabular-nums text-foreground">{affiliateChartTotalUnits.toLocaleString()}</span>
                 </p>
-                <p className="flex justify-between gap-3 border-t border-border/50 pt-2 font-semibold">
+                <p className="flex justify-between gap-3 border-t border-border/50 pt-2">
                   <span className="text-muted-foreground">
-                    Revenue ({PAYOUT_BASE_PER_USER_USD.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })}/unit)
+                    Period gross ({PAYOUT_BASE_PER_USER_USD.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })}/unit)
                   </span>
-                  <span className="tabular-nums text-foreground">{formatUsd0(affiliateChartRevenueUsd)}</span>
+                  <span className="tabular-nums font-medium text-foreground">{formatUsd0(affiliateChartRevenueUsd)}</span>
                 </p>
+                <p className="flex justify-between gap-3 border-t border-border/50 pt-2 font-semibold">
+                  <span className="text-muted-foreground">Profit earned</span>
+                  <span className="tabular-nums text-foreground">{affiliateSalesRow.totalEarnings}</span>
+                </p>
+               
               </div>
             </>
             );
