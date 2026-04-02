@@ -16,10 +16,83 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  extractAlgoGuidePreset,
+  supertrendSeries,
+} from "../_shared/algoGuideDetectors.ts";
 
 const STREAM_TICK_SECRET = Deno.env.get("STREAM_TICK_SECRET") ?? "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
+const TWELVE_DATA_API_KEY = Deno.env.get("TWELVE_DATA_API_KEY") ?? "";
 const ENTRY_DIGEST_SECRET = Deno.env.get("ENTRY_DIGEST_SECRET") ?? "";
+
+function toTwelveDataSymbol(sym: string): string {
+  return sym.replace(/\.(NS|BO|L|AX|TO|DE|F)$/, "");
+}
+
+async function fetchRecentCandles(
+  symbol: string,
+  interval = "5min",
+  outputsize = 100,
+): Promise<{ h: number[]; l: number[]; c: number[] } | null> {
+  if (!TWELVE_DATA_API_KEY) {
+    // Try Yahoo Finance as fallback
+    const yahooSym = symbol.endsWith(".NS") || symbol.endsWith(".BO") ? symbol : `${symbol}.NS`;
+    try {
+      const period2 = Math.floor(Date.now() / 1000);
+      const period1 = period2 - 5 * 24 * 3600;
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSym)}?period1=${period1}&period2=${period2}&interval=5m`;
+      const res = await fetch(url, {
+        headers: { "User-Agent": "Mozilla/5.0" },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      const r = data?.chart?.result?.[0];
+      const q = r?.indicators?.quote?.[0];
+      if (!q?.close?.length) return null;
+      const h: number[] = [], l: number[] = [], c: number[] = [];
+      for (let i = 0; i < q.close.length; i++) {
+        if (q.close[i] != null && q.high[i] != null && q.low[i] != null) {
+          h.push(Number(q.high[i]));
+          l.push(Number(q.low[i]));
+          c.push(Number(q.close[i]));
+        }
+      }
+      return c.length >= 20 ? { h, l, c } : null;
+    } catch { return null; }
+  }
+  const tdSym = toTwelveDataSymbol(symbol);
+  const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(tdSym)}&interval=${interval}&outputsize=${outputsize}&order=ASC&apikey=${TWELVE_DATA_API_KEY}`;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data?.status === "error" || !Array.isArray(data?.values)) return null;
+    const h: number[] = [], l: number[] = [], c: number[] = [];
+    for (const row of data.values) {
+      if (row?.high == null || row?.low == null || row?.close == null) continue;
+      h.push(Number(row.high));
+      l.push(Number(row.low));
+      c.push(Number(row.close));
+    }
+    return c.length >= 20 ? { h, l, c } : null;
+  } catch { return null; }
+}
+
+/** Simple EMA computation */
+function ema(values: number[], period: number): number[] {
+  const result = new Array(values.length).fill(NaN);
+  if (values.length < period) return result;
+  let sum = 0;
+  for (let i = 0; i < period; i++) sum += values[i];
+  result[period - 1] = sum / period;
+  const k = 2 / (period + 1);
+  for (let i = period; i < values.length; i++) {
+    result[i] = values[i] * k + result[i - 1] * (1 - k);
+  }
+  return result;
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -70,7 +143,7 @@ Deno.serve(async (req: Request) => {
     // Fetch the active trade
     const { data: trade, error: tradeErr } = await supabase
       .from("active_trades")
-      .select("id, user_id, symbol, action, status, strategy_id, entry_price, shares, exchange, product")
+      .select("id, user_id, symbol, action, status, strategy_id, entry_price, shares, exchange, product, stop_loss_price, take_profit_price")
       .eq("id", tradeId)
       .in("status", ["active", "monitoring", "exit_zone"])
       .maybeSingle();
@@ -171,11 +244,20 @@ Deno.serve(async (req: Request) => {
       checkHeaders["x-digest-user-id"] = String((trade as AnyRecord).user_id);
     }
 
+    // Append exchange suffix for Indian stocks so data providers resolve correctly
+    let exitSymbol = String((trade as AnyRecord).symbol ?? "").toUpperCase();
+    const tradeExchange = String((trade as AnyRecord).exchange ?? "").toUpperCase();
+    if (tradeExchange === "NSE" && !exitSymbol.endsWith(".NS") && !exitSymbol.endsWith(".BO")) {
+      exitSymbol += ".NS";
+    } else if (tradeExchange === "BSE" && !exitSymbol.endsWith(".BO") && !exitSymbol.endsWith(".NS")) {
+      exitSymbol += ".BO";
+    }
+
     const scanRes = await fetch(`${SUPABASE_URL}/functions/v1/strategy-entry-signals`, {
       method: "POST",
       headers: checkHeaders,
       body: JSON.stringify({
-        symbol: (trade as AnyRecord).symbol,
+        symbol: exitSymbol,
         strategies: [],
         action: exitSide,
         days: 90,
@@ -228,8 +310,69 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // ── Phase 3: Dynamic trailing SL/TP ──
+    // For preset strategies, recompute indicator and ratchet SL toward price
+    let updatedLevels: { stop_loss_price?: number; take_profit_price?: number } | null = null;
+    const preset = extractAlgoGuidePreset(strategy.entry_conditions);
+    const currentSl = (trade as AnyRecord).stop_loss_price != null
+      ? Number((trade as AnyRecord).stop_loss_price)
+      : null;
+
+    if (preset && currentSl != null && Number.isFinite(currentSl)) {
+      const tradeSymbol = String((trade as AnyRecord).symbol ?? "").toUpperCase();
+      const tradeExch = String((trade as AnyRecord).exchange ?? "").toUpperCase();
+      const fullSymbol = (tradeExch === "NSE" && !tradeSymbol.endsWith(".NS") && !tradeSymbol.endsWith(".BO"))
+        ? `${tradeSymbol}.NS`
+        : tradeSymbol;
+
+      if (preset === "supertrend_7_3") {
+        const candles = await fetchRecentCandles(fullSymbol);
+        if (candles) {
+          const { line } = supertrendSeries(candles.h, candles.l, candles.c, 7, 3);
+          const lastLine = line[line.length - 1];
+          if (Number.isFinite(lastLine)) {
+            const isBuy = tradeAction === "BUY";
+            // Ratchet: BUY → SL only moves up; SELL → SL only moves down
+            if (isBuy && lastLine > currentSl) {
+              updatedLevels = { stop_loss_price: lastLine };
+            } else if (!isBuy && lastLine < currentSl) {
+              updatedLevels = { stop_loss_price: lastLine };
+            }
+          }
+        }
+      } else if (preset === "vwap_bounce" || !preset) {
+        // EMA20 trailing for EMA crossover and fallback
+        const candles = await fetchRecentCandles(fullSymbol);
+        if (candles) {
+          const ema20 = ema(candles.c, 20);
+          const lastEma = ema20[ema20.length - 1];
+          if (Number.isFinite(lastEma)) {
+            const isBuy = tradeAction === "BUY";
+            if (isBuy && lastEma > currentSl) {
+              updatedLevels = { stop_loss_price: lastEma };
+            } else if (!isBuy && lastEma < currentSl) {
+              updatedLevels = { stop_loss_price: lastEma };
+            }
+          }
+        }
+      }
+
+      // Persist trailing update to DB
+      if (updatedLevels) {
+        const updatePayload: AnyRecord = {};
+        if (updatedLevels.stop_loss_price != null) updatePayload.stop_loss_price = updatedLevels.stop_loss_price;
+        if (updatedLevels.take_profit_price != null) updatePayload.take_profit_price = updatedLevels.take_profit_price;
+        if (Object.keys(updatePayload).length > 0) {
+          await supabase
+            .from("active_trades")
+            .update(updatePayload)
+            .eq("id", tradeId);
+        }
+      }
+    }
+
     return new Response(
-      JSON.stringify({ should_exit: false, reason: null, trade_id: tradeId }),
+      JSON.stringify({ should_exit: false, reason: null, trade_id: tradeId, updatedLevels }),
       { status: 200, headers },
     );
   } catch (e: unknown) {

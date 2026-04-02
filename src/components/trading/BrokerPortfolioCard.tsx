@@ -13,7 +13,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -368,6 +367,71 @@ interface TradeRow {
 
 const CANCELLABLE = ["open", "pending", "trigger pending", "after market order req received"];
 
+function scrollToBrokerConnect() {
+  document.getElementById("broker-sync-connect")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+/** When strategy is off, hide noisy deploy rows (pending/cancelled); keep executed as history. */
+function deployStateForDisplay(
+  s: Strategy,
+  dep: {
+    status: "pending" | "executed" | "cancelled" | "expired";
+    action: "BUY" | "SELL";
+    symbol: string;
+    quantity: number;
+    created_at: string;
+    last_checked_at?: string | null;
+    executed_at?: string | null;
+    broker_order_id?: string | null;
+    error_message?: string | null;
+  } | null | undefined,
+) {
+  if (!dep) return null;
+  if (!s.is_active && dep.status !== "executed") return null;
+  return dep;
+}
+
+function isLiveChecking(dep: {
+  status: "pending" | "executed" | "cancelled" | "expired";
+  last_checked_at?: string | null;
+} | null | undefined): boolean {
+  if (!dep || dep.status !== "pending") return false;
+  const last = dep.last_checked_at ? Date.parse(dep.last_checked_at) : NaN;
+  if (!Number.isFinite(last)) return false;
+  return Date.now() - last <= 30_000;
+}
+
+type PreflightOpts = {
+  tokenExpired: boolean;
+  symbol: string;
+  quantity: number;
+  product: string;
+  liveLtps: Record<string, number>;
+  availableCash: number;
+};
+
+/** Returns user-facing error string or null if OK to proceed. */
+function preflightOrderAgainstFunds(o: PreflightOpts): string | null {
+  if (o.tokenExpired) {
+    return "SESSION";
+  }
+  const sym = o.symbol.trim().toUpperCase();
+  const px = o.liveLtps[sym] ?? 0;
+  if (!Number.isFinite(px) || px <= 0) {
+    return "LTP";
+  }
+  const notional = o.quantity * px;
+  const avail = Number(o.availableCash) || 0;
+  const prod = String(o.product).toUpperCase();
+  if (prod === "CNC" && notional > avail * 1.005) {
+    return `CNC|${notional}|${avail}`;
+  }
+  if (prod === "MIS" && notional > avail * 4) {
+    return `MIS|${notional}|${avail}`;
+  }
+  return null;
+}
+
 function fmt(v: number | undefined | null, prefix = "₹") {
   if (v == null || isNaN(Number(v))) return "—";
   const n = Number(v);
@@ -537,6 +601,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
   // ── Strategy state ─────────────────────────────────────────────────────────
   const [strategies, setStrategies]       = useState<Strategy[]>([]);
   const [stratLoading, setStratLoading]   = useState(true);
+  const [stratHistory, setStratHistory]   = useState<any[]>([]);
   const [showCreate, setShowCreate]       = useState(false);
   const [editingAlgoStrategy, setEditingAlgoStrategy] = useState<Strategy | null>(null);
   const [form, setForm]                   = useState<StrategyForm>(EMPTY_STRATEGY);
@@ -553,13 +618,13 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
   } | null>(null);
   const [backtestLoading, setBacktestLoading] = useState(false);
   const [toggleLoading, setToggleLoading] = useState<string | null>(null);
-  const [deployLoading, setDeployLoading] = useState<string | null>(null);
   const [deployStateByStrategy, setDeployStateByStrategy] = useState<Record<string, {
     status: "pending" | "executed" | "cancelled" | "expired";
     action: "BUY" | "SELL";
     symbol: string;
     quantity: number;
     created_at: string;
+    last_checked_at?: string | null;
     executed_at?: string | null;
     broker_order_id?: string | null;
     error_message?: string | null;
@@ -693,134 +758,6 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
     }));
   }, [autoNameFromPaper, autoTimesFromPaper]);
 
-  const runBacktestForFire = useCallback(async (strategy: Strategy) => {
-    const fs = {
-      open: false, symbol: "", exchange: "NSE", quantity: "1", product: "MIS", firing: false,
-      backtestPaperType: "trend_following", backtestResult: null as any,
-      backtestLoading: false, backtestAiAnalysis: null as string | null, backtestAiLoading: false,
-      ...firePanel[strategy.id],
-    };
-    const sym = fs.symbol.trim().toUpperCase();
-    if (!sym) { toast.error("Enter a symbol first"); return; }
-    const exchange = String(fs.exchange || "NSE").trim().toUpperCase() || "NSE";
-    const sid = strategy.id;
-    setFireState(sid, { backtestLoading: true, backtestResult: null, backtestAiAnalysis: null });
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const auth = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
-
-      const runSl = Number(strategy.stop_loss_pct) > 0 ? Number(strategy.stop_loss_pct) : 2;
-      const runTp = Number(strategy.take_profit_pct) > 0 ? Number(strategy.take_profit_pct) : 4;
-
-      const cs: FullCustomStrategy = {
-        id: strategy.id,
-        name: strategy.name,
-        description: strategy.description ?? null,
-        is_active: strategy.is_active,
-        trading_mode: strategy.trading_mode,
-        is_intraday: strategy.is_intraday,
-        start_time: strategy.start_time,
-        end_time: strategy.end_time,
-        squareoff_time: strategy.squareoff_time,
-        risk_per_trade_pct: strategy.risk_per_trade_pct,
-        stop_loss_pct: strategy.stop_loss_pct,
-        take_profit_pct: strategy.take_profit_pct,
-        market_type: strategy.market_type ?? null,
-        paper_strategy_type: strategy.paper_strategy_type ?? null,
-        symbols: strategy.symbols as unknown as FullCustomStrategy["symbols"],
-        execution_days: strategy.execution_days ?? null,
-        entry_conditions: strategy.entry_conditions ?? null,
-        exit_conditions: strategy.exit_conditions ?? null,
-        position_config: strategy.position_config ?? null,
-        risk_config: strategy.risk_config ?? null,
-        chart_config: strategy.chart_config ?? null,
-      };
-
-      const customEntryConditions = cs.entry_conditions ?? null;
-      const customExitConditions = cs.exit_conditions ?? null;
-      const hasCustomConds = entryConditionsConfigured(customEntryConditions);
-      const customSnapshot = mergeSnapshotWithBacktestRun(cs, sym, exchange, runSl, runTp);
-      const engineStrategy = resolveEngineStrategyIdForCustom(strategy.paper_strategy_type);
-      const derivedMaxHold = deriveMaxHoldDaysFromExit(customExitConditions);
-      const action = strategy.trading_mode === "SHORT" ? "SELL" : "BUY";
-
-      const backtestBody: Record<string, unknown> = {
-        symbol: sym,
-        exchange,
-        strategy: engineStrategy,
-        action,
-        days: 365,
-        stop_loss_pct: runSl,
-        take_profit_pct: runTp,
-        entry_conditions: hasCustomConds ? customEntryConditions : null,
-        exit_conditions: hasCustomConds ? customExitConditions : null,
-        custom_strategy_name: strategy.name,
-        custom_strategy_id: strategy.id,
-        custom_strategy_snapshot: customSnapshot,
-        execution_days:
-          Array.isArray(strategy.execution_days) && strategy.execution_days.length > 0
-            ? strategy.execution_days
-            : null,
-      };
-      if (derivedMaxHold != null) backtestBody.max_hold_days = derivedMaxHold;
-
-      const res = await supabase.functions.invoke("backtest-vectorbt", {
-        body: backtestBody,
-        headers: auth,
-      });
-      const d = res.data as {
-        error?: string;
-        totalTrades?: number;
-        wins?: number;
-        losses?: number;
-        winRate?: number;
-        totalReturn?: number;
-        maxDrawdown?: number;
-        profitFactor?: number;
-        backtestPeriod?: string;
-        strategyAchieved?: boolean;
-        achievementReason?: string;
-        sampleTrades?: { entryDate: string; exitDate: string; returnPct: number; profitable: boolean }[];
-        currentIndicators?: { price?: number; sma20?: number | null; rsi14?: number | null; high20d?: number; low20d?: number };
-        engine?: string;
-        dataSource?: string;
-        usedCustomConditions?: boolean;
-      };
-      if (res.error || d?.error) {
-        toast.error(String(d.error ?? "Backtest failed"));
-        setFireState(sid, { backtestLoading: false });
-        return;
-      }
-      const nTrades = Number(d.totalTrades ?? 0);
-      setFireState(sid, {
-        backtestLoading: false,
-        backtestResult: {
-          totalTrades: nTrades,
-          wins: Number(d.wins ?? 0),
-          losses: Number(d.losses ?? 0),
-          winRate: Number(d.winRate ?? 0),
-          totalReturn: Number(d.totalReturn ?? 0),
-          maxDrawdown: d.maxDrawdown,
-          profitFactor: d.profitFactor,
-          backtestPeriod: d.backtestPeriod,
-          strategyAchieved: d.strategyAchieved,
-          achievementReason: d.achievementReason,
-          sampleTrades: Array.isArray(d.sampleTrades) ? d.sampleTrades : undefined,
-          currentIndicators: d.currentIndicators,
-          engine: d.engine ?? "vectorbt",
-          dataSource: d.dataSource,
-          usedCustomConditions: d.usedCustomConditions,
-        },
-      });
-      const ruleNote = d.usedCustomConditions
-        ? " — same full snapshot + rules as Algo → Backtesting"
-        : " — preset model (add entry rules in the builder for full parity)";
-      toast.success(`VectorBT backtest: ${nTrades} trades${ruleNote}`);
-    } catch {
-      setFireState(strategy.id, { backtestLoading: false });
-      toast.error("Backtest failed");
-    }
-  }, [firePanel]);
 
   const runBacktest = useCallback(async () => {
     const sym = backtestSymbol.trim().toUpperCase() || "RELIANCE";
@@ -889,32 +826,68 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
       if (ids.length > 0) {
         const { data: pendingRows } = await (supabase as any)
           .from("pending_conditional_orders")
-          .select("strategy_id,status,action,symbol,quantity,created_at,executed_at,broker_order_id,error_message")
+          .select("strategy_id,status,action,symbol,quantity,created_at,last_checked_at,executed_at,broker_order_id,error_message")
           .in("strategy_id", ids)
           .order("created_at", { ascending: false });
         const map: Record<string, any> = {};
+        const statusPriority: Record<string, number> = { pending: 3, executed: 2, expired: 1, cancelled: 0 };
         for (const r of (pendingRows ?? [])) {
           const sid = String(r.strategy_id ?? "");
-          if (!sid || map[sid]) continue;
+          if (!sid) continue;
+          const rStatus = String(r.status ?? "pending");
+          const existing = map[sid];
+          // Prefer pending > executed > expired > cancelled; within same priority, most recent wins (already sorted by created_at desc)
+          if (existing && (statusPriority[existing.status] ?? 0) >= (statusPriority[rStatus] ?? 0)) continue;
+          // Don't show stale cancelled status older than 1 hour — hide it so user sees clean state
+          if (rStatus === "cancelled" && r.created_at) {
+            const age = Date.now() - Date.parse(String(r.created_at));
+            if (age > 3600_000) continue;
+          }
           map[sid] = {
-            status: String(r.status ?? "pending"),
+            status: rStatus,
             action: String(r.action ?? "BUY"),
             symbol: String(r.symbol ?? ""),
             quantity: Number(r.quantity ?? 0),
             created_at: String(r.created_at ?? ""),
+            last_checked_at: r.last_checked_at ?? null,
             executed_at: r.executed_at ?? null,
             broker_order_id: r.broker_order_id ?? null,
             error_message: r.error_message ?? null,
           };
         }
         setDeployStateByStrategy(map);
+        // Strategy history: all deploy rows for the history tab
+        setStratHistory((pendingRows ?? []).map((r: any) => ({
+          ...r,
+          strategyName: list.find((s) => s.id === r.strategy_id)?.name ?? "Unknown",
+        })));
       } else {
         setDeployStateByStrategy({});
+        setStratHistory([]);
       }
     } catch { /* silent */ } finally { setStratLoading(false); }
   }, []);
 
   useEffect(() => { loadStrategies(); }, [loadStrategies]);
+
+  // Real-time subscription on pending_conditional_orders — no polling needed
+  useEffect(() => {
+    if (portfolioTab !== "strategies" && portfolioTab !== "strat-history") return;
+    const channel = supabase
+      .channel("pending-orders-realtime")
+      .on(
+        "postgres_changes" as any,
+        { event: "*", schema: "public", table: "pending_conditional_orders" },
+        () => { void loadStrategies(); },
+      )
+      .on(
+        "postgres_changes" as any,
+        { event: "*", schema: "public", table: "user_strategies" },
+        () => { void loadStrategies(); },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [portfolioTab, loadStrategies]);
 
   const toggleStrategy = async (id: string) => {
     setToggleLoading(id);
@@ -928,6 +901,23 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
       if (res.error || err) {
         toast.error(String(err ?? res.error?.message ?? "Could not change deployment status"));
         return;
+      }
+      const d = res.data as any;
+      const wasJustActivated = d?.strategy?.is_active === true;
+      if (wasJustActivated) {
+        const autoId   = d?.auto_deploy_id;
+        const autoMsg  = d?.auto_deploy_msg ?? "";
+        const sym      = d?.strategy?.symbols?.[0];
+        const symName  = sym?.symbol ?? (typeof sym === "string" ? sym : "");
+        if (autoId && autoMsg !== "already_pending") {
+          toast.success(`⚡ Strategy armed — scanning ${symName || "configured symbol"} for entry conditions`);
+        } else if (autoMsg === "already_pending") {
+          toast.info(`Strategy is active — already scanning ${symName || "symbol"}`);
+        } else if (autoMsg === "no_symbol_configured") {
+          toast.warning("Strategy activated — but no symbol is set. Deactivate, then toggle on again to set symbol + quantity.");
+        }
+      } else {
+        toast.info("Strategy deactivated — all pending orders cancelled");
       }
       await loadStrategies();
     } finally { setToggleLoading(null); }
@@ -944,6 +934,15 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
         "Connect your broker (OpenAlgo) first — use Connect on Home or the AI Prediction page, then return here to go live.",
         { duration: 9000 },
       );
+      scrollToBrokerConnect();
+      return;
+    }
+    if (data?.token_expired) {
+      toast.error(
+        "Daily broker session expired. Use Connect in the Broker Sync bar above, then turn the strategy on again to pick symbol and quantity.",
+        { duration: 12000 },
+      );
+      scrollToBrokerConnect();
       return;
     }
     setGoLive({ strategy: s, ...defaultsForGoLiveStrategy(s) });
@@ -951,6 +950,11 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
 
   const confirmGoLive = async () => {
     if (!goLive) return;
+    if (data?.token_expired) {
+      toast.error("Reconnect broker (session expired) using Connect above, then try again.");
+      scrollToBrokerConnect();
+      return;
+    }
     const sym = goLive.symbol.trim().toUpperCase();
     const qty = parseInt(goLive.quantity, 10);
     if (!sym) {
@@ -1004,10 +1008,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
         toast.error(String(togErr ?? tog.error?.message ?? "Could not activate strategy"));
         return;
       }
-      toast.success(
-        `"${goLive.strategy.name}" is armed (${sym} × ${qty}). Open Actions → DEPLOY BUY or DEPLOY SELL so the app waits for your strategy’s entry rules before placing an order.`,
-        { duration: 11000 },
-      );
+      toast.success(`Strategy "${goLive.strategy.name}" is now live (${sym} x ${qty}). Entry and exit orders are fully automatic.`, { duration: 8000 });
       setGoLive(null);
       await loadStrategies();
     } finally {
@@ -1060,139 +1061,6 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
     } finally { setCreating(false); }
   };
 
-  const fireSignal = async (strategy: Strategy, action: "BUY" | "SELL") => {
-    if (!strategy.is_active) {
-      toast.error("Activate strategy first to open Actions or deploy.");
-      return;
-    }
-    const fs  = getFireState(strategy.id);
-    const sym = fs.symbol.trim().toUpperCase() || (strategy.symbols?.[0] ?? "");
-    if (!sym) { toast.error("Enter a symbol to fire this signal"); return; }
-
-    // If the strategy was created with an explicit symbol list, enforce it
-    try {
-      const rawList = (strategy as any)?.symbols;
-      const list = Array.isArray(rawList)
-        ? rawList.map((x: any) => String(x?.symbol ?? x ?? "").toUpperCase().trim()).filter(Boolean)
-        : [];
-      if (list.length && !list.includes(sym)) {
-        toast.error(`This strategy is restricted to: ${list.slice(0, 6).join(", ")}${list.length > 6 ? "…" : ""}`);
-        return;
-      }
-    } catch { /* non-blocking */ }
-
-    setFireState(strategy.id, { firing: true });
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-
-      // Run AI analysis first — show as toast so user sees it before order lands
-      try {
-        const aiRes = await supabase.functions.invoke("analyze-trade", {
-          body: { symbol: sym, exchange: fs.exchange, action, quantity: parseInt(fs.quantity) || 1, product: fs.product },
-          headers: { Authorization: `Bearer ${session?.access_token}` },
-        });
-        const analysis = (aiRes.data as any)?.analysis;
-        if (analysis) toast.info(`AI: ${analysis}`, { duration: 10000, id: `ai-${strategy.id}` });
-      } catch { /* non-blocking */ }
-
-      const res = await supabase.functions.invoke("fire-strategy-signal", {
-        body: {
-          strategy_id: strategy.id,
-          symbol: sym,
-          exchange: fs.exchange,
-          action,
-          quantity: parseInt(fs.quantity) || 1,
-          product: fs.product,
-          ai_override: fs.aiOverride ?? false,
-        },
-        headers: { Authorization: `Bearer ${session?.access_token}` },
-      });
-      const result = res.data as any;
-      if (res.error || result?.error) {
-        const aiRejection = result?.ai_override;
-        if (aiRejection?.decision === "REJECT") {
-          toast.error(
-            `AI Override REJECTED this trade\n${aiRejection.reason}\n\nRisks: ${(aiRejection.risks ?? []).join(", ")}\nSuggested: ${aiRejection.suggestedAction ?? "Wait."}`,
-            { duration: 15000, id: `ai-reject-${strategy.id}` },
-          );
-        } else {
-          const msg = result?.error ?? result?.message ?? res.error?.message ?? "Signal failed";
-          console.error("fireSignal failed:", { error: res.error, data: result });
-          toast.error(msg);
-        }
-      }
-      else {
-        const oid = result?.orderid ?? result?.broker_order_id ?? "placed";
-        toast.success(`${action} signal fired on "${strategy.name}" — ${sym} · #${String(oid).slice(-8)}`, { duration: 5000 });
-        setFireState(strategy.id, { lastFired: { action, symbol: sym, exchange: fs.exchange, quantity: fs.quantity, product: fs.product } });
-        setFireState(strategy.id, { open: false });
-      }
-    } catch (e: any) { toast.error(e?.message ?? "Signal failed"); }
-    finally { setFireState(strategy.id, { firing: false }); }
-  };
-
-  const deployStrategy = async (strategy: Strategy, action: "BUY" | "SELL") => {
-    if (!strategy.is_active) {
-      toast.error("Activate strategy first to deploy live.");
-      return;
-    }
-    const fs = getFireState(strategy.id);
-    const sym = fs.symbol.trim().toUpperCase() || (strategy.symbols?.[0] ?? "");
-    if (!sym) {
-      toast.error("Enter/select symbol to deploy live monitoring.");
-      return;
-    }
-    try {
-      const rawList = (strategy as any)?.symbols;
-      const list = Array.isArray(rawList)
-        ? rawList.map((x: any) => String(x?.symbol ?? x ?? "").toUpperCase().trim()).filter(Boolean)
-        : [];
-      if (list.length && !list.includes(sym)) {
-        toast.error(`This strategy is restricted to: ${list.slice(0, 6).join(", ")}${list.length > 6 ? "…" : ""}`);
-        return;
-      }
-    } catch { /* non-blocking */ }
-
-    setDeployLoading(strategy.id);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const deploy_overrides: Record<string, unknown> = {
-        start_time: fs.deployStartTime,
-        end_time: fs.deployEndTime,
-        squareoff_time: fs.deploySquareoff,
-        clock_entry_time: fs.deployEntryClock,
-        clock_exit_time: fs.deployExitClock,
-        use_auto_exit: fs.deployUseAutoExit !== false,
-      };
-
-      const res = await supabase.functions.invoke("queue-conditional-order", {
-        body: {
-          strategy_id: strategy.id,
-          symbol: sym,
-          exchange: fs.exchange || "NSE",
-          action,
-          quantity: parseInt(fs.quantity) || 1,
-          product: fs.product || (strategy.is_intraday ? "MIS" : "CNC"),
-          paper_strategy_type: String(strategy.paper_strategy_type ?? "trend_following"),
-          expires_hours: 72,
-          deploy_overrides,
-        },
-        headers: { Authorization: `Bearer ${session?.access_token}` },
-      });
-      const err = (res.data as any)?.error;
-      if (res.error || err) {
-        toast.error(String(err ?? res.error?.message ?? "Could not deploy strategy"));
-        return;
-      }
-      toast.success(`Live deployment started for ${strategy.name}. Status: pending until conditions match.`);
-      await loadStrategies();
-      setFireState(strategy.id, { open: false });
-    } catch (e: any) {
-      toast.error(e?.message ?? "Could not deploy strategy");
-    } finally {
-      setDeployLoading(null);
-    }
-  };
 
   // ── Load all portfolio data ───────────────────────────────────────────────
   const load = useCallback(async (silent = false) => {
@@ -1395,7 +1263,9 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
   const completedToday = data.orders.filter(o => getOrderStatus(o).toLowerCase() === "complete").length;
 
   const activeStrategyCount = strategies.filter((s) => s.is_active).length;
-  const pendingDeployCount = Object.values(deployStateByStrategy).filter((d) => d?.status === "pending").length;
+  const pendingDeployCount = strategies.filter(
+    (s) => deployStateForDisplay(s, deployStateByStrategy[s.id])?.status === "pending",
+  ).length;
 
   // Pie chart data for positions P&L
   const pieData = openPositions.map(p => ({
@@ -1511,57 +1381,19 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
           {(activeStrategyCount > 0 || pendingDeployCount > 0) && (
             <Alert className="bg-purple-500/5 border-purple-500/25 text-zinc-200">
               <Zap className="h-4 w-4 text-purple-400 shrink-0" />
-              <AlertDescription className="text-xs sm:text-sm leading-relaxed space-y-2">
-                <p>
-                  <strong className="text-purple-200">What &quot;active&quot; means:</strong> your strategy is{" "}
-                  <strong>armed</strong> only — the app is allowed to trade for this strategy. The symbol and quantity you
-                  confirmed at activation are saved, but the app still does{" "}
-                  <strong>not</strong> watch the market for your 6-step builder rules until you{" "}
-                  <strong className="text-amber-200">Deploy BUY</strong> or{" "}
-                  <strong className="text-amber-200">Deploy SELL</strong> (condition-based entry), use a{" "}
-                  <strong>webhook</strong>, or place a <strong className="text-teal-200">manual</strong> order in{" "}
-                  <strong>Actions</strong>.
-                </p>
-                <p className="text-zinc-400 text-xs border-t border-purple-500/20 pt-2 mt-2">
-                  <strong className="text-zinc-300">Fully automatic entry:</strong> open <strong>Actions</strong> on the strategy →{" "}
-                  <strong className="text-amber-300">DEPLOY BUY</strong> or <strong className="text-amber-300">DEPLOY SELL</strong>.{" "}
-                  You should see <strong>LIVE DEPLOYED · PENDING</strong>, then <strong>EXECUTED</strong> when an entry fires.{" "}
-                  <strong className="text-zinc-300">Exits:</strong> if auto-exit is on for that deploy, square-offs still show in{" "}
-                  <button type="button" onClick={() => setPortfolioTab("orders")} className="text-teal-400 underline font-semibold">Orders</button>{" "}
-                  and <button type="button" onClick={() => setPortfolioTab("positions")} className="text-teal-400 underline font-semibold">Positions</button>.
-                </p>
-                <p className="text-zinc-400">
-                  <strong className="text-zinc-300">See real orders:</strong>{" "}
-                  <button
-                    type="button"
-                    onClick={() => setPortfolioTab("orders")}
-                    className="text-teal-400 hover:text-teal-300 underline font-semibold"
-                  >
-                    Orders
-                  </button>{" "}
-                  tab (working / filled) and{" "}
-                  <button
-                    type="button"
-                    onClick={() => setPortfolioTab("tradebook")}
-                    className="text-teal-400 hover:text-teal-300 underline font-semibold"
-                  >
-                    Trades
-                  </button>{" "}
-                  tab (executed fills). Watch <strong className="text-zinc-300">Filled Today</strong> above.{" "}
-                  <button
-                    type="button"
-                    onClick={() => setPortfolioTab("strategies")}
-                    className="text-purple-300 hover:text-purple-200 underline font-semibold"
-                  >
-                    Strategies
-                  </button>{" "}
-                  shows live deploy status (pending / executed) per strategy.
-                </p>
+              <AlertDescription className="text-xs sm:text-sm leading-relaxed space-y-1.5">
                 {pendingDeployCount > 0 && (
-                  <p className="text-amber-400/95 text-xs font-medium">
-                    {pendingDeployCount} live deploy{pendingDeployCount === 1 ? "" : "s"} waiting for entry conditions…
+                  <p className="text-teal-400 font-semibold">
+                    {pendingDeployCount} strateg{pendingDeployCount === 1 ? "y" : "ies"} scanning for entry conditions. Orders placed automatically when conditions match.
                   </p>
                 )}
+                <p className="text-zinc-400 text-xs">
+                  Check{" "}
+                  <button type="button" onClick={() => setPortfolioTab("orders")} className="text-teal-400 underline font-semibold">Orders</button>,{" "}
+                  <button type="button" onClick={() => setPortfolioTab("tradebook")} className="text-teal-400 underline font-semibold">Trades</button>, and{" "}
+                  <button type="button" onClick={() => setPortfolioTab("strategies")} className="text-purple-300 underline font-semibold">Strategies</button>{" "}
+                  tabs for live status.
+                </p>
               </AlertDescription>
             </Alert>
           )}
@@ -1629,16 +1461,17 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
 
           {/* ── Tabs ──────────────────────────────────────────────────── */}
           <Tabs value={portfolioTab} onValueChange={setPortfolioTab} className="w-full">
-            <TabsList className="bg-zinc-800 border border-zinc-700 h-auto w-full grid grid-cols-2 sm:grid-cols-4 p-1 gap-1.5">
+            <TabsList className="bg-zinc-800 border border-zinc-700 h-auto w-full grid grid-cols-3 sm:grid-cols-3 lg:grid-cols-6 p-1 gap-1.5">
               {[
-                { value: "positions",  label: "Positions", icon: <ArrowUpRight className="h-3 w-3 mr-0.5" />, count: brokerPositions.length },
-                { value: "holdings",   label: "Holdings",  icon: <Briefcase className="h-3 w-3 mr-0.5" />,    count: data.holdings.length },
-                { value: "orders",     label: "Orders",    icon: <ClipboardList className="h-3 w-3 mr-0.5" />, count: data.orders.length },
-                { value: "tradebook",  label: "Trades",    icon: <BookOpen className="h-3 w-3 mr-0.5" />,      count: data.tradebook.length },
-                // { value: "strategies", label: "Strategies",icon: <Zap className="h-3 w-3 mr-0.5" />,          count: strategies.length },
+                { value: "positions",       label: "Positions",  icon: <ArrowUpRight className="h-3 w-3 mr-0.5" />,  count: brokerPositions.length },
+                { value: "holdings",        label: "Holdings",   icon: <Briefcase className="h-3 w-3 mr-0.5" />,     count: data.holdings.length },
+                { value: "orders",          label: "Orders",     icon: <ClipboardList className="h-3 w-3 mr-0.5" />, count: data.orders.length },
+                { value: "tradebook",       label: "Trades",     icon: <BookOpen className="h-3 w-3 mr-0.5" />,      count: data.tradebook.length },
+                { value: "strategies",      label: "Strategies", icon: <Zap className="h-3 w-3 mr-0.5" />,           count: strategies.length },
+                { value: "strat-history",   label: "Algo Hist.", icon: <LineChart className="h-3 w-3 mr-0.5" />,     count: stratHistory.length },
               ].map(tab => (
                 <TabsTrigger key={tab.value} value={tab.value}
-                  className={`text-xs sm:text-sm h-10 px-2 data-[state=active]:bg-teal-500 data-[state=active]:text-black flex items-center justify-center gap-0.5 transition-all w-full ${tab.value === "strategies" ? "col-span-2 sm:col-span-1" : ""}`}>
+                  className="text-xs sm:text-sm h-10 px-2 data-[state=active]:bg-teal-500 data-[state=active]:text-black flex items-center justify-center gap-0.5 transition-all w-full">
                   {tab.icon}{tab.label} ({tab.count})
                 </TabsTrigger>
               ))}
@@ -2003,6 +1836,25 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
             </TabsContent>
             {/* ── Strategies ────────────────────────────────────────── */}
             <TabsContent value="strategies" className="mt-2 space-y-3">
+              {data.token_expired && (
+                <Alert className="bg-amber-500/10 border-amber-500/35 py-3">
+                  <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
+                  <AlertDescription className="text-xs text-amber-100/95 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <span>
+                      Broker session expired — you can’t arm strategies, deploy, or place orders until you reconnect. Use{" "}
+                      <strong className="text-white">Connect</strong> in the <strong className="text-white">Broker Sync</strong> bar above (same page).
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="shrink-0 h-8 bg-orange-500 hover:bg-orange-400 text-white font-bold text-xs"
+                      onClick={() => scrollToBrokerConnect()}
+                    >
+                      Go to Connect
+                    </Button>
+                  </AlertDescription>
+                </Alert>
+              )}
               {/* Header row with Add button */}
               <div className="flex items-center justify-between">
                 <p className="text-sm text-zinc-300 font-semibold flex items-center gap-1.5">
@@ -2048,7 +1900,8 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                 <div className="space-y-2">
                   {strategies.map(s => {
                     const fs = getFireState(s.id);
-                    const dep = deployStateByStrategy[s.id];
+                    const dep = deployStateForDisplay(s, deployStateByStrategy[s.id]);
+                    const liveChecking = isLiveChecking(dep);
                     return (
                       <div key={s.id} className={`rounded-xl border transition-colors ${
                         s.is_active ? "bg-purple-500/5 border-purple-500/20" : "bg-zinc-900 border-zinc-800"
@@ -2072,39 +1925,6 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                           >
                             <LineChart className="h-3.5 w-3.5" /> Edit
                           </button>
-                          {/* Deploy + manual order panel */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const opening = !fs.open;
-                              const ec = s.entry_conditions;
-                              const xc = s.exit_conditions;
-                              const autoExitOn = !(xc && typeof xc === "object" && xc.autoExitEnabled === false);
-                              setFireState(s.id, {
-                                open: opening,
-                                ...(opening ? {
-                                  deployStartTime: s.start_time ?? "09:15",
-                                  deployEndTime: s.end_time ?? "15:15",
-                                  deploySquareoff: s.squareoff_time ?? "15:15",
-                                  deployEntryClock: ec?.clockEntryTime ? String(ec.clockEntryTime) : "09:20",
-                                  deployExitClock: xc?.clockExitTime ? String(xc.clockExitTime) : (s.squareoff_time ?? "15:15"),
-                                  deployUseAutoExit: autoExitOn,
-                                  symbol: fs.symbol.trim() ? fs.symbol : firstListedSymbol(s.symbols),
-                                } : {}),
-                              });
-                            }}
-                            disabled={!s.is_active}
-                            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold border transition-all ${
-                              fs.open ? "bg-teal-500/20 border-teal-500/40 text-teal-300" : "border-zinc-700 text-zinc-500 hover:border-teal-500/40 hover:text-teal-400"
-                            } disabled:opacity-50 disabled:cursor-not-allowed`}
-                            title={
-                              s.is_active
-                                ? "Open: DEPLOY = wait for strategy conditions; green/red = one immediate order (optional)"
-                                : "Activate strategy first"
-                            }
-                          >
-                            <Zap className="h-3.5 w-3.5" /> Actions
-                          </button>
                           {/* Active toggle */}
                           <button
                             type="button"
@@ -2127,329 +1947,70 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                           </button>
                         </div>
 
-                        {/* Meta badges */}
-                        <div className="flex items-center gap-1.5 flex-wrap px-3 pb-2.5">
+                        {/* Meta badges + live status diagnostic */}
+                        <div className="flex items-center gap-1.5 flex-wrap px-3 pb-1.5">
                           <span className={`text-xs px-2 py-0.5 rounded font-bold tracking-tight ${
                             s.is_active ? "bg-purple-500/15 text-purple-300 border border-purple-500/20" : "bg-zinc-800 text-zinc-500 border border-zinc-700/30"
-                          }`}
-                            title={
-                              s.is_active
-                                ? "Armed: use Actions → DEPLOY for auto entry, or optional instant BUY/SELL. Webhooks also work. Check Orders / Trades when something fills."
-                                : "Turn on to allow Actions (deploy / manual), webhooks, and live deploy."
-                            }
-                          >{s.is_active ? "● ACTIVE" : "○ INACTIVE"}</span>
+                          }`}>{s.is_active ? "● ACTIVE" : "○ INACTIVE"}</span>
                           {dep?.status === "pending" && (
-                            <span className="text-xs px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30 font-bold">
-                              LIVE DEPLOYED · PENDING
+                            <span className={`text-xs px-2 py-0.5 rounded border font-bold animate-pulse ${
+                              liveChecking ? "bg-teal-500/10 text-teal-300 border-teal-500/30" : "bg-amber-500/10 text-amber-300 border-amber-500/30"
+                            }`} title={dep.last_checked_at ? `Last scanned: ${new Date(dep.last_checked_at).toLocaleTimeString("en-IN")}` : "Monitor not scanning yet — start the monitor process"}>
+                              {liveChecking ? "⚡ SCANNING" : "⏳ AWAITING TICK"}
+                              {dep.last_checked_at && (
+                                <span className="ml-1 opacity-70 font-normal">
+                                  {new Date(dep.last_checked_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                                </span>
+                              )}
                             </span>
                           )}
                           {dep?.status === "executed" && (
                             <span className="text-xs px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 font-bold">
-                              EXECUTED · {dep.symbol} · #{String(dep.broker_order_id ?? "").slice(-8) || "—"}
-                            </span>
-                          )}
-                          {dep?.status === "cancelled" && (
-                            <span className="text-xs px-2 py-0.5 rounded bg-red-500/10 text-red-300 border border-red-500/30 font-bold" title={dep.error_message ?? ""}>
-                              DEPLOY CANCELLED
+                              ✓ EXECUTED · {dep.symbol}{dep.broker_order_id ? ` · #${String(dep.broker_order_id).slice(-8)}` : ""}
+                              {dep.executed_at && <span className="ml-1 opacity-70 font-normal">{new Date(dep.executed_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</span>}
                             </span>
                           )}
                           <span className="text-xs px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/30 font-medium">{s.trading_mode}</span>
                           <span className="text-xs px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/30 font-medium">{s.is_intraday ? "Intraday" : "Positional"}</span>
-                          <span className="text-xs text-zinc-500 font-medium tabular-nums ml-1" title="Session window (IST). Fire from UI = executes immediately. Webhook = when conditions met within this window.">{s.start_time}–{s.end_time}</span>
+                          <span className="text-xs text-zinc-500 font-medium tabular-nums ml-1">{s.start_time}–{s.end_time}</span>
                           {s.stop_loss_pct && <span className="text-xs font-bold text-red-500/80">SL {s.stop_loss_pct}%</span>}
                           {s.take_profit_pct && <span className="text-xs font-bold text-green-500/80">TP {s.take_profit_pct}%</span>}
                         </div>
 
-                        {/* Trade tools panel (deploy + manual) */}
-                        {fs.open && (
-                          <div className="mx-3 mb-3 rounded-lg border border-teal-500/20 bg-zinc-950 p-3 space-y-3">
-                            <p className="text-sm font-bold text-teal-400 flex items-center gap-2">
-                              <Zap className="h-4 w-4" /> Trade tools — {s.name}
-                            </p>
-                            <p className="text-[10px] text-zinc-500 leading-relaxed -mt-1">
-                              <strong className="text-amber-400/90">DEPLOY</strong> = automatic: waits until your strategy conditions match, then places one entry order.{" "}
-                              <strong className="text-teal-400/90">BUY / SELL</strong> below = optional one-shot market order (not required for algo mode).
-                            </p>
-                            <div className="grid grid-cols-2 gap-3">
-                              <div className="space-y-1.5">
-                                <Label className="text-zinc-500 text-xs font-semibold">Symbol *</Label>
-                                <SymbolSearchInput
-                                  value={fs.symbol}
-                                  onChange={(v) => setFireState(s.id, { symbol: v })}
-                                  onSelect={(sym, ex) => setFireState(s.id, { symbol: sym, exchange: ex })}
-                                />
-                              </div>
-                              <div className="space-y-1.5">
-                                <Label className="text-zinc-500 text-xs font-semibold">Exchange</Label>
-                                <Select value={fs.exchange} onValueChange={v => setFireState(s.id, { exchange: v })}>
-                                  <SelectTrigger className="bg-zinc-900 border-zinc-700 text-zinc-200 h-9 text-xs font-mono">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent className="bg-zinc-900 border-zinc-700">
-                                    {EXCHANGES_LIST.map(e => (
-                                      <SelectItem key={e} value={e} className="text-xs text-zinc-200">{e}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-3">
-                              <div className="space-y-1.5">
-                                <Label className="text-zinc-500 text-xs font-semibold">Quantity</Label>
-                                <Input
-                                  type="number" min={1}
-                                  value={fs.quantity}
-                                  onChange={e => setFireState(s.id, { quantity: e.target.value })}
-                                  className="bg-zinc-900 border-zinc-700 text-white font-mono text-sm h-9"
-                                />
-                              </div>
-                              <div className="space-y-1.5">
-                                <Label className="text-zinc-500 text-xs font-semibold">Product</Label>
-                                <Select value={fs.product} onValueChange={v => setFireState(s.id, { product: v })}>
-                                  <SelectTrigger className="bg-zinc-900 border-zinc-700 text-zinc-200 h-9 text-xs font-bold uppercase">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent className="bg-zinc-900 border-zinc-700">
-                                    {PRODUCT_LIST.map(p => (
-                                      <SelectItem key={p} value={p} className="text-xs text-zinc-200">{p}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            </div>
-
-                            <div className="rounded-lg border border-amber-800/35 bg-zinc-900/60 p-3 space-y-3">
-                              <p className="text-xs font-bold text-amber-400/95">Live deploy — session &amp; clocks</p>
-                              <p className="text-[10px] text-zinc-500 leading-relaxed">
-                                Applied only for this deployment; your saved strategy is unchanged. Conditions are evaluated on live candles each run.
-                              </p>
-                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                <div className="space-y-1">
-                                  <Label className="text-zinc-500 text-[10px] font-semibold">Session start</Label>
-                                  <Input type="time" value={fs.deployStartTime ?? "09:15"}
-                                    onChange={(e) => setFireState(s.id, { deployStartTime: e.target.value })}
-                                    className="h-8 bg-zinc-900 border-zinc-700 text-white text-xs" />
+                        {/* Live diagnostic strip — always visible when active+pending */}
+                        {s.is_active && dep && (dep.status === "pending" || dep.status === "cancelled") && (
+                          <div className={`mx-3 mb-3 rounded-lg border px-3 py-2 text-[11px] leading-relaxed ${
+                            dep.status === "pending" ? "bg-zinc-950 border-zinc-800" : "bg-red-950/20 border-red-900/30"
+                          }`}>
+                            {dep.status === "pending" ? (
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-zinc-400 font-semibold">Symbol:</span>
+                                  <span className="text-white font-mono font-bold">{dep.symbol || "—"}</span>
+                                  <span className="text-zinc-500">·</span>
+                                  <span className="text-zinc-400 font-semibold">Side:</span>
+                                  <span className={`font-bold ${dep.action === "BUY" ? "text-emerald-400" : "text-red-400"}`}>{dep.action}</span>
+                                  <span className="text-zinc-500">·</span>
+                                  <span className="text-zinc-400 font-semibold">Qty:</span>
+                                  <span className="text-zinc-200">{dep.quantity}</span>
                                 </div>
-                                <div className="space-y-1">
-                                  <Label className="text-zinc-500 text-[10px] font-semibold">Session end</Label>
-                                  <Input type="time" value={fs.deployEndTime ?? "15:15"}
-                                    onChange={(e) => setFireState(s.id, { deployEndTime: e.target.value })}
-                                    className="h-8 bg-zinc-900 border-zinc-700 text-white text-xs" />
-                                </div>
-                                <div className="space-y-1">
-                                  <Label className="text-zinc-500 text-[10px] font-semibold">Squareoff</Label>
-                                  <Input type="time" value={fs.deploySquareoff ?? "15:15"}
-                                    onChange={(e) => setFireState(s.id, { deploySquareoff: e.target.value })}
-                                    className="h-8 bg-zinc-900 border-zinc-700 text-white text-xs" />
-                                </div>
-                              </div>
-                              <div className="grid grid-cols-2 gap-2">
-                                <div className="space-y-1">
-                                  <Label className="text-zinc-500 text-[10px] font-semibold">Entry clock (time / hybrid)</Label>
-                                  <Input type="time" value={fs.deployEntryClock ?? "09:20"}
-                                    onChange={(e) => setFireState(s.id, { deployEntryClock: e.target.value })}
-                                    className="h-8 bg-zinc-900 border-zinc-700 text-white text-xs" />
-                                </div>
-                                <div className="space-y-1">
-                                  <Label className="text-zinc-500 text-[10px] font-semibold">Exit clock</Label>
-                                  <Input type="time" value={fs.deployExitClock ?? "15:15"}
-                                    onChange={(e) => setFireState(s.id, { deployExitClock: e.target.value })}
-                                    className="h-8 bg-zinc-900 border-zinc-700 text-white text-xs" />
-                                </div>
-                              </div>
-                              <label className="flex items-center gap-2 cursor-pointer">
-                                <Switch
-                                  checked={fs.deployUseAutoExit !== false}
-                                  onCheckedChange={(v) => setFireState(s.id, { deployUseAutoExit: v })}
-                                />
-                                <span className="text-[11px] text-zinc-400 leading-snug">Use automated exits (SL/TP / timed / clock) for this deploy</span>
-                              </label>
-                            </div>
-
-                            {/* Backtest option — available for every order and strategy including custom */}
-                            <div className="rounded-lg border border-amber-900/50 bg-amber-950/20 p-3 space-y-2.5">
-                              <p className="text-xs font-bold text-amber-500 flex items-center gap-1.5">
-                                <BarChart3 className="h-3.5 w-3.5" /> Quick backtest (VectorBT)
-                              </p>
-                              <p className="text-[11px] text-zinc-500 leading-tight">
-                                Same <code className="text-zinc-400">backtest-vectorbt</code> path as{" "}
-                                <span className="text-teal-500/90 font-medium">Algo Trading → Backtesting</span>
-                                — full strategy snapshot and entry/exit rules when your builder has them.
-                              </p>
-                              <div className="flex flex-wrap items-end gap-2">
-                                <div className="flex-1 min-w-[160px]">
-                                  <p className="text-[10px] text-zinc-500 font-medium">Strategy model</p>
-                                  <p className="text-xs text-zinc-200 font-bold uppercase tracking-tight">
-                                    {(() => {
-                                      const code = String(s.paper_strategy_type ?? "trend_following");
-                                      const label = STRATEGIES.find(x => x.value === code)?.label;
-                                      return label ?? code.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-                                    })()}
-                                  </p>
-                                </div>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-8 text-xs font-bold border-amber-700/50 text-amber-400 hover:bg-amber-900/30"
-                                  disabled={fs.backtestLoading || !fs.symbol.trim()}
-                                  onClick={() => runBacktestForFire(s)}
-                                >
-                                  {fs.backtestLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BarChart3 className="h-3.5 w-3.5" />}
-                                  <span className="ml-1.5">{fs.backtestLoading ? "Running…" : "Run Backtest"}</span>
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-8 text-xs font-bold border-purple-700/50 text-purple-300 hover:bg-purple-900/30"
-                                  disabled={fs.backtestAiLoading || !fs.symbol.trim()}
-                                  onClick={async () => {
-                                    const sym = fs.symbol.trim().toUpperCase();
-                                    if (!sym) return;
-                                    setFireState(s.id, { backtestAiLoading: true });
-                                    try {
-                                      const { data: { session } } = await supabase.auth.getSession();
-                                      const br = fs.backtestResult;
-                                      const aiRes = await supabase.functions.invoke("analyze-trade", {
-                                        body: {
-                                          symbol: sym,
-                                          exchange: fs.exchange,
-                                          action: "BUY",
-                                          quantity: parseInt(fs.quantity) || 1,
-                                          product: fs.product,
-                                          backtest_summary: br ? {
-                                            totalTrades: br.totalTrades,
-                                            winRate: br.winRate,
-                                            totalReturn: br.totalReturn,
-                                            strategyAchieved: br.strategyAchieved,
-                                          } : undefined,
-                                        },
-                                        headers: { Authorization: `Bearer ${session?.access_token}` },
-                                      });
-                                      const analysis = (aiRes.data as any)?.analysis ?? "No AI analysis available.";
-                                      setFireState(s.id, { backtestAiAnalysis: analysis });
-                                      toast.info(`AI: ${analysis}`, { duration: 10000, id: `ai-bt-${s.id}` });
-                                    } catch {
-                                      toast.error("AI analysis failed");
-                                    } finally {
-                                      setFireState(s.id, { backtestAiLoading: false });
-                                    }
-                                  }}
-                                >
-                                  {fs.backtestAiLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Brain className="h-3.5 w-3.5" />}
-                                  <span className="ml-1.5">{fs.backtestAiLoading ? "Analysing…" : "AI Analysis"}</span>
-                                </Button>
-                              </div>
-                              {fs.backtestResult && (
-                                <div className="text-xs space-y-2.5">
-                                  {fs.backtestResult.usedCustomConditions === true && (
-                                    <p className="text-emerald-500/90 text-[11px] font-medium">
-                                      Custom entry/exit rules from this strategy were sent to the engine (parity with Backtesting tab).
-                                    </p>
-                                  )}
-                                  {fs.backtestResult.usedCustomConditions === false && (
-                                    <p className="text-zinc-500 text-[11px]">
-                                      No builder entry rules detected — ran as preset model. Add Entry in the strategy builder for rule-level backtests.
-                                    </p>
-                                  )}
-                                  {fs.backtestResult.dataSource && (
-                                    <p className="text-zinc-500 text-[11px]">
-                                      Data source: <span className="text-teal-400/90 font-medium">{fs.backtestResult.dataSource}</span>
-                                    </p>
-                                  )}
-                                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center">
-                                    <span className="text-zinc-500 uppercase text-[10px] tracking-wider">Trades</span><span className="text-zinc-500 uppercase text-[10px] tracking-wider">Win</span><span className="text-zinc-500 uppercase text-[10px] tracking-wider">Win rate</span><span className="text-zinc-500 uppercase text-[10px] tracking-wider">Return</span>
-                                    <span className="font-mono font-bold text-sm">{fs.backtestResult.totalTrades}</span>
-                                    <span className="font-mono text-zinc-200 text-sm">{fs.backtestResult.wins}/{fs.backtestResult.losses}</span>
-                                    <span className="font-mono text-emerald-400 font-bold text-sm">{fs.backtestResult.winRate}%</span>
-                                    <span className={`font-mono text-sm font-bold ${fs.backtestResult.totalReturn >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fs.backtestResult.totalReturn >= 0 ? "+" : ""}{fs.backtestResult.totalReturn}%</span>
+                                {dep.error_message ? (
+                                  <div className="flex items-start gap-1.5">
+                                    <span className="text-amber-400 font-semibold shrink-0">Why not fired:</span>
+                                    <span className="text-zinc-300 break-words">{dep.error_message}</span>
                                   </div>
-                                  {typeof fs.backtestResult.profitFactor === "number" && (
-                                    <div className="grid grid-cols-3 gap-2 text-center border-t border-zinc-800 pt-2">
-                                      <span className="text-zinc-500 uppercase text-[10px] tracking-wider">PF</span><span className="text-zinc-500 uppercase text-[10px] tracking-wider">Max DD</span><span className="text-zinc-500 uppercase text-[10px] tracking-wider">Now</span>
-                                      <span className="font-mono text-sm">{fs.backtestResult.profitFactor}</span>
-                                      <span className="font-mono text-sm">{fs.backtestResult.maxDrawdown ?? "—"}%</span>
-                                      <span className={`font-mono text-[11px] font-bold ${fs.backtestResult.strategyAchieved ? "text-emerald-400" : "text-zinc-500"}`}>{fs.backtestResult.strategyAchieved ? "MET" : "NOT MET"}</span>
-                                    </div>
-                                  )}
-                                  {fs.backtestResult.achievementReason && (
-                                    <p className="text-[11px] text-zinc-500 italic">{fs.backtestResult.achievementReason}</p>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                            {/* AI Override toggle */}
-                            <div className="flex items-center justify-between gap-2 px-1 py-1.5 rounded-lg border border-zinc-700 bg-zinc-900/50">
-                              <div className="space-y-0.5">
-                                <p className="text-[10px] text-zinc-300 font-medium">AI Override</p>
-                                <p className="text-[9px] text-zinc-500">AI will accept or reject the trade with reasons before execution</p>
+                                ) : dep.last_checked_at ? (
+                                  <div className="text-zinc-500">Conditions not yet matched — waiting for next tick on {dep.symbol}</div>
+                                ) : (
+                                  <div className="text-amber-400/80 font-semibold">Monitor not running — start chartmate-monitor to begin scanning</div>
+                                )}
                               </div>
-                              <Switch
-                                checked={fs.aiOverride ?? false}
-                                onCheckedChange={(v) => setFireState(s.id, { aiOverride: v })}
-                              />
-                            </div>
-                            <div className="rounded-lg border border-amber-900/40 bg-amber-950/15 p-2 space-y-2">
-                              <p className="text-[10px] font-bold text-amber-400 uppercase tracking-wide">1 · Automatic entry (algo)</p>
-                              <p className="text-[9px] text-zinc-500 leading-snug">Watches the market; one order when rules match. Badge: PENDING → EXECUTED.</p>
-                              <div className="grid grid-cols-2 gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => deployStrategy(s, "BUY")} disabled={Boolean(fs.firing || deployLoading === s.id)}
-                                  className="py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50"
-                                >
-                                  {deployLoading === s.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
-                                  DEPLOY BUY
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => deployStrategy(s, "SELL")} disabled={Boolean(fs.firing || deployLoading === s.id)}
-                                  className="py-2 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50"
-                                >
-                                  {deployLoading === s.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
-                                  DEPLOY SELL
-                                </button>
+                            ) : (
+                              <div className="flex items-start gap-1.5">
+                                <span className="text-red-400 font-semibold shrink-0">Cancelled:</span>
+                                <span className="text-zinc-400">{dep.error_message || "Order was cancelled"}</span>
                               </div>
-                            </div>
-                            <div className="rounded-lg border border-zinc-700 bg-zinc-900/40 p-2 space-y-2">
-                              <p className="text-[10px] font-bold text-teal-500/90 uppercase tracking-wide">2 · Manual (optional)</p>
-                              <p className="text-[9px] text-zinc-500 leading-snug">One immediate market order — skip condition wait. For testing or discretion.</p>
-                              <div className="grid grid-cols-2 gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => fireSignal(s, "BUY")} disabled={fs.firing}
-                                  className="py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50"
-                                >
-                                  {fs.firing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><TrendingUp className="h-3.5 w-3.5" /> BUY now</>}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => fireSignal(s, "SELL")} disabled={fs.firing}
-                                  className="py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50"
-                                >
-                                  {fs.firing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><TrendingDown className="h-3.5 w-3.5" /> SELL now</>}
-                                </button>
-                              </div>
-                            </div>
-                            {fs.lastFired && (
-                              <button
-                                onClick={() => {
-                                  setFireState(s.id, {
-                                    symbol: fs.lastFired!.symbol,
-                                    exchange: fs.lastFired!.exchange,
-                                    quantity: fs.lastFired!.quantity,
-                                    product: fs.lastFired!.product,
-                                  });
-                                  fireSignal(s, fs.lastFired!.action);
-                                }}
-                                disabled={fs.firing}
-                                className="w-full py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-semibold flex items-center justify-center gap-1.5 disabled:opacity-50"
-                              >
-                                <RefreshCw className="h-3.5 w-3.5" /> Re-execute last ({fs.lastFired.action})
-                              </button>
                             )}
-                            <p className="text-[11px] text-zinc-600 font-medium text-center italic">
-                              Backtest above is optional. DEPLOY = wait for conditions; BUY now / SELL now = instant only.
-                            </p>
                           </div>
                         )}
 
@@ -2460,6 +2021,86 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
               )}
 
             </TabsContent>
+
+            {/* ── Algo History ──────────────────────────────────────── */}
+            <TabsContent value="strat-history" className="mt-2 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-zinc-300 font-semibold flex items-center gap-1.5">
+                  <LineChart className="h-4 w-4 text-purple-400" /> Algo Deploy History
+                </p>
+                <button onClick={loadStrategies} className="p-1 text-zinc-500 hover:text-zinc-300 transition-colors" title="Refresh">
+                  <RefreshCw className={`h-3.5 w-3.5 ${stratLoading ? "animate-spin" : ""}`} />
+                </button>
+              </div>
+              {stratLoading ? (
+                <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-zinc-600" /></div>
+              ) : stratHistory.length === 0 ? (
+                <div className="text-center py-8">
+                  <LineChart className="h-8 w-8 text-zinc-800 mx-auto mb-2" />
+                  <p className="text-sm text-zinc-500 font-medium">No deploy history yet</p>
+                  <p className="text-xs text-zinc-600 mt-1">Deploy a strategy to see it here</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-lg border border-zinc-800">
+                  <table className="w-full text-xs">
+                    <thead className="sticky top-0 bg-zinc-900 z-10">
+                      <tr className="border-b border-zinc-800 bg-zinc-800/60">
+                        {["Strategy", "Symbol", "Side", "Status", "Reason / Order ID", "Created", "Last Checked"].map(h => (
+                          <th key={h} className="text-left text-zinc-400 font-semibold uppercase tracking-wider text-[11px] px-3 py-2.5 whitespace-nowrap">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {stratHistory.map((r: any, i: number) => {
+                        const status = String(r.status ?? "");
+                        const statusCls =
+                          status === "pending"   ? "bg-amber-500/10 text-amber-300 border-amber-500/25" :
+                          status === "executed"  ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/25" :
+                          status === "cancelled" ? "bg-red-500/10 text-red-400 border-red-500/25" :
+                          status === "expired"   ? "bg-zinc-700/40 text-zinc-400 border-zinc-600/25" :
+                          "bg-zinc-800 text-zinc-400 border-zinc-700";
+                        const reason = r.error_message
+                          ? String(r.error_message).slice(0, 60) + (r.error_message.length > 60 ? "…" : "")
+                          : r.broker_order_id
+                            ? `#${String(r.broker_order_id).slice(-10)}`
+                            : "—";
+                        const createdStr = r.created_at
+                          ? new Date(r.created_at).toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" })
+                          : "—";
+                        const checkedStr = r.last_checked_at
+                          ? new Date(r.last_checked_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+                          : "Never";
+                        return (
+                          <tr key={i} className="border-b border-zinc-800/50 hover:bg-zinc-800/25">
+                            <td className="px-3 py-2.5">
+                              <p className="text-white font-semibold truncate max-w-[120px]" title={r.strategyName}>{r.strategyName}</p>
+                            </td>
+                            <td className="px-3 py-2.5 font-mono text-zinc-200 font-semibold whitespace-nowrap">{r.symbol || "—"}</td>
+                            <td className="px-3 py-2.5">
+                              <span className={`px-2 py-0.5 rounded border font-bold text-[11px] ${
+                                String(r.action) === "BUY"
+                                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                                  : "bg-red-500/10 text-red-400 border-red-500/20"
+                              }`}>{r.action || "—"}</span>
+                            </td>
+                            <td className="px-3 py-2.5">
+                              <span className={`px-2 py-0.5 rounded border font-bold text-[11px] capitalize ${statusCls}`}>{status}</span>
+                            </td>
+                            <td className="px-3 py-2.5 text-zinc-400 max-w-[200px]">
+                              <span title={r.error_message ?? r.broker_order_id ?? ""}>{reason}</span>
+                            </td>
+                            <td className="px-3 py-2.5 text-zinc-500 whitespace-nowrap tabular-nums">{createdStr}</td>
+                            <td className={`px-3 py-2.5 whitespace-nowrap tabular-nums font-medium ${
+                              r.last_checked_at ? "text-teal-400" : "text-zinc-600 italic"
+                            }`}>{checkedStr}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </TabsContent>
           </Tabs>
         </CardContent>
       </Card>
@@ -2467,10 +2108,9 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
       <Dialog open={goLive != null} onOpenChange={(o) => { if (!o) setGoLive(null); }}>
         <DialogContent className="bg-zinc-950 border-zinc-800 text-white sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-white">Go live — confirm execution</DialogTitle>
+            <DialogTitle className="text-white">Activate strategy</DialogTitle>
             <DialogDescription className="text-zinc-400 text-xs">
-              Orders route through OpenAlgo to your broker. Enter the symbol and quantity you want this strategy to use
-              (same as OpenAlgo: symbol, exchange, quantity, product).
+              Set the symbol and quantity. Once activated, entry and exit orders are placed automatically when strategy conditions match in real-time.
             </DialogDescription>
           </DialogHeader>
           {goLive && (
@@ -2548,7 +2188,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
               onClick={() => void confirmGoLive()}
               disabled={goLiveLoading}
             >
-              {goLiveLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Activate strategy"}
+              {goLiveLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Activate & start scanning"}
             </Button>
           </DialogFooter>
         </DialogContent>

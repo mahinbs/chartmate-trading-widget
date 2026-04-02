@@ -143,8 +143,8 @@ async function fetchAlphaVantageDailyCandles(yahooSymbol: string): Promise<Ohlcv
 function normalizeToYahooSymbol(raw: string): string {
   const clean = raw.replace(/^(NASDAQ|NYSE|BINANCE|OANDA|SP|DJ|COMEX|NYMEX|NSE|BSE):/i, "").trim();
   if (clean.endsWith(".NS") || clean.endsWith(".BO")) return clean.toUpperCase();
-  if (/^[A-Z]{1,5}$/.test(clean) && raw.toUpperCase().includes("NSE:")) return `${clean}.NS`;
-  if (/^[A-Z]{1,5}$/.test(clean) && raw.toUpperCase().includes("BSE:")) return `${clean}.BO`;
+  if (/^[A-Z]{1,5}$/i.test(clean) && raw.toUpperCase().includes("NSE:")) return `${clean.toUpperCase()}.NS`;
+  if (/^[A-Z]{1,5}$/i.test(clean) && raw.toUpperCase().includes("BSE:")) return `${clean.toUpperCase()}.BO`;
   if (clean.includes("-") || clean.includes("=") || clean.includes("^") || clean.includes("/")) {
     return clean.toUpperCase();
   }
@@ -157,7 +157,12 @@ function normalizeToYahooSymbol(raw: string): string {
     q = clean.slice(3).toUpperCase();
   }
   if (forexPairs.includes(b) && forexPairs.includes(q)) return `${b}${q}=X`;
-  return clean.toUpperCase();
+  // Indian stocks: pure-alpha symbols >5 chars that don't match US/forex patterns → append .NS
+  const upper = clean.toUpperCase();
+  if (/^[A-Z]{2,}$/.test(upper) && upper.length > 5 && !forexPairs.includes(upper.slice(0, 3))) {
+    return `${upper}.NS`;
+  }
+  return upper;
 }
 
 async function fetchYahooDaily(yahooSymbol: string, days: number): Promise<{ t: number[]; c: number[]; h: number[]; l: number[]; o: number[]; v: number[] }> {
@@ -318,7 +323,70 @@ type RawSignal = {
   };
   /** Saved custom-strategy fields (session, risk, exits, sizing) for filters + model context */
   customScanMeta?: Record<string, unknown>;
+  /** Structure-based SL/TP computed from preset detector meta (e.g. orbL, supertrendSl) */
+  presetPriceLevels?: {
+    stopLossPrice?: number;
+    takeProfitPrice?: number;
+    trailingReference?: number;
+  };
 };
+
+/** Compute structure-based SL/TP from preset detector meta instead of percentage */
+function computePresetPriceLevels(
+  preset: string,
+  side: "BUY" | "SELL",
+  entryPrice: number,
+  meta?: Record<string, unknown>,
+): { stopLossPrice?: number; takeProfitPrice?: number; trailingReference?: number } | undefined {
+  if (!meta || !entryPrice || !Number.isFinite(entryPrice)) return undefined;
+  const isBuy = side === "BUY";
+
+  if (preset === "orb") {
+    const orbH = Number(meta.orbH);
+    const orbL = Number(meta.orbL);
+    if (!Number.isFinite(orbH) || !Number.isFinite(orbL)) return undefined;
+    const range = orbH - orbL;
+    return {
+      stopLossPrice: isBuy ? orbL : orbH,
+      takeProfitPrice: isBuy ? entryPrice + 2 * range : entryPrice - 2 * range,
+    };
+  }
+
+  if (preset === "supertrend_7_3") {
+    const stSl = Number(meta.supertrendSl);
+    if (!Number.isFinite(stSl)) return undefined;
+    return {
+      stopLossPrice: stSl,
+      trailingReference: stSl,
+      // No fixed TP — trail the supertrend line
+    };
+  }
+
+  if (preset === "vwap_bounce") {
+    const vwap = Number(meta.vwapAtEntry);
+    const sd1 = Number(meta.vwapSd1);
+    const sd2 = Number(meta.vwapSd2);
+    if (!Number.isFinite(vwap)) return undefined;
+    return {
+      stopLossPrice: isBuy ? vwap * 0.995 : vwap * 1.005,
+      takeProfitPrice: Number.isFinite(sd1) ? sd1 : undefined,
+      trailingReference: Number.isFinite(sd2) ? sd2 : undefined,
+    };
+  }
+
+  if (preset === "rsi_divergence") {
+    const swing = Number(meta.rsiSwingPoint);
+    const priorSwing = Number(meta.rsiPriorSwing);
+    if (!Number.isFinite(swing)) return undefined;
+    const slDist = Math.abs(entryPrice - swing);
+    return {
+      stopLossPrice: swing,
+      takeProfitPrice: Number.isFinite(priorSwing) ? priorSwing : (isBuy ? entryPrice + 3 * slDist : entryPrice - 3 * slDist),
+    };
+  }
+
+  return undefined;
+}
 
 type AssetType = "crypto" | "forex" | "stock";
 
@@ -1712,6 +1780,7 @@ function detectCustomEntrySignals(
               algoGuidePreset: preset,
               ...(relaxationTier > 0 ? { ruleRelaxationTier: relaxationTier } : {}),
             },
+            presetPriceLevels: computePresetPriceLevels(preset, side, c[ei], hit.meta),
           });
           inTrade = true;
           entryPrice = c[ei];
@@ -3140,6 +3209,7 @@ Deno.serve(async (req: Request) => {
         forwardMaxAdversePct: fwd.forwardMaxAdversePct,
         conditionAudit: rawSig.conditionAudit ?? null,
         customStrategyMeta: rawSig.customScanMeta ?? null,
+        presetPriceLevels: rawSig.presetPriceLevels ?? null,
       };
     });
 
