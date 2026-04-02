@@ -44,15 +44,29 @@ const RESERVED_DEMO_PERSON_NAMES = new Set([
   "Sofia Martinez",
 ]);
 
+/**
+ * One bar on the affiliate demo sales chart: x-axis shows {@link day} (day of month, or `6 Apr` if disambiguated);
+ * {@link fullLabel} is the full calendar date. Sum of `sales` across the series ≤ {@link AFFILIATE_SALES_SERIES_TOTAL_MAX}.
+ */
+type AffiliateSalesPoint = { day: string; sales: number; fullLabel?: string };
+
 /** Demo affiliates for the public (dummy) dashboard — not loaded from the API */
 interface DashboardAffiliate {
   id: string;
   name: string;
   trackingId: string;
+  /** Used only for YTD payout dialog math */
   userCount: number;
   profitShare: string;
   payout: string;
+  joiningDate: string;
+  totalEarnings: string;
+  lastPayoutDate: string;
+  monthlySales: AffiliateSalesPoint[];
 }
+
+/** Seed row: {@link buildDemoAffiliates} fills `monthlySales` from {@link salesWeights} and today’s date. */
+type DemoAffiliateSeed = Omit<DashboardAffiliate, "monthlySales"> & { salesWeights: number[] };
 
 interface DashboardWhitelabel {
   id: string;
@@ -66,37 +80,33 @@ type PartnerPayoutDialogTarget =
   | { kind: "affiliate"; row: DashboardAffiliate }
   | { kind: "whitelabel"; row: DashboardWhitelabel };
 
-const AFFILIATE_TABLE_PAGE_SIZE = 10;
+const AFFILIATE_TABLE_PAGE_SIZE = 15;
+const AFFILIATE_SALES_CHART_MAX = 50;
+/** Max sum of all bars in one affiliate’s demo sales series (strictly below 50). */
+const AFFILIATE_SALES_SERIES_TOTAL_MAX = 49;
+/**
+ * End date for affiliate demo sales bars (local midnight). Set to `null` to use the visitor’s real calendar “today”.
+ * Fixed here so the public dashboard matches campaign dates (e.g. 2 Apr 2026) regardless of device clock.
+ */
+const PUBLIC_DEMO_SALES_CHART_AS_OF: Date | null = new Date(2026, 3, 2);
 const WHITELABEL_TABLE_PAGE_SIZE = 10;
 
-/** Demo revenue assumption per user; payout = users × this × share (e.g. 80 × 0.30 = $24 per user at 30%). */
-const PAYOUT_BASE_PER_USER_USD = 80;
+/** Product price per referred user for demo payout math; payout ≈ users × this × profit share. */
+const PAYOUT_BASE_PER_USER_USD = 49;
 const AFFILIATE_PROFIT_SHARE = 0.3;
 const WHITELABEL_PROFIT_SHARE = 0.7;
 
-const INDIAN_FIRST = [
-  "Priya", "Ananya", "Rohan", "Vikram", "Kavya", "Aditya", "Ishaan", "Neha", "Rajeev", "Deepa",
-  "Sanjay", "Meera", "Krishna", "Pooja", "Suresh", "Divya", "Manish", "Sunita", "Arnav", "Kiran",
-  "Lakshmi", "Harish", "Anjali", "Vinod", "Shreya", "Gaurav", "Nikhil", "Swati", "Amit",
-  "Tanvi", "Karthik", "Radha", "Devendra", "Sneha", "Yash", "Payal", "Rakesh", "Nandini", "Bhavya",
-  "Pranav", "Ira", "Harsh", "Aarti", "Vivek", "Keerthi", "Ashwin", "Mitali", "Sameer", "Trisha",
-  "Ritika", "Siddharth", "Ishani", "Varun", "Nisha", "Rahul", "Simran", "Kunal", "Tanya", "Abhishek",
-  "Juhi", "Manav", "Ekta", "Rishabh", "Pallavi", "Naveen", "Sonal", "Tarun", "Richa", "Vishal",
-  "Megha", "Akash", "Sakshi", "Rohit", "Komal", "Nitin", "Preeti", "Saurabh", "Ankita", "Hemant",
-];
-
-const INDIAN_LAST = [
-  "Sharma", "Verma", "Patel", "Reddy", "Nair", "Iyer", "Kapoor", "Malhotra", "Agarwal", "Bansal",
-  "Chopra", "Das", "Menon", "Pillai", "Rao", "Singh", "Tiwari", "Joshi", "Gupta", "Kulkarni",
-  "Shah", "Desai", "Nayak", "Bhatt", "Khan", "Choudhury", "Mukherjee", "Ghosh", "Pandey", "Yadav",
-  "Jain", "Bose", "Saxena", "Srivastava", "Rangan", "Subramanian", "Krishnan", "Nambiar", "Thakur", "Varma",
-  "Kaur", "Gill", "Bedi", "Randhawa", "Brar", "Bassi", "Anand", "Sinha", "Mishra", "Tripathi",
-  "Dwivedi", "Nigam", "Aggarwal", "Goel", "Arora", "Seth", "Dhillon", "Cheema", "Sodhi", "Bhalla",
-];
+/** Parse table profit share label for YTD payout breakdown (affiliates only). */
+function parseAffiliateProfitShareFraction(label: string): number {
+  const n = parseInt(label.replace(/%/g, "").trim(), 10);
+  if (n === 70) return 0.7;
+  if (n === 50) return 0.5;
+  return AFFILIATE_PROFIT_SHARE;
+}
 
 /**
- * Names for the public "Recent Members" table only — disjoint from {@link INDIAN_FIRST} / {@link INDIAN_LAST}
- * so ~90% can read as Indian without reusing the affiliate name grids.
+ * Names for the public "Recent Members" table — kept separate from {@link DEMO_AFFILIATES_BASE} names
+ * so rows do not collide with the 15 fixed affiliate demo names.
  */
 const SUBSCRIBER_TABLE_FIRST = [
   "Aarav", "Diya", "Kabir", "Ishita", "Vivaan", "Anika", "Reyansh", "Myra", "Arjun", "Kiara",
@@ -290,8 +300,8 @@ function formatPublicSubscriberJoinedDate(meta: PublicSubscriberJoinMeta, timeZo
 }
 
 /**
- * Public dashboard subscriber rows: ~90% India via {@link SUBSCRIBER_TABLE_FIRST}/{@link SUBSCRIBER_TABLE_LAST}
- * (not {@link INDIAN_FIRST}/{@link INDIAN_LAST}); rest intl. IDs/payment refs stay from the API.
+ * Public dashboard subscriber rows: ~90% India via {@link SUBSCRIBER_TABLE_FIRST}/{@link SUBSCRIBER_TABLE_LAST};
+ * rest intl. IDs/payment refs stay from the API.
  * Full names are unique within the list (probe + numeric suffix fallback).
  */
 function buildPublicSubscriberView(raw: Subscriber[]): Subscriber[] {
@@ -373,80 +383,331 @@ function allIndexPairs(lenA: number, lenB: number): [number, number][] {
   return pairs;
 }
 
-const PAD_FIRST = [
-  "Elara", "Orin", "Sable", "Torin", "Maren", "Cael", "Isolde", "Ren", "Dara", "Juno",
-  "Kestrel", "Lior", "Niam", "Oisin", "Perrin", "Quinlan", "Riven", "Soren", "Tamsin", "Vesper",
-];
-
-const PAD_LAST = [
-  "Ashford", "Blackwood", "Carmine", "Draycott", "Ellerby", "Fairclough", "Gresham", "Hollis", "Ingram", "Kenshaw",
-  "Loxley", "Marchand", "Northcote", "Pemberton", "Quarrie", "Redmayne", "Stroud", "Trelawney", "Underhill", "Whitmore",
-];
-
-function collectIndianPersonNames(count: number, usedLower: Set<string>): string[] {
-  const pairs = allIndexPairs(INDIAN_FIRST.length, INDIAN_LAST.length);
-  shuffleIndexPairs(pairs, 314159265);
-  const out: string[] = [];
-  for (const [a, b] of pairs) {
-    if (out.length >= count) break;
-    const name = `${INDIAN_FIRST[a]} ${INDIAN_LAST[b]}`;
-    const low = name.toLowerCase();
-    if (usedLower.has(low)) continue;
-    usedLower.add(low);
-    out.push(name);
-  }
-  let pad = 0;
-  while (out.length < count) {
-    pad += 1;
-    const name = `${PAD_FIRST[pad % PAD_FIRST.length]} ${PAD_LAST[(pad * 7) % PAD_LAST.length]} ${pad + 600}`;
-    const low = name.toLowerCase();
-    if (usedLower.has(low)) continue;
-    usedLower.add(low);
-    out.push(name);
-  }
-  return out;
+/**
+ * Demo “total earnings”: scales with profit share only, capped by demo chart volume
+ * (≤{@link AFFILIATE_SALES_SERIES_TOTAL_MAX} units × {@link PAYOUT_BASE_PER_USER_USD}), not `userCount`.
+ */
+function demoAffiliateTotalEarningsDisplay(affiliateId: string, shareFrac: number): string {
+  const grossMax = PAYOUT_BASE_PER_USER_USD * AFFILIATE_SALES_SERIES_TOTAL_MAX;
+  const n = parseInt(affiliateId.replace(/\D/g, ""), 10) || 1;
+  const spread = 0.52 + ((n * 23) % 44) / 100;
+  return formatUsd0(Math.round(grossMax * spread * shareFrac));
 }
 
-function collectIntlPersonNames(count: number, usedLower: Set<string>): string[] {
-  const pairs = allIndexPairs(INTL_FIRST.length, INTL_LAST.length);
-  shuffleIndexPairs(pairs, 271828182);
-  const out: string[] = [];
-  for (const [a, b] of pairs) {
-    if (out.length >= count) break;
-    const name = `${INTL_FIRST[a]} ${INTL_LAST[b]}`;
-    const low = name.toLowerCase();
-    if (usedLower.has(low)) continue;
-    usedLower.add(low);
-    out.push(name);
-  }
-  let pad = 0;
-  while (out.length < count) {
-    pad += 1;
-    const name = `Briony Vale ${pad + 340}`;
-    const low = name.toLowerCase();
-    if (usedLower.has(low)) continue;
-    usedLower.add(low);
-    out.push(name);
-  }
-  return out;
+const MS_PER_DAY = 86400000;
+
+const AFF_SALE_MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+
+function stripCalendarDate(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
-function buildDemoAffiliates(excludeLower: Set<string>): DashboardAffiliate[] {
-  const usedLower = new Set<string>(excludeLower);
-  for (const n of RESERVED_DEMO_PERSON_NAMES) usedLower.add(n.toLowerCase());
-  const indian = collectIndianPersonNames(160, usedLower);
-  const intl = collectIntlPersonNames(17, usedLower);
-  const names = [...indian, ...intl];
-  return names.map((name, idx) => {
-    const userCount = 220 + (idx * 104729 % 9200);
-    const payoutN = payoutFromUserCountUsd(userCount, AFFILIATE_PROFIT_SHARE);
+/** March 1 of the same calendar year as `d`, or March 1 of the previous year if `d` is before Mar 1. */
+function marchFirstOnOrBefore(d: Date): Date {
+  const y = d.getFullYear();
+  const mar1 = new Date(y, 2, 1);
+  return stripCalendarDate(d) < mar1 ? new Date(y - 1, 2, 1) : mar1;
+}
+
+function formatAffiliateSaleFullLabel(d: Date): string {
+  return `${d.getDate()} ${AFF_SALE_MONTH_SHORT[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+/** X-axis tick: day of month, or `6 Apr` style if another bar shares the same day-of-month in a different month. */
+function affiliateSaleXTick(d: Date, idx: number, all: Date[]): string {
+  const dom = d.getDate();
+  const clash = all.some(
+    (o, j) =>
+      j !== idx &&
+      o.getDate() === dom &&
+      (o.getMonth() !== d.getMonth() || o.getFullYear() !== d.getFullYear())
+  );
+  return clash ? `${dom} ${AFF_SALE_MONTH_SHORT[d.getMonth()]}` : String(dom);
+}
+
+/**
+ * Eight sample calendar days from Mar 1 through `asOf` (today, date-only)—never after `asOf`.
+ * Weights are relative; integer `sales` sum to {@link AFFILIATE_SALES_SERIES_TOTAL_MAX} and each ≤ {@link AFFILIATE_SALES_CHART_MAX}.
+ */
+function affiliateDemoDailySales(weights: number[], asOf: Date): AffiliateSalesPoint[] {
+  const today = stripCalendarDate(asOf);
+  const start = marchFirstOnOrBefore(today);
+  let daySpan = Math.round((today.getTime() - start.getTime()) / MS_PER_DAY);
+  if (daySpan < 0) daySpan = 0;
+
+  const dates: Date[] = [];
+  for (let i = 0; i < 8; i++) {
+    const t = new Date(start);
+    if (daySpan === 0) {
+      t.setTime(today.getTime());
+    } else {
+      t.setDate(start.getDate() + Math.round((i * daySpan) / 7));
+    }
+    if (t > today) t.setTime(today.getTime());
+    dates.push(stripCalendarDate(t));
+  }
+  for (let i = 1; i < dates.length; i++) {
+    if (dates[i]!.getTime() <= dates[i - 1]!.getTime()) {
+      const nudged = new Date(dates[i - 1]!);
+      nudged.setDate(nudged.getDate() + 1);
+      dates[i] = nudged > today ? new Date(today) : stripCalendarDate(nudged);
+    }
+  }
+
+  const n = dates.length;
+  const cap = AFFILIATE_SALES_CHART_MAX;
+  const totalCap = AFFILIATE_SALES_SERIES_TOTAL_MAX;
+  const w = Array.from({ length: n }, (_, i) => Math.max(0, weights[i] ?? 0));
+  const sumW = w.reduce((a, b) => a + b, 0) || 1;
+  const raw = w.map((x) => (totalCap * x) / sumW);
+  const ints = raw.map((x) => Math.min(cap, Math.floor(x)));
+  let rem = totalCap - ints.reduce((a, b) => a + b, 0);
+  const order = raw
+    .map((x, i) => ({ i, r: x - Math.floor(x) }))
+    .sort((a, b) => b.r - a.r);
+  const out = [...ints];
+  let guard = 0;
+  while (rem > 0 && guard < 200) {
+    const j = order[guard % n]!.i;
+    if (out[j]! < cap) {
+      out[j]! += 1;
+      rem -= 1;
+    }
+    guard += 1;
+  }
+
+  return dates.map((dt, i) => ({
+    day: affiliateSaleXTick(dt, i, dates),
+    fullLabel: formatAffiliateSaleFullLabel(dt),
+    sales: out[i]!,
+  }));
+}
+
+function parseAffiliateSalesJson(raw: string): AffiliateSalesPoint[] | null {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed) || parsed.length === 0) return null;
+    const out: AffiliateSalesPoint[] = [];
+    for (let i = 0; i < parsed.length; i++) {
+      const item = parsed[i];
+      if (!item || typeof item !== "object") continue;
+      const o = item as Record<string, unknown>;
+      const sales = Math.min(AFFILIATE_SALES_CHART_MAX, Math.max(0, Number(o.sales) || 0));
+      const day =
+        typeof o.day === "string" ? o.day : typeof o.month === "string" ? o.month : String(i + 1);
+      const fullLabel = typeof o.fullLabel === "string" ? o.fullLabel : undefined;
+      out.push({ day, sales, fullLabel });
+    }
+    return out.length > 0 ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Exactly 15 demo affiliates: ~47% Indian (non-Malayali), ~27% Malayali (Kerala), ~27% foreign
+ * (closest integer split to 50% / 25% / 25% on 15 rows).
+ * Edit this array (or `data-*` on rendered rows) to change showcase values. Joining dates from 01 Mar 2026 onward; last payouts ≤ 02 Apr 2026 (demo “today”, see {@link PUBLIC_DEMO_SALES_CHART_AS_OF}).
+ */
+const DEMO_AFFILIATES_BASE: DemoAffiliateSeed[] = [
+  /* ── 7 × Indian (pan-India; not Malayali) ── */
+  {
+    id: "af-001",
+    name: "Vikram Sharma",
+    trackingId: "AFF-IN-MH-01",
+    userCount: 1840,
+    profitShare: "70%",
+    payout: formatUsd0(payoutFromUserCountUsd(1840, 0.7)),
+    joiningDate: "01 Mar 2026",
+    totalEarnings: demoAffiliateTotalEarningsDisplay("af-001", 0.7),
+    lastPayoutDate: "31 Mar 2026",
+    salesWeights: [28, 34, 22, 41, 36, 19, 44, 38],
+  },
+  {
+    id: "af-002",
+    name: "Priya Reddy",
+    trackingId: "AFF-IN-TG-02",
+    userCount: 920,
+    profitShare: "50%",
+    payout: formatUsd0(payoutFromUserCountUsd(920, 0.5)),
+    joiningDate: "03 Mar 2026",
+    totalEarnings: demoAffiliateTotalEarningsDisplay("af-002", 0.5),
+    lastPayoutDate: "28 Mar 2026",
+    salesWeights: [12, 19, 31, 27, 45, 33, 21, 40],
+  },
+  {
+    id: "af-003",
+    name: "Aditya Patel",
+    trackingId: "AFF-IN-GJ-03",
+    userCount: 2405,
+    profitShare: "70%",
+    payout: formatUsd0(payoutFromUserCountUsd(2405, 0.7)),
+    joiningDate: "05 Mar 2026",
+    totalEarnings: demoAffiliateTotalEarningsDisplay("af-003", 0.7),
+    lastPayoutDate: "02 Apr 2026",
+    salesWeights: [35, 42, 38, 29, 48, 44, 31, 50],
+  },
+  {
+    id: "af-004",
+    name: "Kavya Joshi",
+    trackingId: "AFF-IN-KA-04",
+    userCount: 1105,
+    profitShare: "50%",
+    payout: formatUsd0(payoutFromUserCountUsd(1105, 0.5)),
+    joiningDate: "07 Mar 2026",
+    totalEarnings: demoAffiliateTotalEarningsDisplay("af-004", 0.5),
+    lastPayoutDate: "25 Mar 2026",
+    salesWeights: [18, 24, 16, 33, 28, 37, 25, 30],
+  },
+  {
+    id: "af-005",
+    name: "Rohan Singh",
+    trackingId: "AFF-IN-PB-05",
+    userCount: 1560,
+    profitShare: "70%",
+    payout: formatUsd0(payoutFromUserCountUsd(1560, 0.7)),
+    joiningDate: "10 Mar 2026",
+    totalEarnings: demoAffiliateTotalEarningsDisplay("af-005", 0.7),
+    lastPayoutDate: "01 Apr 2026",
+    salesWeights: [25, 30, 27, 39, 33, 41, 36, 29],
+  },
+  {
+    id: "af-006",
+    name: "Neha Gupta",
+    trackingId: "AFF-IN-DL-06",
+    userCount: 678,
+    profitShare: "50%",
+    payout: formatUsd0(payoutFromUserCountUsd(678, 0.5)),
+    joiningDate: "12 Mar 2026",
+    totalEarnings: demoAffiliateTotalEarningsDisplay("af-006", 0.5),
+    lastPayoutDate: "27 Mar 2026",
+    salesWeights: [9, 14, 22, 18, 26, 21, 17, 24],
+  },
+  {
+    id: "af-007",
+    name: "Sanjay Verma",
+    trackingId: "AFF-IN-RJ-07",
+    userCount: 2110,
+    profitShare: "70%",
+    payout: formatUsd0(payoutFromUserCountUsd(2110, 0.7)),
+    joiningDate: "14 Mar 2026",
+    totalEarnings: demoAffiliateTotalEarningsDisplay("af-007", 0.7),
+    lastPayoutDate: "30 Mar 2026",
+    salesWeights: [32, 29, 41, 35, 40, 38, 33, 45],
+  },
+  /* ── 4 × Malayali (Kerala) ── */
+  {
+    id: "af-008",
+    name: "Anjali Nair",
+    trackingId: "AFF-KL-01",
+    userCount: 445,
+    profitShare: "50%",
+    payout: formatUsd0(payoutFromUserCountUsd(445, 0.5)),
+    joiningDate: "18 Mar 2026",
+    totalEarnings: demoAffiliateTotalEarningsDisplay("af-008", 0.5),
+    lastPayoutDate: "29 Mar 2026",
+    salesWeights: [6, 11, 15, 12, 19, 14, 10, 16],
+  },
+  {
+    id: "af-009",
+    name: "Rajesh Menon",
+    trackingId: "AFF-KL-02",
+    userCount: 1320,
+    profitShare: "70%",
+    payout: formatUsd0(payoutFromUserCountUsd(1320, 0.7)),
+    joiningDate: "20 Mar 2026",
+    totalEarnings: demoAffiliateTotalEarningsDisplay("af-009", 0.7),
+    lastPayoutDate: "02 Apr 2026",
+    salesWeights: [21, 26, 24, 31, 28, 35, 30, 27],
+  },
+  {
+    id: "af-010",
+    name: "Lakshmi Pillai",
+    trackingId: "AFF-KL-03",
+    userCount: 890,
+    profitShare: "50%",
+    payout: formatUsd0(payoutFromUserCountUsd(890, 0.5)),
+    joiningDate: "22 Mar 2026",
+    totalEarnings: demoAffiliateTotalEarningsDisplay("af-010", 0.5),
+    lastPayoutDate: "30 Mar 2026",
+    salesWeights: [14, 17, 20, 23, 19, 25, 22, 28],
+  },
+  {
+    id: "af-011",
+    name: "Sreeja Unnikrishnan",
+    trackingId: "AFF-KL-04",
+    userCount: 1745,
+    profitShare: "70%",
+    payout: formatUsd0(payoutFromUserCountUsd(1745, 0.7)),
+    joiningDate: "24 Mar 2026",
+    totalEarnings: demoAffiliateTotalEarningsDisplay("af-011", 0.7),
+    lastPayoutDate: "02 Apr 2026",
+    salesWeights: [30, 33, 29, 37, 34, 42, 39, 36],
+  },
+  /* ── 4 × Foreign ── */
+  {
+    id: "af-012",
+    name: "Oliver Bennett",
+    trackingId: "AFF-UK-01",
+    userCount: 560,
+    profitShare: "50%",
+    payout: formatUsd0(payoutFromUserCountUsd(560, 0.5)),
+    joiningDate: "26 Mar 2026",
+    totalEarnings: demoAffiliateTotalEarningsDisplay("af-012", 0.5),
+    lastPayoutDate: "01 Apr 2026",
+    salesWeights: [8, 10, 13, 16, 14, 18, 15, 20],
+  },
+  {
+    id: "af-013",
+    name: "Sophia Coleman",
+    trackingId: "AFF-US-02",
+    userCount: 1988,
+    profitShare: "70%",
+    payout: formatUsd0(payoutFromUserCountUsd(1988, 0.7)),
+    joiningDate: "28 Mar 2026",
+    totalEarnings: demoAffiliateTotalEarningsDisplay("af-013", 0.7),
+    lastPayoutDate: "02 Apr 2026",
+    salesWeights: [27, 31, 36, 33, 41, 38, 35, 43],
+  },
+  {
+    id: "af-014",
+    name: "Liam Foster",
+    trackingId: "AFF-CA-03",
+    userCount: 725,
+    profitShare: "50%",
+    payout: formatUsd0(payoutFromUserCountUsd(725, 0.5)),
+    joiningDate: "01 Apr 2026",
+    totalEarnings: demoAffiliateTotalEarningsDisplay("af-014", 0.5),
+    lastPayoutDate: "02 Apr 2026",
+    salesWeights: [11, 15, 18, 21, 19, 24, 22, 26],
+  },
+  {
+    id: "af-015",
+    name: "Emma Hayes",
+    trackingId: "AFF-AU-04",
+    userCount: 1412,
+    profitShare: "70%",
+    payout: formatUsd0(payoutFromUserCountUsd(1412, 0.7)),
+    joiningDate: "02 Apr 2026",
+    totalEarnings: demoAffiliateTotalEarningsDisplay("af-015", 0.7),
+    lastPayoutDate: "02 Apr 2026",
+    salesWeights: [23, 28, 25, 32, 30, 36, 34, 31],
+  },
+];
+
+function buildDemoAffiliates(excludeLower: Set<string>, salesChartAsOf: Date): DashboardAffiliate[] {
+  const blocked = new Set<string>(excludeLower);
+  for (const n of RESERVED_DEMO_PERSON_NAMES) blocked.add(n.toLowerCase());
+  return DEMO_AFFILIATES_BASE.map((row) => {
+    const { salesWeights, ...rest } = row;
+    let name = row.name;
+    if (blocked.has(name.toLowerCase())) {
+      name = `${row.name} · Partner`;
+    }
     return {
-      id: `af-${idx + 1}`,
+      ...rest,
       name,
-      trackingId: `AFF-${(100000 + idx).toString(36).toUpperCase()}`,
-      userCount,
-      profitShare: "30%",
-      payout: formatUsd0(payoutN),
+      monthlySales: affiliateDemoDailySales(salesWeights, salesChartAsOf),
     };
   });
 }
@@ -771,9 +1032,16 @@ export default function PublicDashboardPage({ embedInAdmin = false }: PublicDash
     [displaySubscribers]
   );
 
+  /** End of the affiliate demo sales window ({@link PUBLIC_DEMO_SALES_CHART_AS_OF} or local “today”). */
+  const affiliateSalesChartAsOf = useMemo(() => {
+    const d = new Date(PUBLIC_DEMO_SALES_CHART_AS_OF ?? new Date());
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+
   const affiliateRows = useMemo(
-    () => buildDemoAffiliates(subscriberNamesLower),
-    [subscriberNamesLower]
+    () => buildDemoAffiliates(subscriberNamesLower, affiliateSalesChartAsOf),
+    [subscriberNamesLower, affiliateSalesChartAsOf]
   );
 
   const whitelabelExcludeLower = useMemo(() => {
@@ -819,11 +1087,14 @@ export default function PublicDashboardPage({ embedInAdmin = false }: PublicDash
 
   const [selectedMetric, setSelectedMetric] = useState<Metric | null>(null);
   const [payoutDialog, setPayoutDialog] = useState<PartnerPayoutDialogTarget | null>(null);
+  const [affiliateSalesRow, setAffiliateSalesRow] = useState<DashboardAffiliate | null>(null);
 
   const payoutDialogBreakdown = useMemo(() => {
     if (!payoutDialog) return null;
     const share =
-      payoutDialog.kind === "affiliate" ? AFFILIATE_PROFIT_SHARE : WHITELABEL_PROFIT_SHARE;
+      payoutDialog.kind === "affiliate"
+        ? parseAffiliateProfitShareFraction(payoutDialog.row.profitShare)
+        : WHITELABEL_PROFIT_SHARE;
     const seed = parseRowSeed(payoutDialog.row.id);
     const months = buildYtdMonthlyPayoutBreakdown(payoutDialog.row.userCount, share, seed);
     const total = months.reduce((s, r) => s + r.amount, 0);
@@ -1061,15 +1332,21 @@ export default function PublicDashboardPage({ embedInAdmin = false }: PublicDash
               <Card className="border-violet-500/25 bg-violet-500/[0.03]">
                 <CardContent className="p-0">
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
+                    <table className="w-full text-sm min-w-[920px]">
                       <thead>
                         <tr className="border-b border-border/50 bg-muted/30">
-                          <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">#</th>
-                          <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">Affiliate name</th>
-                          <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">Tracking ID</th>
-                          <th className="text-right px-4 py-3 font-medium text-muted-foreground text-xs">Users</th>
-                          <th className="text-right px-4 py-3 font-medium text-muted-foreground text-xs">Profit share</th>
-                          <th className="text-right px-4 py-3 font-medium text-muted-foreground text-xs">Payout</th>
+                          <th className="text-left px-3 py-3 font-medium text-muted-foreground text-xs w-10">#</th>
+                          <th className="text-left px-3 py-3 font-medium text-muted-foreground text-xs">Name</th>
+                          <th className="text-left px-3 py-3 font-medium text-muted-foreground text-xs">Id</th>
+                          <th className="text-left px-3 py-3 font-medium text-muted-foreground text-xs whitespace-nowrap">
+                            Joining date
+                          </th>
+                          <th className="text-right px-3 py-3 font-medium text-muted-foreground text-xs">Profit share</th>
+                          <th className="text-right px-3 py-3 font-medium text-muted-foreground text-xs">Total earnings</th>
+                          <th className="text-left px-3 py-3 font-medium text-muted-foreground text-xs whitespace-nowrap">
+                            Last payout date
+                          </th>
+                          <th className="text-center px-3 py-3 font-medium text-muted-foreground text-xs w-[100px]">Sales</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1080,30 +1357,105 @@ export default function PublicDashboardPage({ embedInAdmin = false }: PublicDash
                           )
                           .map((a, idx) => {
                             const globalIdx = (affPage - 1) * AFFILIATE_TABLE_PAGE_SIZE + idx + 1;
+                            const salesJson = JSON.stringify(a.monthlySales);
                             return (
                               <tr
                                 key={a.id}
-                                role="button"
-                                tabIndex={0}
-                                className="border-b border-border/30 hover:bg-muted/20 transition-colors cursor-pointer"
-                                onClick={() => setPayoutDialog({ kind: "affiliate", row: a })}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter" || e.key === " ") {
-                                    e.preventDefault();
-                                    setPayoutDialog({ kind: "affiliate", row: a });
-                                  }
-                                }}
+                                className="border-b border-border/30 hover:bg-muted/15 transition-colors"
+                                data-affiliate-id={a.id}
+                                data-monthly-sales-json={salesJson}
                               >
-                                <td className="px-4 py-3 text-muted-foreground text-xs">{globalIdx}</td>
-                                <td className="px-4 py-3 font-medium">{a.name}</td>
-                                <td className="px-4 py-3">
+                                <td
+                                  className="px-3 py-3 text-muted-foreground text-xs tabular-nums"
+                                  data-field="index"
+                                  data-value={String(globalIdx)}
+                                >
+                                  {globalIdx}
+                                </td>
+                                <td
+                                  className="px-3 py-3 font-medium"
+                                  data-field="name"
+                                  data-value={a.name}
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={() => setPayoutDialog({ kind: "affiliate", row: a })}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" || e.key === " ") {
+                                      e.preventDefault();
+                                      setPayoutDialog({ kind: "affiliate", row: a });
+                                    }
+                                  }}
+                                >
+                                  {a.name}
+                                </td>
+                                <td
+                                  className="px-3 py-3"
+                                  data-field="trackingId"
+                                  data-value={a.trackingId}
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={() => setPayoutDialog({ kind: "affiliate", row: a })}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" || e.key === " ") {
+                                      e.preventDefault();
+                                      setPayoutDialog({ kind: "affiliate", row: a });
+                                    }
+                                  }}
+                                >
                                   <code className="text-xs bg-muted/40 px-1.5 py-0.5 rounded font-mono">{a.trackingId}</code>
                                 </td>
-                                <td className="px-4 py-3 text-right tabular-nums">{a.userCount.toLocaleString()}</td>
-                                <td className="px-4 py-3 text-right font-medium text-violet-600 dark:text-violet-400 tabular-nums">
+                                <td
+                                  className="px-3 py-3 text-muted-foreground whitespace-nowrap"
+                                  data-field="joiningDate"
+                                  data-value={a.joiningDate}
+                                >
+                                  {a.joiningDate}
+                                </td>
+                                <td
+                                  className="px-3 py-3 text-right font-medium text-violet-600 dark:text-violet-400 tabular-nums"
+                                  data-field="profitShare"
+                                  data-value={a.profitShare}
+                                >
                                   {a.profitShare}
                                 </td>
-                                <td className="px-4 py-3 text-right tabular-nums font-medium">{a.payout}</td>
+                                <td
+                                  className="px-3 py-3 text-right tabular-nums font-medium"
+                                  data-field="totalEarnings"
+                                  data-value={a.totalEarnings}
+                                >
+                                  {a.totalEarnings}
+                                </td>
+                                <td
+                                  className="px-3 py-3 text-muted-foreground whitespace-nowrap"
+                                  data-field="lastPayoutDate"
+                                  data-value={a.lastPayoutDate}
+                                >
+                                  {a.lastPayoutDate}
+                                </td>
+                                <td className="px-3 py-3 text-center">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8 gap-1.5 text-xs"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const tr = (e.currentTarget as HTMLButtonElement).closest("tr");
+                                      const raw = tr?.getAttribute("data-monthly-sales-json");
+                                      if (raw) {
+                                        const parsed = parseAffiliateSalesJson(raw);
+                                        if (parsed) {
+                                          setAffiliateSalesRow({ ...a, monthlySales: parsed });
+                                          return;
+                                        }
+                                      }
+                                      setAffiliateSalesRow(a);
+                                    }}
+                                  >
+                                    <BarChart3 className="h-3.5 w-3.5" />
+                                    Graph
+                                  </Button>
+                                </td>
                               </tr>
                             );
                           })}
@@ -1302,6 +1654,84 @@ export default function PublicDashboardPage({ embedInAdmin = false }: PublicDash
               </p>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Affiliate total sales (demo chart; max Y = AFFILIATE_SALES_CHART_MAX) ── */}
+      <Dialog open={affiliateSalesRow !== null} onOpenChange={(open) => !open && setAffiliateSalesRow(null)}>
+        <DialogContent className="max-w-lg sm:max-w-xl">
+          {affiliateSalesRow && (() => {
+            const affiliateChartTotalUnits = affiliateSalesRow.monthlySales.reduce((s, p) => s + p.sales, 0);
+            const affiliateChartRevenueUsd = affiliateChartTotalUnits * PAYOUT_BASE_PER_USER_USD;
+            return (
+            <>
+              <DialogHeader>
+                <DialogTitle>Total sales</DialogTitle>
+                <DialogDescription className="text-left space-y-1">
+                  <span className="font-medium text-foreground">{affiliateSalesRow.name}</span>
+                </DialogDescription>
+              </DialogHeader>
+              <div
+                className="h-[300px] w-full min-w-0 rounded-lg border bg-muted/10 px-1 pt-2"
+                data-chart="affiliate-sales"
+                data-affiliate-id={affiliateSalesRow.id}
+              >
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={affiliateSalesRow.monthlySales}
+                    margin={{ top: 12, right: 12, left: 4, bottom: 28 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeOpacity={0.6} vertical={false} />
+                    <XAxis
+                      dataKey="day"
+                      tick={{ fontSize: 10 }}
+                      tickLine={false}
+                      axisLine={false}
+                      className="text-muted-foreground"
+                      angle={-25}
+                      textAnchor="end"
+                      height={48}
+                    />
+                    <YAxis
+                      domain={[0, AFFILIATE_SALES_CHART_MAX]}
+                      tick={{ fontSize: 11 }}
+                      tickLine={false}
+                      axisLine={false}
+                      className="text-muted-foreground"
+                      width={36}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        background: "hsl(var(--card))",
+                        border: "1px solid hsl(var(--border))",
+                        borderRadius: "8px",
+                        fontSize: 12,
+                      }}
+                      formatter={(value: number) => [value, "Sales"]}
+                      labelFormatter={(_label, payload) => {
+                        const p = payload?.[0]?.payload as AffiliateSalesPoint | undefined;
+                        return p?.fullLabel ?? String(_label);
+                      }}
+                    />
+                    <Bar dataKey="sales" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="mt-3 space-y-2 rounded-lg border bg-muted/20 px-3 py-2.5 text-sm">
+                <p className="flex justify-between gap-3 font-medium">
+                  <span className="text-muted-foreground">Total units</span>
+                  <span className="tabular-nums text-foreground">{affiliateChartTotalUnits.toLocaleString()}</span>
+                </p>
+                <p className="flex justify-between gap-3 border-t border-border/50 pt-2 font-semibold">
+                  <span className="text-muted-foreground">
+                    Revenue ({PAYOUT_BASE_PER_USER_USD.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })}/unit)
+                  </span>
+                  <span className="tabular-nums text-foreground">{formatUsd0(affiliateChartRevenueUsd)}</span>
+                </p>
+              </div>
+            </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 
