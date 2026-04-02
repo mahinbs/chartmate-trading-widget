@@ -11,6 +11,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   tryExecutePendingRow,
   type PendingConditionalRow,
+  type ReadyToFirePayload,
 } from "../_shared/pendingConditionalExecution.ts";
 
 const STREAM_TICK_SECRET = Deno.env.get("STREAM_TICK_SECRET") ?? "";
@@ -63,7 +64,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: pending, error: fetchErr } = await supabase
       .from("pending_conditional_orders")
-      .select("id, user_id, strategy_id, symbol, exchange, action, quantity, product, paper_strategy_type, created_at, expires_at, deploy_overrides")
+      .select("id, user_id, strategy_id, symbol, exchange, action, quantity, product, paper_strategy_type, created_at, expires_at, deploy_overrides, error_message")
       .eq("status", "pending")
       .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
       .order("created_at", { ascending: true })
@@ -77,6 +78,7 @@ Deno.serve(async (req: Request) => {
 
     const localFireGuard = new Map<string, number>();
     const results: Record<string, string> = {};
+    const firesPending: ReadyToFirePayload[] = [];
     let fired = 0;
 
     for (const row of rows) {
@@ -87,8 +89,14 @@ Deno.serve(async (req: Request) => {
         localFireGuard,
         cooldownSeconds: COOLDOWN_SECONDS,
       });
-      results[row.id] = outcome;
-      if (outcome === "fired") fired += 1;
+      if (typeof outcome === "object" && outcome.type === "ready_to_fire") {
+        results[row.id] = "ready_to_fire";
+        firesPending.push(outcome.payload);
+        fired += 1;
+      } else {
+        results[row.id] = String(outcome);
+        if (outcome === "fired") fired += 1;
+      }
     }
 
     return new Response(JSON.stringify({
@@ -98,6 +106,7 @@ Deno.serve(async (req: Request) => {
       checked: rows.length,
       fired,
       results,
+      fires_pending: firesPending,
     }), { status: 200, headers });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "Internal error";

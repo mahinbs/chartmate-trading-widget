@@ -383,9 +383,10 @@ Deno.serve(async (req: Request) => {
         }
       }
 
+      const wasActive = Boolean((current as { is_active?: boolean })?.is_active);
       const { data: toggled, error: toggleErr } = await supabase
         .from("user_strategies")
-        .update({ is_active: !(current as any)?.is_active, updated_at: new Date().toISOString() })
+        .update({ is_active: !wasActive, updated_at: new Date().toISOString() })
         .eq("id", strategyId)
         .eq("user_id", user.id)
         .select()
@@ -398,7 +399,103 @@ Deno.serve(async (req: Request) => {
         );
       }
 
-      return new Response(JSON.stringify({ strategy: toggled }), { status: 200, headers });
+      const toggledRow = toggled as Record<string, unknown>;
+
+      // Turning off must stop live deploy scans — cancel all pending rows for this strategy.
+      if (wasActive) {
+        await supabase
+          .from("pending_conditional_orders")
+          .update({
+            status: "cancelled",
+            error_message: "Strategy deactivated",
+          })
+          .eq("user_id", user.id)
+          .eq("strategy_id", strategyId)
+          .eq("status", "pending");
+        return new Response(JSON.stringify({ strategy: toggledRow }), { status: 200, headers });
+      }
+
+      // Turning ON — auto-create a pending conditional order if strategy has a symbol configured.
+      // This replaces the manual Actions → DEPLOY BUY flow.
+      let autoDeployId: string | null = null;
+      let autoDeployMsg: string | null = null;
+
+      const syms = toggledRow.symbols;
+      let autoSym = "";
+      let autoExchange = "NSE";
+      let autoQty = 1;
+      const autoProduct = toggledRow.is_intraday ? "MIS" : "CNC";
+      const tradingMode = String(toggledRow.trading_mode ?? "BOTH").toUpperCase();
+      const autoAction = tradingMode === "SHORT" ? "SELL" : "BUY";
+
+      if (Array.isArray(syms) && syms.length > 0) {
+        const s0 = syms[0] as Record<string, unknown>;
+        if (typeof syms[0] === "string") {
+          autoSym = (syms[0] as string).trim().toUpperCase();
+        } else if (s0 && typeof s0 === "object") {
+          autoSym = String(s0.symbol ?? "").trim().toUpperCase();
+          autoExchange = String(s0.exchange ?? "NSE").toUpperCase();
+          const q = Number(s0.quantity ?? 0);
+          if (q >= 1) autoQty = Math.floor(q);
+        }
+      }
+
+      if (autoSym) {
+        // Deduplicate: don't re-queue if a live pending already exists
+        const { data: existingPending } = await supabase
+          .from("pending_conditional_orders")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("strategy_id", strategyId)
+          .eq("symbol", autoSym)
+          .eq("status", "pending")
+          .maybeSingle();
+
+        if (!existingPending) {
+          const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+          const { data: newOrder, error: insertErr } = await supabase
+            .from("pending_conditional_orders")
+            .insert({
+              user_id: user.id,
+              strategy_id: strategyId,
+              symbol: autoSym,
+              exchange: autoExchange,
+              action: autoAction,
+              quantity: autoQty,
+              product: autoProduct,
+              paper_strategy_type: String(toggledRow.paper_strategy_type ?? "trend_following"),
+              status: "pending",
+              expires_at: expiresAt,
+              deploy_overrides: {
+                start_time: toggledRow.start_time ?? "09:15",
+                end_time: toggledRow.end_time ?? "15:15",
+                squareoff_time: toggledRow.squareoff_time ?? "15:15",
+                use_auto_exit: true,
+              },
+            })
+            .select("id")
+            .single();
+          if (!insertErr && newOrder) {
+            autoDeployId = (newOrder as { id: string }).id;
+          } else if (insertErr) {
+            autoDeployMsg = insertErr.message;
+          }
+        } else {
+          autoDeployId = existingPending.id as string;
+          autoDeployMsg = "already_pending";
+        }
+      } else {
+        autoDeployMsg = "no_symbol_configured";
+      }
+
+      return new Response(
+        JSON.stringify({
+          strategy: toggledRow,
+          auto_deploy_id: autoDeployId,
+          auto_deploy_msg: autoDeployMsg,
+        }),
+        { status: 200, headers },
+      );
     }
 
     // ── DELETE ────────────────────────────────────────────────────────────

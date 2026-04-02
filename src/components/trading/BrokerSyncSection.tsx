@@ -434,7 +434,10 @@ export default function BrokerSyncSection({ broker: brokerProp, compact = false 
 
   // ── Full card ─────────────────────────────────────────────────────────────
   return (
-    <div className={`flex flex-col md:flex-row items-center justify-between gap-4 p-3 rounded-xl border bg-zinc-950/50 backdrop-blur-sm ${fresh ? "border-teal-500/20" : expired ? "border-amber-500/20" : "border-zinc-800"}`}>
+    <div
+      id="broker-sync-connect"
+      className={`flex flex-col md:flex-row items-center justify-between gap-4 p-3 rounded-xl border bg-zinc-950/50 backdrop-blur-sm ${fresh ? "border-teal-500/20" : expired ? "border-amber-500/20" : "border-zinc-800"}`}
+    >
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2">
           {fresh ? (

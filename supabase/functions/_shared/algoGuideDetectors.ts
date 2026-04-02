@@ -127,6 +127,16 @@ export type PresetHit = {
     orbL?: number;
     breakoutBar?: number;
     supertrendSl?: number;
+    /** VWAP bounce: VWAP value at entry bar */
+    vwapAtEntry?: number;
+    /** VWAP bounce: +1 standard deviation band */
+    vwapSd1?: number;
+    /** VWAP bounce: +2 standard deviation band */
+    vwapSd2?: number;
+    /** RSI divergence: swing point price (low for BUY, high for SELL) */
+    rsiSwingPoint?: number;
+    /** RSI divergence: prior opposing swing point (for TP target) */
+    rsiPriorSwing?: number;
   };
 };
 
@@ -393,7 +403,19 @@ export function detectRsiDivergenceHits(
           break;
         }
       }
-      if (entryI >= 0) hits.push({ i: entryI, side: "BUY" });
+      if (entryI >= 0) {
+        // Find prior swing high for BUY TP target
+        const priorSwingHigh = ph.filter((x) => x < i2).map((x) => h[x]);
+        const rsiPriorSwing = priorSwingHigh.length > 0 ? priorSwingHigh[priorSwingHigh.length - 1] : undefined;
+        hits.push({
+          i: entryI,
+          side: "BUY",
+          meta: {
+            rsiSwingPoint: l[i2],
+            rsiPriorSwing,
+          },
+        });
+      }
     }
   }
   for (let k = 1; k < ph.length; k++) {
@@ -417,7 +439,19 @@ export function detectRsiDivergenceHits(
           break;
         }
       }
-      if (entryI >= 0) hits.push({ i: entryI, side: "SELL" });
+      if (entryI >= 0) {
+        // Find prior swing low for SELL TP target
+        const priorSwingLow = pl.filter((x) => x < i2).map((x) => l[x]);
+        const rsiPriorSwing = priorSwingLow.length > 0 ? priorSwingLow[priorSwingLow.length - 1] : undefined;
+        hits.push({
+          i: entryI,
+          side: "SELL",
+          meta: {
+            rsiSwingPoint: h[i2],
+            rsiPriorSwing,
+          },
+        });
+      }
     }
   }
   return hits;
@@ -518,8 +552,22 @@ export function detectVwapBounceHits(
         c[i] < vw &&
         c[i] < c[prev] &&
         rejectionShort;
-      if (longOk) hits.push({ i, side: "BUY", entryBarOffset: 1 });
-      else if (shortOk) hits.push({ i, side: "SELL", entryBarOffset: 1 });
+      if (longOk) hits.push({
+        i, side: "BUY", entryBarOffset: 1,
+        meta: {
+          vwapAtEntry: vw,
+          vwapSd1: Number.isFinite(sd[i]) ? vw + sd[i] : undefined,
+          vwapSd2: Number.isFinite(sd[i]) ? vw + 2 * sd[i] : undefined,
+        },
+      });
+      else if (shortOk) hits.push({
+        i, side: "SELL", entryBarOffset: 1,
+        meta: {
+          vwapAtEntry: vw,
+          vwapSd1: Number.isFinite(sd[i]) ? vw - sd[i] : undefined,
+          vwapSd2: Number.isFinite(sd[i]) ? vw - 2 * sd[i] : undefined,
+        },
+      });
     }
   }
   return hits;

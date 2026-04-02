@@ -6,8 +6,50 @@ import {
   evaluateGuideRiskGates,
   parseGuideRiskGates,
 } from "./algoGuideRiskGates.ts";
+import { extractAlgoGuidePreset } from "./algoGuideDetectors.ts";
 // deno-lint-ignore no-explicit-any
 type SupabaseLike = any;
+
+/** IST wall-clock minutes (hh*60 + mm) */
+function istMinutesNow(): number {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const hh = Number(parts.find((p) => p.type === "hour")?.value ?? 0);
+  const mm = Number(parts.find((p) => p.type === "minute")?.value ?? 0);
+  return hh * 60 + mm;
+}
+
+/** IST weekday: 0=Sun .. 4=Thu .. 6=Sat */
+function istWeekday(): number {
+  const d = new Date();
+  const ist = new Date(d.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+  return ist.getDay();
+}
+
+/** Fetch India VIX from Yahoo Finance (cached for 5 min) */
+let _vixCache: { value: number; at: number } | null = null;
+async function fetchIndiaVix(): Promise<number | null> {
+  if (_vixCache && Date.now() - _vixCache.at < 5 * 60 * 1000) return _vixCache.value;
+  try {
+    const url = "https://query1.finance.yahoo.com/v8/finance/chart/%5EINDIAVIX?interval=1d&range=1d";
+    const res = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0" },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice;
+    if (price != null && Number.isFinite(Number(price))) {
+      _vixCache = { value: Number(price), at: Date.now() };
+      return _vixCache.value;
+    }
+  } catch { /* ignore */ }
+  return null;
+}
 
 export type DeployOverrides = {
   start_time?: string;
@@ -30,6 +72,22 @@ export type PendingConditionalRow = {
   product: string;
   paper_strategy_type: string;
   deploy_overrides?: Record<string, unknown> | null;
+  /** Included in stream-conditional-tick select to detect queued-for-monitor rows */
+  error_message?: string | null;
+};
+
+/**
+ * When conditions match, the edge function no longer calls OpenAlgo directly
+ * (cloud IPs are not whitelisted). Instead it returns this payload to the monitor
+ * so the monitor can call OpenAlgo from its own server IP.
+ */
+export type ReadyToFirePayload = {
+  pending_row_id: string;
+  /** Full OpenAlgo /api/v1/placeorder body — monitor POSTs this directly */
+  order_payload: Record<string, string | number>;
+  /** Pre-computed active_trade row — monitor inserts this after successful placement */
+  active_trade_template: Record<string, unknown>;
+  strategy_name: string;
 };
 
 export type TryExecuteResult =
@@ -38,7 +96,8 @@ export type TryExecuteResult =
   | "cooldown"
   | "cancelled"
   | "error"
-  | "risk_blocked";
+  | "risk_blocked"
+  | { type: "ready_to_fire"; payload: ReadyToFirePayload };
 
 function cloneJson<T>(v: T): T {
   try {
@@ -46,6 +105,18 @@ function cloneJson<T>(v: T): T {
   } catch {
     return v;
   }
+}
+
+async function setPendingReason(
+  supabase: SupabaseLike,
+  rowId: string,
+  message: string,
+): Promise<void> {
+  await supabase
+    .from("pending_conditional_orders")
+    .update({ error_message: message.slice(0, 1500) })
+    .eq("id", rowId)
+    .eq("status", "pending");
 }
 
 /** Merge deploy-time session/clock/auto-exit into a copy of the strategy row for live scans (does not persist). */
@@ -111,7 +182,12 @@ export async function tryExecutePendingRow(
     cooldownSeconds: number;
   },
 ): Promise<TryExecuteResult> {
-  const { supabaseUrl, openalgoUrl, entryDigestSecret, localFireGuard, cooldownSeconds } = options;
+  const { supabaseUrl, entryDigestSecret, localFireGuard, cooldownSeconds } = options;
+
+  // Already handed off to monitor for placement — skip re-evaluation until confirmed.
+  if (String(row.error_message ?? "").startsWith("__QUEUED_FOR_MONITOR__")) {
+    return "cooldown";
+  }
 
   const { data: strategy, error: stratErr } = await supabase
     .from("user_strategies")
@@ -131,9 +207,20 @@ export async function tryExecutePendingRow(
 
   const merged = applyDeployOverridesToStrategyRow(strategy as Record<string, unknown>, row.deploy_overrides);
 
+  // Touch on every evaluation attempt so NULL last_checked_at is visible when ticks/edge run.
+  await supabase
+    .from("pending_conditional_orders")
+    .update({ last_checked_at: new Date().toISOString() })
+    .eq("id", row.id);
+
   const dedupeKey = `${row.strategy_id}|${row.symbol}|${row.action}`;
   const lastLocalFire = localFireGuard.get(dedupeKey) ?? 0;
   if (Date.now() - lastLocalFire < cooldownSeconds * 1000) {
+    await setPendingReason(
+      supabase,
+      row.id,
+      `Cooldown active after recent execution. Waiting ${cooldownSeconds}s before next entry attempt.`,
+    );
     return "cooldown";
   }
 
@@ -148,7 +235,55 @@ export async function tryExecutePendingRow(
     .gte("executed_at", cooldownIso)
     .limit(1)
     .maybeSingle();
-  if (recentExecuted) return "cooldown";
+  if (recentExecuted) {
+    await setPendingReason(
+      supabase,
+      row.id,
+      `Cooldown active after recent execution. Waiting ${cooldownSeconds}s before next entry attempt.`,
+    );
+    return "cooldown";
+  }
+
+  // ── Phase 4: Pre-trade validation gates (run before expensive signal scan) ──
+  const entryRaw = merged.entry_conditions;
+  const preset = extractAlgoGuidePreset(entryRaw);
+  const riskCfg = merged.risk_config && typeof merged.risk_config === "object"
+    ? merged.risk_config as Record<string, unknown>
+    : {};
+
+  // 4.2 First-15-min block: no entries before 09:30 IST
+  const blockFirst = (entryRaw as Record<string, unknown> | null)?.algoGuideBlockFirstSessionMinutes;
+  if (blockFirst && istMinutesNow() < 9 * 60 + 30) {
+    await setPendingReason(supabase, row.id, "Waiting for market open (09:30 IST) — first 15 min blocked.");
+    return "not_matched";
+  }
+
+  // 4.3 Expiry day filter: skip Thursdays for NSE derivatives
+  if (riskCfg.blockExpiryDays && istWeekday() === 4) {
+    await setPendingReason(supabase, row.id, "Skipped: expiry day (Thursday) — blockExpiryDays enabled.");
+    return "not_matched";
+  }
+
+  // 4.1 VIX filter: block trades when volatility is outside acceptable range
+  if (preset) {
+    const vix = await fetchIndiaVix();
+    if (vix != null) {
+      let vixBlocked = false;
+      let vixRange = "";
+      if ((preset === "supertrend_7_3" || preset === "orb") && (vix < 12 || vix > 25)) {
+        vixBlocked = true;
+        vixRange = "12–25";
+        if (preset === "orb" && vix > 22) { vixBlocked = true; vixRange = "12–22"; }
+      } else if (preset === "vwap_bounce" && vix < 11) {
+        vixBlocked = true;
+        vixRange = ">11";
+      }
+      if (vixBlocked) {
+        await setPendingReason(supabase, row.id, `VIX ${vix.toFixed(1)} outside range (${vixRange}) for ${preset}. Waiting.`);
+        return "not_matched";
+      }
+    }
+  }
 
   const customId = `custom_${strategy.id}`;
   const checkHeaders: Record<string, string> = { "Content-Type": "application/json" };
@@ -165,11 +300,20 @@ export async function tryExecutePendingRow(
     intradayInterval = "5m";
   }
 
+  // Append exchange suffix so strategy-entry-signals data providers resolve Indian stocks correctly
+  let signalSymbol = String(row.symbol).toUpperCase();
+  const exUpper = String(row.exchange ?? "").toUpperCase();
+  if (exUpper === "NSE" && !signalSymbol.endsWith(".NS") && !signalSymbol.endsWith(".BO")) {
+    signalSymbol += ".NS";
+  } else if (exUpper === "BSE" && !signalSymbol.endsWith(".BO") && !signalSymbol.endsWith(".NS")) {
+    signalSymbol += ".BO";
+  }
+
   const checkRes = await fetch(`${supabaseUrl}/functions/v1/strategy-entry-signals`, {
     method: "POST",
     headers: checkHeaders,
     body: JSON.stringify({
-      symbol: row.symbol,
+      symbol: signalSymbol,
       strategies: [],
       action: row.action,
       days: 90,
@@ -201,29 +345,60 @@ export async function tryExecutePendingRow(
   });
 
   const checkData = (await checkRes.json().catch(() => ({}))) as any;
+  if (!checkRes.ok) {
+    console.error("strategy-entry-signals failed for pending row", row.id, checkRes.status, checkData?.error);
+    await setPendingReason(
+      supabase,
+      row.id,
+      `Signal scan failed (${checkRes.status}). ${(checkData?.error ?? "Temporary edge-function error")}`,
+    );
+    return "error";
+  }
+
   const signals = Array.isArray(checkData?.signals) ? checkData.signals : [];
-  const achieved = Boolean(signals.find((s: any) =>
+  const matchedSignal = signals.find((s: any) =>
     String(s?.strategyId ?? "") === customId &&
     String(s?.side ?? "").toUpperCase() === String(row.action).toUpperCase() &&
     Boolean(s?.isLive) &&
     !Boolean(s?.isPredicted),
-  ));
+  );
+  const achieved = Boolean(matchedSignal);
 
-  await supabase
-    .from("pending_conditional_orders")
-    .update({ last_checked_at: new Date().toISOString() })
-    .eq("id", row.id);
-
-  if (!achieved) return "not_matched";
+  if (!achieved) {
+    const sideCandidates = signals.filter((s: any) =>
+      String(s?.strategyId ?? "") === customId &&
+      String(s?.side ?? "").toUpperCase() === String(row.action).toUpperCase() &&
+      !Boolean(s?.isPredicted)
+    );
+    const nearest = sideCandidates[0] as Record<string, unknown> | undefined;
+    const auditLinesRaw = (nearest?.conditionAudit && typeof nearest.conditionAudit === "object")
+      ? (nearest.conditionAudit as { lines?: Array<{ ok?: boolean; label?: string }> }).lines
+      : [];
+    const auditLines = Array.isArray(auditLinesRaw)
+      ? auditLinesRaw
+        .slice(0, 3)
+        .map((l) => `${l?.ok ? "PASS" : "FAIL"} ${String(l?.label ?? "").replace(/\s+/g, " ").trim()}`)
+        .filter(Boolean)
+      : [];
+    const reason = nearest
+      ? `No live entry signal yet (last matching bar is not live).${
+        auditLines.length > 0 ? ` Checks: ${auditLines.join(" | ")}` : ""
+      }`
+      : "No live entry signal yet. Strategy conditions are still not met on the current live bar.";
+    await setPendingReason(supabase, row.id, reason);
+    return "not_matched";
+  }
 
   const symU = String(row.symbol).toUpperCase();
   const riskTz = symU.endsWith(".NS") || symU.endsWith(".BO") ? "Asia/Kolkata" : "UTC";
   const gateCfg = parseGuideRiskGates(merged.risk_config, riskTz);
+  // Only count strategy-linked algo trades (not paper predictions) toward position limit
   const { count: openPosCount } = await supabase
     .from("active_trades")
     .select("id", { count: "exact", head: true })
     .eq("user_id", row.user_id)
-    .in("status", ["active", "monitoring", "exit_zone"]);
+    .in("status", ["active", "monitoring", "exit_zone"])
+    .not("strategy_id", "is", null);
   const gateDeny = evaluateGuideRiskGates({
     cfg: gateCfg,
     nowSec: Math.floor(Date.now() / 1000),
@@ -233,7 +408,14 @@ export async function tryExecutePendingRow(
     stopLossPct: merged.stop_loss_pct != null ? Number(merged.stop_loss_pct) : 0,
     takeProfitPct: merged.take_profit_pct != null ? Number(merged.take_profit_pct) : 0,
   });
-  if (!gateDeny.ok) return "risk_blocked";
+  if (!gateDeny.ok) {
+    await setPendingReason(
+      supabase,
+      row.id,
+      `Entry blocked by risk gate (${gateDeny.code}): ${gateDeny.reason}`,
+    );
+    return "risk_blocked";
+  }
 
   const { data: integration } = await supabase
     .from("user_trading_integration")
@@ -278,34 +460,65 @@ export async function tryExecutePendingRow(
     disclosed_quantity: "0",
   };
 
-  const placeRes = await fetch(`${openalgoUrl}/api/v1/placeorder`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(orderPayload),
-  });
-  const placeData = await placeRes.json().catch(() => ({}));
-  const orderId = (placeData as any)?.orderid ?? (placeData as any)?.broker_order_id;
+  // ── Build ReadyToFirePayload — monitor places order from its server IP ──────
+  // Edge functions run on Supabase/Deno cloud (varying IPs) which are not in
+  // OpenAlgo's API-key IP whitelist. The monitor runs co-located with OpenAlgo
+  // and calls /api/v1/placeorder directly.
+  let entryPx = Number((matchedSignal as any)?.priceAtEntry);
+  if (!Number.isFinite(entryPx) || entryPx <= 0) {
+    const fallback = signals.map((s: any) => Number(s?.priceAtEntry)).find((n: number) =>
+      Number.isFinite(n) && n > 0
+    );
+    entryPx = fallback ?? 0;
+  }
+  const slPct = merged.stop_loss_pct != null ? Number(merged.stop_loss_pct) : 2;
+  const tpPct = merged.take_profit_pct != null ? Number(merged.take_profit_pct) : 4;
+  const isSell = String(row.action).toUpperCase() === "SELL";
 
+  const presetLevels = (matchedSignal as any)?.presetPriceLevels as
+    { stopLossPrice?: number; takeProfitPrice?: number } | null | undefined;
+  const stopLossPrice = (presetLevels?.stopLossPrice != null && Number.isFinite(presetLevels.stopLossPrice))
+    ? presetLevels.stopLossPrice
+    : (isSell ? entryPx * (1 + slPct / 100) : entryPx * (1 - slPct / 100));
+  const takeProfitPrice = (presetLevels?.takeProfitPrice != null && Number.isFinite(presetLevels.takeProfitPrice))
+    ? presetLevels.takeProfitPrice
+    : (isSell ? entryPx * (1 - tpPct / 100) : entryPx * (1 + tpPct / 100));
+  const sharesInt = Math.max(1, Math.round(Number.isFinite(resolvedQty) && resolvedQty > 0 ? resolvedQty : 1));
+  const investmentAmount = Math.round((entryPx > 0 ? entryPx * sharesInt : 0) * 100) / 100;
+
+  const readyPayload: ReadyToFirePayload = {
+    pending_row_id: row.id,
+    order_payload: orderPayload as unknown as Record<string, string | number>,
+    active_trade_template: {
+      user_id: row.user_id,
+      symbol: String(row.symbol).toUpperCase(),
+      action: row.action,
+      status: "active",
+      entry_price: entryPx > 0 ? entryPx : 0.0001,
+      shares: sharesInt,
+      investment_amount: investmentAmount > 0 ? investmentAmount : 0.01,
+      exchange: resolvedExchange,
+      product: resolvedProduct,
+      strategy_id: row.strategy_id,
+      strategy_type: String(merged.paper_strategy_type ?? "custom"),
+      stop_loss_price: Number.isFinite(stopLossPrice) ? stopLossPrice : null,
+      take_profit_price: Number.isFinite(takeProfitPrice) ? takeProfitPrice : null,
+      stop_loss_percentage: slPct,
+      target_profit_percentage: tpPct,
+      current_price: entryPx > 0 ? entryPx : null,
+      current_pnl: 0,
+      current_pnl_percentage: 0,
+    },
+    strategy_name: String(strategy.name ?? ""),
+  };
+
+  // Mark as queued — prevents re-evaluation on next tick while monitor is placing.
+  // Monitor resets status to "executed"/"cancelled" after placement.
+  localFireGuard.set(dedupeKey, Date.now());
   await supabase.from("pending_conditional_orders").update({
-    status: placeRes.ok ? "executed" : "cancelled",
-    executed_at: placeRes.ok ? new Date().toISOString() : null,
-    broker_order_id: orderId ?? null,
-    error_message: placeRes.ok ? null : ((placeData as any)?.message ?? "Order failed"),
+    error_message: `__QUEUED_FOR_MONITOR__:${new Date().toISOString()}`,
+    last_checked_at: new Date().toISOString(),
   }).eq("id", row.id);
 
-  if (placeRes.ok) {
-    localFireGuard.set(dedupeKey, Date.now());
-    await supabase.from("order_audit_logs").insert({
-      user_id: row.user_id,
-      trade_id: null,
-      intent: "entry",
-      provider: "openalgo",
-      request_payload: orderPayload,
-      response_payload: placeData,
-      status: "success",
-    }).catch(() => {});
-    return "fired";
-  }
-
-  return "error";
+  return { type: "ready_to_fire", payload: readyPayload };
 }
