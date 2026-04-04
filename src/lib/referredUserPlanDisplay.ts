@@ -1,25 +1,17 @@
-import { PRICING_PLANS } from "@/constants/pricing";
+import { PRICING_PLANS, ALGO_TRADING_PLAN } from "@/constants/pricing";
 import { hasActiveSubscription, type UserSubscription } from "@/services/stripeService";
 
-/** Shown in affiliate/admin dashboards for `user_subscriptions.plan_id` / payments. */
-const STATIC_PLAN_NAMES: Record<string, string> = {
-  botIntegration: "AI Auto Trading Bot (legacy)",
-  probIntelligence: "Probability Intelligence (legacy)",
-  proPlan: "Pro Plan (legacy)",
-  algoTrading: "Algo Trading Setup",
-  algoTrading_test: "Algo Trading (test)",
-  test_1_rupee: "Test",
-};
-
-const PLAN_NAMES: Record<string, string> = {
-  ...STATIC_PLAN_NAMES,
-  ...Object.fromEntries(PRICING_PLANS.map((p) => [p.id, p.name])),
-};
+const PLAN_NAMES: Record<string, string> = Object.fromEntries(
+  PRICING_PLANS.map((p) => [p.id, p.name]),
+);
+PLAN_NAMES[ALGO_TRADING_PLAN.id] = ALGO_TRADING_PLAN.name;
 
 const EXTRA_PLAN_LABELS: Record<string, string> = {
+  algoTrading: "Algo Trading Setup",
   wl_1_year: "White Label (1 year)",
   wl_2_years: "White Label (2 years)",
   wl_5_years: "White Label (5 years)",
+  test_1_rupee: "Test",
 };
 
 export function planIdToDisplayName(planId: string | null | undefined): string {

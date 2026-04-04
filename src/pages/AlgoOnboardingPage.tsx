@@ -340,11 +340,11 @@ export default function AlgoOnboardingPage() {
           <CardHeader>
             <CardTitle className="text-xl font-black">Live algo is not on your current plan</CardTitle>
             <CardDescription className="text-zinc-400">
-              Probability includes detailed analysis and paper trading. OpenAlgo live execution is
-              included on <strong className="text-zinc-200">Bot</strong> or{" "}
-              <strong className="text-zinc-200">Pro</strong>. Upgrade to{" "}
-              <strong className="text-teal-400">Pro</strong> in billing to get both — Stripe can charge
-              only the prorated difference when configured in the portal.
+              Probability ($99) includes detailed analysis and paper trading. OpenAlgo live execution is
+              included on <strong className="text-zinc-200">Bot ($49)</strong> or{" "}
+              <strong className="text-zinc-200">Pro ($129)</strong>. Upgrade to{" "}
+              <strong className="text-teal-400">Pro</strong> in billing to get both — Stripe charges only
+              the prorated difference when configured in the portal.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col sm:flex-row gap-3">

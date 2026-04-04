@@ -2,15 +2,19 @@
  * create-checkout-session — Supabase Edge Function
  * Creates a Stripe Checkout Session for premium plans or white-label subscriptions.
  *
- * WL 1yr / 2yr     → mode: subscription
+ * WL 1yr / 2yr     → mode: subscription (recurring yearly)
  * WL 5yr           → mode: payment (one-time, admin-generated link with security token)
- * Premium plans    → mode: subscription — each `plan_id` must have a matching entry in PRICE_IDS below.
+ * Premium plans → mode: subscription (recurring yearly)
  *
- * Legacy Bot / Probability / Pro price env vars are no longer wired here. Add new Stripe prices and map
- * them in PRICE_IDS (and in `PRICING_PLANS` in the app) when you launch monthly or new products.
+ * Billing notes (product policy — implement in Stripe Dashboard / Customer Portal as needed):
+ * - Downgrades: effective after the current period ends (use cancel_at_period_end + new plan at renewal).
+ * - Upgrade to Pro ($129) from Bot ($49) or Probability ($99): charge price difference via proration
+ *   (Subscription update + proration_behavior) or Customer Portal.
+ * - Adding Probability ($99) while on Bot-only is a separate product purchase (full $99), not a prorated
+ *   upgrade from $49; next renewal can be consolidated to $129 in Stripe (merged subscription).
  *
- * Env: STRIPE_SECRET_KEY, STRIPE_PRICE_WL_1Y, STRIPE_PRICE_WL_2Y, STRIPE_PRICE_WL_5Y,
- *      optional STRIPE_PRICE_TEST_1R for internal test plan `test_1_rupee`.
+ * Env: STRIPE_SECRET_KEY, STRIPE_PRICE_BOT, STRIPE_PRICE_PROB, STRIPE_PRICE_PRO,
+ *      STRIPE_PRICE_WL_1Y, STRIPE_PRICE_WL_2Y, STRIPE_PRICE_WL_5Y
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -23,17 +27,14 @@ import {
 const STRIPE_SECRET = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 const APP_URL = Deno.env.get("APP_URL") ?? "http://localhost:5173";
 
-function buildPriceIds(): Record<string, string> {
-  const m: Record<string, string> = {
-    wl_1_year: Deno.env.get("STRIPE_PRICE_WL_1Y") ?? "",
-    wl_2_years: Deno.env.get("STRIPE_PRICE_WL_2Y") ?? "",
-    wl_5_years: Deno.env.get("STRIPE_PRICE_WL_5Y") ?? "",
-  };
-  const test1 = Deno.env.get("STRIPE_PRICE_TEST_1R") ?? "";
-  if (test1) m.test_1_rupee = test1;
-  // Example when adding monthly products: m.my_plan = Deno.env.get("STRIPE_PRICE_MY_PLAN") ?? "";
-  return m;
-}
+const PRICE_IDS: Record<string, string> = {
+  botIntegration:   Deno.env.get("STRIPE_PRICE_BOT")  ?? "",
+  probIntelligence: Deno.env.get("STRIPE_PRICE_PROB") ?? "",
+  proPlan:          Deno.env.get("STRIPE_PRICE_PRO")  ?? "",
+  wl_1_year:        Deno.env.get("STRIPE_PRICE_WL_1Y") ?? "",
+  wl_2_years:       Deno.env.get("STRIPE_PRICE_WL_2Y") ?? "",
+  wl_5_years:       Deno.env.get("STRIPE_PRICE_WL_5Y") ?? "",
+};
 
 const corsHeaders = {
   "Access-Control-Allow-Origin":  "*",
@@ -69,10 +70,9 @@ Deno.serve(async (req: Request) => {
     const cancelUrl  = (body.cancel_url  as string) || `${APP_URL}/?checkout=cancelled`;
     const wlPayload  = body.wl as { brand_name?: string; slug?: string; token?: string } | undefined;
 
-    const PRICE_IDS = buildPriceIds();
-    const priceId = PRICE_IDS[planId] ?? "";
+    const priceId = PRICE_IDS[planId] || (planId === "test_1_rupee" ? "" : PRICE_IDS.proPlan);
     if (!priceId) {
-      const msg = `No Stripe price configured for plan_id "${planId}". Add it to create-checkout-session PRICE_IDS and Supabase secrets.`;
+      const msg = `Price for plan ${planId} not configured. Set STRIPE_PRICE_TEST_1R in Supabase secrets.`;
       console.error("create-checkout-session 400:", msg);
       return new Response(JSON.stringify({ error: msg }), { status: 400, headers });
     }
