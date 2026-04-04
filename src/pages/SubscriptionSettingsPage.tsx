@@ -55,11 +55,9 @@ function planLabel(planId: string | undefined): string {
 function planPriceHint(planId: string | undefined): string {
   switch (planId) {
     case "botIntegration":
-      return "$49 / year";
     case "probIntelligence":
-      return "$99 / year";
     case "proPlan":
-      return "$129 / year";
+      return "Legacy plan — see billing portal for renewal details";
     default:
       return "";
   }
@@ -328,7 +326,7 @@ export default function SubscriptionSettingsPage() {
                   <div className="rounded-2xl border border-primary/25 bg-primary/5 px-5 py-4 text-sm leading-relaxed text-muted-foreground">
                     <span className="inline-flex items-center gap-1.5 font-semibold text-foreground">
                       <Zap className="h-4 w-4 text-primary" />
-                      Upgrade to Pro ($129)
+                      Upgrade to Pro
                     </span>
                     <p className="mt-2">
                       You&apos;re on a mid-tier plan. In the billing portal, switch to Pro for full
@@ -374,11 +372,10 @@ export default function SubscriptionSettingsPage() {
                     </AccordionTrigger>
                     <AccordionContent className="space-y-2 pb-4 text-sm leading-relaxed text-muted-foreground">
                       <p>
-                        If you already pay for <strong className="text-foreground">Bot ($49)</strong>{" "}
-                        or <strong className="text-foreground">Probability ($99)</strong>, open the
-                        billing portal and move to{" "}
-                        <strong className="text-foreground">Pro ($129)</strong>. Stripe can apply
-                        proration for the time left on your subscription when configured.
+                        If you already pay for <strong className="text-foreground">Bot</strong> or{" "}
+                        <strong className="text-foreground">Probability</strong>, open the billing
+                        portal and move to <strong className="text-foreground">Pro</strong>. Stripe can
+                        apply proration for the time left on your subscription when configured.
                       </p>
                       <p>
                         After checkout, webhooks update your <code className="text-xs">plan_id</code>{" "}

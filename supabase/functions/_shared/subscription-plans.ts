@@ -11,7 +11,7 @@ const ALGO_ONLY = new Set([
 
 const ANALYSIS = new Set(["probIntelligence", "proPlan"]);
 
-/** Bot + Pro only — not Probability ($99). */
+/** Bot + Pro only — not probability-only. */
 export function planAllowsAlgo(planId: string | null | undefined): boolean {
   if (!planId) return false;
   if (ALGO_ONLY.has(planId)) return true;

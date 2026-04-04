@@ -53,7 +53,7 @@ const PricingPage = () => {
 
   const visiblePlans = useMemo(() => {
     if (onProPlan) return [];
-    if (proUpgradeViaPortal) return PRICING_PLANS.filter((p) => p.id === "proPlan");
+    if (proUpgradeViaPortal) return [];
     return PRICING_PLANS;
   }, [onProPlan, proUpgradeViaPortal]);
 
@@ -85,7 +85,7 @@ const PricingPage = () => {
     navigate,
   ]);
 
-  const startPremiumCheckout = async (planId: string) => {
+  const startPremiumCheckout = async (pid: string) => {
     const {
       data: { session },
     } = await supabase.auth.getSession();
@@ -95,11 +95,11 @@ const PricingPage = () => {
     }
     const origin = window.location.origin;
     const successUrl =
-      planId === "botIntegration"
+      pid === "botIntegration"
         ? `${origin}/algo-setup?checkout=success`
         : `${origin}/home?checkout=success`;
     const result = await createCheckoutSession({
-      plan_id: planId,
+      plan_id: pid,
       success_url: successUrl,
       cancel_url: `${origin}/pricing`,
     });
@@ -116,7 +116,7 @@ const PricingPage = () => {
         <title>Pricing — TradingSmart.ai</title>
         <meta
           name="description"
-          content="AI trading bot integration, probability intelligence, and Pro plan. Simple annual software pricing."
+          content="TradingSmart.ai subscription plans and billing."
         />
       </Helmet>
 
@@ -137,8 +137,8 @@ const PricingPage = () => {
               plans
             </h1>
             <p className="text-zinc-400 text-xl font-light">
-              Use AI to analyze probabilities and automate trades with powerful algorithmic
-              intelligence. All plans bill annually unless noted.
+              New subscription options are being connected to Stripe. If you already subscribe, use
+              the billing portal to manage your plan.
             </p>
           </motion.div>
         </motion.section>
@@ -190,19 +190,62 @@ const PricingPage = () => {
                   </>
                 )}
               </motion.div>
+            ) : proUpgradeViaPortal ? (
+              <motion.div
+                variants={fadeUp}
+                className="max-w-xl mx-auto p-8 rounded-3xl border border-teal-500/20 bg-zinc-900/40 text-center space-y-6"
+              >
+                <p className="text-zinc-400 text-sm">
+                  You already have an active subscription. Upgrade to{" "}
+                  <strong className="text-zinc-200">Pro</strong> in the{" "}
+                  <strong className="text-zinc-200">billing portal</strong> — Stripe can charge only
+                  the prorated difference when that is enabled in your Stripe dashboard.
+                </p>
+                <Button
+                  className="w-full py-6 bg-teal-500 hover:bg-teal-400 text-black font-bold rounded-xl"
+                  disabled={portalLoading}
+                  onClick={async () => {
+                    setPortalLoading(true);
+                    const r = await createBillingPortalSession(`${window.location.origin}/pricing`);
+                    setPortalLoading(false);
+                    if ("error" in r) {
+                      toast.error(r.error);
+                      return;
+                    }
+                    window.location.href = r.url;
+                  }}
+                >
+                  {portalLoading ? (
+                    <Loader2 className="h-5 w-5 animate-spin mx-auto" />
+                  ) : (
+                    "Open billing portal to upgrade"
+                  )}
+                </Button>
+              </motion.div>
+            ) : visiblePlans.length === 0 ? (
+              <motion.div
+                variants={fadeUp}
+                className="max-w-lg mx-auto p-10 rounded-3xl border border-zinc-800 bg-black text-center"
+              >
+                <p className="text-zinc-400 text-sm leading-relaxed mb-6">
+                  Public checkout for new plans is not live yet. Add products in Stripe, set Supabase
+                  secrets, and list them in <code className="text-xs text-zinc-500">PRICING_PLANS</code>{" "}
+                  in the codebase to show cards here.
+                </p>
+                <p className="text-zinc-500 text-xs">
+                  White-label licensing is available on the{" "}
+                  <a href="/white-label" className="text-teal-400 hover:underline">
+                    White Label
+                  </a>{" "}
+                  page.
+                </p>
+              </motion.div>
             ) : (
               <div
                 className={`grid gap-8 max-w-6xl mx-auto items-stretch ${
                   visiblePlans.length === 1 ? "lg:grid-cols-1 max-w-md mx-auto" : "lg:grid-cols-3"
                 }`}
               >
-                {proUpgradeViaPortal && (
-                  <p className="lg:col-span-3 text-center text-zinc-400 text-sm mb-2">
-                    You already have an active subscription. Upgrade to Pro below — use{" "}
-                    <strong className="text-zinc-200">billing portal</strong> so Stripe charges only the
-                    prorated difference (when enabled in your Stripe dashboard).
-                  </p>
-                )}
                 {visiblePlans.map((plan) => (
                   <motion.div
                     key={plan.id}
@@ -285,9 +328,9 @@ const PricingPage = () => {
                       ) : proUpgradeViaPortal && plan.id === "proPlan" ? (
                         "Upgrade in billing portal"
                       ) : plan.recommended ? (
-                        "Get Pro Plan"
+                        "Subscribe"
                       ) : (
-                        "Get Started"
+                        "Get started"
                       )}
                     </Button>
                   </motion.div>

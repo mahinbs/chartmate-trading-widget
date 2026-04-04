@@ -6,7 +6,7 @@ import { useSubscription } from "@/hooks/useSubscription";
 import { isManualFullAccessEmail } from "@/lib/manualSubscriptionBypass";
 
 /**
- * Requires $99 / $129 (probability or pro) for intraday and other analysis-gated routes.
+ * Requires an analysis-tier subscription (probability or pro) for intraday and other analysis-gated routes.
  * (New / Past Analysis use PredictPastAnalysisGate — exception-email only.)
  */
 export function AnalysisFeatureGate({ children }: { children: ReactNode }) {

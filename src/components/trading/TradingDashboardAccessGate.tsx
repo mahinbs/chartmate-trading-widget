@@ -27,7 +27,7 @@ export interface TradingDashboardAccessGateProps {
 }
 
 /**
- * Signed-in users only. Unpaid → pricing. Paid Probability-only ($99) → subscription.
+ * Signed-in users only. Unpaid → pricing. Paid probability-only (no algo) → /subscription?feature=algo.
  * Bot/Pro not yet provisioned → algo-setup (or notReadyRedirect), unless skipProvisioningCheck.
  */
 export function TradingDashboardAccessGate({

@@ -452,10 +452,6 @@ const PredictPage = () => {
     hasActiveSubscription(subscription) &&
     isMidTierEligibleForProOnlyUpgrade(subscription?.plan_id);
 
-  const algoDialogPlans = useMemo(
-    () => (midTierProOnlyUpgrade ? PRICING_PLANS.filter((p) => p.id === "proPlan") : PRICING_PLANS),
-    [midTierProOnlyUpgrade],
-  );
   const [showIntegrationModal, setShowIntegrationModal] = useState(false);
   const [showStrategyDialog, setShowStrategyDialog] = useState(false);
   const [showPreviousOrNewDialog, setShowPreviousOrNewDialog] = useState(false);
@@ -2988,106 +2984,97 @@ const PredictPage = () => {
               {midTierProOnlyUpgrade ? (
                 <>
                   You already have an active plan. Add live OpenAlgo by upgrading to{" "}
-                  <strong className="text-zinc-200">Pro ($129)</strong> in the billing portal — Stripe
-                  charges only the prorated difference when that is enabled in Stripe.
+                  <strong className="text-zinc-200">Pro</strong> in the billing portal — Stripe can
+                  charge only the prorated difference when that is enabled.
                 </>
               ) : (
                 <>
-                  Live OpenAlgo is included on <strong className="text-zinc-200">Bot ($49)</strong> or{" "}
-                  <strong className="text-zinc-200">Pro ($129)</strong>. Probability ($99) does not
-                  include live broker execution.
+                  Live OpenAlgo requires a plan that includes broker execution (not probability-only
+                  analysis). See current options on the pricing page.
                 </>
               )}
             </DialogDescription>
           </DialogHeader>
-          <div
-            className={`grid gap-6 ${
-              algoDialogPlans.length === 1 ? "grid-cols-1 max-w-md mx-auto" : "grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
-            }`}
-          >
-            {algoDialogPlans.map((plan) => (
-              <div
-                key={plan.id}
-                    className={`p-6 rounded-2xl flex flex-col relative transition-all border ${
-                      plan.recommended
-                        ? "bg-gradient-to-b from-teal-950/40 to-black border-teal-500/30 shadow-[0_0_30px_rgba(20,184,166,0.1)] lg:-mt-2"
-                        : "bg-black border-zinc-800 shadow-md"
-                    } ${plan.id === "proPlan" && "md:col-span-2 lg:col-span-1"}`}
+          <div className="flex flex-col items-center gap-6 max-w-md mx-auto">
+            {midTierProOnlyUpgrade ? (
+              <Button
+                className="w-full py-5 rounded-xl bg-teal-500 hover:bg-teal-400 text-black font-bold"
+                onClick={async () => {
+                  const origin = window.location.origin;
+                  const r = await createBillingPortalSession(`${origin}/predict`);
+                  if ("error" in r) {
+                    toast.error(r.error);
+                    return;
+                  }
+                  setShowPremiumDialog(false);
+                  window.location.href = r.url;
+                }}
               >
-                {plan.recommended && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-teal-500 text-black text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest z-10">
-                    Recommended
-                  </div>
-                )}
-                    <h3
-                      className={`text-lg font-bold mb-2 ${plan.recommended ? "text-teal-400" : "text-zinc-200"}`}
-                    >
+                Open billing portal
+              </Button>
+            ) : PRICING_PLANS.length > 0 ? (
+              <div className="grid gap-6 w-full grid-cols-1 md:grid-cols-2 lg:grid-cols-3 lg:max-w-5xl">
+                {PRICING_PLANS.map((plan) => (
+                  <div
+                    key={plan.id}
+                    className={`p-6 rounded-2xl flex flex-col relative border ${
+                      plan.recommended
+                        ? "bg-gradient-to-b from-teal-950/40 to-black border-teal-500/30"
+                        : "bg-black border-zinc-800"
+                    }`}
+                  >
+                    <h3 className={`text-lg font-bold mb-2 ${plan.recommended ? "text-teal-400" : "text-zinc-200"}`}>
                       {plan.name}
                     </h3>
-                <div className="text-3xl font-black mb-4 tracking-tight text-white">
-                  ${plan.price}
-                      <span className="text-sm text-zinc-500 font-normal ml-1">
-                        /{plan.period}
-                      </span>
-                </div>
-                <ul className="space-y-3 mb-8 flex-1 text-sm text-zinc-300">
-                  {plan.features.slice(0, 6).map((feature, i) => (
-                    <li key={i} className="flex gap-3 items-start text-xs">
-                          <CheckCircle
-                            className={`h-4 w-4 shrink-0 mt-0.5 ${plan.recommended ? "text-teal-400" : "text-teal-500"}`}
-                          />
-                      <span className="leading-snug">{feature}</span>
-                    </li>
-                  ))}
-                </ul>
-                <Button
-                      className={`w-full py-5 rounded-xl ${plan.recommended ? "bg-teal-500 hover:bg-teal-400 text-black shadow-lg shadow-teal-500/20" : "bg-zinc-100 hover:bg-zinc-300 text-black"} font-bold transition-all`}
-                  onClick={async () => {
+                    <div className="text-2xl font-black mb-4 text-white">
+                      ${plan.price}
+                      <span className="text-sm text-zinc-500 ml-1">/{plan.period}</span>
+                    </div>
+                    <Button
+                      className="w-full py-4 bg-zinc-100 hover:bg-zinc-300 text-black font-bold"
+                      onClick={async () => {
                         const {
                           data: { session },
                         } = await supabase.auth.getSession();
-                    if (!session) {
-                    setShowPremiumDialog(false);
-                          navigate(
-                            "/auth?redirect=" + encodeURIComponent("/predict"),
-                          );
-                      return;
-                    }
-                    setShowPremiumDialog(false);
-                    const origin = window.location.origin;
-                    if (midTierProOnlyUpgrade && plan.id === "proPlan") {
-                      const r = await createBillingPortalSession(`${origin}/predict`);
-                      if ("error" in r) {
-                        toast.error(r.error);
-                        return;
-                      }
-                      window.location.href = r.url;
-                      return;
-                    }
-                    const successAfterPay =
-                      plan.id === "botIntegration"
-                        ? `${origin}/algo-setup?checkout=success`
-                        : `${origin}/home?checkout=success`;
-                    const result = await createCheckoutSession({
-                      plan_id: plan.id,
-                      success_url: successAfterPay,
-                      cancel_url: `${origin}/predict`,
-                    });
-                    if ("error" in result) {
-                      toast.error(result.error);
-                      return;
-                    }
-                    if ("url" in result) window.location.href = result.url;
-                  }}
-                >
-                  {midTierProOnlyUpgrade && plan.id === "proPlan"
-                    ? "Upgrade in billing portal"
-                    : plan.recommended
-                      ? "Get Pro Plan"
-                      : "Get Started"}
-                </Button>
+                        if (!session) {
+                          setShowPremiumDialog(false);
+                          navigate("/auth?redirect=" + encodeURIComponent("/predict"));
+                          return;
+                        }
+                        setShowPremiumDialog(false);
+                        const origin = window.location.origin;
+                        const successAfterPay =
+                          plan.id === "botIntegration"
+                            ? `${origin}/algo-setup?checkout=success`
+                            : `${origin}/home?checkout=success`;
+                        const result = await createCheckoutSession({
+                          plan_id: plan.id,
+                          success_url: successAfterPay,
+                          cancel_url: `${origin}/predict`,
+                        });
+                        if ("error" in result) {
+                          toast.error(result.error);
+                          return;
+                        }
+                        if ("url" in result) window.location.href = result.url;
+                      }}
+                    >
+                      Continue to checkout
+                    </Button>
+                  </div>
+                ))}
               </div>
-            ))}
+            ) : (
+              <Button
+                className="w-full py-5 rounded-xl bg-teal-500 hover:bg-teal-400 text-black font-bold"
+                onClick={() => {
+                  setShowPremiumDialog(false);
+                  navigate("/pricing?feature=algo");
+                }}
+              >
+                View pricing
+              </Button>
+            )}
           </div>
         </DialogContent>
       </Dialog>
