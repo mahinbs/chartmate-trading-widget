@@ -8,6 +8,9 @@ export interface UserSubscription {
   current_period_end: string | null;
   cancel_at_period_end?: boolean | null;
   stripe_customer_id?: string | null;
+  stripe_subscription_id?: string | null;
+  /** Set by stripe-webhook on invoice.payment_failed; cleared on invoice.paid */
+  payment_failed_at?: string | null;
 }
 
 export async function createCheckoutSession(params: {

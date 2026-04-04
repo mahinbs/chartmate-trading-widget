@@ -12,6 +12,8 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { planAllowsAlgo } from "../_shared/subscription-plans.ts";
+import { getAlgoStrategyLimits } from "../_shared/algo-strategy-limits.ts";
 
 const OPENALGO_URL     = (Deno.env.get("OPENALGO_URL") ?? "").replace(/\/$/, "");
 const OPENALGO_APP_KEY = Deno.env.get("OPENALGO_APP_KEY") ?? "";
@@ -41,6 +43,25 @@ function entryConditionsLookConfigured(entry: unknown): boolean {
     if (conds.length > 0) return true;
   }
   return false;
+}
+
+async function activePlanIdForUser(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+): Promise<string | null> {
+  const { data } = await supabase
+    .from("user_subscriptions")
+    .select("plan_id, status, current_period_end")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!data) return null;
+  const st = String((data as { status?: string }).status ?? "");
+  if (st !== "active" && st !== "trialing") return null;
+  const endRaw = (data as { current_period_end?: string | null }).current_period_end;
+  const endMs = endRaw ? new Date(endRaw).getTime() : null;
+  const graceEndMs = endMs != null ? endMs + 24 * 60 * 60 * 1000 : null;
+  if (graceEndMs != null && graceEndMs < Date.now()) return null;
+  return ((data as { plan_id?: string }).plan_id as string) ?? null;
 }
 
 Deno.serve(async (req: Request) => {
@@ -135,6 +156,41 @@ Deno.serve(async (req: Request) => {
 
       if (!name) {
         return new Response(JSON.stringify({ error: "name is required" }), { status: 400, headers });
+      }
+
+      const subPlanId = await activePlanIdForUser(supabase, user.id);
+      if (!subPlanId || !planAllowsAlgo(subPlanId)) {
+        return new Response(
+          JSON.stringify({
+            error: "An active subscription with live trading (OpenAlgo) access is required to create strategies.",
+            error_code: "NO_ALGO_PLAN",
+          }),
+          { status: 403, headers },
+        );
+      }
+      const limits = getAlgoStrategyLimits(subPlanId);
+      if (!limits) {
+        return new Response(
+          JSON.stringify({ error: "This plan does not support custom strategies.", error_code: "PLAN_NO_STRATEGIES" }),
+          { status: 403, headers },
+        );
+      }
+      const { count: stratCount, error: countErr } = await supabase
+        .from("user_strategies")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id);
+      if (countErr) {
+        return new Response(JSON.stringify({ error: "Could not verify strategy limit" }), { status: 500, headers });
+      }
+      if ((stratCount ?? 0) >= limits.maxCustomStrategies) {
+        return new Response(
+          JSON.stringify({
+            error:
+              `Your plan allows up to ${limits.maxCustomStrategies} custom strateg${limits.maxCustomStrategies === 1 ? "y" : "ies"}. Upgrade in billing to add more.`,
+            error_code: "STRATEGY_LIMIT",
+          }),
+          { status: 403, headers },
+        );
       }
 
       // Get user's OpenAlgo username from integration table
@@ -536,6 +592,19 @@ Deno.serve(async (req: Request) => {
       const strategyId = (body.strategy_id as string ?? "").trim();
       if (!strategyId) {
         return new Response(JSON.stringify({ error: "strategy_id is required" }), { status: 400, headers });
+      }
+
+      const delPlanId = await activePlanIdForUser(supabase, user.id);
+      const delLimits = delPlanId ? getAlgoStrategyLimits(delPlanId) : null;
+      if (!delLimits?.allowDeleteStrategies) {
+        return new Response(
+          JSON.stringify({
+            error:
+              "Your plan does not include deleting strategies. You can edit existing strategies, or upgrade to Professional to create and remove strategies freely.",
+            error_code: "DELETE_NOT_ALLOWED",
+          }),
+          { status: 403, headers },
+        );
       }
 
       // Get OpenAlgo strategy_id first

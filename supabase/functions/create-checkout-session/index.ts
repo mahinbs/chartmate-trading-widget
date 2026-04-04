@@ -13,8 +13,10 @@
  * - Adding Probability ($99) while on Bot-only is a separate product purchase (full $99), not a prorated
  *   upgrade from $49; next renewal can be consolidated to $129 in Stripe (merged subscription).
  *
- * Env: STRIPE_SECRET_KEY, STRIPE_PRICE_BOT, STRIPE_PRICE_PROB, STRIPE_PRICE_PRO,
- *      STRIPE_PRICE_WL_1Y, STRIPE_PRICE_WL_2Y, STRIPE_PRICE_WL_5Y
+ * Env: STRIPE_SECRET_KEY,
+ *      STRIPE_PRICE_STARTER, STRIPE_PRICE_GROWTH, STRIPE_PRICE_PROFESSIONAL (new monthly),
+ *      STRIPE_PRICE_BOT, STRIPE_PRICE_PROB, STRIPE_PRICE_PRO (legacy Stripe price ids for existing subs),
+ *      STRIPE_PRICE_WL_1Y, STRIPE_PRICE_WL_2Y, STRIPE_PRICE_WL_5Y, STRIPE_PRICE_TEST_1R (optional)
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -28,9 +30,9 @@ const STRIPE_SECRET = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 const APP_URL = Deno.env.get("APP_URL") ?? "http://localhost:5173";
 
 const PRICE_IDS: Record<string, string> = {
-  botIntegration:   Deno.env.get("STRIPE_PRICE_BOT")  ?? "",
-  probIntelligence: Deno.env.get("STRIPE_PRICE_PROB") ?? "",
-  proPlan:          Deno.env.get("STRIPE_PRICE_PRO")  ?? "",
+  starterPlan:      Deno.env.get("STRIPE_PRICE_STARTER") ?? "",
+  growthPlan:       Deno.env.get("STRIPE_PRICE_GROWTH") ?? "",
+  professionalPlan: Deno.env.get("STRIPE_PRICE_PROFESSIONAL") ?? "",
   wl_1_year:        Deno.env.get("STRIPE_PRICE_WL_1Y") ?? "",
   wl_2_years:       Deno.env.get("STRIPE_PRICE_WL_2Y") ?? "",
   wl_5_years:       Deno.env.get("STRIPE_PRICE_WL_5Y") ?? "",
@@ -70,9 +72,13 @@ Deno.serve(async (req: Request) => {
     const cancelUrl  = (body.cancel_url  as string) || `${APP_URL}/?checkout=cancelled`;
     const wlPayload  = body.wl as { brand_name?: string; slug?: string; token?: string } | undefined;
 
-    const priceId = PRICE_IDS[planId] || (planId === "test_1_rupee" ? "" : PRICE_IDS.proPlan);
+    let priceId = PRICE_IDS[planId] ?? "";
+    if (!priceId && planId === "test_1_rupee") {
+      priceId = Deno.env.get("STRIPE_PRICE_TEST_1R") ?? "";
+    }
     if (!priceId) {
-      const msg = `Price for plan ${planId} not configured. Set STRIPE_PRICE_TEST_1R in Supabase secrets.`;
+      const msg =
+        `Price for plan "${planId}" not configured. Set the matching STRIPE_PRICE_* secret (e.g. STRIPE_PRICE_STARTER for starterPlan).`;
       console.error("create-checkout-session 400:", msg);
       return new Response(JSON.stringify({ error: msg }), { status: 400, headers });
     }

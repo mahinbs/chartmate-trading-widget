@@ -36,7 +36,7 @@ export function useSubscription() {
       return {
         id: "client-manual-bypass",
         user_id: user.id,
-        plan_id: "proPlan",
+        plan_id: "professionalPlan",
         status: "active",
         current_period_end: null,
         stripe_customer_id: "cus_manual_exc_client_bypass",
@@ -66,6 +66,13 @@ export function useSubscription() {
       periodEndMs + 24 * 60 * 60 * 1000 > nowMs,
   );
 
+  const hasBillingIssue =
+    !manualFullAccessBypass &&
+    Boolean(subscriptionForUi) &&
+    !hasActiveSubscription(subscriptionForUi) &&
+    (subscriptionForUi!.status === "past_due" ||
+      Boolean(subscriptionForUi!.payment_failed_at));
+
   return {
     subscription: subscriptionForUi,
     loading,
@@ -77,5 +84,6 @@ export function useSubscription() {
     daysUntilExpiry,
     isAutoRenewDisabled,
     isInGracePeriod,
+    hasBillingIssue,
   };
 }

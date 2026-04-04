@@ -9,27 +9,36 @@ const ALGO_ONLY = new Set([
   "test_1_rupee",
 ]);
 
-const ANALYSIS = new Set(["probIntelligence", "proPlan"]);
+const LEGACY_ANALYSIS = new Set(["probIntelligence", "proPlan"]);
+const NEW_MONTHLY = new Set(["starterPlan", "growthPlan", "professionalPlan"]);
 
-/** Bot + Pro only — not Probability ($99). */
+/** Bot + Pro only — not Probability ($99) legacy. */
 export function planAllowsAlgo(planId: string | null | undefined): boolean {
   if (!planId) return false;
+  if (NEW_MONTHLY.has(planId)) return true;
   if (ALGO_ONLY.has(planId)) return true;
   return planId === "proPlan";
 }
 
 export function planAllowsAnalysis(planId: string | null | undefined): boolean {
   if (!planId) return false;
-  return ANALYSIS.has(planId);
+  if (NEW_MONTHLY.has(planId)) return true;
+  return LEGACY_ANALYSIS.has(planId);
 }
 
 export function stripePriceToPlanId(): Record<string, string> {
-  const bot = Deno.env.get("STRIPE_PRICE_BOT") ?? "";
-  const prob = Deno.env.get("STRIPE_PRICE_PROB") ?? "";
-  const pro = Deno.env.get("STRIPE_PRICE_PRO") ?? "";
   const m: Record<string, string> = {};
-  if (bot) m[bot] = "botIntegration";
-  if (prob) m[prob] = "probIntelligence";
-  if (pro) m[pro] = "proPlan";
+  const pairs: [string | undefined, string][] = [
+    [Deno.env.get("STRIPE_PRICE_STARTER"), "starterPlan"],
+    [Deno.env.get("STRIPE_PRICE_GROWTH"), "growthPlan"],
+    [Deno.env.get("STRIPE_PRICE_PROFESSIONAL"), "professionalPlan"],
+    [Deno.env.get("STRIPE_PRICE_BOT"), "botIntegration"],
+    [Deno.env.get("STRIPE_PRICE_PROB"), "probIntelligence"],
+    [Deno.env.get("STRIPE_PRICE_PRO"), "proPlan"],
+    [Deno.env.get("STRIPE_PRICE_TEST_1R"), "test_1_rupee"],
+  ];
+  for (const [price, id] of pairs) {
+    if (price?.trim()) m[price.trim()] = id;
+  }
   return m;
 }

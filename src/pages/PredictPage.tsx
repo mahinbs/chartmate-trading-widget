@@ -453,7 +453,8 @@ const PredictPage = () => {
     isMidTierEligibleForProOnlyUpgrade(subscription?.plan_id);
 
   const algoDialogPlans = useMemo(
-    () => (midTierProOnlyUpgrade ? PRICING_PLANS.filter((p) => p.id === "proPlan") : PRICING_PLANS),
+    () =>
+      midTierProOnlyUpgrade ? PRICING_PLANS.filter((p) => p.id === "professionalPlan") : PRICING_PLANS,
     [midTierProOnlyUpgrade],
   );
   const [showIntegrationModal, setShowIntegrationModal] = useState(false);
@@ -2987,15 +2988,16 @@ const PredictPage = () => {
             <DialogDescription className="text-center text-zinc-400 text-base md:text-lg mt-2 max-w-2xl mx-auto">
               {midTierProOnlyUpgrade ? (
                 <>
-                  You already have an active plan. Add live OpenAlgo by upgrading to{" "}
-                  <strong className="text-zinc-200">Pro ($129)</strong> in the billing portal — Stripe
-                  charges only the prorated difference when that is enabled in Stripe.
+                  You already have an active plan. Upgrade to{" "}
+                  <strong className="text-zinc-200">Professional ($199/mo)</strong> in the billing portal
+                  for the highest limits — Stripe prorates when enabled.
                 </>
               ) : (
                 <>
-                  Live OpenAlgo is included on <strong className="text-zinc-200">Bot ($49)</strong> or{" "}
-                  <strong className="text-zinc-200">Pro ($129)</strong>. Probability ($99) does not
-                  include live broker execution.
+                  Live OpenAlgo is included on <strong className="text-zinc-200">Starter ($49/mo)</strong>,{" "}
+                  <strong className="text-zinc-200">Growth ($99/mo)</strong>, and{" "}
+                  <strong className="text-zinc-200">Professional ($199/mo)</strong>. Legacy Probability-only
+                  plans do not include live broker execution.
                 </>
               )}
             </DialogDescription>
@@ -3012,7 +3014,7 @@ const PredictPage = () => {
                       plan.recommended
                         ? "bg-gradient-to-b from-teal-950/40 to-black border-teal-500/30 shadow-[0_0_30px_rgba(20,184,166,0.1)] lg:-mt-2"
                         : "bg-black border-zinc-800 shadow-md"
-                    } ${plan.id === "proPlan" && "md:col-span-2 lg:col-span-1"}`}
+                    } ${plan.id === "professionalPlan" && "md:col-span-2 lg:col-span-1"}`}
               >
                 {plan.recommended && (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-teal-500 text-black text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest z-10">
@@ -3055,7 +3057,7 @@ const PredictPage = () => {
                     }
                     setShowPremiumDialog(false);
                     const origin = window.location.origin;
-                    if (midTierProOnlyUpgrade && plan.id === "proPlan") {
+                    if (midTierProOnlyUpgrade && plan.id === "professionalPlan") {
                       const r = await createBillingPortalSession(`${origin}/predict`);
                       if ("error" in r) {
                         toast.error(r.error);
@@ -3065,7 +3067,7 @@ const PredictPage = () => {
                       return;
                     }
                     const successAfterPay =
-                      plan.id === "botIntegration"
+                      plan.id === "starterPlan"
                         ? `${origin}/algo-setup?checkout=success`
                         : `${origin}/home?checkout=success`;
                     const result = await createCheckoutSession({
@@ -3080,10 +3082,10 @@ const PredictPage = () => {
                     if ("url" in result) window.location.href = result.url;
                   }}
                 >
-                  {midTierProOnlyUpgrade && plan.id === "proPlan"
+                  {midTierProOnlyUpgrade && plan.id === "professionalPlan"
                     ? "Upgrade in billing portal"
                     : plan.recommended
-                      ? "Get Pro Plan"
+                      ? "Get Growth Plan"
                       : "Get Started"}
                 </Button>
               </div>

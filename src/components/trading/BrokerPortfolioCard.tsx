@@ -41,6 +41,8 @@ import {
 } from "@/lib/backtestVectorbtPayload";
 import { getStrategyParams } from "@/constants/strategyParams";
 import AlgoStrategyBuilder from "@/components/trading/AlgoStrategyBuilder";
+import { useSubscription } from "@/hooks/useSubscription";
+import { getAlgoStrategyLimits } from "@/lib/algoStrategyLimits";
 import YahooChartPanel from "@/components/YahooChartPanel";
 import { runLiveEntryConditionScan, type LiveScanStrategyRow } from "@/lib/strategyLiveScan";
 
@@ -819,6 +821,22 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
     lastFired?: { action: "BUY" | "SELL"; symbol: string; exchange: string; quantity: string; product: string };
   }>>({});
   const brokerLabel = (broker || "Broker").charAt(0).toUpperCase() + (broker || "broker").slice(1);
+  const { subscription } = useSubscription();
+  const strategyLimits = getAlgoStrategyLimits(subscription?.plan_id);
+  const canDeleteStrategies = strategyLimits?.allowDeleteStrategies ?? false;
+  const atStrategyCap =
+    strategyLimits != null && strategies.length >= strategyLimits.maxCustomStrategies;
+
+  const openNewStrategyForm = () => {
+    if (atStrategyCap) {
+      toast.error(
+        `Your plan allows up to ${strategyLimits?.maxCustomStrategies} custom strateg${strategyLimits?.maxCustomStrategies === 1 ? "y" : "ies"}. Upgrade in billing to add more.`,
+      );
+      return;
+    }
+    setEditingAlgoStrategy(null);
+    setShowCreate(true);
+  };
 
   // ── Quick Trade Dialog (click on any position/trade/holding row) ──────────
   const [qtd, setQtd] = useState<{
@@ -1264,17 +1282,28 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
     if (!confirm(`Delete strategy "${name}"?`)) return;
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      await supabase.functions.invoke("manage-strategy", {
+      const del = await supabase.functions.invoke("manage-strategy", {
         body: { action: "delete", strategy_id: id },
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
+      const delErr = (del.data as { error?: string })?.error;
+      if (del.error || delErr) {
+        toast.error(String(delErr ?? del.error?.message ?? "Failed to delete strategy"));
+        return;
+      }
       toast.success("Strategy deleted");
       await loadStrategies();
-    } catch { toast.error("Failed to delete strategy"); }
+    } catch {
+      toast.error("Failed to delete strategy");
+    }
   };
 
   const createStrategy = async () => {
     if (!form.name.trim()) { toast.error("Strategy name is required"); return; }
+    if (atStrategyCap) {
+      toast.error("Strategy limit reached for your plan.");
+      return;
+    }
     const riskPct = parseFloat(form.risk_per_trade_pct);
     const slPct   = parseFloat(form.stop_loss_pct);
     const tpPct   = parseFloat(form.take_profit_pct);
@@ -2109,11 +2138,9 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                     <RefreshCw className={`h-3.5 w-3.5 ${stratLoading ? "animate-spin" : ""}`} />
                   </button>
                   <button
-                    onClick={() => {
-                      setEditingAlgoStrategy(null);
-                      setShowCreate(true);
-                    }}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded border border-zinc-700 text-xs font-bold text-zinc-400 hover:text-white hover:border-purple-500/50 transition-colors"
+                    onClick={openNewStrategyForm}
+                    disabled={atStrategyCap}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded border border-zinc-700 text-xs font-bold text-zinc-400 hover:text-white hover:border-purple-500/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <Plus className="h-3.5 w-3.5" /> New Strategy
                   </button>
@@ -2131,11 +2158,9 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                   <p className="text-sm text-zinc-500 font-medium">No strategies yet</p>
                   <p className="text-xs text-zinc-600 mt-1">Create strategies for auto-execution</p>
                   <button
-                    onClick={() => {
-                      setEditingAlgoStrategy(null);
-                      setShowCreate(true);
-                    }}
-                    className="mt-4 flex items-center gap-1.5 mx-auto px-4 py-2 rounded-lg border border-purple-500/30 text-xs font-bold text-purple-400 hover:bg-purple-500/10 transition-colors outline-none focus:ring-2 focus:ring-purple-500/40"
+                    onClick={openNewStrategyForm}
+                    disabled={atStrategyCap}
+                    className="mt-4 flex items-center gap-1.5 mx-auto px-4 py-2 rounded-lg border border-purple-500/30 text-xs font-bold text-purple-400 hover:bg-purple-500/10 transition-colors outline-none focus:ring-2 focus:ring-purple-500/40 disabled:opacity-40"
                   >
                     <Plus className="h-3.5 w-3.5" /> Create your first strategy
                   </button>
@@ -2199,10 +2224,15 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                               Live View
                             </button>
                           )}
-                          {/* Delete */}
-                          <button onClick={() => deleteStrategy(s.id, s.name)} className="p-0.5 text-zinc-700 hover:text-red-400 transition-colors">
-                            <Trash2 className="h-3 w-3" />
-                          </button>
+                          {canDeleteStrategies ? (
+                            <button
+                              onClick={() => deleteStrategy(s.id, s.name)}
+                              className="p-0.5 text-zinc-700 hover:text-red-400 transition-colors"
+                              title="Delete strategy"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          ) : null}
                         </div>
 
                         {/* Meta badges + live status diagnostic */}

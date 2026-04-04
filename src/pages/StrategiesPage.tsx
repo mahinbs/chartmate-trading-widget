@@ -59,6 +59,8 @@ import {
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useSubscription } from "@/hooks/useSubscription";
+import { getAlgoStrategyLimits } from "@/lib/algoStrategyLimits";
 
 interface StrategySymbol {
   symbol:       string;
@@ -150,6 +152,7 @@ const EMPTY_FORM = {
 export default function StrategiesPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { subscription } = useSubscription();
   const canOpenPredictFlow = isAnalysisExceptionEmail(user?.email);
   const [strategies, setStrategies]     = useState<UserStrategy[]>([]);
   const [loading, setLoading]           = useState(true);
@@ -160,6 +163,21 @@ export default function StrategiesPage() {
   const [showCreate, setShowCreate]     = useState(false);
   const [creating, setCreating]         = useState(false);
   const [form, setForm]                 = useState({ ...EMPTY_FORM });
+
+  const stratLimits = getAlgoStrategyLimits(subscription?.plan_id);
+  const canDeleteStrategies = stratLimits?.allowDeleteStrategies ?? false;
+  const atStrategyCap =
+    stratLimits != null && strategies.length >= stratLimits.maxCustomStrategies;
+
+  const openCreateDialog = () => {
+    if (atStrategyCap) {
+      toast.error(
+        `Your plan allows up to ${stratLimits?.maxCustomStrategies} custom strateg${stratLimits?.maxCustomStrategies === 1 ? "y" : "ies"}. Upgrade in billing to add more.`,
+      );
+      return;
+    }
+    setShowCreate(true);
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -184,6 +202,10 @@ export default function StrategiesPage() {
 
   const handleCreate = async () => {
     if (!form.name.trim()) { toast.error("Strategy name is required"); return; }
+    if (atStrategyCap) {
+      toast.error("Strategy limit reached for your plan.");
+      return;
+    }
 
     setCreating(true);
     try {
@@ -308,6 +330,13 @@ export default function StrategiesPage() {
             </h1>
             <p className="text-zinc-400 text-sm mt-0.5">
               Create trading strategies — our AI analyzes and backtests each one.
+              {stratLimits ? (
+                <span className="block text-zinc-500 text-xs mt-1">
+                  Your plan: up to {stratLimits.maxCustomStrategies} custom strateg
+                  {stratLimits.maxCustomStrategies === 1 ? "y" : "ies"}
+                  {stratLimits.allowDeleteStrategies ? " (you may delete and create new ones)." : " (edit only; delete requires Professional)."}
+                </span>
+              ) : null}
             </p>
           </div>
           <div className="flex gap-2">
@@ -323,7 +352,8 @@ export default function StrategiesPage() {
             </Button>
             <Button
               size="sm"
-              onClick={() => setShowCreate(true)}
+              onClick={openCreateDialog}
+              disabled={atStrategyCap}
               className="bg-teal-500 hover:bg-teal-400 text-black font-bold"
             >
               <Plus className="h-4 w-4 mr-1.5" />
@@ -348,7 +378,8 @@ export default function StrategiesPage() {
                 </p>
               </div>
               <Button
-                onClick={() => setShowCreate(true)}
+                onClick={openCreateDialog}
+                disabled={atStrategyCap}
                 className="bg-teal-500 hover:bg-teal-400 text-black font-bold"
               >
                 <Plus className="h-4 w-4 mr-1.5" />
@@ -423,14 +454,16 @@ export default function StrategiesPage() {
                             {s.ai_analysis ? "Re-analyze" : "Analyze"}
                           </span>
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setDeleting(s.id)}
-                          className="text-red-400 hover:text-red-300 hover:bg-red-500/10 h-8 w-8"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        {canDeleteStrategies ? (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setDeleting(s.id)}
+                            className="text-red-400 hover:text-red-300 hover:bg-red-500/10 h-8 w-8"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        ) : null}
                         <Button
                           variant="ghost"
                           size="icon"

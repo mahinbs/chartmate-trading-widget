@@ -42,6 +42,8 @@ import { StrategyEntrySignalsPanel } from "@/components/prediction/StrategyEntry
 import AlgoStrategyBuilder from "@/components/trading/AlgoStrategyBuilder";
 import { TradingDashboardAccessGate } from "@/components/trading/TradingDashboardAccessGate";
 import { TradingDashboardShell } from "@/components/trading/TradingDashboardShell";
+import { useSubscription } from "@/hooks/useSubscription";
+import { getAlgoStrategyLimits } from "@/lib/algoStrategyLimits";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const EXCHANGES = [
@@ -217,6 +219,11 @@ function StrategiesPanel({ broker }: { broker: string }) {
   } | null>(null);
   const [goLiveLoading, setGoLiveLoading] = useState(false);
   const brokerLabel = broker.charAt(0).toUpperCase() + broker.slice(1);
+  const { subscription } = useSubscription();
+  const stratLimits = getAlgoStrategyLimits(subscription?.plan_id);
+  const canDeleteStrategies = stratLimits?.allowDeleteStrategies ?? false;
+  const atStrategyCap =
+    stratLimits != null && strategies.length >= stratLimits.maxCustomStrategies;
 
   const getFireState = (id: string) => firePanel[id] ?? {
     open: false, symbol: "", exchange: "NSE", quantity: "1", product: "MIS", firing: false, aiOverride: false,
@@ -425,10 +432,15 @@ function StrategiesPanel({ broker }: { broker: string }) {
     if (!confirm(`Delete strategy "${name}"?`)) return;
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      await supabase.functions.invoke("manage-strategy", {
+      const del = await supabase.functions.invoke("manage-strategy", {
         body: { action: "delete", strategy_id: id },
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
+      const delErr = (del.data as { error?: string })?.error;
+      if (del.error || delErr) {
+        toast.error(String(delErr ?? del.error?.message ?? "Failed to delete strategy"));
+        return;
+      }
       toast.success("Strategy deleted");
       await loadStrategies();
     } catch {
@@ -437,6 +449,12 @@ function StrategiesPanel({ broker }: { broker: string }) {
   };
 
   const openCreateBuilder = () => {
+    if (atStrategyCap) {
+      toast.error(
+        `Your plan allows up to ${stratLimits?.maxCustomStrategies} custom strateg${stratLimits?.maxCustomStrategies === 1 ? "y" : "ies"}. Upgrade in billing to add more.`,
+      );
+      return;
+    }
     setEditingStrategy(null);
     setBuilderOpen(true);
   };
@@ -486,7 +504,8 @@ function StrategiesPanel({ broker }: { broker: string }) {
             </button>
             <button
               onClick={openCreateBuilder}
-              className="flex items-center gap-1 px-2 py-1 rounded border border-zinc-700 text-[11px] text-zinc-400 hover:text-white hover:border-purple-500/50 transition-colors"
+              disabled={atStrategyCap}
+              className="flex items-center gap-1 px-2 py-1 rounded border border-zinc-700 text-[11px] text-zinc-400 hover:text-white hover:border-purple-500/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Plus className="h-3 w-3" />
               New
@@ -666,14 +685,15 @@ function StrategiesPanel({ broker }: { broker: string }) {
                       )}
                     </button>
 
-                    {/* Delete */}
-                    <button
-                      onClick={() => deleteStrategy(s.id, s.name)}
-                      className="p-0.5 text-zinc-700 hover:text-red-400 transition-colors"
-                      title="Delete strategy"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
+                    {canDeleteStrategies ? (
+                      <button
+                        onClick={() => deleteStrategy(s.id, s.name)}
+                        className="p-0.5 text-zinc-700 hover:text-red-400 transition-colors"
+                        title="Delete strategy"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    ) : null}
                 </div>
 
                   {/* Meta badges */}

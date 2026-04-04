@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { format } from "date-fns";
 import {
+  AlertTriangle,
   ArrowRight,
   Bot,
   CalendarDays,
@@ -38,28 +39,27 @@ import {
 } from "@/lib/subscriptionEntitlements";
 import { createBillingPortalSession, hasActiveSubscription } from "@/services/stripeService";
 import { cn } from "@/lib/utils";
+import { planIdToDisplayName } from "@/lib/referredUserPlanDisplay";
 
 function planLabel(planId: string | undefined): string {
-  switch (planId) {
-    case "botIntegration":
-      return "Bot — AI auto trading";
-    case "probIntelligence":
-      return "Probability — analysis & paper";
-    case "proPlan":
-      return "Pro — full platform";
-    default:
-      return planId ? `Plan: ${planId}` : "No active plan";
-  }
+  if (!planId) return "No active plan";
+  return planIdToDisplayName(planId);
 }
 
 function planPriceHint(planId: string | undefined): string {
   switch (planId) {
+    case "starterPlan":
+      return "$49 / month";
+    case "growthPlan":
+      return "$99 / month";
+    case "professionalPlan":
+      return "$199 / month";
     case "botIntegration":
-      return "$49 / year";
+      return "Legacy — Bot tier";
     case "probIntelligence":
-      return "$99 / year";
+      return "Legacy — Probability tier";
     case "proPlan":
-      return "$129 / year";
+      return "Legacy — Pro tier";
     default:
       return "";
   }
@@ -107,7 +107,7 @@ function FeatureTile({
 }
 
 export default function SubscriptionSettingsPage() {
-  const { subscription, loading, manualFullAccessBypass } = useSubscription();
+  const { subscription, loading, manualFullAccessBypass, hasBillingIssue } = useSubscription();
   const [portalLoading, setPortalLoading] = useState(false);
 
   const paid = hasActiveSubscription(subscription);
@@ -205,26 +205,45 @@ export default function SubscriptionSettingsPage() {
                         </div>
                         <CardDescription className="max-w-lg text-sm leading-relaxed text-muted-foreground">
                           Your active subscription controls which trading and analysis features are
-                          unlocked in the app.
+                          unlocked. Plans renew monthly through Stripe unless you cancel.
+                        </CardDescription>
+                      </>
+                    ) : hasBillingIssue && subscription ? (
+                      <>
+                        <div className="flex flex-wrap items-center gap-2.5">
+                          <span className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+                            {planLabel(planId)}
+                          </span>
+                          <Badge className="border-0 bg-amber-500/20 px-2.5 py-0.5 text-xs font-semibold text-amber-700 dark:text-amber-400">
+                            Past due — access paused
+                          </Badge>
+                        </div>
+                        <CardDescription className="max-w-lg text-sm leading-relaxed text-muted-foreground">
+                          Update your payment method in Stripe&apos;s billing portal. When the charge
+                          succeeds, access turns back on automatically.
                         </CardDescription>
                       </>
                     ) : (
                       <>
                         <p className="text-xl font-semibold text-foreground">No active subscription</p>
                         <CardDescription className="max-w-lg text-sm leading-relaxed">
-                          Subscribe to unlock AI analysis, paper trading, and (on Bot or Pro) live
-                          algo execution. Pick a plan that matches how you trade.
+                          Subscribe to unlock AI analysis, paper trading, and live algo execution on
+                          Starter, Growth, or Professional. Pick a plan that matches how you trade.
                         </CardDescription>
                       </>
                     )}
                   </div>
-                  {!loading && paid && !noBillingPortal && (
+                  {!loading && (paid || (hasBillingIssue && subscription)) && !noBillingPortal && (
                     <Button
                       type="button"
                       size="lg"
                       onClick={openPortal}
                       disabled={portalLoading}
-                      className="shrink-0 gap-2 rounded-xl bg-primary px-6 font-semibold text-primary-foreground shadow-lg shadow-primary/25 transition hover:bg-primary/90 hover:shadow-primary/35"
+                      className={`shrink-0 gap-2 rounded-xl px-6 font-semibold shadow-lg transition ${
+                        hasBillingIssue && !paid
+                          ? "bg-amber-600 text-white shadow-amber-900/30 hover:bg-amber-500"
+                          : "bg-primary text-primary-foreground shadow-primary/25 hover:bg-primary/90 hover:shadow-primary/35"
+                      }`}
                     >
                       {portalLoading ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -238,6 +257,49 @@ export default function SubscriptionSettingsPage() {
               </CardHeader>
 
               <CardContent className="space-y-6 px-6 py-8 sm:px-8">
+                {!loading && hasBillingIssue && subscription && !noBillingPortal && (
+                  <div className="rounded-2xl border border-amber-500/35 bg-amber-500/10 p-6 shadow-sm">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex gap-3">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400">
+                          <AlertTriangle className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">Payment failed or past due</p>
+                          <p className="mt-1 max-w-lg text-sm leading-relaxed text-muted-foreground">
+                            Stripe could not charge your card for the latest renewal. Premium access is
+                            paused until payment succeeds. Open the billing portal to update your
+                            payment method or retry.
+                          </p>
+                          {subscription.payment_failed_at ? (
+                            <p className="mt-2 text-xs text-muted-foreground">
+                              Last failed charge notice:{" "}
+                              {format(new Date(subscription.payment_failed_at), "PPp")}
+                            </p>
+                          ) : null}
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            Plan on file: <span className="font-medium text-foreground">{planLabel(planId)}</span>
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        size="lg"
+                        onClick={openPortal}
+                        disabled={portalLoading}
+                        className="shrink-0 gap-2 rounded-xl bg-amber-600 px-6 font-semibold text-white hover:bg-amber-500"
+                      >
+                        {portalLoading ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <ExternalLink className="h-4 w-4" />
+                        )}
+                        Fix payment in portal
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
                 {!loading && paid && (
                   <>
                     <div className="grid gap-4 sm:grid-cols-2">
@@ -249,7 +311,7 @@ export default function SubscriptionSettingsPage() {
                       <FeatureTile
                         included={planAllowsAlgo(planId)}
                         title="Live algo / OpenAlgo"
-                        description="Broker-linked execution and the live trading dashboard — Bot and Pro."
+                        description="Broker-linked execution and the live trading dashboard — included on all paid tiers (legacy Probability-only plans excepted)."
                       />
                     </div>
 
@@ -285,15 +347,15 @@ export default function SubscriptionSettingsPage() {
                   </>
                 )}
 
-                {!loading && !paid && (
+                {!loading && !paid && !hasBillingIssue && (
                   <div className="rounded-2xl border border-dashed border-primary/35 bg-gradient-to-br from-primary/[0.08] to-transparent p-8 text-center sm:text-left">
                     <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/20 text-primary ring-1 ring-primary/30 sm:mx-0">
                       <Bot className="h-7 w-7" />
                     </div>
                     <p className="text-base font-semibold text-foreground">Ready when you are</p>
                     <p className="mx-auto mt-2 max-w-lg text-sm text-muted-foreground sm:mx-0">
-                      All plans bill annually through Stripe. You can change or cancel later from the
-                      billing portal.
+                      Plans bill monthly through Stripe with auto-renewal. Use the billing portal anytime
+                      to change plans, cancel auto-renew, or update your card.
                     </p>
                   </div>
                 )}
@@ -309,7 +371,7 @@ export default function SubscriptionSettingsPage() {
                       </p>
                     </div>
                   )}
-                  {!paid && (
+                  {!paid && !hasBillingIssue && (
                     <>
                       <Button type="button" size="lg" asChild className="gap-2 rounded-xl font-semibold">
                         <Link to="/pricing">
@@ -322,26 +384,32 @@ export default function SubscriptionSettingsPage() {
                       </Button>
                     </>
                   )}
+                  {!paid && hasBillingIssue && subscription && !noBillingPortal && (
+                    <Button type="button" variant="outline" size="lg" asChild className="rounded-xl">
+                      <Link to="/home">Back to dashboard</Link>
+                    </Button>
+                  )}
                 </div>
 
                 {showProPortalCta && !noBillingPortal && (
                   <div className="rounded-2xl border border-primary/25 bg-primary/5 px-5 py-4 text-sm leading-relaxed text-muted-foreground">
                     <span className="inline-flex items-center gap-1.5 font-semibold text-foreground">
                       <Zap className="h-4 w-4 text-primary" />
-                      Upgrade to Pro ($129)
+                      Upgrade to Professional ($199/mo)
                     </span>
                     <p className="mt-2">
-                      You&apos;re on a mid-tier plan. In the billing portal, switch to Pro for full
-                      analysis <em>and</em> live algo. Stripe can charge only the{" "}
-                      <strong className="text-foreground">prorated difference</strong> for the rest of
-                      your term when that&apos;s enabled in your Stripe portal settings.
+                      You&apos;re on Starter or Growth (or a legacy mid-tier). In the billing portal,
+                      switch to Professional for the highest strategy limits. Stripe applies proration
+                      or schedules the change for the next period depending on your{" "}
+                      <strong className="text-foreground">Stripe Customer Portal</strong> and product
+                      settings.
                     </p>
                   </div>
                 )}
               </CardContent>
             </Card>
 
-            {!loading && !paid && (
+            {!loading && !paid && !hasBillingIssue && (
               <p className="flex items-start gap-3 rounded-xl border border-border/60 bg-muted/10 px-4 py-3 text-xs text-muted-foreground">
                 <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/80" />
                 <span>
@@ -370,19 +438,21 @@ export default function SubscriptionSettingsPage() {
                 <Accordion type="single" collapsible className="w-full">
                   <AccordionItem value="upgrade" className="border-border/50 px-3">
                     <AccordionTrigger className="py-4 text-sm font-semibold hover:no-underline hover:text-primary">
-                      Upgrades & Pro
+                      Upgrades & changes
                     </AccordionTrigger>
                     <AccordionContent className="space-y-2 pb-4 text-sm leading-relaxed text-muted-foreground">
                       <p>
-                        If you already pay for <strong className="text-foreground">Bot ($49)</strong>{" "}
-                        or <strong className="text-foreground">Probability ($99)</strong>, open the
-                        billing portal and move to{" "}
-                        <strong className="text-foreground">Pro ($129)</strong>. Stripe can apply
-                        proration for the time left on your subscription when configured.
+                        Use <strong className="text-foreground">Open billing portal</strong> to move
+                        between <strong className="text-foreground">Starter</strong>,{" "}
+                        <strong className="text-foreground">Growth</strong>, and{" "}
+                        <strong className="text-foreground">Professional</strong>. Whether the new price
+                        starts immediately with proration or at the next renewal is controlled in{" "}
+                        <strong className="text-foreground">Stripe Dashboard</strong> (Customer Portal
+                        + subscription settings).
                       </p>
                       <p>
-                        After checkout, webhooks update your <code className="text-xs">plan_id</code>{" "}
-                        automatically — no need to contact support.
+                        After checkout or portal changes, Stripe webhooks update your{" "}
+                        <code className="text-xs">plan_id</code> in the app automatically.
                       </p>
                     </AccordionContent>
                   </AccordionItem>
@@ -406,12 +476,19 @@ export default function SubscriptionSettingsPage() {
                     </AccordionTrigger>
                     <AccordionContent className="space-y-2 pb-4 text-sm leading-relaxed text-muted-foreground">
                       <p>
-                        Turning off auto-renew means the subscription won&apos;t bill again after the
-                        current term. You keep access until that end date.
+                        <strong className="text-foreground">Cancel subscription</strong> is done in the
+                        same Stripe Customer Portal (not inside ChartMate). You can turn off auto-renew
+                        or cancel outright depending on what your portal is configured to offer.
                       </p>
                       <p>
-                        With auto-renew on, Stripe charges at renewal and access continues for the next
-                        period.
+                        Turning off auto-renew usually keeps access until the end of the{" "}
+                        <strong className="text-foreground">current billing period</strong>. When a
+                        renewal charge succeeds, access continues for the next month.
+                      </p>
+                      <p>
+                        If a renewal payment fails, Stripe marks the subscription{" "}
+                        <strong className="text-foreground">past_due</strong> and this app pauses
+                        premium access until you fix the card in the portal.
                       </p>
                     </AccordionContent>
                   </AccordionItem>

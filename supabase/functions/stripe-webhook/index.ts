@@ -1,7 +1,14 @@
 /**
  * stripe-webhook — Supabase Edge Function
- * Handles Stripe webhooks: checkout.session.completed, customer.subscription.updated/deleted.
- * Env: STRIPE_WEBHOOK_SECRET
+ *
+ * Events to enable in Stripe Dashboard → Webhooks:
+ * - checkout.session.completed
+ * - customer.subscription.updated
+ * - customer.subscription.deleted
+ * - invoice.payment_failed  (sets payment_failed_at)
+ * - invoice.paid              (clears payment_failed_at when subscription renews)
+ *
+ * Env: STRIPE_WEBHOOK_SECRET, STRIPE_SECRET_KEY (fetch full subscription on checkout)
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -323,12 +330,15 @@ Deno.serve(async (req: Request) => {
       const status = (sub.status as string) ?? "canceled";
       const resolvedPlan = planIdFromStripeSubscription(obj as Record<string, unknown>);
 
+      // unpaid = retries exhausted; treat like past_due for DB check constraint & app access
       const dbStatus =
         status === "active" || status === "trialing"
           ? status
-          : status === "past_due"
+          : status === "past_due" || status === "unpaid"
             ? "past_due"
-            : "canceled";
+            : status === "incomplete"
+              ? "incomplete"
+              : "canceled";
       const updatePayload: Record<string, unknown> = {
         status: dbStatus,
         current_period_end: sub.current_period_end
@@ -338,6 +348,9 @@ Deno.serve(async (req: Request) => {
         updated_at: new Date().toISOString(),
       };
       if (resolvedPlan) updatePayload.plan_id = resolvedPlan;
+      if (dbStatus === "canceled") {
+        updatePayload.payment_failed_at = null;
+      }
 
       await supabase
         .from("user_subscriptions")
@@ -358,6 +371,30 @@ Deno.serve(async (req: Request) => {
           .from("white_label_tenant_users")
           .update({ status: status === "active" ? "active" : "suspended" })
           .eq("tenant_id", wlRes.data[0].id);
+      }
+    } else if (event.type === "invoice.payment_failed") {
+      const inv = obj as { subscription?: string | null };
+      const subId = typeof inv.subscription === "string" ? inv.subscription : null;
+      if (subId) {
+        await supabase
+          .from("user_subscriptions")
+          .update({
+            payment_failed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("stripe_subscription_id", subId);
+      }
+    } else if (event.type === "invoice.paid") {
+      const inv = obj as { subscription?: string | null };
+      const subId = typeof inv.subscription === "string" ? inv.subscription : null;
+      if (subId) {
+        await supabase
+          .from("user_subscriptions")
+          .update({
+            payment_failed_at: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("stripe_subscription_id", subId);
       }
     }
 
