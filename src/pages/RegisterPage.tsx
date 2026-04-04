@@ -21,6 +21,7 @@ interface SignUpFormData {
   paymentDate: string;
   signature: string;
   declaration: boolean;
+  techProviderAcknowledge: boolean;
 }
 
 const RegisterPage = () => {
@@ -70,7 +71,7 @@ const RegisterPage = () => {
         }
       );
 
-      if (response.data.success) {
+      if ((response.data as any).success) {
         alert("Form submitted successfully!");
         reset();
         setFile(null);
@@ -266,19 +267,37 @@ const RegisterPage = () => {
                       {...register("declaration", { required: true })}
                     />
                     <div className="space-y-1">
-                      <label htmlFor="declaration" className="text-sm text-zinc-300 leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                        I confirm that I have read and agree to the{" "}
+                      <label htmlFor="declaration" className="text-sm text-zinc-300 leading-none cursor-pointer peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                        I agree to the{" "}
                         <Link
                           to="/terms"
                           className="text-teal-400 hover:text-teal-300 underline underline-offset-4 transition-colors"
                         >
-                          Terms and Conditions
-                        </Link>{" "}
-                        of the website.
+                          Terms & Conditions
+                        </Link>
                       </label>
                       {errors.declaration && (
                         <p className="text-xs text-red-400 flex items-center gap-1.5">
                           <AlertCircle className="w-3 h-3" /> You must agree to the Terms and Conditions
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-start space-x-3 pt-2">
+                    <Checkbox
+                      id="techProviderAcknowledge"
+                      className="mt-1 border-zinc-600 data-[state=checked]:bg-teal-500 data-[state=checked]:border-teal-500"
+                      onCheckedChange={(checked) => setValue("techProviderAcknowledge", checked === true)}
+                      {...register("techProviderAcknowledge", { required: true })}
+                    />
+                    <div className="space-y-1">
+                      <label htmlFor="techProviderAcknowledge" className="text-sm text-zinc-300 leading-tight cursor-pointer peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                        I understand that this platform is only a technology provider and does not offer any investment advice or trading strategies.
+                      </label>
+                      {errors.techProviderAcknowledge && (
+                        <p className="text-xs text-red-400 flex items-center gap-1.5 mt-1">
+                          <AlertCircle className="w-3 h-3" /> This acknowledgment is required
                         </p>
                       )}
                     </div>

@@ -9,6 +9,7 @@ const BASE_NAV_ITEMS = [
   { id: "ai-trading-analysis-and-back-testing", label: "AI Trading Analysis and Back Testing", isRoute: true },
   { id: "pricing", label: "Software Pricing", isRoute: true },
   { id: "white-label", label: "White Label", isRoute: true },
+  { id: "terms", label: "Terms & Conditions", isRoute: true },
 ];
 
 const scrollToSection = (id: string) => {
@@ -68,12 +69,15 @@ const AiPredictionFooter: React.FC = () => {
           <p className="text-sm font-semibold text-white">
             TradingSmart.ai – AI-Powered Market Predictions
           </p>
-          <p className="max-w-xl text-[11px] leading-relaxed text-gray-500">
+          <p className="max-w-xl text-[11px] leading-relaxed text-gray-500 mb-2">
             Data-driven probabilities for Stocks, Forex &amp; Crypto. Not
             signals or investment advice. Always trade with proper risk
             management.
           </p>
-          <p className="text-[11px] text-gray-600">
+          <p className="max-w-xl text-[10px] md:text-[11px] leading-relaxed text-gray-400 font-medium pb-2 border-b border-white/5 md:border-none md:pb-0">
+            We are not registered as an Investment Adviser or Research Analyst under SEBI regulations as we do not provide any advisory or research services. This is a technology platform only.
+          </p>
+          <p className="text-[11px] text-gray-600 mt-2">
             © {year} TradingSmart.ai. All rights reserved.
           </p>
         </div>

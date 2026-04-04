@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo } from "react";
 import type { CountryCode } from "libphonenumber-js";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
   CardContent,
@@ -119,6 +120,8 @@ const AuthPage = () => {
     email: "",
     password: "",
     confirmPassword: "",
+    techProviderAcknowledge: false,
+    termsAcknowledge: false,
   });
 
   const { signIn, signUp, user } = useAuth();
@@ -270,6 +273,24 @@ const AuthPage = () => {
       toast({
         title: "Password too short",
         description: "Use at least 6 characters.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!signUpData.techProviderAcknowledge) {
+      toast({
+        title: "Acknowledgment required",
+        description: "Please acknowledge that this platform is only a technology provider.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!signUpData.termsAcknowledge) {
+      toast({
+        title: "Terms & Conditions",
+        description: "Please agree to the Terms & Conditions before signing up.",
         variant: "destructive",
       });
       return;
@@ -878,7 +899,31 @@ const AuthPage = () => {
                     required
                   />
                 </div>
-                <Button type="submit" className="w-full" disabled={isLoading || emailCooldown.active}>
+                <div className="flex items-start space-x-3 pt-2">
+                  <Checkbox
+                    id="techProviderAcknowledgeAuth"
+                    className="mt-1 flex-shrink-0"
+                    checked={signUpData.techProviderAcknowledge}
+                    onCheckedChange={(checked) => setSignUpData({ ...signUpData, techProviderAcknowledge: checked === true })}
+                    required
+                  />
+                  <Label htmlFor="techProviderAcknowledgeAuth" className="text-sm text-foreground font-normal leading-tight cursor-pointer">
+                    I understand that this platform is only a technology provider and does not offer any investment advice or trading strategies.
+                  </Label>
+                </div>
+                <div className="flex items-start space-x-3 pt-2">
+                  <Checkbox
+                    id="termsAcknowledgeAuth"
+                    className="mt-1 flex-shrink-0"
+                    checked={signUpData.termsAcknowledge}
+                    onCheckedChange={(checked) => setSignUpData({ ...signUpData, termsAcknowledge: checked === true })}
+                    required
+                  />
+                  <Label htmlFor="termsAcknowledgeAuth" className="text-sm text-foreground font-normal leading-tight cursor-pointer">
+                    I agree to the <Link to="/terms" className="text-teal-500 hover:underline">Terms & Conditions</Link>
+                  </Label>
+                </div>
+                <Button type="submit" className="w-full mt-4" disabled={isLoading || emailCooldown.active}>
                   {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   {emailCooldown.active ? `Wait ${emailCooldown.mmss}` : "Sign Up"}
                 </Button>

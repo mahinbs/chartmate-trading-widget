@@ -10,8 +10,8 @@ const TermsOfService = () => {
         <Layout>
             <div className="min-h-screen bg-black text-white font-sans selection:bg-cyan-500 selection:text-black">
                 <Helmet>
-                    <title>Terms of Service | Boostmysites</title>
-                    <meta name="description" content="Terms of Service for Boostmysites platform. Read our legal terms, disclaimers, and user responsibilities." />
+                    <title>Terms & Conditions | Platform</title>
+                    <meta name="description" content="Terms & Conditions for our platform." />
                 </Helmet>
 
                 {/* Hero Section */}
@@ -26,12 +26,9 @@ const TermsOfService = () => {
                                 <FaArrowLeft /> Back to Home
                             </Link>
                             <div className="flex items-center gap-6 mb-6">
-                                <div className="p-5 bg-cyan-500/10 rounded-2xl border border-cyan-500/20 backdrop-blur-sm">
-                                    <FaShieldAlt className="text-4xl text-cyan-400" />
-                                </div>
                                 <div>
-                                    <h1 className="text-4xl md:text-6xl font-black tracking-tight text-white mb-2">Terms of Service</h1>
-                                    <p className="text-gray-400 font-medium">Last Updated: 20-01-2025</p>
+                                    <h1 className="text-4xl md:text-6xl font-black tracking-tight text-white mb-2">Terms & Conditions</h1>
+                                    <p className="text-gray-400 font-medium">Please read these terms carefully before using the platform.</p>
                                 </div>
                             </div>
                         </ScrollReveal>
@@ -39,272 +36,202 @@ const TermsOfService = () => {
                 </section>
 
                 {/* Content Section */}
-                <section className="py-20 px-4 bg-zinc-950">
-                    <div className="container mx-auto max-w-4xl">
+                <section className="pb-20 px-4 bg-zinc-950">
+                    <div className="container mx-auto max-w-6xl">
                         <div className="space-y-12">
 
                             {/* Section 1 */}
                             <ScrollReveal delay={0.1}>
-                                <div className="p-8 bg-black/50 rounded-3xl border border-white/5 hover:border-cyan-500/20 transition-colors">
-                                    <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-                                        <span className="text-cyan-400 font-mono">01.</span> Acceptance of Terms
+                                <div className="p-4 md:p-8 bg-black/50 rounded-3xl border border-white/5 hover:border-cyan-500/20 transition-colors">
+                                    <h2 className="text-2xl font-bold text-white mb-6">
+                                        <span className="text-cyan-400">1.</span> Nature of Service
                                     </h2>
-                                    <p className="text-gray-300 leading-relaxed mb-4 text-lg font-light">
-                                        By accessing or using our website, software, platform, demo, or any related services ("Service"), you agree to be bound by these Terms of Service ("Terms").
-                                        If you do not agree, do not use the Service.
-                                    </p>
-                                    <div className="bg-cyan-500/10 border-l-4 border-cyan-500 p-4 rounded-r-lg">
-                                        <p className="text-cyan-400 font-semibold">
-                                            This is not optional. Continued usage = acceptance.
-                                        </p>
+                                    <div className="text-gray-300 leading-relaxed space-y-4 font-light">
+                                        <p>This platform is a technology service provider that offers software tools, APIs, and infrastructure to enable users to integrate and automate their own trading systems.</p>
+                                        <p>We do not provide any trading strategies, investment advice, recommendations, research analysis, or portfolio management services.</p>
                                     </div>
                                 </div>
                             </ScrollReveal>
 
                             {/* Section 2 */}
-                            <ScrollReveal delay={0.2}>
-                                <div className="p-8 bg-black/50 rounded-3xl border border-white/5 hover:border-cyan-500/20 transition-colors">
-                                    <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-                                        <span className="text-cyan-400 font-mono">02.</span> Nature of the Service (Critical Clause)
+                            <ScrollReveal delay={0.15}>
+                                <div className="p-4 md:p-8 bg-black/50 rounded-3xl border border-white/5 hover:border-cyan-500/20 transition-colors">
+                                    <h2 className="text-2xl font-bold text-white mb-6">
+                                        <span className="text-cyan-400">2.</span> No Investment Advisory
                                     </h2>
-                                    <p className="text-gray-300 leading-relaxed mb-6 text-lg font-light">
-                                        We provide AI-powered market analysis software that generates probability-based predictions for financial markets, including but not limited to stocks, forex, and cryptocurrencies.
-                                    </p>
-                                    <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-6 mb-6">
-                                        <h3 className="text-lg font-bold text-red-400 mb-4 uppercase tracking-wider">We DO NOT:</h3>
-                                        <ul className="space-y-3 text-gray-300">
-                                            <li className="flex items-start gap-3">
-                                                <span className="text-red-500 mt-1 font-bold">✗</span>
-                                                <span>Provide buy or sell signals</span>
-                                            </li>
-                                            <li className="flex items-start gap-3">
-                                                <span className="text-red-500 mt-1 font-bold">✗</span>
-                                                <span>Provide trading tips or calls</span>
-                                            </li>
-                                            <li className="flex items-start gap-3">
-                                                <span className="text-red-500 mt-1 font-bold">✗</span>
-                                                <span>Provide personalized recommendations</span>
-                                            </li>
-                                            <li className="flex items-start gap-3">
-                                                <span className="text-red-500 mt-1 font-bold">✗</span>
-                                                <span>Act as a financial advisor, broker, or signal provider</span>
-                                            </li>
-                                        </ul>
+                                    <div className="text-gray-300 leading-relaxed space-y-4 font-light">
+                                        <p>We are not registered as an Investment Adviser or Research Analyst under the Securities and Exchange Board of India regulations.</p>
+                                        <p>Nothing on this platform should be construed as financial advice, trading advice, or a recommendation to buy or sell any securities.</p>
                                     </div>
-                                    <p className="text-white font-bold text-lg border-t border-white/10 pt-4">
-                                        You make all trading decisions independently. We sell software tools — not trading advice.
-                                    </p>
                                 </div>
                             </ScrollReveal>
 
                             {/* Section 3 */}
-                            <ScrollReveal delay={0.3}>
-                                <div className="p-8 bg-black/50 rounded-3xl border border-white/5 hover:border-cyan-500/20 transition-colors">
-                                    <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-                                        <span className="text-cyan-400 font-mono">03.</span> No Investment Advice
+                            <ScrollReveal delay={0.2}>
+                                <div className="p-4 md:p-8 bg-black/50 rounded-3xl border border-white/5 hover:border-cyan-500/20 transition-colors">
+                                    <h2 className="text-2xl font-bold text-white mb-6">
+                                        <span className="text-cyan-400">3.</span> User Responsibility
                                     </h2>
-                                    <p className="text-gray-300 leading-relaxed mb-6 text-lg font-light">
-                                        All information provided through the Service is for educational and informational purposes only.
-                                    </p>
-                                    <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-2xl p-6 mb-6">
-                                        <h3 className="text-lg font-bold text-yellow-400 mb-4 uppercase tracking-wider">Nothing on the platform constitutes:</h3>
-                                        <ul className="space-y-2 text-gray-300">
-                                            <li>• Financial advice</li>
-                                            <li>• Investment advice</li>
-                                            <li>• Trading advice</li>
-                                            <li>• Portfolio management</li>
-                                            <li>• A solicitation to buy or sell any financial instrument</li>
+                                    <div className="text-gray-300 leading-relaxed space-y-4 font-light">
+                                        <p>All trading decisions, strategies, and executions are solely determined by the user.</p>
+                                        <p>Users are fully responsible for:</p>
+                                        <ul className="list-disc pl-6 space-y-2">
+                                            <li>Their trading strategies</li>
+                                            <li>Risk management</li>
+                                            <li>Financial outcomes (profits or losses)</li>
                                         </ul>
+                                        <p>The platform has no control over user decisions or market outcomes.</p>
                                     </div>
-                                    <p className="text-yellow-400 font-semibold italic">
-                                        If you treat this as advice, that's your misuse, not our liability.
-                                    </p>
                                 </div>
                             </ScrollReveal>
 
                             {/* Section 4 */}
-                            <ScrollReveal delay={0.4}>
-                                <div className="p-8 bg-black/50 rounded-3xl border border-white/5 hover:border-cyan-500/20 transition-colors">
-                                    <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-                                        <span className="text-cyan-400 font-mono">04.</span> Eligibility
+                            <ScrollReveal delay={0.25}>
+                                <div className="p-4 md:p-8 bg-black/50 rounded-3xl border border-white/5 hover:border-cyan-500/20 transition-colors">
+                                    <h2 className="text-2xl font-bold text-white mb-6">
+                                        <span className="text-cyan-400">4.</span> No Trade Execution Control
                                     </h2>
-                                    <p className="text-gray-300 leading-relaxed mb-4 text-lg font-light">You must:</p>
-                                    <ul className="space-y-3 text-gray-300 mb-6">
-                                        <li className="flex items-start gap-3">
-                                            <span className="text-cyan-400 font-bold">✓</span>
-                                            <span>Be at least 18 years old</span>
-                                        </li>
-                                        <li className="flex items-start gap-3">
-                                            <span className="text-cyan-400 font-bold">✓</span>
-                                            <span>Have legal capacity to enter a binding agreement</span>
-                                        </li>
-                                        <li className="flex items-start gap-3">
-                                            <span className="text-cyan-400 font-bold">✓</span>
-                                            <span>Comply with all applicable local laws and regulations</span>
-                                        </li>
-                                    </ul>
-                                    <p className="text-gray-400 italic text-sm">
-                                        If trading is restricted in your jurisdiction, you are responsible, not us.
-                                    </p>
+                                    <div className="text-gray-300 leading-relaxed space-y-4 font-light">
+                                        <p>We do not:</p>
+                                        <ul className="list-disc pl-6 space-y-2">
+                                            <li>Execute trades on behalf of users</li>
+                                            <li>Manage user brokerage accounts</li>
+                                            <li>Access funds or holdings</li>
+                                        </ul>
+                                        <p>Any integration with brokers or third-party platforms is initiated and controlled entirely by the user.</p>
+                                    </div>
                                 </div>
                             </ScrollReveal>
 
                             {/* Section 5 */}
-                            <ScrollReveal delay={0.5}>
-                                <div className="p-8 bg-black/50 rounded-3xl border border-white/5 hover:border-cyan-500/20 transition-colors">
-                                    <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-                                        <span className="text-cyan-400 font-mono">05.</span> Accuracy & Performance Disclaimer
+                            <ScrollReveal delay={0.3}>
+                                <div className="p-4 md:p-8 bg-black/50 rounded-3xl border border-white/5 hover:border-cyan-500/20 transition-colors">
+                                    <h2 className="text-2xl font-bold text-white mb-6">
+                                        <span className="text-cyan-400">5.</span> Third-Party Integrations
                                     </h2>
-                                    <p className="text-gray-300 leading-relaxed mb-4 text-lg font-light">
-                                        Any accuracy metrics, probability scores, backtests, or historical results shown:
-                                    </p>
-                                    <ul className="space-y-2 text-gray-300 mb-6 pl-4 border-l border-white/10">
-                                        <li>• Are not guarantees</li>
-                                        <li>• Vary by market conditions, timeframe, and asset</li>
-                                        <li>• May differ between live and historical data</li>
-                                    </ul>
-                                    <p className="text-white font-semibold mb-2">
-                                        Past performance does not predict future results.
-                                    </p>
-                                    <p className="text-gray-400 italic text-sm">
-                                        If you expect certainty, this product is not for you.
-                                    </p>
+                                    <div className="text-gray-300 leading-relaxed space-y-4 font-light">
+                                        <p>Our platform may integrate with third-party services such as brokers, APIs, or trading platforms.</p>
+                                        <p>We are not responsible for:</p>
+                                        <ul className="list-disc pl-6 space-y-2">
+                                            <li>Downtime or failures of third-party services</li>
+                                            <li>Data inaccuracies from external providers</li>
+                                            <li>Any losses arising from such integrations</li>
+                                        </ul>
+                                    </div>
                                 </div>
                             </ScrollReveal>
 
                             {/* Section 6 */}
-                            <ScrollReveal delay={0.6}>
-                                <div className="p-8 bg-black/50 rounded-3xl border border-white/5 hover:border-cyan-500/20 transition-colors">
-                                    <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-                                        <span className="text-cyan-400 font-mono">06.</span> User Responsibilities
+                            <ScrollReveal delay={0.35}>
+                                <div className="p-4 md:p-8 bg-black/50 rounded-3xl border border-white/5 hover:border-cyan-500/20 transition-colors">
+                                    <h2 className="text-2xl font-bold text-white mb-6">
+                                        <span className="text-cyan-400">6.</span> No Guarantee of Returns
                                     </h2>
-                                    <p className="text-gray-300 leading-relaxed mb-4 text-lg font-light">You agree that:</p>
-                                    <ul className="space-y-3 text-gray-300 mb-6">
-                                        <li className="flex items-start gap-3">
-                                            <span className="text-cyan-400 font-bold">→</span>
-                                            <span>You are solely responsible for your trades</span>
-                                        </li>
-                                        <li className="flex items-start gap-3">
-                                            <span className="text-cyan-400 font-bold">→</span>
-                                            <span>You understand the risks of financial markets</span>
-                                        </li>
-                                        <li className="flex items-start gap-3">
-                                            <span className="text-cyan-400 font-bold">→</span>
-                                            <span>You will not rely on the Service as a sole decision-making tool</span>
-                                        </li>
-                                        <li className="flex items-start gap-3">
-                                            <span className="text-cyan-400 font-bold">→</span>
-                                            <span>You will not claim reliance on the Service for losses</span>
-                                        </li>
-                                    </ul>
-                                    <p className="text-red-400 font-semibold">
-                                        Failure to understand risk is not our responsibility.
-                                    </p>
+                                    <div className="text-gray-300 leading-relaxed space-y-4 font-light">
+                                        <p>We do not guarantee:</p>
+                                        <ul className="list-disc pl-6 space-y-2">
+                                            <li>Profits</li>
+                                            <li>Returns</li>
+                                            <li>Performance outcomes</li>
+                                        </ul>
+                                        <p>All trading involves risk, including potential loss of capital.</p>
+                                    </div>
                                 </div>
                             </ScrollReveal>
 
                             {/* Section 7 */}
-                            <ScrollReveal delay={0.7}>
-                                <div className="p-8 bg-black/50 rounded-3xl border border-white/5 hover:border-cyan-500/20 transition-colors">
-                                    <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-                                        <span className="text-cyan-400 font-mono">07.</span> Payments & Access
+                            <ScrollReveal delay={0.4}>
+                                <div className="p-4 md:p-8 bg-black/50 rounded-3xl border border-white/5 hover:border-cyan-500/20 transition-colors">
+                                    <h2 className="text-2xl font-bold text-white mb-6">
+                                        <span className="text-cyan-400">7.</span> Limitation of Liability
                                     </h2>
-                                    <ul className="space-y-2 text-gray-300 text-lg font-light">
-                                        <li>• Fees are for software access only</li>
-                                        <li>• No profit sharing, performance fees, or commissions</li>
-                                        <li>• Demo access does not guarantee future availability</li>
-                                        <li>• Pricing may change without prior notice</li>
-                                        <li>• Refunds, if any, are governed strictly by the stated refund policy</li>
-                                    </ul>
+                                    <div className="text-gray-300 leading-relaxed space-y-4 font-light">
+                                        <p>Under no circumstances shall the platform, its founders, employees, or affiliates be liable for:</p>
+                                        <ul className="list-disc pl-6 space-y-2">
+                                            <li>Any financial losses</li>
+                                            <li>Trading losses</li>
+                                            <li>Indirect or consequential damages</li>
+                                        </ul>
+                                        <p>Use of the platform is entirely at the user’s own risk.</p>
+                                    </div>
                                 </div>
                             </ScrollReveal>
 
                             {/* Section 8 */}
-                            <ScrollReveal delay={0.8}>
-                                <div className="p-8 bg-black/50 rounded-3xl border border-white/5 hover:border-cyan-500/20 transition-colors">
-                                    <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-                                        <span className="text-cyan-400 font-mono">08.</span> Intellectual Property
+                            <ScrollReveal delay={0.45}>
+                                <div className="p-4 md:p-8 bg-black/50 rounded-3xl border border-white/5 hover:border-cyan-500/20 transition-colors">
+                                    <h2 className="text-2xl font-bold text-white mb-6">
+                                        <span className="text-cyan-400">8.</span> Acceptable Use
                                     </h2>
-                                    <p className="text-gray-300 leading-relaxed mb-6 text-lg font-light">
-                                        All content, software, algorithms, UI, data structures, and branding are our intellectual property.
-                                    </p>
-                                    <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-6 mb-6">
-                                        <h3 className="text-lg font-bold text-red-400 mb-4 uppercase tracking-wider">You may not:</h3>
-                                        <ul className="space-y-2 text-gray-300">
-                                            <li>• Copy</li>
-                                            <li>• Reverse engineer</li>
-                                            <li>• Resell</li>
-                                            <li>• White-label (unless explicitly permitted)</li>
-                                            <li>• Redistribute</li>
+                                    <div className="text-gray-300 leading-relaxed space-y-4 font-light">
+                                        <p>Users agree NOT to:</p>
+                                        <ul className="list-disc pl-6 space-y-2">
+                                            <li>Use the platform for illegal or unauthorized activities</li>
+                                            <li>Misuse APIs or attempt to exploit the system</li>
+                                            <li>Violate any financial regulations applicable in their jurisdiction</li>
                                         </ul>
                                     </div>
-                                    <p className="text-red-400 font-bold">
-                                        Violation = immediate termination.
-                                    </p>
                                 </div>
                             </ScrollReveal>
 
                             {/* Section 9 */}
-                            <ScrollReveal delay={0.9}>
-                                <div className="p-8 bg-black/50 rounded-3xl border border-white/5 hover:border-cyan-500/20 transition-colors">
-                                    <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-                                        <span className="text-cyan-400 font-mono">09.</span> Limitation of Liability
+                            <ScrollReveal delay={0.5}>
+                                <div className="p-4 md:p-8 bg-black/50 rounded-3xl border border-white/5 hover:border-cyan-500/20 transition-colors">
+                                    <h2 className="text-2xl font-bold text-white mb-6">
+                                        <span className="text-cyan-400">9.</span> Suspension / Termination
                                     </h2>
-                                    <p className="text-gray-300 leading-relaxed mb-4 text-lg font-light">
-                                        To the maximum extent permitted by law, we are not liable for:
-                                    </p>
-                                    <ul className="space-y-2 text-gray-300 mb-6 pl-4 border-l border-white/10">
-                                        <li>• Trading losses</li>
-                                        <li>• Missed opportunities</li>
-                                        <li>• Data delays or inaccuracies</li>
-                                        <li>• Market volatility</li>
-                                        <li>• Emotional or financial distress</li>
-                                    </ul>
-                                    <p className="text-white font-bold text-lg">
-                                        You use the Service entirely at your own risk.
-                                    </p>
+                                    <div className="text-gray-300 leading-relaxed space-y-4 font-light">
+                                        <p>We reserve the right to:</p>
+                                        <ul className="list-disc pl-6 space-y-2">
+                                            <li>Suspend or terminate accounts</li>
+                                            <li>Restrict access</li>
+                                        </ul>
+                                        <p>If misuse, suspicious activity, or regulatory risks are identified.</p>
+                                    </div>
                                 </div>
                             </ScrollReveal>
 
                             {/* Section 10 */}
-                            <ScrollReveal delay={1.0}>
-                                <div className="p-8 bg-black/50 rounded-3xl border border-white/5 hover:border-cyan-500/20 transition-colors">
-                                    <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-                                        <span className="text-cyan-400 font-mono">10.</span> Termination
+                            <ScrollReveal delay={0.55}>
+                                <div className="p-4 md:p-8 bg-black/50 rounded-3xl border border-white/5 hover:border-cyan-500/20 transition-colors">
+                                    <h2 className="text-2xl font-bold text-white mb-6">
+                                        <span className="text-cyan-400">10.</span> Intellectual Property
                                     </h2>
-                                    <p className="text-gray-300 leading-relaxed mb-4 text-lg font-light">
-                                        We may suspend or terminate access at any time if:
-                                    </p>
-                                    <ul className="space-y-2 text-gray-300 mb-4 pl-4 border-l border-white/10">
-                                        <li>• Terms are violated</li>
-                                        <li>• Abuse or misuse is detected</li>
-                                        <li>• Legal or compliance risks arise</li>
-                                    </ul>
-                                    <p className="text-gray-400 font-semibold">
-                                        No explanations required.
-                                    </p>
+                                    <div className="text-gray-300 leading-relaxed space-y-4 font-light">
+                                        <p>All software, branding, UI/UX, and infrastructure belong to the company.</p>
+                                        <p>Users are not allowed to:</p>
+                                        <ul className="list-disc pl-6 space-y-2">
+                                            <li>Copy</li>
+                                            <li>Resell</li>
+                                            <li>Reverse engineer</li>
+                                        </ul>
+                                        <p>Any part of the platform without permission.</p>
+                                    </div>
                                 </div>
                             </ScrollReveal>
 
                             {/* Section 11 */}
-                            <ScrollReveal delay={1.1}>
-                                <div className="p-8 bg-black/50 rounded-3xl border border-cyan-500/20 hover:border-cyan-500/40 transition-colors">
-                                    <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-                                        <span className="text-cyan-400 font-mono">11.</span> Governing Law
+                            <ScrollReveal delay={0.6}>
+                                <div className="p-4 md:p-8 bg-black/50 rounded-3xl border border-white/5 hover:border-cyan-500/20 transition-colors">
+                                    <h2 className="text-2xl font-bold text-white mb-6">
+                                        <span className="text-cyan-400">11.</span> Modifications
                                     </h2>
-                                    <p className="text-gray-300 leading-relaxed text-lg font-light">
-                                        These Terms shall be governed by the laws of <span className="text-cyan-400 font-semibold">India</span>, without regard to conflict of law principles.
-                                    </p>
+                                    <div className="text-gray-300 leading-relaxed space-y-4 font-light">
+                                        <p>We may update these Terms at any time. Continued use of the platform implies acceptance of updated terms.</p>
+                                    </div>
                                 </div>
                             </ScrollReveal>
 
-                            {/* Final Notice */}
-                            <ScrollReveal delay={1.2}>
-                                <div className="p-8 bg-gradient-to-r from-cyan-900/20 to-blue-900/20 rounded-3xl border border-cyan-500/30">
-                                    <p className="text-center text-gray-300 text-base leading-relaxed">
-                                        By using our Service, you acknowledge that you have read, understood, and agree to be bound by these Terms of Service.
-                                        If you have any questions, please contact us before using the Service.
-                                    </p>
+                            {/* Section 12 */}
+                            <ScrollReveal delay={0.65}>
+                                <div className="p-4 md:p-8 bg-black/50 rounded-3xl border border-white/5 hover:border-cyan-500/20 transition-colors">
+                                    <h2 className="text-2xl font-bold text-white mb-6">
+                                        <span className="text-cyan-400">12.</span> Governing Law
+                                    </h2>
+                                    <div className="text-gray-300 leading-relaxed space-y-4 font-light">
+                                        <p>These Terms shall be governed by the laws of India.</p>
+                                        <p>Any disputes shall be subject to the jurisdiction of the appropriate courts.</p>
+                                    </div>
                                 </div>
                             </ScrollReveal>
 

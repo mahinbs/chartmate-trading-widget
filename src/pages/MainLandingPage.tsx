@@ -295,11 +295,17 @@ const MainLandingPage = () => {
           </motion.h1>
           <motion.p
             variants={fadeUp}
-            className={`text-lg md:text-xl ${bodyMuted} max-w-3xl mx-auto mb-12`}
+            className={`text-lg md:text-xl ${bodyMuted} max-w-3xl mx-auto mb-6`}
           >
             Build, backtest, and deploy trading strategies with AI — without
             writing a single line of code. Our developers build everything for
             you and integrate your strategy within 72 hours.
+          </motion.p>
+          <motion.p
+            variants={fadeUp}
+            className={`text-sm md:text-base text-zinc-400 font-light max-w-2xl mx-auto mb-12 leading-relaxed`}
+          >
+            We are a technology platform that enables users to integrate and automate their own trading systems. We do not provide any trading strategies, investment advice, or recommendations.
           </motion.p>
           <motion.div
             variants={fadeUp}
@@ -320,6 +326,9 @@ const MainLandingPage = () => {
               Book Demo
             </Button>
           </motion.div>
+          <motion.p variants={fadeUp} className="text-zinc-500 text-xs mt-4">
+            No advisory. No strategy. Pure technology platform.
+          </motion.p>
         </motion.div>
 
         <div className="absolute bottom-0 md:bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 opacity-60">
@@ -443,6 +452,9 @@ const MainLandingPage = () => {
               AI Trading Analysis and Back Testing
             </Link>
           </motion.div>
+          <motion.p variants={fadeUp} className="text-zinc-500 text-xs mt-4 text-center">
+            No advisory. No strategy. Pure technology platform.
+          </motion.p>
         </div>
       </motion.section>
 
@@ -589,6 +601,9 @@ const MainLandingPage = () => {
           >
             Start Building Now
           </Button>
+          <motion.p variants={fadeUp} className="text-zinc-500 text-xs mt-4 text-center max-w-md mx-auto">
+            No advisory. No strategy. Pure technology platform.
+          </motion.p>
         </motion.div>
       </motion.section>
 
@@ -653,7 +668,7 @@ const MainLandingPage = () => {
             variants={fadeUp}
             className={`${sectionTitle} text-center`}
           >
-            DISCLAIMER
+            PLATFORM DISCLAIMER
           </motion.h2>
 
           <motion.div
@@ -661,17 +676,32 @@ const MainLandingPage = () => {
             className="mt-12 bg-black border border-zinc-800/50 rounded-2xl p-8 md:p-10 font-jetbrains text-xs md:text-sm text-zinc-400 space-y-6 shadow-2xl relative overflow-hidden"
           >
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-zinc-800 via-teal-900 to-zinc-800" />
-            <div className="flex gap-4 items-start">
-               <span className="text-teal-500 font-bold shrink-0">{">"}</span>
-               <p className="leading-relaxed">Trading Smart.ai is a technology platform providing tools for strategy execution and analysis.</p>
+            <div className="flex justify-center mb-6">
+              <Shield className="w-10 h-10 text-teal-500 opacity-80" />
             </div>
             <div className="flex gap-4 items-start">
                <span className="text-teal-500 font-bold shrink-0">{">"}</span>
-               <p className="leading-relaxed">We do not provide investment advice, stock recommendations, or portfolio management services.</p>
+               <p className="leading-relaxed">This platform is a pure technology service provider offering software infrastructure and integration tools for users to deploy their own trading strategies.</p>
             </div>
             <div className="flex gap-4 items-start">
                <span className="text-teal-500 font-bold shrink-0">{">"}</span>
-               <p className="leading-relaxed">All strategies are defined or approved by the user, and all trading decisions are the user's responsibility.</p>
+               <p className="leading-relaxed">We do not provide stock recommendations, trading strategies, investment advice, or portfolio management services.</p>
+            </div>
+            <div className="flex gap-4 items-start">
+               <span className="text-teal-500 font-bold shrink-0">{">"}</span>
+               <p className="leading-relaxed">All trading decisions, strategies, and executions are solely determined and controlled by the user.</p>
+            </div>
+            <div className="flex gap-4 items-start">
+               <span className="text-teal-500 font-bold shrink-0">{">"}</span>
+               <p className="leading-relaxed">We do not access, manage, or control user brokerage accounts, nor do we execute trades on behalf of users.</p>
+            </div>
+            <div className="flex gap-4 items-start">
+               <span className="text-teal-500 font-bold shrink-0">{">"}</span>
+               <p className="leading-relaxed">Users are fully responsible for their financial decisions and outcomes.</p>
+            </div>
+            <div className="flex gap-4 items-start">
+               <span className="text-teal-500 font-bold shrink-0">{">"}</span>
+               <p className="leading-relaxed">This platform does not guarantee any profits or returns and is not affiliated with any regulatory advisory services under the Securities and Exchange Board of India (SEBI).</p>
             </div>
           </motion.div>
         </div>
@@ -718,6 +748,9 @@ const MainLandingPage = () => {
               Talk to Our Team
             </Button>
           </motion.div>
+          <motion.p variants={fadeUp} className="text-zinc-500 text-xs mt-6 text-center w-full">
+            No advisory. No strategy. Pure technology platform.
+          </motion.p>
         </div>
       </motion.section>
 

@@ -119,7 +119,7 @@ const Footer = () => {
                     to="/terms"
                     className="hover:text-primary transition-colors"
                   >
-                    Terms of Service
+                    Terms & Conditions
                   </Link>
                 </li>
                 <li>
@@ -137,9 +137,14 @@ const Footer = () => {
 
         {/* Bottom Bar */}
         <div className="flex flex-col md:flex-row justify-between items-center text-sm text-gray-500">
-          <p>
-            &copy; {new Date().getFullYear()} Boostmysites. All rights reserved.
-          </p>
+          <div className="flex flex-col space-y-2">
+            <p className="max-w-2xl text-[10px] md:text-sm text-gray-400 font-medium pb-2 border-b border-white/5 md:border-none md:pb-0">
+              We are not registered as an Investment Adviser or Research Analyst under SEBI regulations as we do not provide any advisory or research services. This is a technology platform only.
+            </p>
+            <p>
+              &copy; {new Date().getFullYear()} Boostmysites. All rights reserved.
+            </p>
+          </div>
           <div className="flex items-center gap-2 mt-4 md:mt-0">
             <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
             <span className="text-gray-400 font-medium">
