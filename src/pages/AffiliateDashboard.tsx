@@ -9,8 +9,14 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { RefreshCw, Link2, Users, FileText, DollarSign, Percent, Copy, Check, LogOut } from "lucide-react";
+import { RefreshCw, Link2, Users, FileText, DollarSign, Percent, Copy, Check, LogOut, UserPlus } from "lucide-react";
 import { toast } from "sonner";
+import { describeReferredUserSubscription, planIdToDisplayName } from "@/lib/referredUserPlanDisplay";
+
+interface VisitorRow {
+  visitor_ip: string;
+  visited_at: string;
+}
 
 interface AffiliateStats {
   id: string;
@@ -20,9 +26,22 @@ interface AffiliateStats {
   commission_percent: number;
   is_active: boolean;
   unique_visitors: number;
+  visitor_rows: VisitorRow[];
+  referred_signups: SignupRow[];
   form_submissions: ContactRow[];
   payments: PaymentRow[];
   total_commission_earned: number;
+}
+
+interface SignupRow {
+  user_id: string;
+  email: string | null;
+  full_name: string;
+  phone: string | null;
+  country: string | null;
+  referral_code_at_signup: string | null;
+  created_at: string;
+  subscription?: { plan_id: string; status: string; current_period_end: string | null } | null;
 }
 
 interface ContactRow {
@@ -43,6 +62,7 @@ interface PaymentRow {
   commission_amount: number;
   status: string;
   created_at: string;
+  plan_id?: string | null;
 }
 
 export default function AffiliateDashboard() {
@@ -51,7 +71,9 @@ export default function AffiliateDashboard() {
   const [stats, setStats] = useState<AffiliateStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
-  const [activeTab, setActiveTab] = useState<"forms" | "payments">("forms");
+  const [activeTab, setActiveTab] = useState<"visitors" | "signups" | "forms" | "payments">("visitors");
+  const [visitorsPage, setVisitorsPage] = useState(1);
+  const [signupsPage, setSignupsPage] = useState(1);
   const [formsPage, setFormsPage] = useState(1);
   const [paymentsPage, setPaymentsPage] = useState(1);
   const pageSize = 10;
@@ -72,8 +94,38 @@ export default function AffiliateDashboard() {
 
       const { data: visitors } = await (supabase as any)
         .from("affiliate_visitors")
-        .select("visitor_ip")
-        .eq("affiliate_id", aff.id);
+        .select("visitor_ip, visited_at")
+        .eq("affiliate_id", aff.id)
+        .order("visited_at", { ascending: false });
+
+      const { data: signupsRaw } = await (supabase as any)
+        .from("user_signup_profiles")
+        .select(
+          "user_id, email, full_name, phone, country, referral_code_at_signup, created_at",
+        )
+        .eq("affiliate_id", aff.id)
+        .order("created_at", { ascending: false });
+
+      const signupList = (signupsRaw ?? []) as SignupRow[];
+      const userIds = signupList.map((s) => s.user_id).filter(Boolean);
+      let subByUser: Record<string, { plan_id: string; status: string; current_period_end: string | null }> = {};
+      if (userIds.length) {
+        const { data: subs } = await (supabase as any)
+          .from("user_subscriptions")
+          .select("user_id, plan_id, status, current_period_end")
+          .in("user_id", userIds);
+        (subs ?? []).forEach((row: any) => {
+          subByUser[row.user_id] = {
+            plan_id: row.plan_id,
+            status: row.status,
+            current_period_end: row.current_period_end ?? null,
+          };
+        });
+      }
+      const signups = signupList.map((s) => ({
+        ...s,
+        subscription: subByUser[s.user_id] ?? null,
+      }));
 
       const { data: submissions } = await (supabase as any)
         .from("contact_submissions")
@@ -83,7 +135,7 @@ export default function AffiliateDashboard() {
 
       const { data: payments } = await (supabase as any)
         .from("user_payments")
-        .select("id, amount, currency, commission_amount, status, created_at")
+        .select("id, amount, currency, commission_amount, status, created_at, plan_id")
         .eq("affiliate_id", aff.id)
         .order("created_at", { ascending: false });
 
@@ -95,6 +147,8 @@ export default function AffiliateDashboard() {
       setStats({
         ...aff,
         unique_visitors: (visitors ?? []).length,
+        visitor_rows: (visitors ?? []) as VisitorRow[],
+        referred_signups: signups,
         form_submissions: submissions ?? [],
         payments: payments ?? [],
         total_commission_earned: totalCommission,
@@ -189,13 +243,13 @@ export default function AffiliateDashboard() {
               </Button>
             </div>
             <p className="text-xs text-zinc-500 mt-2">
-              Share this link on your channels. When someone opens it, visits your link, fills the form or pays — you earn your commission.
+              Share this link on your channels. We track unique visitors, account sign-ups, contact forms, and paid plans attributed to you.
             </p>
           </CardContent>
         </Card>
 
         {/* Summary cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
           <Card className="glass-panel border-white/10">
             <CardContent className="pt-6">
               <div className="flex items-center gap-3 mb-1">
@@ -204,6 +258,16 @@ export default function AffiliateDashboard() {
               </div>
               <p className="text-3xl font-bold text-white">{stats.unique_visitors}</p>
               <p className="text-xs text-zinc-500 mt-1">Distinct IPs via your link</p>
+            </CardContent>
+          </Card>
+          <Card className="glass-panel border-white/10">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3 mb-1">
+                <UserPlus className="h-5 w-5 text-sky-400" />
+                <span className="text-xs text-muted-foreground uppercase tracking-wide">Sign-ups</span>
+              </div>
+              <p className="text-3xl font-bold text-white">{stats.referred_signups.length}</p>
+              <p className="text-xs text-zinc-500 mt-1">Accounts created via your link</p>
             </CardContent>
           </Card>
           <Card className="glass-panel border-white/10">
@@ -223,10 +287,10 @@ export default function AffiliateDashboard() {
                 <span className="text-xs text-muted-foreground uppercase tracking-wide">Payments</span>
               </div>
               <p className="text-3xl font-bold text-white">{stats.payments.length}</p>
-              <p className="text-xs text-zinc-500 mt-1">Users who paid via your link</p>
+              <p className="text-xs text-zinc-500 mt-1">Completed checkouts</p>
             </CardContent>
           </Card>
-          <Card className="glass-panel border-white/10">
+          <Card className="glass-panel border-white/10 col-span-2 lg:col-span-1">
             <CardContent className="pt-6">
               <div className="flex items-center gap-3 mb-1">
                 <Percent className="h-5 w-5 text-purple-400" />
@@ -240,17 +304,192 @@ export default function AffiliateDashboard() {
           </Card>
         </div>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "forms" | "payments")} className="space-y-4">
-          <TabsList className="bg-white/5 border border-white/10">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "visitors" | "signups" | "forms" | "payments")} className="space-y-4">
+          <TabsList className="bg-white/5 border border-white/10 flex-wrap h-auto gap-1 py-1">
+            <TabsTrigger value="visitors" className="text-xs flex items-center gap-2">
+              <Users className="h-3.5 w-3.5 text-blue-400" />
+              Unique visitors ({stats.visitor_rows.length})
+            </TabsTrigger>
+            <TabsTrigger value="signups" className="text-xs flex items-center gap-2">
+              <UserPlus className="h-3.5 w-3.5 text-sky-400" />
+              Sign-ups ({stats.referred_signups.length})
+            </TabsTrigger>
             <TabsTrigger value="forms" className="text-xs flex items-center gap-2">
               <FileText className="h-3.5 w-3.5 text-amber-400" />
-              Forms filled
+              Forms ({stats.form_submissions.length})
             </TabsTrigger>
             <TabsTrigger value="payments" className="text-xs flex items-center gap-2">
               <DollarSign className="h-3.5 w-3.5 text-green-400" />
-              Money earned
+              Money earned ({stats.payments.length})
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="visitors" className="space-y-4">
+            <Card className="glass-panel border-white/10">
+              <CardHeader>
+                <CardTitle className="text-white text-base flex items-center gap-2">
+                  <Users className="h-4 w-4 text-blue-400" />
+                  Distinct IPs from your link ({stats.visitor_rows.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="overflow-x-auto">
+                {stats.visitor_rows.length === 0 ? (
+                  <p className="text-muted-foreground text-sm py-6 text-center">
+                    No visitors recorded yet. Share your link to start tracking.
+                  </p>
+                ) : (
+                  <>
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="border-white/10 hover:bg-transparent">
+                          <TableHead className="text-muted-foreground">IP address</TableHead>
+                          <TableHead className="text-muted-foreground">First visited</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {stats.visitor_rows
+                          .slice((visitorsPage - 1) * pageSize, visitorsPage * pageSize)
+                          .map((v, idx) => (
+                            <TableRow key={`${v.visitor_ip}-${idx}`} className="border-white/5 hover:bg-white/5">
+                              <TableCell className="font-mono text-sm text-zinc-400">{v.visitor_ip}</TableCell>
+                              <TableCell className="text-zinc-500 text-xs">
+                                {new Date(v.visited_at).toLocaleString()}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                      </TableBody>
+                    </Table>
+                    {stats.visitor_rows.length > pageSize && (
+                      <div className="flex justify-end items-center gap-3 pt-4 text-xs text-muted-foreground">
+                        <span>
+                          Page {visitorsPage} of {Math.ceil(stats.visitor_rows.length / pageSize)}
+                        </span>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={visitorsPage === 1}
+                            onClick={() => setVisitorsPage((p) => Math.max(1, p - 1))}
+                            className="h-7 px-3 border-white/10"
+                          >
+                            Prev
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={visitorsPage * pageSize >= stats.visitor_rows.length}
+                            onClick={() =>
+                              setVisitorsPage((p) =>
+                                p * pageSize >= stats.visitor_rows.length ? p : p + 1,
+                              )
+                            }
+                            className="h-7 px-3 border-white/10"
+                          >
+                            Next
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="signups" className="space-y-4">
+            <Card className="glass-panel border-white/10">
+              <CardHeader>
+                <CardTitle className="text-white text-base flex items-center gap-2">
+                  <UserPlus className="h-4 w-4 text-sky-400" />
+                  Users who registered via your link ({stats.referred_signups.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="overflow-x-auto">
+                {stats.referred_signups.length === 0 ? (
+                  <p className="text-muted-foreground text-sm py-6 text-center">
+                    No sign-ups yet. When someone creates an account after using your link, they appear here.
+                  </p>
+                ) : (
+                  <>
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="border-white/10 hover:bg-transparent">
+                          <TableHead className="text-muted-foreground">Name</TableHead>
+                          <TableHead className="text-muted-foreground">Email</TableHead>
+                          <TableHead className="text-muted-foreground">Phone</TableHead>
+                          <TableHead className="text-muted-foreground">Country</TableHead>
+                          <TableHead className="text-muted-foreground">Ref code</TableHead>
+                          <TableHead className="text-muted-foreground">Billing</TableHead>
+                          <TableHead className="text-muted-foreground">Plan</TableHead>
+                          <TableHead className="text-muted-foreground">Signed up</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {stats.referred_signups
+                          .slice((signupsPage - 1) * pageSize, signupsPage * pageSize)
+                          .map((s) => {
+                            const d = describeReferredUserSubscription(s.subscription ?? null);
+                            return (
+                            <TableRow key={s.user_id} className="border-white/5 hover:bg-white/5">
+                              <TableCell className="text-zinc-300">{s.full_name || "—"}</TableCell>
+                              <TableCell className="text-zinc-400 text-sm">{s.email || "—"}</TableCell>
+                              <TableCell className="text-zinc-400 text-sm">{s.phone || "—"}</TableCell>
+                              <TableCell className="text-zinc-400 text-sm">{s.country || "—"}</TableCell>
+                              <TableCell className="text-zinc-500 text-xs font-mono">
+                                {s.referral_code_at_signup || "—"}
+                              </TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant={d.billing === "Paid" ? "default" : "secondary"}
+                                  className="border-white/10 text-xs"
+                                >
+                                  {d.billing}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-zinc-400 text-xs max-w-[180px]">{d.planLine}</TableCell>
+                              <TableCell className="text-zinc-500 text-xs">
+                                {new Date(s.created_at).toLocaleString()}
+                              </TableCell>
+                            </TableRow>
+                          );})}
+                      </TableBody>
+                    </Table>
+                    {stats.referred_signups.length > pageSize && (
+                      <div className="flex justify-end items-center gap-3 pt-4 text-xs text-muted-foreground">
+                        <span>
+                          Page {signupsPage} of {Math.ceil(stats.referred_signups.length / pageSize)}
+                        </span>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={signupsPage === 1}
+                            onClick={() => setSignupsPage((p) => Math.max(1, p - 1))}
+                            className="h-7 px-3 border-white/10"
+                          >
+                            Prev
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={signupsPage * pageSize >= stats.referred_signups.length}
+                            onClick={() =>
+                              setSignupsPage((p) =>
+                                p * pageSize >= stats.referred_signups.length ? p : p + 1,
+                              )
+                            }
+                            className="h-7 px-3 border-white/10"
+                          >
+                            Next
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
 
           <TabsContent value="forms" className="space-y-4">
             <Card className="glass-panel border-white/10">
@@ -351,6 +590,7 @@ export default function AffiliateDashboard() {
                       <TableHeader>
                         <TableRow className="border-white/10 hover:bg-transparent">
                           <TableHead className="text-muted-foreground">Amount</TableHead>
+                          <TableHead className="text-muted-foreground">Plan</TableHead>
                           <TableHead className="text-muted-foreground">Status</TableHead>
                           <TableHead className="text-muted-foreground">Your commission</TableHead>
                           <TableHead className="text-muted-foreground">Date</TableHead>
@@ -363,6 +603,9 @@ export default function AffiliateDashboard() {
                             <TableRow key={p.id} className="border-white/5 hover:bg-white/5">
                               <TableCell className="text-zinc-300">
                                 {p.currency} {Number(p.amount).toFixed(2)}
+                              </TableCell>
+                              <TableCell className="text-zinc-400 text-xs">
+                                {planIdToDisplayName(p.plan_id)}
                               </TableCell>
                               <TableCell>
                                 <Badge

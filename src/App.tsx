@@ -2,8 +2,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { useState } from "react";
+import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-dom";
+import { useState, useEffect } from "react";
 import HomePage from "./pages/HomePage";
 import PredictPage from "./pages/PredictPage";
 import PredictionsPage from "./pages/PredictionsPage";
@@ -63,6 +63,8 @@ import TickChart from "./pages/TickChart";
 import PricingPage from "./pages/PricingPage";
 import { PredictionChatbot } from "./components/PredictionChatbot";
 import { useAuth } from "./hooks/useAuth";
+import { useAffiliateRef } from "./hooks/useAffiliateRef";
+import { supabase } from "@/integrations/supabase/client";
 import { useLocation } from "react-router-dom";
 import { AlgoToolsDashboardLayout } from "./components/layout/AlgoToolsDashboardLayout";
 
@@ -131,6 +133,58 @@ function isLoggedInAppPath(pathname: string): boolean {
   return false;
 }
 
+/** Records ?ref= on any route and persists affiliate id in sessionStorage for signup / checkout. */
+function AffiliateRefCapture() {
+  useAffiliateRef();
+  return null;
+}
+
+/** If the user visited a ?ref= link (IP recorded) but never typed a code, attach affiliate from IP once. */
+function AffiliateIpAttributionSync() {
+  const { user, loading } = useAuth();
+  useEffect(() => {
+    if (loading || !user?.id) return;
+    const k = `affiliate_ip_sync_v1_${user.id}`;
+    try {
+      if (sessionStorage.getItem(k)) return;
+    } catch {
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (cancelled || !session?.access_token) return;
+      await supabase.functions.invoke("sync-affiliate-from-ip", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      try {
+        sessionStorage.setItem(k, "1");
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, loading]);
+  return null;
+}
+
+/** Old bookmarked URLs → same UI as modal on list/dashboard with ?view= */
+function AdminAffiliateDeepLinkRedirect() {
+  const { affiliateId } = useParams<{ affiliateId: string }>();
+  const q = affiliateId ? `?view=${encodeURIComponent(affiliateId)}` : "";
+  return <Navigate to={`/admin/affiliates${q}`} replace />;
+}
+
+function WhitelabelAffiliateDeepLinkRedirect() {
+  const { slug, affiliateId } = useParams<{ slug: string; affiliateId: string }>();
+  const q = affiliateId
+    ? `?tab=affiliates&view=${encodeURIComponent(affiliateId)}`
+    : "?tab=affiliates";
+  return <Navigate to={`/wl/${slug}/dashboard${q}`} replace />;
+}
+
 function AppChatbots() {
   const { user } = useAuth();
   const { pathname } = useLocation();
@@ -158,6 +212,8 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
+          <AffiliateRefCapture />
+          <AffiliateIpAttributionSync />
           <div className="min-h-screen bg-background text-foreground">
             <Routes>
               <Route path="/rsb-fintech-founder" element={<LandingPage />} />
@@ -328,12 +384,14 @@ const App = () => (
                 <Route path="dashboard" element={<PublicDashboardPage embedInAdmin />} />
                 <Route path="public-dashboard" element={<AdminPublicDashboardPage />} />
                 <Route path="affiliates" element={<AdminAffiliatesPage />} />
+                <Route path="affiliates/:affiliateId" element={<AdminAffiliateDeepLinkRedirect />} />
                 <Route path="contacts" element={<AdminContactsPage />} />
                 <Route path="whitelabels" element={<AdminWhitelabelsPage />} />
                 <Route path="algo-requests" element={<AdminAlgoRequestsPage />} />
               </Route>
               <Route path="/wl/:slug" element={<WhitelabelLoginPage />} />
               <Route path="/wl/:slug/dashboard" element={<WhitelabelDashboardPage />} />
+              <Route path="/wl/:slug/affiliates/:affiliateId" element={<WhitelabelAffiliateDeepLinkRedirect />} />
               <Route path="*" element={<Navigate to="/home" replace />} />
             </Routes>
             <AppChatbots />

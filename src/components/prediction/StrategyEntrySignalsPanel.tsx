@@ -852,7 +852,7 @@ function SignalAnalysisCard(props: {
             Strategy conditions (this bar, engine-checked)
           </p>
           <p className="text-[11px] text-zinc-500">
-            Kind: <span className="text-zinc-400 font-mono">{row.conditionAudit.kind}</span>
+            Kind: <span className="text-zinc-400 font-mono">{row.conditionAudit?.kind ?? "—"}</span>
             {" · "}
             Stack:{" "}
             <span className={row.conditionAudit.overallMatch ? "text-emerald-400 font-semibold" : "text-red-400 font-semibold"}>

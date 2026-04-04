@@ -22,6 +22,27 @@ const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey, x-client-info",
 };
 
+/** True if saved JSON has at least one entry path the scanner can use (preset, raw, clock, or visual groups). */
+function entryConditionsLookConfigured(entry: unknown): boolean {
+  if (entry == null || typeof entry !== "object") return false;
+  const e = entry as Record<string, unknown>;
+  if (String(e.algoGuidePreset ?? "").trim().length > 0) return true;
+  if (String(e.rawExpression ?? "").trim().length > 0) return true;
+  const st = String(e.strategySubtype ?? "").toLowerCase();
+  if ((st === "time_based" || st === "hybrid") && String(e.clockEntryTime ?? "").trim().length > 0) {
+    return true;
+  }
+  const groups = Array.isArray(e.groups) ? e.groups : [];
+  for (const g of groups) {
+    if (!g || typeof g !== "object") continue;
+    const conds = Array.isArray((g as Record<string, unknown>).conditions)
+      ? (g as Record<string, unknown>).conditions as unknown[]
+      : [];
+    if (conds.length > 0) return true;
+  }
+  return false;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
 
@@ -345,7 +366,7 @@ Deno.serve(async (req: Request) => {
 
         const { data: rowSym } = await supabase
           .from("user_strategies")
-          .select("symbols")
+          .select("symbols, entry_conditions")
           .eq("id", strategyId)
           .eq("user_id", user.id)
           .maybeSingle();
@@ -377,6 +398,18 @@ Deno.serve(async (req: Request) => {
               error:
                 "Set a symbol and quantity before going live (confirm in the activation dialog or edit the strategy).",
               error_code: "ACTIVATION_NEEDS_SYMBOL",
+            }),
+            { status: 400, headers },
+          );
+        }
+
+        const entryCfg = (rowSym as { entry_conditions?: unknown })?.entry_conditions;
+        if (!entryConditionsLookConfigured(entryCfg)) {
+          return new Response(
+            JSON.stringify({
+              error:
+                "Save entry rules before going live: add indicator conditions, a time-based entry, a raw expression, or an Algo Guide preset.",
+              error_code: "ACTIVATION_NEEDS_ENTRY_RULES",
             }),
             { status: 400, headers },
           );

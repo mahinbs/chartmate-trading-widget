@@ -15,6 +15,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useAuth } from "@/hooks/useAuth";
+import { getSessionAffiliateAttribution } from "@/hooks/useAffiliateRef";
 import { useAuthEmailCooldown } from "@/hooks/useAuthEmailCooldown";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useToast } from "@/hooks/use-toast";
@@ -282,11 +283,14 @@ const AuthPage = () => {
         signUpData.phoneCountryIso,
         signUpData.phoneNational,
       );
+      const { affiliateId, referralCode } = getSessionAffiliateAttribution();
       const { data, error } = await signUp(signUpData.email, signUpData.password, {
         full_name: name,
         date_of_birth: signUpData.dateOfBirth,
         phone: phoneE164,
         country: signUpData.country,
+        affiliate_id: affiliateId,
+        referral_code: referralCode ?? undefined,
       });
 
       if (error) {

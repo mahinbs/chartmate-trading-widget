@@ -1,7 +1,7 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Copy, Eye, Pencil, RotateCcw, Ban, Trash2, Check } from "lucide-react";
+import { Copy, Eye, Pencil, RotateCcw, Ban, Trash2, Check, UserPlus } from "lucide-react";
 import { AffiliateRow } from "@/hooks/useWhitelabelAffiliates";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -44,6 +44,7 @@ export function AffiliateTable({
             <TableHead className="text-muted-foreground font-medium text-xs">Email</TableHead>
             <TableHead className="text-muted-foreground font-medium text-xs">Commission %</TableHead>
             <TableHead className="text-muted-foreground font-medium text-xs">Visitors</TableHead>
+            <TableHead className="text-muted-foreground font-medium text-xs">Sign-ups</TableHead>
             <TableHead className="text-muted-foreground font-medium text-xs text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
@@ -65,6 +66,12 @@ export function AffiliateTable({
               <TableCell>
                 <Badge variant="outline" className="bg-cyan-500/10 text-cyan-400 border-cyan-500/20 text-[10px] px-1.5 py-0 h-5">
                   {r.unique_visitors}
+                </Badge>
+              </TableCell>
+              <TableCell>
+                <Badge variant="outline" className="bg-sky-500/10 text-sky-400 border-sky-500/20 text-[10px] px-1.5 py-0 h-5 gap-0.5 inline-flex items-center">
+                  <UserPlus className="h-2.5 w-2.5" />
+                  {r.referred_signups}
                 </Badge>
               </TableCell>
               <TableCell className="text-right">

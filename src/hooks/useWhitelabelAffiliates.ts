@@ -11,6 +11,7 @@ export interface AffiliateRow {
   is_active: boolean;
   created_at: string;
   unique_visitors: number;
+  referred_signups: number;
   form_submissions: number;
   total_commission: number;
   payments_count: number;
@@ -29,9 +30,9 @@ export function useWhitelabelAffiliates(userId: string | undefined, tenantId: st
     try {
       if (isDummy) {
         const dummyAffs: AffiliateRow[] = [
-          { id: "1", code: "alpha", name: "John Alpha", email: "john@alpha.com", commission_percent: 15, is_active: true, created_at: new Date().toISOString(), unique_visitors: 124, form_submissions: 12, total_commission: 4500, payments_count: 5 },
-          { id: "2", code: "beta", name: "Sarah Beta", email: "sarah@beta.com", commission_percent: 10, is_active: true, created_at: new Date().toISOString(), unique_visitors: 89, form_submissions: 4, total_commission: 1200, payments_count: 2 },
-          { id: "3", code: "gamma", name: "Mark Gamma", email: "mark@gamma.com", commission_percent: 10, is_active: false, created_at: new Date().toISOString(), unique_visitors: 342, form_submissions: 28, total_commission: 9800, payments_count: 14 },
+          { id: "1", code: "alpha", name: "John Alpha", email: "john@alpha.com", commission_percent: 15, is_active: true, created_at: new Date().toISOString(), unique_visitors: 124, referred_signups: 8, form_submissions: 12, total_commission: 4500, payments_count: 5 },
+          { id: "2", code: "beta", name: "Sarah Beta", email: "sarah@beta.com", commission_percent: 10, is_active: true, created_at: new Date().toISOString(), unique_visitors: 89, referred_signups: 3, form_submissions: 4, total_commission: 1200, payments_count: 2 },
+          { id: "3", code: "gamma", name: "Mark Gamma", email: "mark@gamma.com", commission_percent: 10, is_active: false, created_at: new Date().toISOString(), unique_visitors: 342, referred_signups: 22, form_submissions: 28, total_commission: 9800, payments_count: 14 },
         ];
         setAffiliates(dummyAffs);
         return;
@@ -47,6 +48,7 @@ export function useWhitelabelAffiliates(userId: string | undefined, tenantId: st
       const list: AffiliateRow[] = (affData ?? []).map((a: any) => ({
         ...a,
         unique_visitors: 0,
+        referred_signups: 0,
         form_submissions: 0,
         total_commission: 0,
         payments_count: 0,
@@ -54,8 +56,9 @@ export function useWhitelabelAffiliates(userId: string | undefined, tenantId: st
 
       const ids = list.map((a) => a.id);
       if (ids.length > 0) {
-        const [visitorsRes, submissionsRes, paymentsRes] = await Promise.all([
+        const [visitorsRes, signupsRes, submissionsRes, paymentsRes] = await Promise.all([
           (supabase as any).from("affiliate_visitors").select("affiliate_id").in("affiliate_id", ids),
+          (supabase as any).from("user_signup_profiles").select("affiliate_id").in("affiliate_id", ids),
           (supabase as any).from("contact_submissions").select("affiliate_id").in("affiliate_id", ids),
           (supabase as any).from("user_payments").select("affiliate_id, commission_amount").in("affiliate_id", ids)
         ]);
@@ -63,6 +66,11 @@ export function useWhitelabelAffiliates(userId: string | undefined, tenantId: st
         const visitorCount: Record<string, number> = {};
         (visitorsRes.data ?? []).forEach((v: any) => {
           visitorCount[v.affiliate_id] = (visitorCount[v.affiliate_id] ?? 0) + 1;
+        });
+
+        const signupCount: Record<string, number> = {};
+        (signupsRes.data ?? []).forEach((row: any) => {
+          if (row.affiliate_id) signupCount[row.affiliate_id] = (signupCount[row.affiliate_id] ?? 0) + 1;
         });
 
         const submissionCount: Record<string, number> = {};
@@ -81,6 +89,7 @@ export function useWhitelabelAffiliates(userId: string | undefined, tenantId: st
 
         list.forEach((a) => {
           a.unique_visitors = visitorCount[a.id] ?? 0;
+          a.referred_signups = signupCount[a.id] ?? 0;
           a.form_submissions = submissionCount[a.id] ?? 0;
           a.total_commission = commissionSum[a.id] ?? 0;
           a.payments_count = paymentCount[a.id] ?? 0;

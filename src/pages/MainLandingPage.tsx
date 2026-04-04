@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { Helmet } from "react-helmet-async";
 import { useNavigate, Link } from "react-router-dom";
-import { useAffiliateRef } from "@/hooks/useAffiliateRef";
+import { getSessionAffiliateAttribution } from "@/hooks/useAffiliateRef";
 import { useAuth } from "@/hooks/useAuth";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useMyTenantMembership } from "@/hooks/useWhitelabel";
@@ -58,7 +58,6 @@ const staggerContainer: Variants = {
 };
 
 const MainLandingPage = () => {
-  const { affiliateId } = useAffiliateRef();
   const { user, loading: authLoading } = useAuth();
   const { role, loading: roleLoading } = useUserRole();
   const { membership, loading: membershipLoading } = useMyTenantMembership(
@@ -189,6 +188,8 @@ const MainLandingPage = () => {
       };
 
       const emailBody = `Name : ${data.name}\nEmail : ${data.email}\nPhone : ${data.phone}\nInterested Plan : ${planNames[data.plan] || data.plan}\nMessage : \n ${data.message || "N/A"}`;
+
+      const { affiliateId } = getSessionAffiliateAttribution();
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- table not in generated types
       await (supabase as any)

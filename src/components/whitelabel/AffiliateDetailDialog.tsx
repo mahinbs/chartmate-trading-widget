@@ -3,12 +3,21 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Users, FileText, DollarSign, Percent, Eye } from "lucide-react";
+import { Users, FileText, DollarSign, Percent, Eye, UserPlus } from "lucide-react";
 import { AffiliateRow } from "@/hooks/useWhitelabelAffiliates";
 
 interface AffiliateDetail {
   affiliate: AffiliateRow;
   visitors: { visitor_ip: string; visited_at: string }[];
+  signups: {
+    user_id: string;
+    email: string | null;
+    full_name: string;
+    phone: string | null;
+    country: string | null;
+    referral_code_at_signup: string | null;
+    created_at: string;
+  }[];
   submissions: { id: string; name: string; email: string; phone: string; telegram_id?: string; description?: string; referral_code?: string; created_at: string }[];
   payments: { id: string; amount: number; currency: string; commission_amount: number; status: string; created_at: string }[];
 }
@@ -36,9 +45,10 @@ export function AffiliateDetailDialog({ detail, loading, onClose }: AffiliateDet
           <ScrollArea className="max-h-[70vh] pr-4">
             <div className="space-y-6 py-2">
               {/* Summary chips */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
                 {[
                   { label: "Unique visitors", value: detail.visitors.length, clr: "text-blue-400", icon: Users },
+                  { label: "Sign-ups", value: detail.signups.length, clr: "text-sky-400", icon: UserPlus },
                   { label: "Form submissions", value: detail.submissions.length, clr: "text-amber-400", icon: FileText },
                   { label: "Payments", value: detail.payments.length, clr: "text-green-400", icon: DollarSign },
                   { label: `Commission (${detail.affiliate.commission_percent}%)`, value: `₹${detail.payments.reduce((s, p) => s + Number(p.commission_amount ?? 0), 0).toFixed(2)}`, clr: "text-purple-400", icon: Percent },
@@ -76,6 +86,33 @@ export function AffiliateDetailDialog({ detail, loading, onClose }: AffiliateDet
                 </Table>
               </Section>
 
+              {/* Sign-ups */}
+              <Section title={`Account sign-ups (${detail.signups.length})`} icon={<UserPlus className="h-3.5 w-3.5 text-sky-400" />}>
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-white/10 hover:bg-transparent">
+                      <TableHead className="text-muted-foreground text-[10px] h-8">Name</TableHead>
+                      <TableHead className="text-muted-foreground text-[10px] h-8">Email</TableHead>
+                      <TableHead className="text-muted-foreground text-[10px] h-8">Ref code</TableHead>
+                      <TableHead className="text-muted-foreground text-[10px] h-8">Date</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {detail.signups.map((s) => (
+                      <TableRow key={s.user_id} className="border-white/5 hover:bg-white/5 h-8">
+                        <TableCell className="text-[10px] text-zinc-300 py-1">{s.full_name || "—"}</TableCell>
+                        <TableCell className="text-[10px] text-zinc-500 py-1">{s.email || "—"}</TableCell>
+                        <TableCell className="font-mono text-[10px] text-zinc-500 py-1">{s.referral_code_at_signup || "—"}</TableCell>
+                        <TableCell className="text-[10px] text-zinc-500 py-1">{new Date(s.created_at).toLocaleString()}</TableCell>
+                      </TableRow>
+                    ))}
+                    {detail.signups.length === 0 && (
+                      <TableRow><TableCell colSpan={4} className="text-center text-zinc-500 text-[10px] py-4">No sign-ups yet.</TableCell></TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </Section>
+
               {/* Form submissions */}
               <Section title={`Form submissions (${detail.submissions.length})`} icon={<FileText className="h-3.5 w-3.5 text-amber-400" />}>
                 <Table>
@@ -102,6 +139,39 @@ export function AffiliateDetailDialog({ detail, loading, onClose }: AffiliateDet
                     ))}
                     {detail.submissions.length === 0 && (
                       <TableRow><TableCell colSpan={3} className="text-center text-zinc-500 text-[10px] py-4">No submissions yet.</TableCell></TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </Section>
+
+              {/* Payments */}
+              <Section title={`Payments & commission (${detail.payments.length})`} icon={<DollarSign className="h-3.5 w-3.5 text-green-400" />}>
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-white/10 hover:bg-transparent">
+                      <TableHead className="text-muted-foreground text-[10px] h-8">Amount</TableHead>
+                      <TableHead className="text-muted-foreground text-[10px] h-8">Status</TableHead>
+                      <TableHead className="text-muted-foreground text-[10px] h-8">Commission</TableHead>
+                      <TableHead className="text-muted-foreground text-[10px] h-8">Date</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {detail.payments.map((p) => (
+                      <TableRow key={p.id} className="border-white/5 hover:bg-white/5">
+                        <TableCell className="text-[10px] text-zinc-300 py-1">
+                          {p.currency} {Number(p.amount).toFixed(2)}
+                        </TableCell>
+                        <TableCell className="py-1">
+                          <Badge variant={p.status === "completed" ? "default" : "secondary"} className="text-[10px] h-5">
+                            {p.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-[10px] text-green-400 py-1">₹{Number(p.commission_amount ?? 0).toFixed(2)}</TableCell>
+                        <TableCell className="text-[10px] text-zinc-500 py-1">{new Date(p.created_at).toLocaleDateString()}</TableCell>
+                      </TableRow>
+                    ))}
+                    {detail.payments.length === 0 && (
+                      <TableRow><TableCell colSpan={4} className="text-center text-zinc-500 text-[10px] py-4">No payments yet.</TableCell></TableRow>
                     )}
                   </TableBody>
                 </Table>

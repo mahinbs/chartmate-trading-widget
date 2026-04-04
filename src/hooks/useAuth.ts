@@ -7,6 +7,9 @@ export type SignUpProfileData = {
   date_of_birth: string; // YYYY-MM-DD
   phone?: string;
   country?: string;
+  /** Persisted to auth metadata → signup profile trigger (validated server-side). */
+  affiliate_id?: string | null;
+  referral_code?: string | null;
 };
 
 export const useAuth = () => {
@@ -41,19 +44,28 @@ export const useAuth = () => {
   ) => {
     const redirectUrl = `${window.location.origin}/`;
 
+    const meta: Record<string, string> = profile
+      ? {
+          full_name: profile.full_name.trim(),
+          date_of_birth: profile.date_of_birth,
+          phone: (profile.phone ?? "").trim(),
+          country: (profile.country ?? "").trim(),
+        }
+      : {};
+
+    if (profile?.affiliate_id?.trim()) {
+      meta.affiliate_id = profile.affiliate_id.trim();
+    }
+    if (profile?.referral_code?.trim()) {
+      meta.referral_code = profile.referral_code.trim();
+    }
+
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         emailRedirectTo: redirectUrl,
-        data: profile
-          ? {
-              full_name: profile.full_name.trim(),
-              date_of_birth: profile.date_of_birth,
-              phone: (profile.phone ?? "").trim(),
-              country: (profile.country ?? "").trim(),
-            }
-          : undefined,
+        data: Object.keys(meta).length ? meta : undefined,
       },
     });
     return { data, error };
