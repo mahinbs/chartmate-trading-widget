@@ -1,19 +1,52 @@
 /**
- * Opens Stripe Customer Portal for plan changes, cancel, payment method.
- * Configure the portal in Stripe Dashboard: products, proration, downgrade at period end.
+ * Stripe Customer Portal — opens hosted flows (payment, plan change, cancel) using your portal config.
  *
- * Env: STRIPE_SECRET_KEY, APP_URL, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+ * Body JSON:
+ * - return_url (optional)
+ * - portal_flow (optional): "default" | "payment_method_update" | "subscription_update" | "subscription_cancel"
+ *
+ * Uses Billing Portal configuration:
+ * - STRIPE_CUSTOMER_PORTAL_CONFIGURATION_ID env, or built-in default for this project.
+ *
+ * Env: STRIPE_SECRET_KEY, APP_URL, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
+ *      STRIPE_CUSTOMER_PORTAL_CONFIGURATION_ID (optional override)
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const STRIPE_SECRET = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 const APP_URL = Deno.env.get("APP_URL") ?? "http://localhost:5173";
+/** Default portal config (override with STRIPE_CUSTOMER_PORTAL_CONFIGURATION_ID for test/live splits). */
+const DEFAULT_PORTAL_CONFIGURATION_ID = "bpc_1TIRfmSQFpbfNakVFN0mQ3gN";
+const envPortal = Deno.env.get("STRIPE_CUSTOMER_PORTAL_CONFIGURATION_ID")?.trim() ?? "";
+const PORTAL_CONFIGURATION_ID = envPortal.length > 0 ? envPortal : DEFAULT_PORTAL_CONFIGURATION_ID;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey, x-client-info",
 };
+
+type PortalFlow = "default" | "payment_method_update" | "subscription_update" | "subscription_cancel";
+
+function appendPortalFlow(form: URLSearchParams, flow: PortalFlow, subscriptionId: string | null) {
+  if (flow === "default") return;
+  if (flow === "payment_method_update") {
+    form.append("flow_data[type]", "payment_method_update");
+    return;
+  }
+  if (!subscriptionId || !subscriptionId.startsWith("sub_")) {
+    throw new Error("No active Stripe subscription on file for this account.");
+  }
+  if (flow === "subscription_cancel") {
+    form.append("flow_data[type]", "subscription_cancel");
+    form.append("flow_data[subscription_cancel][subscription]", subscriptionId);
+    return;
+  }
+  if (flow === "subscription_update") {
+    form.append("flow_data[type]", "subscription_update");
+    form.append("flow_data[subscription_update][subscription]", subscriptionId);
+  }
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -44,9 +77,16 @@ Deno.serve(async (req: Request) => {
       ? body.return_url
       : `${APP_URL}/subscription`;
 
+    const rawFlow = body.portal_flow as string | undefined;
+    const portal_flow: PortalFlow =
+      rawFlow === "payment_method_update" || rawFlow === "subscription_update" ||
+        rawFlow === "subscription_cancel"
+        ? rawFlow
+        : "default";
+
     const { data: row, error: subErr } = await supabase
       .from("user_subscriptions")
-      .select("stripe_customer_id")
+      .select("stripe_customer_id, stripe_subscription_id")
       .eq("user_id", user.id)
       .maybeSingle();
 
@@ -63,9 +103,19 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    const subscriptionId = (row?.stripe_subscription_id as string | null)?.trim() ?? null;
+
     const form = new URLSearchParams();
     form.append("customer", customerId);
     form.append("return_url", returnUrl);
+    form.append("configuration", PORTAL_CONFIGURATION_ID);
+
+    try {
+      appendPortalFlow(form, portal_flow, subscriptionId);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Invalid portal flow";
+      return new Response(JSON.stringify({ error: msg }), { status: 400, headers });
+    }
 
     const stripeRes = await fetch("https://api.stripe.com/v1/billing_portal/sessions", {
       method: "POST",

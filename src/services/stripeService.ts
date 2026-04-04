@@ -43,18 +43,36 @@ export async function createCheckoutSession(params: {
   return { url: data.url };
 }
 
-export async function createBillingPortalSession(return_url?: string): Promise<
-  { url: string } | { error: string }
-> {
+export type BillingPortalFlow =
+  | "default"
+  | "payment_method_update"
+  | "subscription_update"
+  | "subscription_cancel";
+
+export type CreateBillingPortalOptions = {
+  return_url?: string;
+  portal_flow?: BillingPortalFlow;
+};
+
+export async function createBillingPortalSession(
+  returnUrlOrOptions?: string | CreateBillingPortalOptions,
+): Promise<{ url: string } | { error: string }> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) {
     return { error: "Please sign in to continue" };
   }
 
+  let return_url: string;
+  let portal_flow: BillingPortalFlow = "default";
+  if (typeof returnUrlOrOptions === "string") {
+    return_url = returnUrlOrOptions;
+  } else {
+    return_url = returnUrlOrOptions?.return_url ?? `${window.location.origin}/subscription`;
+    portal_flow = returnUrlOrOptions?.portal_flow ?? "default";
+  }
+
   const res = await supabase.functions.invoke("create-customer-portal-session", {
-    body: {
-      return_url: return_url ?? `${window.location.origin}/subscription`,
-    },
+    body: { return_url, portal_flow },
     headers: { Authorization: `Bearer ${session.access_token}` },
   });
 
@@ -63,6 +81,38 @@ export async function createBillingPortalSession(return_url?: string): Promise<
   if (res.error || data?.error) return { error: errMsg };
   if (!data?.url) return { error: "No portal URL returned" };
   return { url: data.url };
+}
+
+export interface StripeInvoiceRow {
+  id: string;
+  number: string | null;
+  status: string | null;
+  /** Invoice total (cents). */
+  total: number;
+  amount_paid: number;
+  currency: string;
+  created: number;
+  hosted_invoice_url: string | null;
+  invoice_pdf: string | null;
+}
+
+export async function listStripeInvoices(): Promise<
+  { invoices: StripeInvoiceRow[] } | { error: string }
+> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    return { error: "Please sign in to continue" };
+  }
+
+  const res = await supabase.functions.invoke("list-stripe-invoices", {
+    body: {},
+    headers: { Authorization: `Bearer ${session.access_token}` },
+  });
+
+  const data = res.data as { invoices?: StripeInvoiceRow[]; error?: string } | null;
+  const errMsg = data?.error ?? res.error?.message ?? "Failed to load invoices";
+  if (res.error || data?.error) return { error: errMsg };
+  return { invoices: data?.invoices ?? [] };
 }
 
 export async function getSubscription(): Promise<UserSubscription | null> {

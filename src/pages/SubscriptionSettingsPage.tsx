@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { format } from "date-fns";
 import {
@@ -17,6 +17,8 @@ import {
   Zap,
   Shield,
   HelpCircle,
+  Receipt,
+  FileDown,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -31,13 +33,27 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DashboardShellLayout } from "@/components/layout/DashboardShellLayout";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { useSubscription } from "@/hooks/useSubscription";
 import {
   isMidTierEligibleForProOnlyUpgrade,
   planAllowsAlgo,
   planAllowsAnalysis,
 } from "@/lib/subscriptionEntitlements";
-import { createBillingPortalSession, hasActiveSubscription } from "@/services/stripeService";
+import {
+  createBillingPortalSession,
+  hasActiveSubscription,
+  listStripeInvoices,
+  type BillingPortalFlow,
+  type StripeInvoiceRow,
+} from "@/services/stripeService";
 import { cn } from "@/lib/utils";
 import { planIdToDisplayName } from "@/lib/referredUserPlanDisplay";
 
@@ -106,9 +122,17 @@ function FeatureTile({
   );
 }
 
+function formatInvoiceAmount(cents: number, currency: string): string {
+  const sym = (cents / 100).toFixed(2);
+  return `${sym} ${currency.toUpperCase()}`;
+}
+
 export default function SubscriptionSettingsPage() {
   const { subscription, loading, manualFullAccessBypass, hasBillingIssue } = useSubscription();
   const [portalLoading, setPortalLoading] = useState(false);
+  const [invoices, setInvoices] = useState<StripeInvoiceRow[]>([]);
+  const [invoicesLoading, setInvoicesLoading] = useState(false);
+  const [invoicesError, setInvoicesError] = useState<string | null>(null);
 
   const paid = hasActiveSubscription(subscription);
   const planId = subscription?.plan_id;
@@ -121,10 +145,38 @@ export default function SubscriptionSettingsPage() {
     subscription?.stripe_customer_id?.startsWith("cus_manual_exc_"),
   );
   const noBillingPortal = manualFullAccessBypass || manualStripeProfile;
+  const stripeReady = Boolean(
+    subscription?.stripe_customer_id && !manualStripeProfile && !manualFullAccessBypass,
+  );
+  const hasStripeSub = Boolean(subscription?.stripe_subscription_id?.startsWith("sub_"));
 
-  const openPortal = async () => {
+  useEffect(() => {
+    if (!stripeReady || loading) return;
+    let cancelled = false;
+    (async () => {
+      setInvoicesLoading(true);
+      setInvoicesError(null);
+      const r = await listStripeInvoices();
+      if (cancelled) return;
+      setInvoicesLoading(false);
+      if ("error" in r) {
+        setInvoicesError(r.error);
+        setInvoices([]);
+        return;
+      }
+      setInvoices(r.invoices);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [stripeReady, loading, subscription?.stripe_customer_id]);
+
+  const openBillingSession = async (portal_flow: BillingPortalFlow = "default") => {
     setPortalLoading(true);
-    const r = await createBillingPortalSession(`${window.location.origin}/subscription`);
+    const r = await createBillingPortalSession({
+      return_url: `${window.location.origin}/subscription`,
+      portal_flow,
+    });
     setPortalLoading(false);
     if ("error" in r) {
       toast.error(r.error);
@@ -237,7 +289,7 @@ export default function SubscriptionSettingsPage() {
                     <Button
                       type="button"
                       size="lg"
-                      onClick={openPortal}
+                      onClick={() => openBillingSession("default")}
                       disabled={portalLoading}
                       className={`shrink-0 gap-2 rounded-xl px-6 font-semibold shadow-lg transition ${
                         hasBillingIssue && !paid
@@ -285,7 +337,7 @@ export default function SubscriptionSettingsPage() {
                       <Button
                         type="button"
                         size="lg"
-                        onClick={openPortal}
+                        onClick={() => openBillingSession("payment_method_update")}
                         disabled={portalLoading}
                         className="shrink-0 gap-2 rounded-xl bg-amber-600 px-6 font-semibold text-white hover:bg-amber-500"
                       >
@@ -409,6 +461,179 @@ export default function SubscriptionSettingsPage() {
               </CardContent>
             </Card>
 
+            {!loading && stripeReady && (
+              <Card className="overflow-hidden border border-white/10 bg-zinc-950/50 shadow-xl shadow-black/30 ring-1 ring-white/5">
+                <CardHeader className="border-b border-white/5 bg-zinc-900/40 px-6 py-6 sm:px-8">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex items-start gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary ring-1 ring-primary/25">
+                        <Receipt className="h-5 w-5" />
+                      </span>
+                      <div>
+                        <CardTitle className="text-lg font-semibold">Billing actions & invoices</CardTitle>
+                        <CardDescription className="mt-1 max-w-xl text-sm leading-relaxed">
+                          These buttons open Stripe&apos;s secure Customer Portal (your configured{" "}
+                          <span className="font-medium text-foreground">bpc_</span> flow). Plan and
+                          payment changes sync back to ChartMate via webhooks.
+                        </CardDescription>
+                      </div>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-8 px-6 py-8 sm:px-8">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-auto min-h-11 justify-start gap-2 rounded-xl border-white/15 bg-zinc-900/30 py-3 text-left font-medium"
+                      disabled={portalLoading}
+                      onClick={() => openBillingSession("default")}
+                    >
+                      {portalLoading ? (
+                        <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                      ) : (
+                        <ExternalLink className="h-4 w-4 shrink-0 text-primary" />
+                      )}
+                      <span>
+                        <span className="block text-sm font-semibold">Full billing portal</span>
+                        <span className="block text-xs font-normal text-muted-foreground">
+                          Invoices, history, and all portal options
+                        </span>
+                      </span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-auto min-h-11 justify-start gap-2 rounded-xl border-white/15 bg-zinc-900/30 py-3 text-left font-medium"
+                      disabled={portalLoading}
+                      onClick={() => openBillingSession("payment_method_update")}
+                    >
+                      {portalLoading ? (
+                        <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                      ) : (
+                        <CreditCard className="h-4 w-4 shrink-0 text-primary" />
+                      )}
+                      <span>
+                        <span className="block text-sm font-semibold">Update payment method</span>
+                        <span className="block text-xs font-normal text-muted-foreground">
+                          Add or replace the card on file
+                        </span>
+                      </span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-auto min-h-11 justify-start gap-2 rounded-xl border-white/15 bg-zinc-900/30 py-3 text-left font-medium"
+                      disabled={portalLoading || !hasStripeSub}
+                      onClick={() => openBillingSession("subscription_update")}
+                      title={!hasStripeSub ? "No Stripe subscription id on file" : undefined}
+                    >
+                      {portalLoading ? (
+                        <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                      ) : (
+                        <Zap className="h-4 w-4 shrink-0 text-primary" />
+                      )}
+                      <span>
+                        <span className="block text-sm font-semibold">Change plan</span>
+                        <span className="block text-xs font-normal text-muted-foreground">
+                          Upgrade or downgrade (portal rules apply)
+                        </span>
+                      </span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-auto min-h-11 justify-start gap-2 rounded-xl border-amber-500/25 bg-amber-500/5 py-3 text-left font-medium text-amber-800 hover:bg-amber-500/10 dark:text-amber-200"
+                      disabled={portalLoading || !hasStripeSub}
+                      onClick={() => openBillingSession("subscription_cancel")}
+                      title={!hasStripeSub ? "No Stripe subscription id on file" : undefined}
+                    >
+                      {portalLoading ? (
+                        <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                      ) : (
+                        <XCircle className="h-4 w-4 shrink-0" />
+                      )}
+                      <span>
+                        <span className="block text-sm font-semibold">Cancel subscription</span>
+                        <span className="block text-xs font-normal text-muted-foreground">
+                          Stripe-hosted cancel / end-of-period flow
+                        </span>
+                      </span>
+                    </Button>
+                  </div>
+
+                  <div className="space-y-3">
+                    <p className="text-sm font-semibold text-foreground">Recent invoices</p>
+                    {invoicesLoading ? (
+                      <div className="space-y-2">
+                        <Skeleton className="h-10 w-full rounded-lg" />
+                        <Skeleton className="h-10 w-full rounded-lg" />
+                      </div>
+                    ) : invoicesError ? (
+                      <p className="text-sm text-destructive">{invoicesError}</p>
+                    ) : invoices.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        No invoices yet, or they are not available for this customer.
+                      </p>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Date</TableHead>
+                            <TableHead>Invoice</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="text-right">Amount</TableHead>
+                            <TableHead className="w-[120px]"> </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {invoices.map((inv) => (
+                            <TableRow key={inv.id}>
+                              <TableCell className="text-muted-foreground">
+                                {inv.created
+                                  ? format(new Date(inv.created * 1000), "PP")
+                                  : "—"}
+                              </TableCell>
+                              <TableCell className="font-mono text-xs">
+                                {inv.number ?? inv.id.slice(-8)}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className="text-xs capitalize">
+                                  {inv.status ?? "—"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right tabular-nums">
+                                {formatInvoiceAmount(inv.total || inv.amount_paid, inv.currency)}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex flex-wrap justify-end gap-1.5">
+                                  {inv.hosted_invoice_url ? (
+                                    <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" asChild>
+                                      <a href={inv.hosted_invoice_url} target="_blank" rel="noreferrer">
+                                        View
+                                      </a>
+                                    </Button>
+                                  ) : null}
+                                  {inv.invoice_pdf ? (
+                                    <Button variant="ghost" size="sm" className="h-8 gap-1 px-2 text-xs" asChild>
+                                      <a href={inv.invoice_pdf} target="_blank" rel="noreferrer">
+                                        <FileDown className="h-3.5 w-3.5" />
+                                        PDF
+                                      </a>
+                                    </Button>
+                                  ) : null}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {!loading && !paid && !hasBillingIssue && (
               <p className="flex items-start gap-3 rounded-xl border border-border/60 bg-muted/10 px-4 py-3 text-xs text-muted-foreground">
                 <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/80" />
@@ -476,9 +701,9 @@ export default function SubscriptionSettingsPage() {
                     </AccordionTrigger>
                     <AccordionContent className="space-y-2 pb-4 text-sm leading-relaxed text-muted-foreground">
                       <p>
-                        <strong className="text-foreground">Cancel subscription</strong> is done in the
-                        same Stripe Customer Portal (not inside ChartMate). You can turn off auto-renew
-                        or cancel outright depending on what your portal is configured to offer.
+                        Use <strong className="text-foreground">Cancel subscription</strong> above — it
+                        opens Stripe&apos;s hosted flow (still the official portal, launched from our UI).
+                        You can turn off auto-renew or cancel outright depending on your portal config.
                       </p>
                       <p>
                         Turning off auto-renew usually keeps access until the end of the{" "}
