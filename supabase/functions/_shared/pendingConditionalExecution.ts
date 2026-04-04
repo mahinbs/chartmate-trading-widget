@@ -376,14 +376,25 @@ export async function tryExecutePendingRow(
       : [];
     const auditLines = Array.isArray(auditLinesRaw)
       ? auditLinesRaw
-        .slice(0, 3)
+        .slice(0, 12)
         .map((l) => `${l?.ok ? "PASS" : "FAIL"} ${String(l?.label ?? "").replace(/\s+/g, " ").trim()}`)
         .filter(Boolean)
       : [];
+    const passCount = auditLines.filter((x) => x.startsWith("PASS ")).length;
+    const failCount = auditLines.filter((x) => x.startsWith("FAIL ")).length;
+    const liveFlag = Boolean(nearest?.isLive) ? "YES" : "NO";
+    const px = Number((nearest as any)?.priceAtEntry ?? 0);
+    const pxText = Number.isFinite(px) && px > 0 ? px.toFixed(2) : "—";
+    const ts = String((nearest as any)?.entryTimestamp ?? (nearest as any)?.entryTime ?? "").trim();
+    const strategyKind = String((nearest as any)?.conditionAudit?.kind ?? "").trim();
     const reason = nearest
-      ? `No live entry signal yet (last matching bar is not live).${
-        auditLines.length > 0 ? ` Checks: ${auditLines.join(" | ")}` : ""
-      }`
+      ? [
+        "No live entry signal yet.",
+        `State: LIVE_BAR=${liveFlag} SIDE=${String(row.action).toUpperCase()} PRICE=${pxText}${ts ? ` TIME=${ts}` : ""}${strategyKind ? ` KIND=${strategyKind}` : ""}`,
+        ...(auditLines.length > 0
+          ? [`Checks: ${passCount} pass / ${failCount} fail`, ...auditLines]
+          : []),
+      ].join("\n")
       : "No live entry signal yet. Strategy conditions are still not met on the current live bar.";
     await setPendingReason(supabase, row.id, reason);
     return "not_matched";

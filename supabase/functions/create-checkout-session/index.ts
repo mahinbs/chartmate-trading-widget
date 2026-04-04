@@ -18,6 +18,11 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  applyAffiliateToUserProfileIfEmpty,
+  getClientIp,
+  resolveAffiliateIdFromVisitorIp,
+} from "../_shared/affiliate-ip-resolution.ts";
 
 const STRIPE_SECRET = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 const APP_URL = Deno.env.get("APP_URL") ?? "http://localhost:5173";
@@ -106,6 +111,35 @@ Deno.serve(async (req: Request) => {
 
       // Save session ID on the request record (will be updated with stripe session id after creation)
       // We'll update after we get the Stripe session back
+    }
+
+    const { data: signupProf } = await supabase
+      .from("user_signup_profiles")
+      .select("affiliate_id, referral_code_at_signup, user_id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    let resolvedAffiliateId = (signupProf?.affiliate_id as string | null) ?? null;
+    if (!resolvedAffiliateId) {
+      const metaAff = (user.user_metadata as Record<string, unknown>)?.affiliate_id;
+      if (typeof metaAff === "string" && metaAff.trim()) {
+        const { data: affOk } = await supabase
+          .from("affiliates")
+          .select("id")
+          .eq("id", metaAff.trim())
+          .eq("is_active", true)
+          .maybeSingle();
+        if (affOk?.id) resolvedAffiliateId = affOk.id as string;
+      }
+    }
+    if (!resolvedAffiliateId) {
+      const clientIp = getClientIp(req);
+      resolvedAffiliateId = await resolveAffiliateIdFromVisitorIp(supabase, clientIp);
+    }
+
+    // Persist attribution on the user row (source of truth for webhooks / dashboards). No Stripe metadata needed.
+    if (resolvedAffiliateId && !(signupProf as { affiliate_id?: string | null } | null)?.affiliate_id) {
+      await applyAffiliateToUserProfileIfEmpty(supabase, user.id, user.email, resolvedAffiliateId);
     }
 
     const metadata: Record<string, string> = {

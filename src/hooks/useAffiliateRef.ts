@@ -13,6 +13,14 @@ function getStoredRef(): string | null {
   }
 }
 
+/** Session keys populated by the global ref capture in App — read at form submit / signup. */
+export function getSessionAffiliateAttribution(): {
+  affiliateId: string | null;
+  referralCode: string | null;
+} {
+  return { affiliateId: getStoredAffiliateId(), referralCode: getStoredRef() };
+}
+
 function setStoredRef(ref: string | null): void {
   try {
     if (ref) sessionStorage.setItem(AFFILIATE_REF_KEY, ref);

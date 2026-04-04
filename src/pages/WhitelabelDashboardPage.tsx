@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate, Link, Navigate } from "react-router-dom";
+import { useParams, useNavigate, Link, Navigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -29,14 +29,15 @@ import { DashboardStats } from "@/components/whitelabel/DashboardStats";
 import { AffiliateTable } from "@/components/whitelabel/AffiliateTable";
 import { BrandedLinkBoard } from "@/components/whitelabel/BrandedLinkBoard";
 import { UserTable } from "@/components/whitelabel/UserTable";
-import { AffiliateDetailDialog } from "@/components/whitelabel/AffiliateDetailDialog";
 import { CreateAffiliateDialog } from "@/components/whitelabel/CreateAffiliateDialog";
+import { AffiliateDetailModal } from "@/components/affiliate/AffiliateDetailModal";
 
 const defaultAffForm = { code: "", name: "", email: "", commission_percent: 10, is_active: true };
 
 export default function WhitelabelDashboardPage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user: realUser, loading: authLoading } = useAuth();
   const { tenant, loading: tenantLoading } = useWhitelabelTenant(slug);
 
@@ -56,12 +57,27 @@ export default function WhitelabelDashboardPage() {
 
   /* ── UI State ── */
   const [mainTab, setMainTab] = useState<"overview" | "affiliates">("overview");
+  const affiliateViewId = searchParams.get("view");
+
+  useEffect(() => {
+    if (searchParams.get("tab") === "affiliates") setMainTab("affiliates");
+    if (searchParams.get("view")) setMainTab("affiliates");
+  }, [searchParams]);
+
+  const openAffiliateDetail = (id: string) => {
+    if (!slug) return;
+    setMainTab("affiliates");
+    navigate(`/wl/${slug}/dashboard?tab=affiliates&view=${encodeURIComponent(id)}`, { replace: true });
+  };
+
+  const closeAffiliateDetail = () => {
+    if (!slug) return;
+    navigate(`/wl/${slug}/dashboard?tab=affiliates`, { replace: true });
+  };
   const [affDialogOpen, setAffDialogOpen] = useState(false);
   const [affSaving, setAffSaving] = useState(false);
   const [affEditingId, setAffEditingId] = useState<string | null>(null);
   const [editingData, setEditingData] = useState(defaultAffForm);
-  const [detailAff, setDetailAff] = useState<any | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
   const [tempCredentials, setTempCredentials] = useState<{ email: string; temp_password: string } | null>(null);
   const [algoRows, setAlgoRows] = useState<any[]>([]);
   const [algoLoading, setAlgoLoading] = useState(false);
@@ -286,23 +302,6 @@ export default function WhitelabelDashboardPage() {
     }
   };
 
-  const handleViewDetail = async (aff: AffiliateRow) => {
-    setDetailLoading(true);
-    setDetailAff(null);
-    try {
-      const [vRec, sRec, pRec] = await Promise.all([
-        (supabase as any).from("affiliate_visitors").select("*").eq("affiliate_id", aff.id).order("visited_at", { ascending: false }),
-        (supabase as any).from("contact_submissions").select("*").eq("affiliate_id", aff.id).order("created_at", { ascending: false }),
-        (supabase as any).from("user_payments").select("*").eq("affiliate_id", aff.id).order("created_at", { ascending: false })
-      ]);
-      setDetailAff({ affiliate: aff, visitors: vRec.data ?? [], submissions: sRec.data ?? [], payments: pRec.data ?? [] });
-    } catch (err: any) {
-      toast.error("Could not load details");
-    } finally {
-      setDetailLoading(false);
-    }
-  };
-
   /* ── UI Render Bits ── */
   return (
     <div className="min-h-screen bg-black text-white selection:bg-cyan-500/30">
@@ -416,7 +415,7 @@ export default function WhitelabelDashboardPage() {
             </div>
             <AffiliateTable
               affiliates={affiliates}
-              onViewDetail={handleViewDetail}
+              onViewDetail={(aff) => openAffiliateDetail(aff.id)}
               onEdit={(aff) => { setAffEditingId(aff.id); setEditingData({ ...aff }); setAffDialogOpen(true); }}
               onResetPassword={handleResetPassword}
               onToggleActive={handleToggleActive}
@@ -425,6 +424,18 @@ export default function WhitelabelDashboardPage() {
           </TabsContent>
         </Tabs>
       </main>
+
+      {isWLAdmin && slug ? (
+        <AffiliateDetailModal
+          open={!!affiliateViewId}
+          onOpenChange={(open) => {
+            if (!open) closeAffiliateDetail();
+          }}
+          affiliateId={affiliateViewId}
+          surface="wl"
+          backLabel="Back to affiliates"
+        />
+      ) : null}
 
       {/* Modular Dialogs */}
       <CreateAffiliateDialog
@@ -435,8 +446,6 @@ export default function WhitelabelDashboardPage() {
         onSave={handleSaveAffiliate}
         saving={affSaving}
       />
-      <AffiliateDetailDialog detail={detailAff} loading={detailLoading} onClose={() => setDetailAff(null)} />
-
       {/* Temp Credentials Dialog */}
       {tempCredentials && (
         <Dialog open={!!tempCredentials} onOpenChange={(o) => !o && setTempCredentials(null)}>

@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie,
+  LineChart as RechartsLineChart, Line, CartesianGrid, ReferenceLine,
 } from "recharts";
 import {
   AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3,
@@ -40,6 +41,8 @@ import {
 } from "@/lib/backtestVectorbtPayload";
 import { getStrategyParams } from "@/constants/strategyParams";
 import AlgoStrategyBuilder from "@/components/trading/AlgoStrategyBuilder";
+import YahooChartPanel from "@/components/YahooChartPanel";
+import { runLiveEntryConditionScan, type LiveScanStrategyRow } from "@/lib/strategyLiveScan";
 
 function firstListedSymbol(symbols: unknown): string {
   if (!Array.isArray(symbols) || symbols.length === 0) return "";
@@ -378,12 +381,14 @@ function deployStateForDisplay(
     status: "pending" | "executed" | "cancelled" | "expired";
     action: "BUY" | "SELL";
     symbol: string;
+    exchange?: string | null;
     quantity: number;
     created_at: string;
     last_checked_at?: string | null;
     executed_at?: string | null;
     broker_order_id?: string | null;
     error_message?: string | null;
+    deploy_overrides?: Record<string, unknown> | null;
   } | null | undefined,
 ) {
   if (!dep) return null;
@@ -399,6 +404,147 @@ function isLiveChecking(dep: {
   const last = dep.last_checked_at ? Date.parse(dep.last_checked_at) : NaN;
   if (!Number.isFinite(last)) return false;
   return Date.now() - last <= 30_000;
+}
+
+function formatDeployReason(message?: string | null): string {
+  const msg = String(message ?? "").trim();
+  if (!msg) return "";
+  if (msg.startsWith("__QUEUED_FOR_MONITOR__")) {
+    return "Queued for monitor - waiting for next live tick.";
+  }
+  if (/No IPs configured for this app/i.test(msg)) {
+    return "Kite Connect blocked this order: server IP whitelist is not configured in the Kite app.";
+  }
+  return msg;
+}
+
+function parseDeployReasonDetails(message?: string | null): {
+  headline: string;
+  checks: Array<{ ok: boolean; label: string }>;
+} {
+  const text = formatDeployReason(message);
+  if (!text) return { headline: "", checks: [] };
+  const lines = text
+    .split("\n")
+    .map((x) => x.trim())
+    .filter(Boolean);
+  const checks = lines
+    .filter((x) => x.startsWith("PASS ") || x.startsWith("FAIL "))
+    .map((x) => ({
+      ok: x.startsWith("PASS "),
+      label: x.replace(/^PASS\s+|^FAIL\s+/, "").trim(),
+    }));
+  const headline = lines.find((x) => !x.startsWith("PASS ") && !x.startsWith("FAIL ") && x !== "Checks:")
+    ?? text;
+  return { headline, checks };
+}
+
+function toYahooChartSymbol(sym: string, exchange?: string | null): string {
+  const s = String(sym ?? "").trim().toUpperCase();
+  const ex = String(exchange ?? "").trim().toUpperCase();
+  if (!s) return "";
+  if (s.includes("=") || s.includes("-") || s.endsWith(".NS") || s.endsWith(".BO")) return s;
+  if (ex === "BSE") return `${s}.BO`;
+  return `${s}.NS`;
+}
+
+/** Stringify RHS from algo builder (`rhs: { kind, value } | { kind, id, period }`) or plain scalars. */
+function formatConditionOperand(v: unknown): string {
+  if (v == null) return "";
+  if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") return String(v);
+  if (typeof v !== "object") return String(v);
+  const o = v as Record<string, unknown>;
+  const k = String(o.kind ?? "");
+  if (k === "number" && o.value != null) return String(o.value);
+  if (k === "indicator") {
+    const id = String(o.id ?? o.indicator ?? "indicator").trim();
+    const period = o.period != null ? String(o.period) : "";
+    return period ? `${id}(${period})` : id;
+  }
+  try {
+    const s = JSON.stringify(o);
+    return s.length > 96 ? `${s.slice(0, 93)}…` : s;
+  } catch {
+    return "[value]";
+  }
+}
+
+function entryConditionSummaryLines(entry: unknown): string[] {
+  if (!entry || typeof entry !== "object") return [];
+  const e = entry as Record<string, unknown>;
+  const out: string[] = [];
+  const preset = String(e.algoGuidePreset ?? "").trim();
+  if (preset) {
+    out.push(`Built-in rule pack: ${preset.replace(/_/g, " ")}`);
+  }
+  const groups = Array.isArray(e.groups) ? e.groups as Array<Record<string, unknown>> : [];
+  if (groups.length > 0) {
+    out.push(`Group logic: ${String(e.groupLogic ?? "AND").toUpperCase()}`);
+    for (let i = 0; i < groups.length; i += 1) {
+      const g = groups[i];
+      const conds = Array.isArray(g.conditions) ? g.conditions : [];
+      out.push(`Group ${i + 1}: ${String(g.groupLogic ?? "AND").toUpperCase()} · ${conds.length} condition(s)`);
+      for (const c of conds.slice(0, 8)) {
+        const cc = c as Record<string, unknown>;
+        const indName = String(
+          cc.indicator ?? cc.leftOperand ?? cc.left ?? cc.lhs ?? cc.field ?? "",
+        ).trim();
+        const indPeriod = cc.period != null && indName ? `(${cc.period})` : "";
+        const indicator = `${indName}${indPeriod}`.trim() || "rule";
+        const operator = String(
+          cc.operator ?? cc.comparator ?? cc.op ?? cc.condition ?? "compare",
+        ).trim();
+        const rawRight = cc.value ?? cc.rightOperand ?? cc.right ?? cc.rhs ?? cc.threshold ?? null;
+        const right = formatConditionOperand(rawRight);
+        if (!indName && !operator && !right) {
+          out.push(`- ${JSON.stringify(cc)}`);
+        } else if (!right) {
+          out.push(`- ${indicator} ${operator}`.trim());
+        } else {
+          out.push(`- ${indicator} ${operator} ${right}`.trim());
+        }
+      }
+    }
+    return out;
+  }
+  const timeEntry = String(e.clockEntryTime ?? "").trim();
+  if (timeEntry) out.push(`Clock entry time: ${timeEntry}`);
+  const mode = String(e.executionMode ?? "").trim();
+  if (mode) out.push(`Execution mode: ${mode}`);
+  const raw = String(e.customConditionRaw ?? "").trim();
+  if (raw) out.push(`Raw rule: ${raw.slice(0, 220)}${raw.length > 220 ? "…" : ""}`);
+  if (out.length === 0) {
+    try {
+      out.push(`Raw config: ${JSON.stringify(e).slice(0, 320)}`);
+    } catch {
+      out.push("Raw config available, but could not parse readable rules.");
+    }
+  }
+  return out;
+}
+
+function buildStrategySimulationSeries(lastPrice: number, slPct: number, tpPct: number) {
+  const base = Number.isFinite(lastPrice) && lastPrice > 0 ? lastPrice : 100;
+  const sl = base * (1 - slPct / 100);
+  const tp = base * (1 + tpPct / 100);
+  const steps = Array.from({ length: 12 }, (_, i) => i);
+  const success: number[] = [];
+  const fail: number[] = [];
+  for (const i of steps) {
+    // Smooth synthetic paths for visual "what if" diagnostics
+    const upMove = base + (tp - base) * Math.min(1, i / 8);
+    const dnMove = base - (base - sl) * Math.min(1, i / 8);
+    success.push(i < 10 ? upMove : tp);
+    fail.push(i < 10 ? dnMove : sl);
+  }
+  return steps.map((i) => ({
+    step: i + 1,
+    success: Number(success[i].toFixed(4)),
+    fail: Number(fail[i].toFixed(4)),
+    entry: Number(base.toFixed(4)),
+    stopLoss: Number(sl.toFixed(4)),
+    takeProfit: Number(tp.toFixed(4)),
+  }));
 }
 
 type PreflightOpts = {
@@ -601,6 +747,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
   // ── Strategy state ─────────────────────────────────────────────────────────
   const [strategies, setStrategies]       = useState<Strategy[]>([]);
   const [stratLoading, setStratLoading]   = useState(true);
+  const realtimeStratRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [stratHistory, setStratHistory]   = useState<any[]>([]);
   const [showCreate, setShowCreate]       = useState(false);
   const [editingAlgoStrategy, setEditingAlgoStrategy] = useState<Strategy | null>(null);
@@ -622,12 +769,14 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
     status: "pending" | "executed" | "cancelled" | "expired";
     action: "BUY" | "SELL";
     symbol: string;
+    exchange?: string | null;
     quantity: number;
     created_at: string;
     last_checked_at?: string | null;
     executed_at?: string | null;
     broker_order_id?: string | null;
     error_message?: string | null;
+    deploy_overrides?: Record<string, unknown> | null;
   } | null>>({});
   const [goLive, setGoLive] = useState<{
     strategy: Strategy;
@@ -637,6 +786,19 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
     product: string;
   } | null>(null);
   const [goLiveLoading, setGoLiveLoading] = useState(false);
+  const [liveDiagStrategy, setLiveDiagStrategy] = useState<Strategy | null>(null);
+  const [liveDiagLastPrice, setLiveDiagLastPrice] = useState<number | null>(null);
+  const [liveDiagScan, setLiveDiagScan] = useState<{
+    loading: boolean;
+    error: string | null;
+    headline: string;
+    checks: Array<{ ok: boolean; label: string }>;
+    allMet: boolean;
+  } | null>(null);
+  const liveDiagStrategyRef = useRef<Strategy | null>(null);
+  const deployMapRef = useRef<typeof deployStateByStrategy>({});
+  liveDiagStrategyRef.current = liveDiagStrategy;
+  deployMapRef.current = deployStateByStrategy;
 
   const [firePanel, setFirePanel]         = useState<Record<string, {
     open: boolean; symbol: string; exchange: string; quantity: string; product: string; firing: boolean;
@@ -811,8 +973,9 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
   const setFireState = (id: string, patch: Partial<typeof firePanel[string]>) =>
     setFirePanel(fp => ({ ...fp, [id]: { ...getFireState(id), ...patch } }));
 
-  const loadStrategies = useCallback(async () => {
-    setStratLoading(true);
+  const loadStrategies = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
+    if (!silent) setStratLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const res = await supabase.functions.invoke("manage-strategy", {
@@ -826,7 +989,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
       if (ids.length > 0) {
         const { data: pendingRows } = await (supabase as any)
           .from("pending_conditional_orders")
-          .select("strategy_id,status,action,symbol,quantity,created_at,last_checked_at,executed_at,broker_order_id,error_message")
+          .select("strategy_id,status,action,symbol,exchange,quantity,created_at,last_checked_at,executed_at,broker_order_id,error_message,deploy_overrides")
           .in("strategy_id", ids)
           .order("created_at", { ascending: false });
         const map: Record<string, any> = {};
@@ -847,12 +1010,16 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
             status: rStatus,
             action: String(r.action ?? "BUY"),
             symbol: String(r.symbol ?? ""),
+            exchange: r.exchange ?? null,
             quantity: Number(r.quantity ?? 0),
             created_at: String(r.created_at ?? ""),
             last_checked_at: r.last_checked_at ?? null,
             executed_at: r.executed_at ?? null,
             broker_order_id: r.broker_order_id ?? null,
             error_message: r.error_message ?? null,
+            deploy_overrides: (r.deploy_overrides && typeof r.deploy_overrides === "object")
+              ? r.deploy_overrides as Record<string, unknown>
+              : null,
           };
         }
         setDeployStateByStrategy(map);
@@ -865,8 +1032,79 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
         setDeployStateByStrategy({});
         setStratHistory([]);
       }
-    } catch { /* silent */ } finally { setStratLoading(false); }
+    } catch { /* silent */ } finally {
+      if (!silent) setStratLoading(false);
+    }
   }, []);
+
+  const runLiveDiagConditionScan = useCallback(async () => {
+    const s = liveDiagStrategyRef.current;
+    if (!s) return;
+    const dep = deployStateForDisplay(s, deployMapRef.current[s.id]);
+    if (dep?.status !== "pending") {
+      setLiveDiagScan(null);
+      return;
+    }
+    const chartSymbol = dep.symbol || firstListedSymbol(s.symbols) || "";
+    if (!chartSymbol) {
+      setLiveDiagScan({
+        loading: false,
+        error: "No symbol configured for this deployment.",
+        headline: "",
+        checks: [],
+        allMet: false,
+      });
+      return;
+    }
+    setLiveDiagScan({
+      loading: true,
+      error: null,
+      headline: "",
+      checks: [],
+      allMet: false,
+    });
+    try {
+      const r = await runLiveEntryConditionScan(s as unknown as LiveScanStrategyRow, {
+        symbol: chartSymbol,
+        exchange: dep.exchange,
+        action: dep.action,
+        deploy_overrides: dep.deploy_overrides ?? null,
+      });
+      setLiveDiagScan({
+        loading: false,
+        error: r.error,
+        headline: r.headline,
+        checks: r.checks,
+        allMet: r.allMet,
+      });
+    } catch (e: unknown) {
+      setLiveDiagScan({
+        loading: false,
+        error: e instanceof Error ? e.message : "Condition scan failed",
+        headline: "",
+        checks: [],
+        allMet: false,
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!liveDiagStrategy) {
+      setLiveDiagScan(null);
+      return;
+    }
+    void runLiveDiagConditionScan();
+  }, [liveDiagStrategy?.id, runLiveDiagConditionScan]);
+
+  const scheduleLiveStrategiesRefresh = useCallback(() => {
+    // Frequent tick updates can trigger many DB change events; coalesce them
+    // into one silent refresh to keep UI live without flicker.
+    if (realtimeStratRefreshRef.current) return;
+    realtimeStratRefreshRef.current = setTimeout(() => {
+      realtimeStratRefreshRef.current = null;
+      void loadStrategies({ silent: true });
+    }, 1000);
+  }, [loadStrategies]);
 
   useEffect(() => { loadStrategies(); }, [loadStrategies]);
 
@@ -878,16 +1116,22 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
       .on(
         "postgres_changes" as any,
         { event: "*", schema: "public", table: "pending_conditional_orders" },
-        () => { void loadStrategies(); },
+        () => { scheduleLiveStrategiesRefresh(); },
       )
       .on(
         "postgres_changes" as any,
         { event: "*", schema: "public", table: "user_strategies" },
-        () => { void loadStrategies(); },
+        () => { scheduleLiveStrategiesRefresh(); },
       )
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [portfolioTab, loadStrategies]);
+    return () => {
+      if (realtimeStratRefreshRef.current) {
+        clearTimeout(realtimeStratRefreshRef.current);
+        realtimeStratRefreshRef.current = null;
+      }
+      supabase.removeChannel(channel);
+    };
+  }, [portfolioTab, scheduleLiveStrategiesRefresh]);
 
   const toggleStrategy = async (id: string) => {
     setToggleLoading(id);
@@ -1861,7 +2105,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                   <Zap className="h-4 w-4 text-purple-400" /> Auto Strategies
                 </p>
                 <div className="flex items-center gap-1.5">
-                  <button onClick={loadStrategies} className="p-1 text-zinc-500 hover:text-zinc-300 transition-colors" title="Refresh">
+                  <button onClick={() => void loadStrategies()} className="p-1 text-zinc-500 hover:text-zinc-300 transition-colors" title="Refresh">
                     <RefreshCw className={`h-3.5 w-3.5 ${stratLoading ? "animate-spin" : ""}`} />
                   </button>
                   <button
@@ -1902,6 +2146,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                     const fs = getFireState(s.id);
                     const dep = deployStateForDisplay(s, deployStateByStrategy[s.id]);
                     const liveChecking = isLiveChecking(dep);
+                    const reasonInfo = parseDeployReasonDetails(dep?.error_message ?? null);
                     return (
                       <div key={s.id} className={`rounded-xl border transition-colors ${
                         s.is_active ? "bg-purple-500/5 border-purple-500/20" : "bg-zinc-900 border-zinc-800"
@@ -1941,6 +2186,19 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                                   s.is_active ? "translate-x-[18px]" : "translate-x-0.5"
                                 }`} />}
                           </button>
+                          {(dep?.status === "pending" || dep?.status === "cancelled") && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setLiveDiagLastPrice(null);
+                                setLiveDiagStrategy(s);
+                              }}
+                              className="px-2 py-1 rounded-md text-[10px] font-bold border border-cyan-700/40 text-cyan-300 hover:bg-cyan-500/10 transition-all"
+                              title="Open live diagnostics"
+                            >
+                              Live View
+                            </button>
+                          )}
                           {/* Delete */}
                           <button onClick={() => deleteStrategy(s.id, s.name)} className="p-0.5 text-zinc-700 hover:text-red-400 transition-colors">
                             <Trash2 className="h-3 w-3" />
@@ -1995,20 +2253,37 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                                   <span className="text-zinc-200">{dep.quantity}</span>
                                 </div>
                                 {dep.error_message ? (
-                                  <div className="flex items-start gap-1.5">
-                                    <span className="text-amber-400 font-semibold shrink-0">Why not fired:</span>
-                                    <span className="text-zinc-300 break-words">{dep.error_message}</span>
+                                  <div className="space-y-1">
+                                    <div className="flex items-start gap-1.5">
+                                      <span className="text-amber-400 font-semibold shrink-0">Why not fired:</span>
+                                      <span className="text-zinc-300 break-words">{reasonInfo.headline}</span>
+                                    </div>
+                                    {reasonInfo.checks.length > 0 && (
+                                      <div className="rounded border border-zinc-800 bg-zinc-900/60 px-2 py-1.5 space-y-1">
+                                        <div className="text-[10px] text-zinc-500 uppercase tracking-wide">Live condition checks</div>
+                                        {reasonInfo.checks.slice(0, 8).map((c, idx) => (
+                                          <div key={`${idx}-${c.label}`} className="flex items-start gap-1.5">
+                                            <span className={`text-[10px] font-bold shrink-0 ${c.ok ? "text-emerald-400" : "text-red-400"}`}>
+                                              {c.ok ? "PASS" : "FAIL"}
+                                            </span>
+                                            <span className="text-zinc-300 break-words">{c.label}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
                                   </div>
                                 ) : dep.last_checked_at ? (
                                   <div className="text-zinc-500">Conditions not yet matched — waiting for next tick on {dep.symbol}</div>
                                 ) : (
-                                  <div className="text-amber-400/80 font-semibold">Monitor not running — start chartmate-monitor to begin scanning</div>
+                                  <div className="text-amber-400/80 font-semibold">
+                                    Awaiting first live tick on {dep.symbol}. If this does not update in 1-2 minutes, verify chartmate-monitor and broker WebSocket connectivity.
+                                  </div>
                                 )}
                               </div>
                             ) : (
                               <div className="flex items-start gap-1.5">
                                 <span className="text-red-400 font-semibold shrink-0">Cancelled:</span>
-                                <span className="text-zinc-400">{dep.error_message || "Order was cancelled"}</span>
+                                <span className="text-zinc-400">{formatDeployReason(dep.error_message) || "Order was cancelled"}</span>
                               </div>
                             )}
                           </div>
@@ -2028,7 +2303,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                 <p className="text-sm text-zinc-300 font-semibold flex items-center gap-1.5">
                   <LineChart className="h-4 w-4 text-purple-400" /> Algo Deploy History
                 </p>
-                <button onClick={loadStrategies} className="p-1 text-zinc-500 hover:text-zinc-300 transition-colors" title="Refresh">
+                <button onClick={() => void loadStrategies()} className="p-1 text-zinc-500 hover:text-zinc-300 transition-colors" title="Refresh">
                   <RefreshCw className={`h-3.5 w-3.5 ${stratLoading ? "animate-spin" : ""}`} />
                 </button>
               </div>
@@ -2059,8 +2334,9 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                           status === "cancelled" ? "bg-red-500/10 text-red-400 border-red-500/25" :
                           status === "expired"   ? "bg-zinc-700/40 text-zinc-400 border-zinc-600/25" :
                           "bg-zinc-800 text-zinc-400 border-zinc-700";
-                        const reason = r.error_message
-                          ? String(r.error_message).slice(0, 60) + (r.error_message.length > 60 ? "…" : "")
+                        const reasonText = formatDeployReason(r.error_message);
+                        const reason = reasonText
+                          ? String(reasonText).slice(0, 60) + (reasonText.length > 60 ? "…" : "")
                           : r.broker_order_id
                             ? `#${String(r.broker_order_id).slice(-10)}`
                             : "—";
@@ -2087,7 +2363,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                               <span className={`px-2 py-0.5 rounded border font-bold text-[11px] capitalize ${statusCls}`}>{status}</span>
                             </td>
                             <td className="px-3 py-2.5 text-zinc-400 max-w-[200px]">
-                              <span title={r.error_message ?? r.broker_order_id ?? ""}>{reason}</span>
+                              <span title={formatDeployReason(r.error_message) || r.broker_order_id || ""}>{reason}</span>
                             </td>
                             <td className="px-3 py-2.5 text-zinc-500 whitespace-nowrap tabular-nums">{createdStr}</td>
                             <td className={`px-3 py-2.5 whitespace-nowrap tabular-nums font-medium ${
@@ -2104,6 +2380,213 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
           </Tabs>
         </CardContent>
       </Card>
+
+      <Dialog open={liveDiagStrategy != null} onOpenChange={(o) => {
+        if (!o) {
+          setLiveDiagStrategy(null);
+          setLiveDiagLastPrice(null);
+          setLiveDiagScan(null);
+        }
+      }}>
+        <DialogContent className="bg-zinc-950 border-zinc-800 text-white sm:max-w-[100vw] max-w-[100vw] w-screen h-screen p-0 overflow-hidden rounded-none">
+          <DialogHeader>
+            <DialogTitle className="text-white px-4 pt-4">Live Strategy Diagnostics</DialogTitle>
+            <DialogDescription className="text-zinc-400 text-xs">
+              Real-time status for current symbol, chart, and condition checks from latest live evaluation tick.
+            </DialogDescription>
+          </DialogHeader>
+          {(() => {
+            if (!liveDiagStrategy) return null;
+            const dep = deployStateForDisplay(liveDiagStrategy, deployStateByStrategy[liveDiagStrategy.id]);
+            const staleReason = parseDeployReasonDetails(dep?.error_message ?? null);
+            const scan = liveDiagScan;
+            const displayChecks =
+              scan && !scan.loading && !scan.error
+                ? scan.checks
+                : staleReason.checks;
+            const hasLiveAudit = displayChecks.length > 0;
+            const matchingNow = displayChecks.filter((c) => c.ok);
+            const notMatchingNow = displayChecks.filter((c) => !c.ok);
+            const displayHeadline = scan?.loading
+              ? "Running a fresh condition scan on live data (same engine as execution)…"
+              : scan?.error
+                ? `${scan.error}${staleReason.headline ? ` — Previous tick: ${staleReason.headline}` : ""}`
+                : scan?.headline
+                  ? scan.headline
+                  : staleReason.headline;
+            const chartSymbol = dep?.symbol || firstListedSymbol(liveDiagStrategy.symbols) || "";
+            const chartExchange = dep?.exchange ?? (liveDiagStrategy.position_config && typeof liveDiagStrategy.position_config === "object"
+              ? (liveDiagStrategy.position_config as Record<string, unknown>).exchange as string | undefined
+              : undefined);
+            const yahooChartSymbol = toYahooChartSymbol(chartSymbol, chartExchange);
+            const strategyRuleLines = entryConditionSummaryLines(liveDiagStrategy.entry_conditions);
+            const slPct = Number(liveDiagStrategy.stop_loss_pct ?? 1.5);
+            const tpPct = Number(liveDiagStrategy.take_profit_pct ?? 2.5);
+            const simSeries = buildStrategySimulationSeries(
+              liveDiagLastPrice ?? 100,
+              Number.isFinite(slPct) && slPct > 0 ? slPct : 1.5,
+              Number.isFinite(tpPct) && tpPct > 0 ? tpPct : 2.5,
+            );
+            return (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-0 h-[calc(100vh-92px)]">
+                <div className="lg:col-span-2 p-4 border-b lg:border-b-0 lg:border-r border-zinc-800 overflow-y-auto space-y-3">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                    <div className="rounded border border-zinc-800 bg-zinc-900/50 px-2 py-1.5">
+                      <div className="text-zinc-500">Strategy</div>
+                      <div className="text-zinc-100 font-semibold truncate">{liveDiagStrategy.name}</div>
+                    </div>
+                    <div className="rounded border border-zinc-800 bg-zinc-900/50 px-2 py-1.5">
+                      <div className="text-zinc-500">Status</div>
+                      <div className="text-zinc-100 font-semibold uppercase">{dep?.status ?? "—"}</div>
+                    </div>
+                    <div className="rounded border border-zinc-800 bg-zinc-900/50 px-2 py-1.5">
+                      <div className="text-zinc-500">Symbol</div>
+                      <div className="text-zinc-100 font-semibold">{chartSymbol || "—"}</div>
+                    </div>
+                    <div className="rounded border border-zinc-800 bg-zinc-900/50 px-2 py-1.5">
+                      <div className="text-zinc-500">Last Checked</div>
+                      <div className="text-zinc-100 font-semibold">
+                        {dep?.last_checked_at
+                          ? new Date(dep.last_checked_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+                          : "Awaiting tick"}
+                      </div>
+                    </div>
+                  </div>
+
+                  {yahooChartSymbol ? (
+                    <div className="h-[52vh] min-h-[360px]">
+                      <YahooChartPanel
+                        symbol={yahooChartSymbol}
+                        displayName={chartSymbol}
+                        onLivePrice={(p) => setLiveDiagLastPrice(p)}
+                      />
+                    </div>
+                  ) : (
+                    <div className="rounded border border-zinc-800 bg-zinc-900/60 px-3 py-8 text-center text-zinc-400 text-sm">
+                      No symbol configured yet for chart.
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-4 overflow-y-auto space-y-3">
+                  <div className="rounded border border-zinc-800 bg-zinc-900/60 px-3 py-2">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <div className="text-[11px] text-zinc-500 uppercase tracking-wide">Condition status</div>
+                      {dep?.status === "pending" && (
+                        <button
+                          type="button"
+                          onClick={() => void runLiveDiagConditionScan()}
+                          disabled={Boolean(scan?.loading)}
+                          className="inline-flex items-center gap-1 text-[11px] text-teal-400 hover:text-teal-300 disabled:opacity-40"
+                        >
+                          <RefreshCw className={`h-3 w-3 ${scan?.loading ? "animate-spin" : ""}`} />
+                          Refresh scan
+                        </button>
+                      )}
+                    </div>
+                    <div className="text-sm text-zinc-200 break-words">
+                      {displayHeadline || "Waiting for next live tick and condition evaluation."}
+                    </div>
+                  </div>
+
+                  {hasLiveAudit ? (
+                    <>
+                      <div className="rounded border border-emerald-900/40 bg-emerald-950/10 px-3 py-2">
+                        <div className="text-[11px] text-emerald-300 uppercase tracking-wide mb-1">
+                          Matching now ({matchingNow.length})
+                        </div>
+                        {matchingNow.length > 0 ? (
+                          <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+                            {matchingNow.map((c, idx) => (
+                              <div key={`m-${idx}-${c.label}`} className="text-xs text-emerald-200 break-words">
+                                PASS - {c.label}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-zinc-400">No condition is PASS on the latest evaluated bar.</div>
+                        )}
+                      </div>
+
+                      <div className="rounded border border-red-900/40 bg-red-950/10 px-3 py-2">
+                        <div className="text-[11px] text-red-300 uppercase tracking-wide mb-1">
+                          Not matching now ({notMatchingNow.length})
+                        </div>
+                        {notMatchingNow.length > 0 ? (
+                          <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
+                            {notMatchingNow.map((c, idx) => (
+                              <div key={`f-${idx}-${c.label}`} className="text-xs text-red-200 break-words">
+                                FAIL - {c.label}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-zinc-400">No condition is failing on the latest evaluated bar.</div>
+                        )}
+                      </div>
+                    </>
+                  ) : scan?.loading ? (
+                    <div className="rounded border border-zinc-800 bg-zinc-900/60 px-3 py-6 flex flex-col items-center justify-center gap-2 text-xs text-zinc-400">
+                      <Loader2 className="h-6 w-6 animate-spin text-teal-500" />
+                      Evaluating conditions against the latest bars…
+                    </div>
+                  ) : (
+                    <div className="rounded border border-amber-900/40 bg-amber-950/10 px-3 py-2 text-xs text-amber-300">
+                      {dep?.status === "pending"
+                        ? "No per-rule PASS/FAIL lines were returned for this scan (engine may use a shape without line-level audit). Configured rules are shown below when available."
+                        : "Live rule-audit lines are not in the last server snapshot. Open this view while pending to run a full scan, or use Refresh scan."}
+                    </div>
+                  )}
+
+                  {dep?.status === "executed" && (
+                    <div className="rounded border border-blue-900/40 bg-blue-950/10 px-3 py-2">
+                      <div className="text-[11px] text-blue-300 uppercase tracking-wide mb-1">
+                        Simulated Outcomes (Success vs Fail)
+                      </div>
+                      <div className="text-[11px] text-zinc-400 mb-2">
+                        Scenario path after execution. X-axis is projected bars; Y-axis is price.
+                      </div>
+                      <div className="h-44">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <RechartsLineChart data={simSeries}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+                            <XAxis dataKey="step" stroke="#71717a" tickFormatter={(v) => `B${v}`} />
+                            <YAxis stroke="#71717a" domain={["auto", "auto"]} tickFormatter={(v) => Number(v).toFixed(2)} />
+                            <Tooltip
+                              contentStyle={{ background: "#09090b", border: "1px solid #27272a", color: "#e4e4e7" }}
+                              labelStyle={{ color: "#a1a1aa" }}
+                              labelFormatter={(label) => `Projected bar: B${label}`}
+                              formatter={(value: number, name: string) => [
+                                Number(value).toFixed(3),
+                                name === "success" ? "Success path price" : "Fail path price",
+                              ]}
+                            />
+                            <ReferenceLine y={simSeries[0]?.entry} stroke="#a1a1aa" strokeDasharray="5 5" />
+                            <ReferenceLine y={simSeries[0]?.takeProfit} stroke="#10b981" strokeDasharray="3 3" />
+                            <ReferenceLine y={simSeries[0]?.stopLoss} stroke="#ef4444" strokeDasharray="3 3" />
+                            <Line type="monotone" dataKey="success" stroke="#10b981" dot={false} strokeWidth={2} />
+                            <Line type="monotone" dataKey="fail" stroke="#ef4444" dot={false} strokeWidth={2} />
+                          </RechartsLineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  )}
+                  {!hasLiveAudit && strategyRuleLines.length > 0 && (
+                    <div className="rounded border border-zinc-800 bg-zinc-900/60 px-3 py-2">
+                      <div className="text-[11px] text-zinc-500 uppercase tracking-wide mb-1">Configured Strategy Rules</div>
+                      <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
+                        {strategyRuleLines.map((line, idx) => (
+                          <div key={`rule-${idx}`} className="text-xs text-zinc-300 break-words">{line}</div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={goLive != null} onOpenChange={(o) => { if (!o) setGoLive(null); }}>
         <DialogContent className="bg-zinc-950 border-zinc-800 text-white sm:max-w-md">

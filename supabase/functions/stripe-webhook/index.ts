@@ -20,6 +20,98 @@ function planIdFromStripeSubscription(sub: Record<string, unknown>): string | un
   return map[priceId];
 }
 
+async function resolveAffiliateIdForPayment(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  /** Older sessions only — attribution lives on user_signup_profiles now. */
+  legacyStripeMetaAffiliateId?: string | null,
+): Promise<string | null> {
+  const { data: prof } = await supabase
+    .from("user_signup_profiles")
+    .select("affiliate_id")
+    .eq("user_id", userId)
+    .maybeSingle();
+  const fromProfile = prof?.affiliate_id as string | null;
+  if (fromProfile) {
+    const { data: aff } = await supabase
+      .from("affiliates")
+      .select("id")
+      .eq("id", fromProfile)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (aff?.id) return aff.id as string;
+  }
+  if (legacyStripeMetaAffiliateId?.trim()) {
+    const { data: aff2 } = await supabase
+      .from("affiliates")
+      .select("id")
+      .eq("id", legacyStripeMetaAffiliateId.trim())
+      .eq("is_active", true)
+      .maybeSingle();
+    if (aff2?.id) return aff2.id as string;
+  }
+  return null;
+}
+
+async function recordCheckoutPayment(
+  supabase: ReturnType<typeof createClient>,
+  params: {
+    sessionId: string;
+    userId: string;
+    planId: string;
+    legacyStripeMetaAffiliateId?: string | null;
+    amountTotal?: number | null;
+    currency?: string | null;
+  },
+) {
+  if (!params.sessionId || !params.userId || !params.planId) return;
+
+  const { data: existing } = await supabase
+    .from("user_payments")
+    .select("id")
+    .eq("stripe_checkout_session_id", params.sessionId)
+    .maybeSingle();
+  if (existing?.id) return;
+
+  const cents = params.amountTotal ?? 0;
+  const amount = cents > 0 ? cents / 100 : 0;
+  const currency = (params.currency ?? "inr").toUpperCase();
+
+  let affiliateId: string | null = await resolveAffiliateIdForPayment(
+    supabase,
+    params.userId,
+    params.legacyStripeMetaAffiliateId,
+  );
+  let commissionPercent: number | null = null;
+  let commissionAmount: number | null = null;
+
+  if (affiliateId) {
+    const { data: aff } = await supabase
+      .from("affiliates")
+      .select("commission_percent, is_active")
+      .eq("id", affiliateId)
+      .maybeSingle();
+    if (!aff || !(aff as { is_active?: boolean }).is_active) {
+      affiliateId = null;
+    } else {
+      commissionPercent = Number((aff as { commission_percent?: number }).commission_percent ?? 0);
+      commissionAmount = (amount * commissionPercent) / 100;
+    }
+  }
+
+  await supabase.from("user_payments").insert({
+    user_id: params.userId,
+    amount,
+    currency,
+    status: "completed",
+    affiliate_id: affiliateId,
+    commission_percent: commissionPercent,
+    commission_amount: commissionAmount,
+    plan_id: params.planId,
+    stripe_checkout_session_id: params.sessionId,
+  });
+}
+
 async function fetchStripeSubscription(subId: string): Promise<Record<string, unknown> | null> {
   if (!STRIPE_SECRET) return null;
   const res = await fetch(`https://api.stripe.com/v1/subscriptions/${subId}`, {
@@ -79,10 +171,15 @@ Deno.serve(async (req: Request) => {
       const session = obj as {
         id?: string; customer?: string; subscription?: string;
         customer_email?: string; payment_intent?: string;
+        amount_total?: number | null;
+        currency?: string | null;
       };
       const custId   = session.customer as string | undefined;
       const subId    = session.subscription as string | undefined;
       const wlToken  = meta.wl_token as string | undefined;
+      const affiliateFromCheckout = typeof meta.affiliate_id === "string" && meta.affiliate_id.trim()
+        ? meta.affiliate_id.trim()
+        : null;
 
       if (type === "whitelabel" && userId && planId) {
         const brandName = meta.brand_name ?? "White Label Partner";
@@ -160,6 +257,17 @@ Deno.serve(async (req: Request) => {
               .eq("token", wlToken);
           }
         }
+
+        if (session.id && userId && planId) {
+          await recordCheckoutPayment(supabase, {
+            sessionId: session.id,
+            userId,
+            planId,
+            legacyStripeMetaAffiliateId: affiliateFromCheckout,
+            amountTotal: session.amount_total ?? null,
+            currency: session.currency ?? null,
+          });
+        }
       } else if (userId && planId) {
         let periodEnd: string | null = null;
         let resolvedPlanId = planId;
@@ -189,6 +297,17 @@ Deno.serve(async (req: Request) => {
           },
           { onConflict: "user_id" },
         );
+
+        if (session.id) {
+          await recordCheckoutPayment(supabase, {
+            sessionId: session.id,
+            userId,
+            planId: resolvedPlanId,
+            legacyStripeMetaAffiliateId: affiliateFromCheckout,
+            amountTotal: session.amount_total ?? null,
+            currency: session.currency ?? null,
+          });
+        }
       }
     } else if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
       const sub = obj as {

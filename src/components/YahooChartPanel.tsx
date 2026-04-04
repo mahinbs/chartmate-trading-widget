@@ -211,10 +211,12 @@ export default function YahooChartPanel({
   symbol,
   displayName,
   onLivePrice,
+  onCandlesLoaded,
 }: {
   symbol: string;
   displayName?: string;
   onLivePrice?: (price: number) => void;
+  onCandlesLoaded?: (candles: Candle[]) => void;
 }) {
   const containerRef   = useRef<HTMLDivElement | null>(null);
   const chartRef       = useRef<IChartApi | null>(null);
@@ -393,6 +395,7 @@ export default function YahooChartPanel({
       if (data?.error && !data?.candles?.length) throw new Error(data.error);
       const candles: Candle[] = data?.candles ?? [];
       setLastCandles(candles);
+      onCandlesLoaded?.(candles);
       setMeta(data?.meta ?? null);
       applyCandles(candles);
       if (!livePrice && data?.meta?.regularMarketPrice) {
@@ -404,7 +407,7 @@ export default function YahooChartPanel({
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [applyCandles, livePrice, onLivePrice]);
+  }, [applyCandles, livePrice, onCandlesLoaded, onLivePrice]);
 
   /* ── Yahoo Finance WebSocket streaming ─────────────────────────────── */
   const connectWS = useCallback((sym: string) => {
