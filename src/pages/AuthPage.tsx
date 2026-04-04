@@ -59,7 +59,7 @@ function EmailCooldownBanner({
 }) {
   if (!showTimer && !generic) return null;
   return (
-    <Alert className="mb-4 border-amber-500/40 bg-amber-500/10 text-amber-950 dark:border-amber-400/30 dark:bg-amber-500/15 dark:text-amber-50">
+    <Alert className="mb-4 border-amber-500/40 bg-amber-500/10 text-amber-550 dark:border-amber-400/30 dark:bg-amber-500/15 dark:text-amber-50">
       <Clock className="h-4 w-4 text-amber-700 dark:text-amber-200" />
       <AlertTitle>Please wait</AlertTitle>
       <AlertDescription>
