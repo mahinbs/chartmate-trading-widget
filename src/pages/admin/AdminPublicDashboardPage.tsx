@@ -75,69 +75,21 @@ function parseNumeric(v: string) {
 
 const DEFAULT_SALES_WEIGHTS = [20, 24, 18, 28, 26, 22, 30, 24];
 
-/** Generate random sales weights that sum to userCount */
-function generateRandomSalesWeights(userCount: number, seed: number): number[] {
-  const random = (s: number) => {
-    const x = Math.sin(s) * 43758.5453123;
-    return x - Math.floor(x);
-  };
-  
-  const weights = Array.from({ length: 8 }, (_, i) => 0.3 + random(seed + i * 100) * 0.7);
-  const sumWeights = weights.reduce((a, b) => a + b, 0);
-  const normalized = weights.map(w => (w / sumWeights) * userCount);
-  
-  const integers = normalized.map(n => Math.floor(n));
-  let remaining = userCount - integers.reduce((a, b) => a + b, 0);
-  
-  const fractionals = normalized.map((n, i) => ({ index: i, frac: n - Math.floor(n) }));
-  fractionals.sort((a, b) => b.frac - a.frac);
-  
-  for (let i = 0; i < fractionals.length && remaining > 0; i++) {
-    integers[fractionals[i].index]++;
-    remaining--;
-  }
-  
-  return integers;
-}
-
-function parseSalesWeightsInput(s: string, userCount: number): { weights: number[], error?: string } {
-  const trimmed = s.trim();
-  if (!trimmed) {
-    return { weights: generateRandomSalesWeights(userCount, Date.now()) };
-  }
-  
-  const parts = trimmed
+function parseSalesWeightsInput(s: string): number[] {
+  const parts = s
+    .trim()
     .split(/[\s,]+/)
     .filter(Boolean)
     .map((x) => Math.max(0, Number(x) || 0));
-  
-  if (parts.length === 0) {
-    return { weights: generateRandomSalesWeights(userCount, Date.now()) };
-  }
-  
-  const weights = Array.from({ length: 8 }, (_, i) => parts[i] ?? 0);
-  const sum = weights.reduce((a, b) => a + b, 0);
-  
-  if (sum > userCount) {
-    return { 
-      weights: [], 
-      error: `Chart weights total (${sum}) exceeds referred users (${userCount})` 
-    };
-  }
-  
-  return { weights };
-}
-
-function calculateAffiliateProfit(userCount: number, profitShare: string): number {
-  const p = profitShare.trim();
-  const share = p === "70%" ? 0.7 : p === "50%" ? 0.5 : 0.3;
-  return Math.round(userCount * 49 * share);
+  if (parts.length === 0) return [...DEFAULT_SALES_WEIGHTS];
+  return Array.from({ length: 8 }, (_, i) => parts[i] ?? DEFAULT_SALES_WEIGHTS[i] ?? 1);
 }
 
 function formatAffiliatePayoutPreview(userCount: number, profitShare: string): string {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(
-    calculateAffiliateProfit(userCount, profitShare)
-  );
+  const p = profitShare.trim();
+  const share = p === "70%" ? 0.7 : p === "50%" ? 0.5 : 0.3;
+  const n = Math.round(userCount * 49 * share);
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
 }
 
 const AFF_DATE_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
@@ -307,14 +259,8 @@ export default function AdminPublicDashboardPage() {
       toast.error('Use joining and payout dates like "01 Mar 2026" (DD Mon YYYY)');
       return;
     }
-    const parsed = parseSalesWeightsInput(newAffiliate.salesWeights, userCount);
-    if (parsed.error) {
-      toast.error(parsed.error);
-      return;
-    }
-    const salesWeights = parsed.weights;
+    const salesWeights = parseSalesWeightsInput(newAffiliate.salesWeights);
     const profitShare = newAffiliate.profitShare.trim() || "30%";
-    const profit = calculateAffiliateProfit(userCount, profitShare);
     const row: PublicDashboardAffiliateSeed = {
       id: `af-${typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Date.now()}`,
       name,
@@ -323,7 +269,7 @@ export default function AdminPublicDashboardPage() {
       profitShare,
       payout: formatAffiliatePayoutPreview(userCount, profitShare),
       joiningDate,
-      totalEarnings: new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(profit),
+      totalEarnings: "$0",
       lastPayoutDate,
       salesWeights,
     };
@@ -924,9 +870,7 @@ export default function AdminPublicDashboardPage() {
                 placeholder="Eight comma-separated numbers, e.g. 28, 34, 22, 41, 36, 19, 44, 38"
                 className="h-8 text-sm bg-zinc-950/50 border-white/10 font-mono"
               />
-              <p className="text-[10px] text-zinc-500">
-                Leave blank to auto-generate random chart data. Must not exceed the total referred users count.
-              </p>
+              <p className="text-[10px] text-zinc-500">Shapes the demo bar chart; totals still follow $49/unit × share. Leave blank for defaults.</p>
             </div>
             <div className="flex justify-end">
               <Button type="button" onClick={addCustomAffiliate} className="bg-white/10 hover:bg-white/20 text-white border border-white/10">

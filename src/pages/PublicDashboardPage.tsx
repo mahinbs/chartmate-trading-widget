@@ -737,18 +737,12 @@ function buildDemoAffiliates(
       name = `${row.name} · Partner`;
     }
     const shareFrac = parseAffiliateProfitShareFraction(row.profitShare);
-    
-    // Use the actual userCount and totalEarnings from the row
-    const totalUnits = row.userCount;
-    const grossUsd = totalUnits * PAYOUT_BASE_PER_USER_USD;
-    const profitUsd = Math.round(grossUsd * shareFrac);
-    
+    const model = demoAffiliateSalesModel(row.id, shareFrac);
     return {
       ...rest,
       name,
-      totalEarnings: row.totalEarnings || formatUsd0(profitUsd),
-      payout: formatUsd0(profitUsd),
-      monthlySales: affiliateDemoDailySales(salesWeights, salesChartAsOf, row.joiningDate, totalUnits),
+      totalEarnings: formatUsd0(model.profitUsd),
+      monthlySales: affiliateDemoDailySales(salesWeights, salesChartAsOf, row.joiningDate, model.totalUnits),
     };
   });
 }
