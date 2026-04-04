@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import type { CountryCode } from "libphonenumber-js";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,6 +31,11 @@ import {
   buildE164FromNational,
   DEFAULT_SIGNUP_PHONE_ISO,
 } from "@/lib/countryDialCodes";
+import { PRICING_PLANS } from "@/constants/pricing";
+import { premiumPlanCheckoutUrls } from "@/lib/premiumCheckoutUrls";
+import { createCheckoutSession } from "@/services/stripeService";
+
+const VALID_PREMIUM_CHECKOUT_PLANS = new Set(PRICING_PLANS.map((p) => p.id));
 
 function computeAgeFromIsoDate(isoDate: string): number | null {
   if (!isoDate || !/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return null;
@@ -129,6 +134,8 @@ const AuthPage = () => {
   const { role, loading: roleLoading } = useUserRole();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const postAuthCheckoutStartedRef = useRef(false);
   const emailCooldown = useAuthEmailCooldown();
   const [genericEmailRateLimit, setGenericEmailRateLimit] = useState(false);
 
@@ -160,6 +167,36 @@ const AuthPage = () => {
         navigate("/auth/change-password", { replace: true });
         return;
       }
+
+      const plan = searchParams.get("subscribe_plan")?.trim() ?? "";
+      if (plan && VALID_PREMIUM_CHECKOUT_PLANS.has(plan) && role === "user") {
+        if (postAuthCheckoutStartedRef.current) return;
+        postAuthCheckoutStartedRef.current = true;
+        const { success_url, cancel_url } = premiumPlanCheckoutUrls(plan);
+        const result = await createCheckoutSession({
+          plan_id: plan,
+          success_url,
+          cancel_url,
+        });
+        if ("error" in result) {
+          postAuthCheckoutStartedRef.current = false;
+          toast({
+            title: "Could not start checkout",
+            description: result.error,
+            variant: "destructive",
+          });
+          navigate("/pricing", { replace: true });
+          return;
+        }
+        if (result.url) {
+          window.location.href = result.url;
+          return;
+        }
+        postAuthCheckoutStartedRef.current = false;
+        navigate("/pricing", { replace: true });
+        return;
+      }
+
       if (role === "super_admin") {
         navigate("/admin", { replace: true });
         return;
@@ -181,7 +218,7 @@ const AuthPage = () => {
       else if (role === "user") navigate("/home", { replace: true });
     };
     routeAfterLogin();
-  }, [user, role, roleLoading, navigate]);
+  }, [user, role, roleLoading, navigate, searchParams]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();

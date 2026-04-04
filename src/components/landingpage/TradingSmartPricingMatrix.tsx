@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { premiumPlanCheckoutUrls } from "@/lib/premiumCheckoutUrls";
 import { createCheckoutSession } from "@/services/stripeService";
 import { toast } from "sonner";
 
@@ -17,18 +18,14 @@ export function TradingSmartPricingMatrix() {
       data: { session },
     } = await supabase.auth.getSession();
     if (!session) {
-      navigate("/auth?redirect=" + encodeURIComponent("/pricing"));
+      navigate("/auth?subscribe_plan=" + encodeURIComponent(planId));
       return;
     }
-    const origin = window.location.origin;
-    const successUrl =
-      planId === "starterPlan"
-        ? `${origin}/algo-setup?checkout=success`
-        : `${origin}/home?checkout=success`;
+    const { success_url, cancel_url } = premiumPlanCheckoutUrls(planId);
     const result = await createCheckoutSession({
       plan_id: planId,
-      success_url: successUrl,
-      cancel_url: `${origin}/pricing`,
+      success_url,
+      cancel_url,
     });
     if ("error" in result) {
       toast.error(result.error);
