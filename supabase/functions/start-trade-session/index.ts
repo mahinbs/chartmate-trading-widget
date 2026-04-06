@@ -32,6 +32,8 @@ interface StartTradeRequest {
   expectedRoiWorst?: number;
   predictionId?: string;
   isPaperTrade?: boolean;
+  /** Optional 7-module scoring snapshot at trade-open time */
+  scoreVector?: Record<string, unknown> | null;
 }
 
 serve(async (req) => {
@@ -252,6 +254,10 @@ serve(async (req) => {
       last_price_update: now.toISOString(),
       
       prediction_id: requestBody.predictionId,
+      score_vector:
+        requestBody.scoreVector && typeof requestBody.scoreVector === "object"
+          ? requestBody.scoreVector
+          : null,
       confidence: requestBody.confidence,
       risk_grade: requestBody.riskGrade,
       expected_roi_best: requestBody.expectedRoiBest,

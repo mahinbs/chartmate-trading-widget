@@ -41,6 +41,7 @@ export interface ActiveTrade {
   
   confidence?: number;
   riskGrade?: string;
+  scoreVector?: Record<string, unknown> | null;
   
   exitPrice?: number;
   exitTime?: string;
@@ -96,6 +97,8 @@ class TradeTrackingService {
     expectedRoiWorst?: number;
     predictionId?: string;
     isPaperTrade?: boolean;
+    /** Optional 7-module score snapshot to persist on active_trades */
+    scoreVector?: Record<string, unknown> | null;
   }) {
     try {
       const { data, error } = await supabase.functions.invoke('start-trade-session', {
@@ -570,6 +573,9 @@ class TradeTrackingService {
       
       confidence: data.confidence,
       riskGrade: data.risk_grade,
+      scoreVector: (data.score_vector && typeof data.score_vector === "object")
+        ? data.score_vector as Record<string, unknown>
+        : null,
       
       exitPrice: data.exit_price ? parseFloat(data.exit_price) : undefined,
       exitTime: data.exit_time,

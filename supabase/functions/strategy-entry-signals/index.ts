@@ -31,6 +31,13 @@ import {
   extractAlgoGuidePreset,
   type PresetHit,
 } from "../_shared/algoGuideDetectors.ts";
+import {
+  buildScoringContext,
+  runScoringEngine,
+  DEFAULT_WEIGHTS,
+  type ScoreVector,
+  type ScoringContext,
+} from "../_shared/scoringEngine.ts";
 
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 const TWELVE_DATA_API_KEY = Deno.env.get("TWELVE_DATA_API_KEY") ?? "";
@@ -1215,8 +1222,8 @@ function buildCustomScanMeta(args: {
 
 /**
  * Applies execution_days + session only to bars that actually fired from **custom rule evaluation**
- * (custom_time | custom_raw | custom_visual | custom_hybrid). Template / template-fallback rows have no
- * such audit — otherwise strict schedule would strip every fallback bar and scans stay empty.
+ * (custom_time | custom_raw | custom_visual | custom_hybrid). Default/base-type inherited rows have no
+ * such audit — otherwise strict schedule would strip inherited baseline bars and scans stay empty.
  */
 function filterRawSignalsByCustomSchedule(
   signals: RawSignal[],
@@ -2218,6 +2225,8 @@ type MergedAiRow = {
   confirmationDetail: string;
   whyThisScore: string;
   scoreSource: string;
+  /** Full 7-module score breakdown */
+  score_vector: ScoreVector | null;
 };
 
 function strField(v: unknown): string {
@@ -2247,8 +2256,8 @@ function whyThisScoreAligned(body: string, finalScore: number): string {
   return `Blended score ${finalScore}/100 — ${cleaned}`;
 }
 
-/** Rule-based quality read so we never silently default to 50 with no basis. */
-function heuristicMergeRow(raw: RawSignal, ind: RealIndicators | null): MergedAiRow {
+/** Strict rule-engine scoring (no heuristic fallback). */
+function heuristicMergeRow(raw: RawSignal, ind: RealIndicators | null, scoringCtx?: ScoringContext | null): MergedAiRow {
   const rsiBar = raw.marketData?.rsi14;
   const rsiSnap = ind?.rsi14;
   const rsi = rsiBar != null && Number.isFinite(rsiBar) ? rsiBar : rsiSnap;
@@ -2341,12 +2350,24 @@ function heuristicMergeRow(raw: RawSignal, ind: RealIndicators | null): MergedAi
     reasons.push("Matches latest bar — actionable now if liquidity and risk limits allow.");
   }
 
-  score = Math.max(14, Math.min(93, Math.round(score)));
+  if (!scoringCtx) {
+    throw new Error("[heuristicMergeRow] Strict mode requires scoring context.");
+  }
+
+  // ── 7-module scoring engine (required) ──
+  const sv = runScoringEngine(
+    { side: raw.side, entryIndex: raw.entryIndex, priceAtEntry: raw.priceAtEntry, isLive: raw.isLive, strategyId: raw.strategyId, customScanMeta: raw.customScanMeta ?? null },
+    scoringCtx,
+    DEFAULT_WEIGHTS,
+  );
+  score = Math.max(14, Math.min(93, sv.final_score));
+
   const verdict = score >= 69 ? "confirm" : score <= 37 ? "reject" : "mixed";
-  const whyThisScore = reasons.join(" ");
+  const whyThisScore =
+    `7-module score: Market=${sv.market_strength_score} Trend=${sv.trend_alignment_score} Signal=${sv.signal_strength_score} Volume=${sv.volume_confirmation_score} Volatility=${sv.volatility_score} RR=${sv.rr_score} TrapRisk=${sv.trap_probability}. ${reasons.join(" ")}`;
   const entryExitRuleSummary = raw.side === "BUY"
-    ? `Strategy rule produced a long (BUY) candidate for “${raw.strategyLabel}”.`
-    : `Strategy rule produced an exit/short (SELL) candidate for “${raw.strategyLabel}”.`;
+    ? `Strategy rule produced a long (BUY) candidate for "${raw.strategyLabel}".`
+    : `Strategy rule produced an exit/short (SELL) candidate for "${raw.strategyLabel}".`;
   const liveViability = raw.isLive
     ? "Live: conditions match the current candle; invalid if a gap, headline, or volatility regime breaks the setup."
     : "";
@@ -2355,7 +2376,7 @@ function heuristicMergeRow(raw: RawSignal, ind: RealIndicators | null): MergedAi
     : verdict === "mixed"
     ? `Mixed evidence — not a clean confirm: ${whyThisScore}`
     : "";
-  const rationale = `${whyThisScore} Composite → ${score}/100 (${verdict}).`;
+  const rationale = `${whyThisScore} Composite score: ${score}/100 (${verdict}).`;
   const confirmationDetail = verdict === "confirm"
     ? stripStaleScoreClaims(`Rule-based confirm: ${whyThisScore}`, score)
     : "";
@@ -2369,15 +2390,17 @@ function heuristicMergeRow(raw: RawSignal, ind: RealIndicators | null): MergedAi
     rejectionDetail,
     confirmationDetail,
     whyThisScore,
-    scoreSource: "heuristic",
+    scoreSource: "scoring_engine",
+    score_vector: sv,
   };
 }
 
-/** Map AI rows by strategyId+entryDate+side, blend with heuristic (no blind 50s). */
+/** Map AI rows by strategyId+entryDate+side, keeping scoring-engine output as source of truth. */
 function mergeAiScoresIntoRaw(
   raw: RawSignal[],
   parsed: unknown[] | null,
   ind: RealIndicators | null,
+  scoringCtx?: ScoringContext | null,
 ): MergedAiRow[] {
   const map = new Map<string, Record<string, unknown>>();
   if (parsed) {
@@ -2395,58 +2418,29 @@ function mergeAiScoresIntoRaw(
   }
 
   return raw.map((s) => {
-    const h = heuristicMergeRow(s, ind);
+    const h = heuristicMergeRow(s, ind, scoringCtx);
     const r = map.get(`${s.strategyId}|${s.entryDate}|${s.side}`) ?? map.get(`${s.strategyId}|${s.entryDate}`);
 
     if (!r) {
       const extra = parsed === null
-        ? " Gemini pass failed or empty — showing rule-based breakdown only."
-        : " No matching AI row — showing rule-based breakdown only.";
+        ? " Gemini pass failed or empty — using strict scoring-engine output."
+        : " No matching AI row — using strict scoring-engine output.";
     return {
         ...h,
         rationale: h.rationale + extra,
-        scoreSource: "heuristic",
+        scoreSource: h.scoreSource,
+        score_vector: h.score_vector ?? null,
       };
     }
 
-    const aiScoreRaw = r.probabilityScore;
-    const aiScore = typeof aiScoreRaw === "number" && Number.isFinite(aiScoreRaw)
-      ? Math.max(0, Math.min(100, aiScoreRaw))
-      : null;
-    const aiVerdict = typeof r.verdict === "string" ? r.verdict.toLowerCase() : "";
     const aiRationale = strField(r.rationale);
     const aiEntry = strField(r.entryExitRuleSummary);
     const aiLive = strField(r.liveViability);
     const aiReject = strField(r.rejectionDetail);
     const aiConfirm = strField(r.confirmationDetail);
     const aiWhy = strField(r.whyThisScore);
-
-    if (aiScore === null) {
-      const fs = h.probabilityScore;
-      const confirmText = h.verdict === "confirm"
-        ? stripStaleScoreClaims(aiConfirm || h.confirmationDetail, fs)
-        : "";
-      return {
-        ...h,
-        whyThisScore: whyThisScoreAligned(aiWhy || h.whyThisScore, fs),
-        rationale:
-          `${stripStaleScoreClaims((aiRationale || h.rationale) + " (AI omitted numeric score; rule-based score used.)", fs)} Same blended score as the headline: ${fs}/100.`,
-        rejectionDetail: stripStaleScoreClaims(h.rejectionDetail, fs),
-        confirmationDetail: confirmText,
-        scoreSource: "heuristic",
-      };
-    }
-
-    const aiVague = aiScore === 50 && aiRationale.length < 50;
-    const blended = aiVague
-      ? Math.round(0.22 * aiScore + 0.78 * h.probabilityScore)
-      : Math.round(0.52 * aiScore + 0.48 * h.probabilityScore);
-    const probabilityScore = Math.max(14, Math.min(93, blended));
-
-    const verdictOk =
-      aiVerdict === "confirm" || aiVerdict === "reject" || aiVerdict === "mixed" || aiVerdict === "review";
-    const verdictRaw = aiVague ? h.verdict : verdictOk ? aiVerdict : h.verdict;
-    const verdict = verdictRaw === "review" ? "mixed" : verdictRaw;
+    const probabilityScore = h.probabilityScore;
+    const verdict = h.verdict;
 
     const entryExitRuleSummary = aiEntry || h.entryExitRuleSummary;
     const whyThisScore = whyThisScoreAligned(aiWhy || h.whyThisScore, probabilityScore);
@@ -2472,10 +2466,10 @@ function mergeAiScoresIntoRaw(
       );
     }
 
-    const rationaleCore = aiVague
-      ? `${h.whyThisScore} Model returned a neutral score with thin text; prioritizing structured rule read.`
-      : `${aiRationale || "Model assessment."} Rule-based cross-check: ${h.whyThisScore}`;
-    const rationale = `${stripStaleScoreClaims(rationaleCore, probabilityScore)} Same blended score as the headline: ${probabilityScore}/100.`;
+    const rationaleCore = aiRationale
+      ? `${aiRationale} Rule-engine lock: ${h.whyThisScore}`
+      : h.whyThisScore;
+    const rationale = `${stripStaleScoreClaims(rationaleCore, probabilityScore)} Same strict score as the headline: ${probabilityScore}/100.`;
 
     return {
       probabilityScore,
@@ -2486,7 +2480,8 @@ function mergeAiScoresIntoRaw(
       rejectionDetail,
       confirmationDetail,
       whyThisScore,
-      scoreSource: aiVague ? "heuristic+gemini" : "gemini+heuristic",
+      scoreSource: aiRationale ? "scoring_engine+gemini_context" : "scoring_engine",
+      score_vector: h.score_vector ?? null,
     };
   }).map((row) => ({
     ...row,
@@ -2603,12 +2598,13 @@ async function scoreWithGemini(
   raw: RawSignal[],
   indicators: RealIndicators | null,
   post?: { result?: string; actualChangePercent?: number; predictedDirection?: string },
+  scoringCtx?: ScoringContext | null,
 ): Promise<MergedAiRow[]> {
   const indForMerge = indicators ?? null;
   if (raw.length === 0) return [];
 
   if (!GEMINI_API_KEY) {
-    return mergeAiScoresIntoRaw(raw, null, indForMerge);
+    return mergeAiScoresIntoRaw(raw, null, indForMerge, scoringCtx);
   }
 
   const indBlock = indicators
@@ -2619,6 +2615,14 @@ Bollinger Bands: Upper ${indicators.bbUpper?.toFixed(2) ?? "N/A"} | Middle ${ind
 Current Price: ${indicators.currentPrice?.toFixed(2) ?? "N/A"}, Change: ${indicators.changePct?.toFixed(2) ?? "N/A"}%`
     : "\nNo external indicator data available — using OHLCV-computed values.";
 
+  // Build per-signal score_vector context block for Gemini
+  const scoreVectorBlock = raw.map((s, idx) => {
+    const sv = mergeAiScoresIntoRaw([s], null, null, scoringCtx)[0]?.score_vector;
+    if (!sv) return null;
+    return `Signal[${idx}] ${s.strategyId} ${s.side} pre-scored: Market=${sv.market_strength_score} Trend=${sv.trend_alignment_score} Signal=${sv.signal_strength_score} Volume=${sv.volume_confirmation_score} Volatility=${sv.volatility_score} RR=${sv.rr_score} Trap=${sv.trap_probability} => final=${sv.final_score} (${sv.entry_quality})`;
+  }).filter(Boolean).join("\n");
+  const moduleScoresBlock = scoreVectorBlock ? `\n\n7-Module Rule Engine Pre-Scores (your probabilityScore must be consistent with these):\n${scoreVectorBlock}` : "";
+
   const prompt = `You are a trading risk assistant. Score ONLY real historical or live-detected signals (not forecasts). Not financial advice.
 BUY = long entry candidate. SELL = exit or short-side candidate.
 Do NOT assume future price paths. Score based on indicator snapshot + bar context.
@@ -2626,7 +2630,7 @@ Do NOT assume future price paths. Score based on indicator snapshot + bar contex
 Symbol: ${symbol} (data: ${yahooSymbol})
 Last close: ${lastClose}
 ${indBlock}
-${post?.result ? `Post-analysis outcome context: ${post.result}, actual move ~${post.actualChangePercent ?? "?"}%, predicted direction was ${post.predictedDirection ?? "?"}.` : "No post-analysis context."}
+${post?.result ? `Post-analysis outcome context: ${post.result}, actual move ~${post.actualChangePercent ?? "?"}%, predicted direction was ${post.predictedDirection ?? "?"}.` : "No post-analysis context."}${moduleScoresBlock}
 
 Signals (JSON array):
 ${JSON.stringify(raw.map((x) => ({
@@ -2657,10 +2661,11 @@ Return ONLY a JSON array (no markdown), SAME LENGTH AND SAME ORDER as input. Eac
   "confirmationDetail": string (if verdict is confirm: 2-3 sentences why this setup passes — cite RSI/MACD/BB/bar context and rule alignment; if reject or mixed: "") }
 
 Scoring guide:
-- BUY: higher if oversold RSI, price near lower BB, MACD not bearish; lower if overbought or stale without reset.
+- BUY: higher if oversold RSI, price near lower BB, MACD not bearish, market trending up, low trap risk; lower if overbought or stale without reset.
 - SELL: higher if overbought RSI, price near upper BB, MACD not bullish; lower if washed-out RSI.
 - Live signals: mention immediacy and gap/news risk.
-- If evidence is mixed, use verdict "mixed" and explain the conflict in rejectionDetail.`;
+- If evidence is mixed, use verdict "mixed" and explain the conflict in rejectionDetail.
+- When 7-Module Pre-Scores are provided above, your probabilityScore must be broadly consistent with the rule-engine final_score (within ~20 pts). Do NOT contradict a high trap probability with a "confirm" verdict.`;
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
   const res = await fetch(url, {
@@ -2681,27 +2686,27 @@ Scoring guide:
   if (!res.ok) {
     const errText = await res.text();
     console.error(`Gemini ${res.status} (${GEMINI_MODEL}):`, errText);
-    return mergeAiScoresIntoRaw(raw, null, indForMerge);
+    return mergeAiScoresIntoRaw(raw, null, indForMerge, scoringCtx);
   }
   let data: GeminiLikeResponse = {};
   try {
     data = await res.json() as GeminiLikeResponse;
   } catch (e) {
     console.error("Gemini JSON decode failed:", e);
-    return mergeAiScoresIntoRaw(raw, null, indForMerge);
+    return mergeAiScoresIntoRaw(raw, null, indForMerge, scoringCtx);
   }
   const text = geminiAllText(data);
   const finish = (data as { candidates?: Array<{ finishReason?: string }> })?.candidates?.[0]?.finishReason;
   if (!text.trim()) {
     console.error("Gemini empty output", { finish, snippet: JSON.stringify(data).slice(0, 600) });
-    return mergeAiScoresIntoRaw(raw, null, indForMerge);
+    return mergeAiScoresIntoRaw(raw, null, indForMerge, scoringCtx);
   }
   const parsed = parseJsonArrayFromModelText(text);
   if (!parsed) {
     console.error("Gemini JSON parse failed; text head:", text.slice(0, 1500));
-    return mergeAiScoresIntoRaw(raw, null, indForMerge);
+    return mergeAiScoresIntoRaw(raw, null, indForMerge, scoringCtx);
   }
-  return mergeAiScoresIntoRaw(raw, parsed, indForMerge);
+  return mergeAiScoresIntoRaw(raw, parsed, indForMerge, scoringCtx);
 }
 
 Deno.serve(async (req: Request) => {
@@ -2917,8 +2922,38 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // ── Fetch HTF candles for market context (1H used as higher-TF for M1/M2) ──
+    let htf1hOhlcv: { t: number[]; c: number[]; h: number[]; l: number[]; o: number[]; v: number[] } | null = null;
+    if (!customSelectionDailyOnly && usedInterval !== "1d") {
+      try {
+        const htf = await fetchYahooChart({ yahooSymbol, period1: period1Intraday - 7 * 24 * 3600, period2, interval: "1h" });
+        if (htf.c.length >= 50) htf1hOhlcv = htf;
+      } catch { /* best-effort */ }
+    }
+
     // ── Fetch real indicators from APIs (enriches Gemini scoring context) ──
     const realIndicators = await fetchRealIndicators(yahooSymbol, assetType, c);
+    // ── Build 7-module ScoringContext (shared across all signals in this scan) ──
+    const vForCtx = v.length === c.length ? v : new Array(c.length).fill(0);
+    const oForCtx = o.length === c.length ? o : c.slice();
+    const htfForCtx = htf1hOhlcv
+      ? { h: htf1hOhlcv.h, l: htf1hOhlcv.l, c: htf1hOhlcv.c, o: htf1hOhlcv.o ?? htf1hOhlcv.c.slice(), v: htf1hOhlcv.v ?? [], t: htf1hOhlcv.t }
+      : null;
+    const scoringCtx = buildScoringContext(
+      { h, l, c, o: oForCtx, v: vForCtx, t },
+      {
+        rsi14: realIndicators.rsi14,
+        macdLine: realIndicators.macdLine,
+        macdSignal: realIndicators.macdSignal,
+        bbUpper: realIndicators.bbUpper,
+        bbMiddle: realIndicators.bbMiddle,
+        bbLower: realIndicators.bbLower,
+        currentPrice: realIndicators.currentPrice,
+        changePct: realIndicators.changePct,
+      },
+      htfForCtx,
+    );
+
     /** Wall-clock evaluation for TIME_IS / clock exit (Indian sessions → IST; else UTC) */
     const scanTimeZone = isIndian ? "Asia/Kolkata" : "UTC";
     const maxPerStrategy = 4;
@@ -2943,7 +2978,7 @@ Deno.serve(async (req: Request) => {
     //     - Usable entry_conditions → full-series custom detection first.
     //     - If that matches nothing (or no usable conditions) → paper_strategy_type template (trend_following, …).
     const customLabelMap: Record<string, string> = {};
-    /** Custom ids that use base-type live radar (no custom bar matches, or no usable custom rules). */
+    /** Custom ids that explicitly inherit default/base-type rule set (no custom entry conditions provided). */
     const customTemplateLiveRelabelIds = new Set<string>();
     const hasCustomConditions = (cs: CustomStrategyConfig): boolean =>
       entryConditionsAreUsableForScan(cs.entryConditions ?? null);
@@ -2987,7 +3022,8 @@ Deno.serve(async (req: Request) => {
           supertrendSlow,
       );
         allRaw.push(...fromCustom);
-        if (fromCustom.length > 0) continue;
+        // Strict mode: custom strategy with explicit entry rules does not fall back to base templates.
+        continue;
       }
       customTemplateLiveRelabelIds.add(csId);
       const csActions: Array<"BUY" | "SELL"> =
@@ -3160,12 +3196,15 @@ Deno.serve(async (req: Request) => {
       return b.entryIndex - a.entryIndex;
     });
     const capped = pipelineRaw.slice(0, 80);
-    const scored = await scoreWithGemini(symbol, yahooSymbol, c[c.length - 1] ?? 0, capped, realIndicators, postAnalysis);
+    const scored = await scoreWithGemini(symbol, yahooSymbol, c[c.length - 1] ?? 0, capped, realIndicators, postAnalysis, scoringCtx);
     const scanEvaluatedAt = new Date().toISOString();
     const scanEvaluatedAtMs = Date.parse(scanEvaluatedAt);
 
     const merged = capped.map((rawSig, i) => {
       const ai = scored[i];
+      if (!ai || !ai.score_vector) {
+        throw new Error(`[strategy-entry-signals] Strict scoring is required; missing score_vector for ${rawSig.strategyId} ${rawSig.side} ${rawSig.entryDate}`);
+      }
       const fwd = simpleForwardRead(
         rawSig.entryIndex,
         rawSig.side,
@@ -3190,7 +3229,7 @@ Deno.serve(async (req: Request) => {
         liveViability: ai?.liveViability ?? "",
         rejectionDetail: ai?.rejectionDetail ?? "",
         confirmationDetail: ai?.confirmationDetail ?? "",
-        scoreSource: ai?.scoreSource ?? "heuristic",
+        scoreSource: ai.scoreSource,
         isLive: rawSig.isLive ?? false,
         isPredicted: false,
         /** UI-only: full `liveWindowMs` after results arrive (does not change bar time/price). */
@@ -3210,6 +3249,7 @@ Deno.serve(async (req: Request) => {
         conditionAudit: rawSig.conditionAudit ?? null,
         customStrategyMeta: rawSig.customScanMeta ?? null,
         presetPriceLevels: rawSig.presetPriceLevels ?? null,
+        score_vector: ai.score_vector,
       };
     });
 
