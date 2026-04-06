@@ -23,6 +23,7 @@
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
+  detectLiquiditySweepBosHits,
   detectOrbHits,
   detectRsiDivergenceHits,
   detectSupertrendDualTfHits,
@@ -31,6 +32,10 @@ import {
   extractAlgoGuidePreset,
   type PresetHit,
 } from "../_shared/algoGuideDetectors.ts";
+import {
+  resolveMarketSessionProfile,
+  type MarketSessionProfile,
+} from "../_shared/marketSession.ts";
 import {
   buildScoringContext,
   runScoringEngine,
@@ -392,6 +397,21 @@ function computePresetPriceLevels(
     };
   }
 
+  if (preset === "liquidity_sweep_bos") {
+    const sweepExtreme = Number(meta.sweepExtreme);
+    const bosLevel = Number(meta.bosLevel);
+    const targetZone = Number(meta.targetZonePrice);
+    const atrGuess = entryPrice * 0.005; // 0.5% fallback ATR
+    if (!Number.isFinite(sweepExtreme)) return undefined;
+    return {
+      stopLossPrice: isBuy ? sweepExtreme - atrGuess : sweepExtreme + atrGuess,
+      takeProfitPrice: Number.isFinite(targetZone) ? targetZone
+        : (Number.isFinite(bosLevel)
+            ? (isBuy ? entryPrice + 2 * Math.abs(entryPrice - sweepExtreme) : entryPrice - 2 * Math.abs(sweepExtreme - entryPrice))
+            : undefined),
+    };
+  }
+
   return undefined;
 }
 
@@ -684,7 +704,7 @@ type ConditionEvalCtx = {
   volSmaCache: Map<number, number[]>;
   /** Unix seconds per candle — required for TIME_IS(...) */
   timestamps?: number[];
-  /** IANA zone for wall-clock rules (IST for Indian symbols, UTC otherwise) */
+  /** IANA zone for wall-clock rules (Asia/Kolkata, America/New_York, or UTC — from symbol class) */
   timeZone?: string;
   /**
    * 0 = exact saved rules; 1–2 = mild / wider slack on numeric compares, crosses, and clock gates
@@ -1403,12 +1423,12 @@ function wallClockMinutesScan(tsSec: number, tz: string): number | null {
   }
 }
 
-/** Skip entries on opening-range candles (guide: avoid first 15 minutes). */
-function guideBlocksOpenQuarterBar(entryCfg: EntryConditionsConfig, tsSec: number, scanTimeZone: string): boolean {
+/** Skip entries during local ORB formation window (India 9:15–9:30, US 9:30–9:45, crypto/FX UTC 0:00–0:15). */
+function guideBlocksOpenQuarterBar(entryCfg: EntryConditionsConfig, tsSec: number, profile: MarketSessionProfile): boolean {
   if (!entryCfg.algoGuideBlockFirstSessionMinutes) return false;
-  const m = wallClockMinutesScan(tsSec, scanTimeZone);
+  const m = wallClockMinutesScan(tsSec, profile.timeZone);
   if (m == null) return false;
-  return m >= 9 * 60 + 15 && m < 9 * 60 + 30;
+  return m >= profile.orbOpenStartMin && m < profile.orbOpenEndMin;
 }
 
 function customEntryConfigRunnable(
@@ -1445,8 +1465,9 @@ function customEntryConditionsMatchAt(
   ctx: ConditionEvalCtx,
   timestamps: number[],
   scanTimeZone: string,
+  sessionProfile: MarketSessionProfile,
 ): boolean {
-  if (guideBlocksOpenQuarterBar(entryCfg, timestamps[idx], scanTimeZone)) return false;
+  if (guideBlocksOpenQuarterBar(entryCfg, timestamps[idx], sessionProfile)) return false;
   if (subtype === "time_based") {
     const hhmm =
       String(entryCfg.clockEntryTime ?? "").trim() ||
@@ -1624,6 +1645,7 @@ function detectCustomEntrySignals(
   realIndicators: RealIndicators,
   requestedActions: Array<"BUY" | "SELL">,
   scanTimeZone: string,
+  sessionProfile: MarketSessionProfile,
   maxSignals: number,
   realtimeMode: boolean,
   barMinutesApprox: number,
@@ -1687,7 +1709,7 @@ function detectCustomEntrySignals(
   const preset = extractAlgoGuidePreset(entryCfg);
   if (preset) {
     let presetHits: PresetHit[] = [];
-    if (preset === "orb") presetHits = detectOrbHits(timestamps, c, h, l, scanTimeZone);
+    if (preset === "orb") presetHits = detectOrbHits(timestamps, c, h, l, sessionProfile);
     else if (preset === "supertrend_7_3") {
       if (
         supertrendSlow &&
@@ -1703,16 +1725,20 @@ function detectCustomEntrySignals(
           supertrendSlow.h,
           supertrendSlow.l,
           supertrendSlow.c,
-          scanTimeZone,
+          sessionProfile,
         );
       } else {
-        presetHits = detectSupertrendFlipHits(h, l, c, timestamps, scanTimeZone);
+        presetHits = detectSupertrendFlipHits(h, l, c, timestamps, sessionProfile);
       }
     } else if (preset === "vwap_bounce") {
       presetHits = vBars && vBars.length === c.length
-        ? detectVwapBounceHits(timestamps, h, l, c, vBars, scanTimeZone, oBars)
+        ? detectVwapBounceHits(timestamps, h, l, c, vBars, sessionProfile, oBars)
         : [];
-    } else if (preset === "rsi_divergence") presetHits = detectRsiDivergenceHits(c, h, l);
+    } else if (preset === "rsi_divergence") {
+      presetHits = detectRsiDivergenceHits(c, h, l);
+    } else if (preset === "liquidity_sweep_bos") {
+      presetHits = detectLiquiditySweepBosHits(c, h, l);
+    }
 
     const collectPresetAtTier = (relaxationTier: number): RawSignal[] => {
       ctx.ruleRelaxation = relaxationTier;
@@ -1749,17 +1775,68 @@ function detectCustomEntrySignals(
           if (!barAllowedByCustomSchedule(entryTs, cs.executionDays, cs.startTime, cs.endTime, scanTimeZone)) {
             continue;
           }
+          // Build rich per-preset PASS/FAIL audit lines shown in the detail view
+          const auditLines: Array<{ ok: boolean; label: string }> = [];
+          const priceLvls = computePresetPriceLevels(preset, side, c[ei], hit.meta);
+          if (preset === "orb") {
+            const orbH = Number(hit.meta?.orbH);
+            const orbL = Number(hit.meta?.orbL);
+            auditLines.push({ ok: true, label: `Opening range captured: High ${Number.isFinite(orbH) ? orbH.toFixed(2) : "?"} / Low ${Number.isFinite(orbL) ? orbL.toFixed(2) : "?"}` });
+            auditLines.push({ ok: true, label: `Breakout direction: ${side} (5m candle closed ${side === "BUY" ? "above Range High" : "below Range Low"})` });
+            auditLines.push({ ok: priceLvls?.stopLossPrice != null, label: `SL set at ${side === "BUY" ? "Range Low" : "Range High"}: ${priceLvls?.stopLossPrice?.toFixed(2) ?? "—"}` });
+            auditLines.push({ ok: priceLvls?.takeProfitPrice != null, label: `TP set at 2× range: ${priceLvls?.takeProfitPrice?.toFixed(2) ?? "—"}` });
+            if (Number.isFinite(orbH) && Number.isFinite(orbL)) {
+              const rng = orbH - orbL;
+              const midP = (orbH + orbL) / 2;
+              const rngPct = midP > 0 ? (rng / midP * 100).toFixed(2) : "?";
+              auditLines.push({ ok: midP > 0 && rng / midP >= 0.002 && rng / midP <= 0.01, label: `Range width: ${rngPct}% (must be 0.2%–1.0%)` });
+            }
+          } else if (preset === "supertrend_7_3") {
+            const stSl = Number(hit.meta?.supertrendSl);
+            auditLines.push({ ok: true, label: `Supertrend(7,3) flipped to ${side === "BUY" ? "GREEN (bullish)" : "RED (bearish)"} on 5m` });
+            auditLines.push({ ok: true, label: `15m trend confirmed: ${side === "BUY" ? "Uptrend (green)" : "Downtrend (red)"}` });
+            auditLines.push({ ok: Number.isFinite(stSl), label: `Dynamic SL at Supertrend line: ${Number.isFinite(stSl) ? stSl.toFixed(2) : "—"}` });
+            auditLines.push({ ok: true, label: `Exit signal: when Supertrend flips against position (trailing)` });
+          } else if (preset === "vwap_bounce") {
+            const vw = Number(hit.meta?.vwapAtEntry);
+            const sd1 = Number(hit.meta?.vwapSd1);
+            const sd2 = Number(hit.meta?.vwapSd2);
+            auditLines.push({ ok: true, label: `VWAP test: ${side === "BUY" ? "price touched VWAP from above with rejection" : "price tested VWAP from below with rejection"}` });
+            auditLines.push({ ok: true, label: `Rejection candle confirmed (lower/upper wick ≥ 30% of range)` });
+            auditLines.push({ ok: true, label: `Volume above 10-bar average at test candle` });
+            auditLines.push({ ok: true, label: `1st or 2nd VWAP touch only (lower probability on 3rd+)` });
+            auditLines.push({ ok: Number.isFinite(vw), label: `VWAP at entry: ${Number.isFinite(vw) ? vw.toFixed(2) : "—"}` });
+            auditLines.push({ ok: Number.isFinite(sd1), label: `TP1 (VWAP +1 SD): ${Number.isFinite(sd1) ? sd1.toFixed(2) : "—"} — close 50% here` });
+            auditLines.push({ ok: Number.isFinite(sd2), label: `TP2 (VWAP +2 SD): ${Number.isFinite(sd2) ? sd2.toFixed(2) : "—"} — close remaining 50%` });
+            auditLines.push({ ok: Number.isFinite(priceLvls?.stopLossPrice), label: `SL at 0.5% ${side === "BUY" ? "below" : "above"} VWAP: ${priceLvls?.stopLossPrice?.toFixed(2) ?? "—"}` });
+          } else if (preset === "rsi_divergence") {
+            const swing = Number(hit.meta?.rsiSwingPoint);
+            const prior = Number(hit.meta?.rsiPriorSwing);
+            auditLines.push({ ok: true, label: `RSI(14) divergence detected: price made ${side === "BUY" ? "lower low, RSI made higher low" : "higher high, RSI made lower high"}` });
+            auditLines.push({ ok: true, label: `Divergence spans ≥ 5 candles between pivot points` });
+            auditLines.push({ ok: true, label: `MACD histogram turning in trade direction (confirmation)` });
+            auditLines.push({ ok: true, label: `Confirmation candle: ${side === "BUY" ? "close above prior candle high" : "close below prior candle low"}` });
+            auditLines.push({ ok: Number.isFinite(swing), label: `SL beyond divergence swing point: ${Number.isFinite(swing) ? swing.toFixed(2) : "—"}` });
+            auditLines.push({ ok: Number.isFinite(prior), label: `TP at prior swing ${side === "BUY" ? "high" : "low"}: ${Number.isFinite(prior) ? prior.toFixed(2) : "—"} (50% exit)` });
+            auditLines.push({ ok: Number.isFinite(priceLvls?.takeProfitPrice), label: `TP full: ${priceLvls?.takeProfitPrice?.toFixed(2) ?? "—"} (3× SL distance)` });
+          } else if (preset === "liquidity_sweep_bos") {
+            const sweptZone = Number(hit.meta?.sweptZonePrice);
+            const sweepEx = Number(hit.meta?.sweepExtreme);
+            const bosLvl = Number(hit.meta?.bosLevel);
+            const targetZone = Number(hit.meta?.targetZonePrice);
+            auditLines.push({ ok: Number.isFinite(sweptZone), label: `Liquidity zone swept: ${side === "BUY" ? "equal lows / buy-side stops" : "equal highs / sell-side stops"} at ${Number.isFinite(sweptZone) ? sweptZone.toFixed(2) : "—"}` });
+            auditLines.push({ ok: Number.isFinite(sweepEx), label: `Sweep extreme: ${Number.isFinite(sweepEx) ? sweepEx.toFixed(2) : "—"} (price wicked beyond zone by ≥ 0.1%, then closed back)` });
+            auditLines.push({ ok: Number.isFinite(bosLvl), label: `Break of Structure (BOS) confirmed: close ${side === "BUY" ? "above prior swing high" : "below prior swing low"} at ${Number.isFinite(bosLvl) ? bosLvl.toFixed(2) : "—"}` });
+            auditLines.push({ ok: Number.isFinite(priceLvls?.stopLossPrice), label: `SL placed 1 ATR beyond sweep extreme: ${priceLvls?.stopLossPrice?.toFixed(2) ?? "—"}` });
+            auditLines.push({ ok: Number.isFinite(targetZone), label: `TP at next opposing liquidity zone: ${Number.isFinite(targetZone) ? targetZone.toFixed(2) : "—"}` });
+          } else {
+            auditLines.push({ ok: true, label: `Preset "${preset}" matched at bar ${signalBar} (${side})` });
+          }
+
           const conditionAudit: StrategyConditionAudit = {
             kind: "custom_visual",
             overallMatch: true,
-            lines: [
-              {
-                ok: true,
-                label: `Algo guide preset "${preset}" at bar ${signalBar}${
-                  hitBar !== signalBar ? ` (setup ${hitBar})` : ""
-                } (${side})`,
-              },
-            ],
+            lines: auditLines,
             snapshot: {
               barIndex: signalBar,
               barTimeIso: new Date(timestamps[signalBar] * 1000).toISOString(),
@@ -1827,7 +1904,7 @@ function detectCustomEntrySignals(
           continue;
         }
 
-        if (!customEntryConditionsMatchAt(entryCfg, subtype, i, ctx, timestamps, scanTimeZone)) continue;
+        if (!customEntryConditionsMatchAt(entryCfg, subtype, i, ctx, timestamps, scanTimeZone, sessionProfile)) continue;
 
         const ei = realtimeMode ? i : i + 1;
         if (ei >= n) continue;
@@ -2364,7 +2441,7 @@ function heuristicMergeRow(raw: RawSignal, ind: RealIndicators | null, scoringCt
 
   const verdict = score >= 69 ? "confirm" : score <= 37 ? "reject" : "mixed";
   const whyThisScore =
-    `7-module score: Market=${sv.market_strength_score} Trend=${sv.trend_alignment_score} Signal=${sv.signal_strength_score} Volume=${sv.volume_confirmation_score} Volatility=${sv.volatility_score} RR=${sv.rr_score} TrapRisk=${sv.trap_probability}. ${reasons.join(" ")}`;
+    `7-module score: Market=${sv.market_strength_score} Trend=${sv.trend_alignment_score} Signal=${sv.signal_strength_score} Volume=${sv.volume_confirmation_score} Volatility=${sv.volatility_score} RR=${sv.rr_score} TrapRisk=${sv.trap_probability} (${sv.trend_direction}, grade=${sv.entry_quality}, execute=${sv.execute_trade}). ${reasons.join(" ")}`;
   const entryExitRuleSummary = raw.side === "BUY"
     ? `Strategy rule produced a long (BUY) candidate for "${raw.strategyLabel}".`
     : `Strategy rule produced an exit/short (SELL) candidate for "${raw.strategyLabel}".`;
@@ -2619,7 +2696,7 @@ Current Price: ${indicators.currentPrice?.toFixed(2) ?? "N/A"}, Change: ${indica
   const scoreVectorBlock = raw.map((s, idx) => {
     const sv = mergeAiScoresIntoRaw([s], null, null, scoringCtx)[0]?.score_vector;
     if (!sv) return null;
-    return `Signal[${idx}] ${s.strategyId} ${s.side} pre-scored: Market=${sv.market_strength_score} Trend=${sv.trend_alignment_score} Signal=${sv.signal_strength_score} Volume=${sv.volume_confirmation_score} Volatility=${sv.volatility_score} RR=${sv.rr_score} Trap=${sv.trap_probability} => final=${sv.final_score} (${sv.entry_quality})`;
+    return `Signal[${idx}] ${s.strategyId} ${s.side} pre-scored: Market=${sv.market_strength_score} Trend=${sv.trend_alignment_score} Signal=${sv.signal_strength_score} Volume=${sv.volume_confirmation_score} Volatility=${sv.volatility_score} RR=${sv.rr_score} Trap=${sv.trap_probability} => final=${sv.final_score} grade=${sv.entry_quality} trend=${sv.trend_direction} execute=${sv.execute_trade}`;
   }).filter(Boolean).join("\n");
   const moduleScoresBlock = scoreVectorBlock ? `\n\n7-Module Rule Engine Pre-Scores (your probabilityScore must be consistent with these):\n${scoreVectorBlock}` : "";
 
@@ -2954,8 +3031,9 @@ Deno.serve(async (req: Request) => {
       htfForCtx,
     );
 
-    /** Wall-clock evaluation for TIME_IS / clock exit (Indian sessions → IST; else UTC) */
-    const scanTimeZone = isIndian ? "Asia/Kolkata" : "UTC";
+    /** Wall-clock evaluation: IST for NSE/BSE, America/New_York for US stocks, UTC for crypto/forex */
+    const sessionProfile = resolveMarketSessionProfile(yahooSymbol);
+    const scanTimeZone = sessionProfile.timeZone;
     const maxPerStrategy = 4;
     const allRaw: RawSignal[] = [];
     const realtimeMode = usedInterval !== "1d";
@@ -3016,6 +3094,7 @@ Deno.serve(async (req: Request) => {
           realIndicators,
         scanActions,
         scanTimeZone,
+          sessionProfile,
           maxPerStrategy,
           realtimeMode,
           barMinutesApprox,
@@ -3250,6 +3329,10 @@ Deno.serve(async (req: Request) => {
         customStrategyMeta: rawSig.customScanMeta ?? null,
         presetPriceLevels: rawSig.presetPriceLevels ?? null,
         score_vector: ai.score_vector,
+        /** Convenience top-level fields from score_vector */
+        trend_direction: ai.score_vector.trend_direction,
+        execute_trade: ai.score_vector.execute_trade,
+        entry_quality: ai.score_vector.entry_quality,
       };
     });
 

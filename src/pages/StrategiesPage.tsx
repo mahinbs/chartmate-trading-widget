@@ -50,6 +50,7 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  FlaskConical,
   Loader2,
   Plus,
   RefreshCw,
@@ -61,6 +62,7 @@ import {
 import { toast } from "sonner";
 import { useSubscription } from "@/hooks/useSubscription";
 import { getAlgoStrategyLimits } from "@/lib/algoStrategyLimits";
+import { PaperTradeSetupDialog } from "@/components/trading/PaperTradeSetupDialog";
 
 interface StrategySymbol {
   symbol:       string;
@@ -163,6 +165,7 @@ export default function StrategiesPage() {
   const [showCreate, setShowCreate]     = useState(false);
   const [creating, setCreating]         = useState(false);
   const [form, setForm]                 = useState({ ...EMPTY_FORM });
+  const [paperTradeStrategyId, setPaperTradeStrategyId] = useState<string | null>(null);
 
   const stratLimits = getAlgoStrategyLimits(subscription?.plan_id);
   const canDeleteStrategies = stratLimits?.allowDeleteStrategies ?? false;
@@ -431,7 +434,17 @@ export default function StrategiesPage() {
                       </div>
 
                       {/* Action buttons */}
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setPaperTradeStrategyId(s.id)}
+                          className="border-teal-700/50 text-teal-400 hover:bg-teal-500/10 text-xs"
+                          title="Paper trade when this strategy’s entry conditions are met (scheduled or now)"
+                        >
+                          <FlaskConical className="h-3.5 w-3.5 sm:mr-1" />
+                          <span className="hidden sm:inline">Paper Trade</span>
+                        </Button>
                         <Switch
                           checked={s.is_active}
                           onCheckedChange={() => handleToggle(s.id)}
@@ -907,6 +920,18 @@ export default function StrategiesPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <PaperTradeSetupDialog
+        open={paperTradeStrategyId != null}
+        onOpenChange={(o) => {
+          if (!o) setPaperTradeStrategyId(null);
+        }}
+        preselectedStrategyId={paperTradeStrategyId}
+        onCreated={() => {
+          setPaperTradeStrategyId(null);
+          toast.success("Paper strategy queued. View progress under Active Trades → Pending Paper Strategies.");
+        }}
+      />
     </div>
   );
 }

@@ -1,15 +1,29 @@
 /**
- * NSE algo-guide style presets (ORB, Supertrend 7/3, VWAP bounce, RSI divergence).
- * Uses real OHLCV (+ volume when provided). IST wall-clock rules for ORB.
+ * Algo-guide style presets (ORB, Supertrend 7/3, VWAP bounce, RSI divergence,
+ * Liquidity Sweep + Break of Structure).
+ * Session windows use `MarketSessionProfile` (India / US / crypto / forex).
  */
 
-export type AlgoGuidePresetId = "orb" | "supertrend_7_3" | "vwap_bounce" | "rsi_divergence";
+import type { MarketSessionProfile } from "./marketSession.ts";
+
+export type AlgoGuidePresetId =
+  | "orb"
+  | "supertrend_7_3"
+  | "vwap_bounce"
+  | "rsi_divergence"
+  | "liquidity_sweep_bos";
 
 export function extractAlgoGuidePreset(entryConditions: unknown): AlgoGuidePresetId | null {
   if (!entryConditions || typeof entryConditions !== "object") return null;
   const p = (entryConditions as { algoGuidePreset?: string }).algoGuidePreset;
-  if (p === "orb" || p === "supertrend_7_3" || p === "vwap_bounce" || p === "rsi_divergence") {
-    return p;
+  if (
+    p === "orb" ||
+    p === "supertrend_7_3" ||
+    p === "vwap_bounce" ||
+    p === "rsi_divergence" ||
+    p === "liquidity_sweep_bos"
+  ) {
+    return p as AlgoGuidePresetId;
   }
   return null;
 }
@@ -140,19 +154,20 @@ export type PresetHit = {
   };
 };
 
-/** Toby Crabel ORB: range 9:15–9:30 IST, breakout on 5m close after 9:30 */
+/** Toby Crabel ORB: first 15m range in local session, breakout after range ends */
 export function detectOrbHits(
   t: number[],
   c: number[],
   h: number[],
   l: number[],
-  tz: string,
+  profile: MarketSessionProfile,
 ): PresetHit[] {
   const n = c.length;
   const hits: PresetHit[] = [];
-  const OPEN_START = 9 * 60 + 15;
-  const OPEN_END = 9 * 60 + 30;
-  const AFTER_OPEN = 9 * 60 + 30;
+  const tz = profile.timeZone;
+  const OPEN_START = profile.orbOpenStartMin;
+  const OPEN_END = profile.orbOpenEndMin;
+  const AFTER_OPEN = profile.orbBreakoutAfterMin;
 
   const byDay = new Map<string, number[]>();
   for (let i = 0; i < n; i++) {
@@ -227,17 +242,19 @@ export function detectSupertrendFlipHits(
   l: number[],
   c: number[],
   t: number[],
-  tz: string,
+  profile: MarketSessionProfile,
 ): PresetHit[] {
   const { trend, line } = supertrendSeries(h, l, c, 7, 3);
   const atr = atrSeries(h, l, c, 7);
   const n = c.length;
   const hits: PresetHit[] = [];
-  const SESSION_END = 12 * 60 + 30;
-  const SESSION_START = 9 * 60 + 30;
+  const tz = profile.timeZone;
+  const SESSION_END = profile.supertrendSessionEndMin;
+  const SESSION_START = profile.supertrendSessionStartMin;
   for (let i = 1; i < n; i++) {
     const m = barWallClockMinutes(t[i], tz);
-    if (m == null || m < SESSION_START || m > SESSION_END) continue;
+    if (!profile.supertrend24h && (m == null || m < SESSION_START || m > SESSION_END)) continue;
+    if (profile.supertrend24h && m == null) continue;
     const ar = atr[i];
     if (Number.isFinite(ar) && c[i] > 0 && ar / c[i] < 0.001) continue;
     if (trend[i] === 1 && trend[i - 1] === -1) {
@@ -262,10 +279,10 @@ export function detectSupertrendDualTfHits(
   hSlow: number[],
   lSlow: number[],
   cSlow: number[],
-  tz: string,
+  profile: MarketSessionProfile,
 ): PresetHit[] {
   if (tSlow.length < 15 || tFast.length < 15) {
-    return detectSupertrendFlipHits(hFast, lFast, cFast, tFast, tz);
+    return detectSupertrendFlipHits(hFast, lFast, cFast, tFast, profile);
   }
   const { trend: trendSlow } = supertrendSeries(hSlow, lSlow, cSlow, 7, 3);
   const { trend: trendFast, line: lineFast } = supertrendSeries(hFast, lFast, cFast, 7, 3);
@@ -279,11 +296,13 @@ export function detectSupertrendDualTfHits(
     slowTrendAtFast[i] = trendSlow[j] ?? 0;
   }
   const hits: PresetHit[] = [];
-  const SESSION_END = 12 * 60 + 30;
-  const SESSION_START = 9 * 60 + 30;
+  const tz = profile.timeZone;
+  const SESSION_END = profile.supertrendSessionEndMin;
+  const SESSION_START = profile.supertrendSessionStartMin;
   for (let i = 1; i < nF; i++) {
     const m = barWallClockMinutes(tFast[i], tz);
-    if (m == null || m < SESSION_START || m > SESSION_END) continue;
+    if (!profile.supertrend24h && (m == null || m < SESSION_START || m > SESSION_END)) continue;
+    if (profile.supertrend24h && m == null) continue;
     const st = slowTrendAtFast[i];
     const ar = atrFast[i];
     if (Number.isFinite(ar) && cFast[i] > 0 && ar / cFast[i] < 0.001) continue;
@@ -464,14 +483,14 @@ export function detectVwapBounceHits(
   l: number[],
   c: number[],
   v: number[],
-  tz: string,
+  profile: MarketSessionProfile,
   o?: number[],
 ): PresetHit[] {
   if (!v.length || v.length !== c.length) return [];
   const n = c.length;
   const hits: PresetHit[] = [];
-  /** No new VWAP entries from 14:45 IST (last ~30 min before 15:15 cash close). */
-  const VWAP_LAST_ENTRY_MIN = 14 * 60 + 45;
+  const tz = profile.timeZone;
+  const vwapCutoff = profile.vwapLastEntryBeforeMin;
 
   const byDay = new Map<string, number[]>();
   for (let i = 0; i < n; i++) {
@@ -526,7 +545,8 @@ export function detectVwapBounceHits(
       const i = idxs[k];
       const prev = idxs[k - 1];
       const m = barWallClockMinutes(t[i], tz);
-      if (m == null || m >= VWAP_LAST_ENTRY_MIN) continue;
+      if (m == null) continue;
+      if (vwapCutoff != null && m >= vwapCutoff) continue;
       const vw = vwap[i];
       if (!Number.isFinite(vw)) continue;
       if (touchCount[i] > 2) continue;
@@ -571,4 +591,159 @@ export function detectVwapBounceHits(
     }
   }
   return hits;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STRATEGY 6: Liquidity Sweep + Break of Structure (Smart Money / ICT-style)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type LiquiditySweepBosMeta = {
+  /** Price of the swept liquidity zone (the equal high/low that was taken out) */
+  sweptZonePrice: number;
+  /** Extreme of the sweep candle (sweep low for BUY, sweep high for SELL) */
+  sweepExtreme: number;
+  /** BOS level — the structural pivot that confirmed direction reversal */
+  bosLevel: number;
+  /** Next opposing liquidity zone (TP target) */
+  targetZonePrice: number;
+};
+
+/**
+ * Smart Money / ICT Liquidity Sweep + Break of Structure detector.
+ *
+ * Algorithm:
+ * 1. Cluster swing highs/lows into "liquidity zones" (equal levels within 0.15%).
+ * 2. Detect a sweep: price wicks beyond a zone by ≥ 0.1% then closes back inside.
+ * 3. After the sweep, look for a BOS: a candle that closes beyond the last opposing
+ *    swing point, confirming the intended move.
+ * 4. Entry: on the close of the BOS candle (or the next candle as confirmation).
+ * 5. SL: 1 ATR beyond the sweep extreme.
+ * 6. TP: next opposing liquidity zone.
+ */
+export function detectLiquiditySweepBosHits(
+  c: number[],
+  h: number[],
+  l: number[],
+  lookback = 80,
+  swingWindow = 4,
+  sweepPct = 0.001,   // 0.1% beyond zone
+  clusterPct = 0.0015, // 0.15% clustering tolerance for equal highs/lows
+): PresetHit[] {
+  const n = c.length;
+  if (n < lookback) return [];
+  const hits: PresetHit[] = [];
+
+  const atr7 = atrSeries(h, l, c, 7);
+
+  for (let cursor = lookback; cursor < n - 1; cursor++) {
+    const start = cursor - lookback;
+
+    // ── Step 1: Find swing highs and lows in the lookback window ──────────────
+    const swingHighs: number[] = [];
+    const swingLows: number[] = [];
+    for (let i = start + swingWindow; i < cursor - swingWindow; i++) {
+      let isHigh = true;
+      let isLow = true;
+      for (let j = i - swingWindow; j <= i + swingWindow; j++) {
+        if (j === i) continue;
+        if (h[j] >= h[i]) isHigh = false;
+        if (l[j] <= l[i]) isLow = false;
+      }
+      if (isHigh) swingHighs.push(i);
+      if (isLow) swingLows.push(i);
+    }
+    if (swingHighs.length < 2 || swingLows.length < 2) continue;
+
+    const lastSwingHigh = swingHighs[swingHighs.length - 1];
+    const lastSwingLow = swingLows[swingLows.length - 1];
+
+    // ── Step 2: Cluster equal levels (liquidity zones) ────────────────────────
+    // A zone is formed when two or more swing highs/lows cluster within clusterPct.
+    let bullishZonePrice = NaN; // cluster of equal lows = buy-side liquidity below price
+    let bearishZonePrice = NaN; // cluster of equal highs = sell-side liquidity above price
+
+    for (let a = 0; a < swingHighs.length - 1; a++) {
+      for (let b = a + 1; b < swingHighs.length; b++) {
+        const ia = swingHighs[a];
+        const ib = swingHighs[b];
+        const mid = (h[ia] + h[ib]) / 2;
+        if (Math.abs(h[ia] - h[ib]) / mid < clusterPct) {
+          bearishZonePrice = mid;
+        }
+      }
+    }
+    for (let a = 0; a < swingLows.length - 1; a++) {
+      for (let b = a + 1; b < swingLows.length; b++) {
+        const ia = swingLows[a];
+        const ib = swingLows[b];
+        const mid = (l[ia] + l[ib]) / 2;
+        if (Math.abs(l[ia] - l[ib]) / mid < clusterPct) {
+          bullishZonePrice = mid;
+        }
+      }
+    }
+
+    const prevBar = cursor - 1;
+    const curBar = cursor;
+    const atrVal = atr7[curBar] ?? (h[curBar] - l[curBar]);
+
+    // ── Step 3a: Bullish setup — sweep of a low liquidity zone ───────────────
+    // Price wicks below bullishZonePrice (buyside stops taken) → closes above it → BOS up
+    if (
+      Number.isFinite(bullishZonePrice) &&
+      l[prevBar] < bullishZonePrice * (1 - sweepPct) && // sweep: wick below zone
+      c[prevBar] > bullishZonePrice &&                   // close back above zone
+      c[curBar] > h[lastSwingHigh] &&                    // BOS: current bar closes above prior swing high
+      lastSwingHigh > lastSwingLow                       // structure: high is more recent than low
+    ) {
+      // Next opposing liquidity (bearish zone) becomes TP
+      const tp = Number.isFinite(bearishZonePrice)
+        ? bearishZonePrice
+        : h[lastSwingHigh] + (h[lastSwingHigh] - bullishZonePrice) * 1.5;
+      const sl = l[prevBar] - atrVal;
+
+      hits.push({
+        i: curBar,
+        side: "BUY",
+        meta: {
+          sweptZonePrice: bullishZonePrice,
+          sweepExtreme: l[prevBar],
+          bosLevel: h[lastSwingHigh],
+          targetZonePrice: tp,
+        } as unknown as PresetHit["meta"],
+      });
+    }
+
+    // ── Step 3b: Bearish setup — sweep of a high liquidity zone ──────────────
+    if (
+      Number.isFinite(bearishZonePrice) &&
+      h[prevBar] > bearishZonePrice * (1 + sweepPct) && // sweep: wick above zone
+      c[prevBar] < bearishZonePrice &&                   // close back below zone
+      c[curBar] < l[lastSwingLow] &&                     // BOS: current bar closes below prior swing low
+      lastSwingLow > lastSwingHigh                       // structure: low is more recent than high
+    ) {
+      const tp = Number.isFinite(bullishZonePrice)
+        ? bullishZonePrice
+        : l[lastSwingLow] - (bearishZonePrice - l[lastSwingLow]) * 1.5;
+
+      hits.push({
+        i: curBar,
+        side: "SELL",
+        meta: {
+          sweptZonePrice: bearishZonePrice,
+          sweepExtreme: h[prevBar],
+          bosLevel: l[lastSwingLow],
+          targetZonePrice: tp,
+        } as unknown as PresetHit["meta"],
+      });
+    }
+  }
+
+  // Deduplicate: keep only the last hit per side per 10-bar window
+  const deduped: PresetHit[] = [];
+  for (const hit of hits) {
+    const prev = deduped.findLast((x) => x.side === hit.side);
+    if (!prev || hit.i - prev.i > 10) deduped.push(hit);
+  }
+  return deduped;
 }

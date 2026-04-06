@@ -63,6 +63,7 @@ import { LiveEntryTrackingSection } from "@/components/prediction/LiveEntryTrack
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { tradeTrackingService } from "@/services/tradeTrackingService";
+import { isUsdDenominatedSymbol } from "@/lib/tradingview-symbols";
 
 export interface PostAnalysisContext {
   result?: string;
@@ -812,6 +813,7 @@ function SignalAnalysisCard(props: {
     trackingSignalKey,
     compactZone,
   } = props;
+  const currSymbol = isUsdDenominatedSymbol(symbolForExecution) ? "$" : "₹";
   const isPast = !row.isLive && row.entryDate !== todayKey;
   const barMs = entryBarMs(row);
   const uiExp =
@@ -959,6 +961,7 @@ function SignalAnalysisCard(props: {
             >
               {verdictUiLabel(row.verdict)}
             </Badge>
+            {/* Start Tracking temporarily hidden — use Paper Trade button on strategy instead
             {onStartTradeSession ? (
               <Button
                 type="button"
@@ -977,6 +980,7 @@ function SignalAnalysisCard(props: {
                 )}
               </Button>
             ) : null}
+            */}
           </div>
         </div>
       </div>
@@ -995,7 +999,7 @@ function SignalAnalysisCard(props: {
             {pointUi ? `${pointUi.priceLabel}: ` : "Price: "}
           </span>
           <span className="font-mono text-white">
-            {row.priceAtEntry?.toFixed?.(2) ?? row.priceAtEntry}
+            {currSymbol}{row.priceAtEntry?.toFixed?.(2) ?? row.priceAtEntry}
           </span>
         </p>
         {slTpHint ? (
@@ -1148,7 +1152,7 @@ function SignalAnalysisCard(props: {
         </div>
       ) : null}
 
-      {row.score_vector ? <ScorecardPanel sv={row.score_vector} /> : null}
+      {row.score_vector ? <ScorecardPanel sv={row.score_vector} symbol={symbolForExecution} /> : null}
 
       <div className="space-y-1">
         <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">
@@ -1339,7 +1343,8 @@ function reviewSetupReason(sv: ScoreVector): string {
   return `Review before entry: ${core}.${weak}`;
 }
 
-function ScorecardPanel({ sv }: { sv: ScoreVector }) {
+function ScorecardPanel({ sv, symbol }: { sv: ScoreVector; symbol?: string }) {
+  const currSymbol = symbol && isUsdDenominatedSymbol(symbol) ? "$" : "₹";
   const [open, setOpen] = useState(false);
   const qc = qualityColors(sv.entry_quality);
   const gc = gateColors(sv.execute_trade);
@@ -1460,7 +1465,7 @@ function ScorecardPanel({ sv }: { sv: ScoreVector }) {
                     Stop Loss
                   </p>
                   <p className="text-sm font-mono text-red-300">
-                    {sv.stop_loss_price.toFixed(2)}
+                    {currSymbol}{sv.stop_loss_price.toFixed(2)}
                   </p>
                 </div>
               )}
@@ -1470,7 +1475,7 @@ function ScorecardPanel({ sv }: { sv: ScoreVector }) {
                     Target
                   </p>
                   <p className="text-sm font-mono text-emerald-300">
-                    {sv.take_profit_price.toFixed(2)}
+                    {currSymbol}{sv.take_profit_price.toFixed(2)}
                   </p>
                 </div>
               )}

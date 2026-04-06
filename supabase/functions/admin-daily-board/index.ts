@@ -1,24 +1,11 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
-
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type"
 };
-
-type BoardRow = {
-  symbol: string;
-  display_name: string | null;
-  sort_order: number;
-  timeframe: string;
-  investment: number;
-  profile: Record<string, unknown>;
-};
-
-type AuthContext = { userId: string | null; email: string | null; isServiceRole: boolean };
-
-function parseTimeframeMinutes(timeframe: string): number {
+function parseTimeframeMinutes(timeframe) {
   const match = /^(\d+)(m|h|d|w)$/i.exec((timeframe || "1d").trim());
   if (!match) return 1440;
   const value = Number(match[1]);
@@ -28,79 +15,88 @@ function parseTimeframeMinutes(timeframe: string): number {
   if (unit === "d") return value * 1440;
   return value * 10080;
 }
-
-function computeExpiryIso(timeframe: string): string {
+function computeExpiryIso(timeframe) {
   const minutes = parseTimeframeMinutes(timeframe);
   return new Date(Date.now() + minutes * 60 * 1000).toISOString();
 }
-
-function todayUtcDate(): string {
+function todayUtcDate() {
   return new Date().toISOString().slice(0, 10);
 }
-
-function normalizeProbability(raw: unknown): number | null {
+function normalizeProbability(raw) {
   if (typeof raw !== "number" || Number.isNaN(raw)) return null;
   return raw <= 1 ? Number((raw * 100).toFixed(2)) : Number(raw.toFixed(2));
 }
-
-async function getAuthContext(req: Request, supabaseClient: ReturnType<typeof createClient>): Promise<AuthContext> {
+async function getAuthContext(req, supabaseClient) {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) throw new Error("Missing authorization header");
   const token = authHeader.replace("Bearer ", "");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  if (token && token === serviceRoleKey) return { userId: null, email: null, isServiceRole: true };
+  if (token && token === serviceRoleKey) return {
+    userId: null,
+    email: null,
+    isServiceRole: true
+  };
   const { data, error } = await supabaseClient.auth.getUser(token);
   if (error || !data.user) throw new Error("Invalid or expired token");
-  return { userId: data.user.id, email: data.user.email ?? null, isServiceRole: false };
+  return {
+    userId: data.user.id,
+    email: data.user.email ?? null,
+    isServiceRole: false
+  };
 }
-
-async function assertAdmin(auth: AuthContext, supabaseClient: ReturnType<typeof createClient>) {
+async function assertAdmin(auth, supabaseClient) {
   if (auth.isServiceRole) return;
-  const { data: roleRow, error } = await supabaseClient
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", auth.userId)
-    .maybeSingle();
+  const { data: roleRow, error } = await supabaseClient.from("user_roles").select("role").eq("user_id", auth.userId).maybeSingle();
   if (error) throw new Error(`Failed to validate role: ${error.message}`);
   const hasAdminRole = roleRow?.role === "admin" || roleRow?.role === "super_admin";
   if (!hasAdminRole) throw new Error("Forbidden: admin access required");
 }
-
-async function callPredictMovement(symbol: string, timeframe: string, investment: number, profile: Record<string, unknown>) {
+async function callPredictMovement(symbol, timeframe, investment, profile) {
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  const horizons = [60, 240, 1440, 10080];
-
-  let response: Response;
+  const horizons = [
+    60,
+    240,
+    1440,
+    10080
+  ];
+  let response;
   try {
     response = await fetch(`${supabaseUrl}/functions/v1/predict-movement`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceRoleKey}`, apikey: serviceRoleKey },
-      body: JSON.stringify({ symbol, investment, timeframe, focusTimeframe: timeframe, horizons, ...profile }),
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${serviceRoleKey}`,
+        apikey: serviceRoleKey
+      },
+      body: JSON.stringify({
+        symbol,
+        investment,
+        timeframe,
+        focusTimeframe: timeframe,
+        horizons,
+        ...profile
+      })
     });
   } catch (networkErr) {
     throw new Error(`Network error calling predict-movement for ${symbol}: ${networkErr?.message ?? networkErr}`);
   }
-
-  let payload: Record<string, unknown>;
+  let payload;
   try {
     payload = await response.json();
-  } catch {
-    const text = await response.text().catch(() => "(empty body)");
+  } catch  {
+    const text = await response.text().catch(()=>"(empty body)");
     throw new Error(`predict-movement returned non-JSON (status ${response.status}) for ${symbol}: ${text.slice(0, 300)}`);
   }
-
   if (!response.ok) {
     const detail = payload?.details ?? payload?.error ?? `status ${response.status}`;
     throw new Error(`predict-movement failed for ${symbol}: ${detail}`);
   }
-
   return payload;
 }
-
-async function generateBoardRows(rows: BoardRow[], generatedForDate: string, generatedBy: string | null, refreshReason: "manual" | "expiry" | "daily" | "auto") {
+async function generateBoardRows(rows, generatedForDate, generatedBy, refreshReason) {
   const generatedRows = [];
-  for (const row of rows) {
+  for (const row of rows){
     const prediction = await callPredictMovement(row.symbol, row.timeframe || "1d", Number(row.investment || 10000), row.profile || {});
     const forecast = prediction?.geminiForecast?.forecasts?.[0];
     const probabilities = forecast?.probabilities || {};
@@ -120,72 +116,109 @@ async function generateBoardRows(rows: BoardRow[], generatedForDate: string, gen
       generated_by: generatedBy,
       refresh_reason: refreshReason,
       is_active: true,
-      generated_at: new Date().toISOString(),
+      generated_at: new Date().toISOString()
     });
   }
   return generatedRows;
 }
-
-serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-
+serve(async (req)=>{
+  if (req.method === "OPTIONS") return new Response("ok", {
+    headers: corsHeaders
+  });
   try {
-    const supabaseClient = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
-      { auth: { autoRefreshToken: false, persistSession: false } },
-    );
-
+    const supabaseClient = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "", {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    });
     const auth = await getAuthContext(req, supabaseClient);
     await assertAdmin(auth, supabaseClient);
-
     if (req.method === "GET") {
       const url = new URL(req.url);
       const date = url.searchParams.get("date");
-      let query = supabaseClient.from("daily_predictions_board").select("*").order("generated_for_date", { ascending: false }).order("sort_order", { ascending: true });
+      let query = supabaseClient.from("daily_predictions_board").select("*").order("generated_for_date", {
+        ascending: false
+      }).order("sort_order", {
+        ascending: true
+      });
       if (date) query = query.eq("generated_for_date", date);
       const { data, error } = await query.limit(200);
       if (error) throw new Error(`Failed to fetch board: ${error.message}`);
-      return new Response(JSON.stringify({ rows: data ?? [] }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({
+        rows: data ?? []
+      }), {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json"
+        }
+      });
     }
-
     if (req.method !== "POST") {
-      return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({
+        error: "Method not allowed"
+      }), {
+        status: 405,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json"
+        }
+      });
     }
-
-    const body = await req.json().catch(() => ({}));
+    const body = await req.json().catch(()=>({}));
     const action = body?.action || "generate";
     const generatedForDate = body?.date || todayUtcDate();
-
     if (action === "generate" || action === "daily") {
-      const { data: watchlist, error } = await supabaseClient
-        .from("admin_symbol_watchlist")
-        .select("symbol, display_name, sort_order, timeframe, investment, profile, is_active")
-        .eq("is_active", true)
-        .order("sort_order", { ascending: true })
-        .limit(10);
+      const { data: watchlist, error } = await supabaseClient.from("admin_symbol_watchlist").select("symbol, display_name, sort_order, timeframe, investment, profile, is_active").eq("is_active", true).order("sort_order", {
+        ascending: true
+      }).limit(10);
       if (error) throw new Error(`Failed to fetch watchlist: ${error.message}`);
       if (!watchlist || watchlist.length === 0) {
-        return new Response(JSON.stringify({ message: "No active symbols in watchlist", updated: 0 }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({
+          message: "No active symbols in watchlist",
+          updated: 0
+        }), {
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json"
+          }
+        });
       }
-
-      const rows = await generateBoardRows(
-        (watchlist as any[]).map((r) => ({ symbol: r.symbol, display_name: r.display_name, sort_order: r.sort_order, timeframe: r.timeframe, investment: Number(r.investment), profile: r.profile || {} })),
-        generatedForDate,
-        auth.userId,
-        action === "daily" ? "daily" : "manual",
-      );
-      const { error: upsertError } = await supabaseClient.from("daily_predictions_board").upsert(rows, { onConflict: "generated_for_date,symbol" });
+      const rows = await generateBoardRows(watchlist.map((r)=>({
+          symbol: r.symbol,
+          display_name: r.display_name,
+          sort_order: r.sort_order,
+          timeframe: r.timeframe,
+          investment: Number(r.investment),
+          profile: r.profile || {}
+        })), generatedForDate, auth.userId, action === "daily" ? "daily" : "manual");
+      const { error: upsertError } = await supabaseClient.from("daily_predictions_board").upsert(rows, {
+        onConflict: "generated_for_date,symbol"
+      });
       if (upsertError) throw new Error(`Failed to upsert board rows: ${upsertError.message}`);
-      return new Response(JSON.stringify({ success: true, action, generatedForDate, updated: rows.length }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({
+        success: true,
+        action,
+        generatedForDate,
+        updated: rows.length
+      }), {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json"
+        }
+      });
     }
-
     if (action === "publish") {
       const { symbol: pubSymbol, display_name: pubDisplayName, timeframe: pubTimeframe, investment: pubInvestment, prediction_payload: predictionPayload } = body;
       if (!pubSymbol || !predictionPayload) {
-        return new Response(JSON.stringify({ error: "Missing symbol or prediction_payload for publish" }), {
+        return new Response(JSON.stringify({
+          error: "Missing symbol or prediction_payload for publish"
+        }), {
           status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json"
+          }
         });
       }
       const symbolNorm = String(pubSymbol).trim().toUpperCase().replace(/^.*:/, "");
@@ -207,80 +240,81 @@ serve(async (req) => {
         generated_by: auth.userId,
         refresh_reason: "manual",
         is_active: true,
-        generated_at: new Date().toISOString(),
+        generated_at: new Date().toISOString()
       };
       // Preserve sort_order if this symbol already exists for this date, else append
-      const { data: existingForSymbol } = await supabaseClient
-        .from("daily_predictions_board")
-        .select("sort_order")
-        .eq("generated_for_date", generatedForDate)
-        .eq("symbol", symbolNorm)
-        .maybeSingle();
+      const { data: existingForSymbol } = await supabaseClient.from("daily_predictions_board").select("sort_order").eq("generated_for_date", generatedForDate).eq("symbol", symbolNorm).maybeSingle();
       if (existingForSymbol?.sort_order != null) {
-        (row as any).sort_order = (existingForSymbol as any).sort_order;
+        row.sort_order = existingForSymbol.sort_order;
       } else {
-        const { data: lastRow } = await supabaseClient
-          .from("daily_predictions_board")
-          .select("sort_order")
-          .eq("generated_for_date", generatedForDate)
-          .order("sort_order", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        (row as any).sort_order = lastRow?.sort_order != null ? (lastRow as any).sort_order + 1 : 0;
+        const { data: lastRow } = await supabaseClient.from("daily_predictions_board").select("sort_order").eq("generated_for_date", generatedForDate).order("sort_order", {
+          ascending: false
+        }).limit(1).maybeSingle();
+        row.sort_order = lastRow?.sort_order != null ? lastRow.sort_order + 1 : 0;
       }
-      const { error: upsertError } = await supabaseClient.from("daily_predictions_board").upsert(row, { onConflict: "generated_for_date,symbol" });
+      const { error: upsertError } = await supabaseClient.from("daily_predictions_board").upsert(row, {
+        onConflict: "generated_for_date,symbol"
+      });
       if (upsertError) throw new Error(`Failed to publish: ${upsertError.message}`);
-      return new Response(JSON.stringify({ success: true, action: "publish", symbol: symbolNorm, generated_for_date: generatedForDate }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({
+        success: true,
+        action: "publish",
+        symbol: symbolNorm,
+        generated_for_date: generatedForDate
+      }), {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json"
+        }
+      });
     }
-
     if (action === "delete") {
       const { id: deleteId } = body;
       if (!deleteId) {
-        return new Response(JSON.stringify({ error: "Missing id for delete" }), {
+        return new Response(JSON.stringify({
+          error: "Missing id for delete"
+        }), {
           status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json"
+          }
         });
       }
-      const { error: deleteError } = await supabaseClient
-        .from("daily_predictions_board")
-        .delete()
-        .eq("id", String(deleteId));
+      const { error: deleteError } = await supabaseClient.from("daily_predictions_board").delete().eq("id", String(deleteId));
       if (deleteError) throw new Error(`Failed to delete: ${deleteError.message}`);
-      return new Response(JSON.stringify({ success: true, action: "delete", id: deleteId }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      return new Response(JSON.stringify({
+        success: true,
+        action: "delete",
+        id: deleteId
+      }), {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json"
+        }
       });
     }
-
     if (action === "re_predict") {
-      const {
-        symbol: repSymbol,
-        display_name: repDisplayName,
-        timeframe: repTimeframe,
-        investment: repInvestment,
-        generated_for_date: repDate,
-      } = body;
-
+      const { symbol: repSymbol, display_name: repDisplayName, timeframe: repTimeframe, investment: repInvestment, generated_for_date: repDate } = body;
       if (!repSymbol) {
-        return new Response(JSON.stringify({ error: "Missing symbol for re_predict" }), {
-          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        return new Response(JSON.stringify({
+          error: "Missing symbol for re_predict"
+        }), {
+          status: 400,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json"
+          }
         });
       }
-
       // Use the date of the existing row if provided, otherwise today
-      const repForDate = (typeof repDate === "string" && repDate.trim()) ? repDate.trim() : generatedForDate;
+      const repForDate = typeof repDate === "string" && repDate.trim() ? repDate.trim() : generatedForDate;
       const repTf = repTimeframe || "1d";
       const repInv = Number(repInvestment || 10000);
       const repSymNorm = String(repSymbol).trim().toUpperCase();
-
       // Fetch existing row's sort_order so we don't reset it to 0
-      const { data: existingRow } = await supabaseClient
-        .from("daily_predictions_board")
-        .select("sort_order, profile")
-        .eq("generated_for_date", repForDate)
-        .eq("symbol", repSymNorm)
-        .maybeSingle();
-
-      const repProfile: Record<string, unknown> = (existingRow as any)?.profile || {};
+      const { data: existingRow } = await supabaseClient.from("daily_predictions_board").select("sort_order, profile").eq("generated_for_date", repForDate).eq("symbol", repSymNorm).maybeSingle();
+      const repProfile = existingRow?.profile || {};
       const baseProfile = {
         riskTolerance: repProfile.riskTolerance ?? "medium",
         tradingStyle: repProfile.tradingStyle ?? "swing_trading",
@@ -288,25 +322,28 @@ serve(async (req) => {
         stopLossPercentage: repProfile.stopLossPercentage ?? 5,
         targetProfitPercentage: repProfile.targetProfitPercentage ?? 15,
         leverage: repProfile.leverage ?? 1,
-        marginType: repProfile.marginType ?? "cash",
+        marginType: repProfile.marginType ?? "cash"
       };
-
-      let prediction: Record<string, unknown>;
+      let prediction;
       try {
         prediction = await callPredictMovement(repSymNorm, repTf, repInv, baseProfile);
       } catch (predErr) {
         const msg = predErr instanceof Error ? predErr.message : String(predErr);
         console.error(`re_predict: callPredictMovement failed — ${msg}`);
-        return new Response(JSON.stringify({ error: `Prediction failed: ${msg}` }), {
-          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        return new Response(JSON.stringify({
+          error: `Prediction failed: ${msg}`
+        }), {
+          status: 500,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json"
+          }
         });
       }
-
-      const gf = prediction?.geminiForecast as Record<string, unknown> | undefined;
-      const forecast = (gf?.forecasts as any[])?.[0];
-      const probs: Record<string, number> = forecast?.probabilities || {};
+      const gf = prediction?.geminiForecast;
+      const forecast = gf?.forecasts?.[0];
+      const probs = forecast?.probabilities || {};
       const maxProb = Math.max(Number(probs.up ?? 0), Number(probs.down ?? 0), Number(probs.sideways ?? 0));
-
       const slimPayload = {
         symbol: prediction?.symbol,
         currentPrice: prediction?.currentPrice,
@@ -317,71 +354,101 @@ serve(async (req) => {
         opportunities: prediction?.opportunities,
         geminiForecast: gf ? {
           action_signal: gf.action_signal,
-          forecasts: (gf.forecasts as any[])?.slice(0, 4),
+          forecasts: gf.forecasts?.slice(0, 4),
           support_resistance: gf.support_resistance,
           positioning_guidance: gf.positioning_guidance,
           expected_roi: gf.expected_roi,
           risk_grade: gf.risk_grade,
           deep_analysis: gf.deep_analysis,
-          market_context: gf.market_context,
-        } : undefined,
+          market_context: gf.market_context
+        } : undefined
       };
-
       const repRow = {
         generated_for_date: repForDate,
         symbol: repSymNorm,
         display_name: repDisplayName || repSymNorm,
-        sort_order: (existingRow as any)?.sort_order ?? 0,
+        sort_order: existingRow?.sort_order ?? 0,
         timeframe: repTf,
         investment: repInv,
         profile: baseProfile,
         prediction_payload: slimPayload,
         probability_score: normalizeProbability(maxProb),
-        action_signal: (gf?.action_signal as any)?.action || null,
+        action_signal: gf?.action_signal?.action || null,
         expires_at: computeExpiryIso(repTf),
         generated_by: auth.userId,
         refresh_reason: "re_predict",
         is_active: true,
-        generated_at: new Date().toISOString(),
+        generated_at: new Date().toISOString()
       };
-
-      const { error: upsertError } = await supabaseClient
-        .from("daily_predictions_board")
-        .upsert(repRow, { onConflict: "generated_for_date,symbol" });
+      const { error: upsertError } = await supabaseClient.from("daily_predictions_board").upsert(repRow, {
+        onConflict: "generated_for_date,symbol"
+      });
       if (upsertError) throw new Error(`Failed to re_predict upsert: ${upsertError.message}`);
-
-      return new Response(JSON.stringify({ success: true, action: "re_predict", symbol: repSymNorm, generated_for_date: repForDate }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      return new Response(JSON.stringify({
+        success: true,
+        action: "re_predict",
+        symbol: repSymNorm,
+        generated_for_date: repForDate
+      }), {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json"
+        }
       });
     }
-
     if (action === "refresh_expired") {
-      const { data: expiredRows, error: expiredError } = await supabaseClient
-        .from("daily_predictions_board")
-        .select("symbol, display_name, sort_order, timeframe, investment, profile")
-        .eq("generated_for_date", generatedForDate)
-        .eq("is_active", true)
-        .lte("expires_at", new Date().toISOString())
-        .order("sort_order", { ascending: true });
+      const { data: expiredRows, error: expiredError } = await supabaseClient.from("daily_predictions_board").select("symbol, display_name, sort_order, timeframe, investment, profile").eq("generated_for_date", generatedForDate).eq("is_active", true).lte("expires_at", new Date().toISOString()).order("sort_order", {
+        ascending: true
+      });
       if (expiredError) throw new Error(`Failed to fetch expired rows: ${expiredError.message}`);
       if (!expiredRows || expiredRows.length === 0) {
-        return new Response(JSON.stringify({ success: true, action, generatedForDate, updated: 0 }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({
+          success: true,
+          action,
+          generatedForDate,
+          updated: 0
+        }), {
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json"
+          }
+        });
       }
-
-      const rows = await generateBoardRows(expiredRows as any, generatedForDate, auth.userId, "expiry");
-      const { error: upsertError } = await supabaseClient.from("daily_predictions_board").upsert(rows, { onConflict: "generated_for_date,symbol" });
+      const rows = await generateBoardRows(expiredRows, generatedForDate, auth.userId, "expiry");
+      const { error: upsertError } = await supabaseClient.from("daily_predictions_board").upsert(rows, {
+        onConflict: "generated_for_date,symbol"
+      });
       if (upsertError) throw new Error(`Failed to refresh rows: ${upsertError.message}`);
-      return new Response(JSON.stringify({ success: true, action, generatedForDate, updated: rows.length }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({
+        success: true,
+        action,
+        generatedForDate,
+        updated: rows.length
+      }), {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json"
+        }
+      });
     }
-
-    return new Response(JSON.stringify({ error: `Unsupported action: ${action}` }), {
+    return new Response(JSON.stringify({
+      error: `Unsupported action: ${action}`
+    }), {
       status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "application/json"
+      }
     });
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message ?? "Internal server error" }), {
+    return new Response(JSON.stringify({
+      error: error.message ?? "Internal server error"
+    }), {
       status: error.message?.includes("Forbidden") ? 403 : 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "application/json"
+      }
     });
   }
 });

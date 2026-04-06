@@ -7,21 +7,12 @@ import {
   parseGuideRiskGates,
 } from "./algoGuideRiskGates.ts";
 import { extractAlgoGuidePreset } from "./algoGuideDetectors.ts";
+import {
+  resolveMarketSessionProfile,
+  wallClockMinutesNowInZone,
+} from "./marketSession.ts";
 // deno-lint-ignore no-explicit-any
 type SupabaseLike = any;
-
-/** IST wall-clock minutes (hh*60 + mm) */
-function istMinutesNow(): number {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Kolkata",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(new Date());
-  const hh = Number(parts.find((p) => p.type === "hour")?.value ?? 0);
-  const mm = Number(parts.find((p) => p.type === "minute")?.value ?? 0);
-  return hh * 60 + mm;
-}
 
 /** IST weekday: 0=Sun .. 4=Thu .. 6=Sat */
 function istWeekday(): number {
@@ -74,6 +65,8 @@ export type PendingConditionalRow = {
   deploy_overrides?: Record<string, unknown> | null;
   /** Included in stream-conditional-tick select to detect queued-for-monitor rows */
   error_message?: string | null;
+  /** When true, entry creates an active_trades row directly (PAPER- prefix) instead of going through OpenAlgo */
+  is_paper_trade?: boolean;
 };
 
 /**
@@ -251,21 +244,38 @@ export async function tryExecutePendingRow(
     ? merged.risk_config as Record<string, unknown>
     : {};
 
-  // 4.2 First-15-min block: no entries before 09:30 IST
+  // Yahoo-style symbol + session profile (must match strategy-entry-signals)
+  let signalSymbol = String(row.symbol).toUpperCase();
+  const exUpper = String(row.exchange ?? "").toUpperCase();
+  if (exUpper === "NSE" && !signalSymbol.endsWith(".NS") && !signalSymbol.endsWith(".BO")) {
+    signalSymbol += ".NS";
+  } else if (exUpper === "BSE" && !signalSymbol.endsWith(".BO") && !signalSymbol.endsWith(".NS")) {
+    signalSymbol += ".BO";
+  }
+  const sessionProf = resolveMarketSessionProfile(signalSymbol);
+
+  // 4.2 Opening-range block: no entries before local ORB window ends (IST / US ET / UTC crypto)
   const blockFirst = (entryRaw as Record<string, unknown> | null)?.algoGuideBlockFirstSessionMinutes;
-  if (blockFirst && istMinutesNow() < 9 * 60 + 30) {
-    await setPendingReason(supabase, row.id, "Waiting for market open (09:30 IST) — first 15 min blocked.");
-    return "not_matched";
+  if (blockFirst) {
+    const localMin = wallClockMinutesNowInZone(sessionProf.timeZone);
+    if (localMin != null && localMin < sessionProf.orbBreakoutAfterMin) {
+      await setPendingReason(
+        supabase,
+        row.id,
+        `Waiting for session open (${sessionProf.timeZone}) — no entries before ${Math.floor(sessionProf.orbBreakoutAfterMin / 60)}:${String(sessionProf.orbBreakoutAfterMin % 60).padStart(2, "0")} local.`,
+      );
+      return "not_matched";
+    }
   }
 
-  // 4.3 Expiry day filter: skip Thursdays for NSE derivatives
-  if (riskCfg.blockExpiryDays && istWeekday() === 4) {
+  // 4.3 Expiry day filter: NSE-style Thursday skip (Indian symbols only)
+  if (riskCfg.blockExpiryDays && sessionProf.kind === "india_equity" && istWeekday() === 4) {
     await setPendingReason(supabase, row.id, "Skipped: expiry day (Thursday) — blockExpiryDays enabled.");
     return "not_matched";
   }
 
-  // 4.1 VIX filter: block trades when volatility is outside acceptable range
-  if (preset) {
+  // 4.1 India VIX filter (Indian equities only — no India VIX for US/crypto/forex)
+  if (preset && sessionProf.kind === "india_equity") {
     const vix = await fetchIndiaVix();
     if (vix != null) {
       let vixBlocked = false;
@@ -277,6 +287,9 @@ export async function tryExecutePendingRow(
       } else if (preset === "vwap_bounce" && vix < 11) {
         vixBlocked = true;
         vixRange = ">11";
+      } else if (preset === "liquidity_sweep_bos" && (vix < 12 || vix > 30)) {
+        vixBlocked = true;
+        vixRange = "12–30";
       }
       if (vixBlocked) {
         await setPendingReason(supabase, row.id, `VIX ${vix.toFixed(1)} outside range (${vixRange}) for ${preset}. Waiting.`);
@@ -286,6 +299,10 @@ export async function tryExecutePendingRow(
   }
 
   const customId = `custom_${strategy.id}`;
+  const tradingModeUpper = String(merged.trading_mode ?? "BOTH").toUpperCase();
+  /** Request both scan sides when strategy is BOTH; LONG/SHORT limit signals to one side (row.action is not authoritative). */
+  const signalsRequestAction =
+    tradingModeUpper === "LONG" ? "BUY" : tradingModeUpper === "SHORT" ? "SELL" : "BOTH";
   const checkHeaders: Record<string, string> = { "Content-Type": "application/json" };
   if (entryDigestSecret) {
     checkHeaders["x-digest-secret"] = entryDigestSecret;
@@ -300,22 +317,13 @@ export async function tryExecutePendingRow(
     intradayInterval = "5m";
   }
 
-  // Append exchange suffix so strategy-entry-signals data providers resolve Indian stocks correctly
-  let signalSymbol = String(row.symbol).toUpperCase();
-  const exUpper = String(row.exchange ?? "").toUpperCase();
-  if (exUpper === "NSE" && !signalSymbol.endsWith(".NS") && !signalSymbol.endsWith(".BO")) {
-    signalSymbol += ".NS";
-  } else if (exUpper === "BSE" && !signalSymbol.endsWith(".BO") && !signalSymbol.endsWith(".NS")) {
-    signalSymbol += ".BO";
-  }
-
   const checkRes = await fetch(`${supabaseUrl}/functions/v1/strategy-entry-signals`, {
     method: "POST",
     headers: checkHeaders,
     body: JSON.stringify({
       symbol: signalSymbol,
       strategies: [],
-      action: row.action,
+      action: signalsRequestAction,
       days: 90,
       preferIntraday: true,
       intradayInterval,
@@ -356,18 +364,29 @@ export async function tryExecutePendingRow(
   }
 
   const signals = Array.isArray(checkData?.signals) ? checkData.signals : [];
+
+  const sideMatchesTradingMode = (s: any): boolean => {
+    const side = String(s?.side ?? "").toUpperCase();
+    if (tradingModeUpper === "LONG") return side === "BUY";
+    if (tradingModeUpper === "SHORT") return side === "SELL";
+    return side === "BUY" || side === "SELL";
+  };
+
   const matchedSignal = signals.find((s: any) =>
     String(s?.strategyId ?? "") === customId &&
-    String(s?.side ?? "").toUpperCase() === String(row.action).toUpperCase() &&
+    sideMatchesTradingMode(s) &&
     Boolean(s?.isLive) &&
     !Boolean(s?.isPredicted),
   );
   const achieved = Boolean(matchedSignal);
+  const resolvedAction: "BUY" | "SELL" = achieved
+    ? (String((matchedSignal as any)?.side ?? "").toUpperCase() === "SELL" ? "SELL" : "BUY")
+    : "BUY";
 
   if (!achieved) {
     const sideCandidates = signals.filter((s: any) =>
       String(s?.strategyId ?? "") === customId &&
-      String(s?.side ?? "").toUpperCase() === String(row.action).toUpperCase() &&
+      sideMatchesTradingMode(s) &&
       !Boolean(s?.isPredicted)
     );
     const nearest = sideCandidates[0] as Record<string, unknown> | undefined;
@@ -376,7 +395,7 @@ export async function tryExecutePendingRow(
       : [];
     const auditLines = Array.isArray(auditLinesRaw)
       ? auditLinesRaw
-        .slice(0, 12)
+        .slice(0, 28)
         .map((l) => `${l?.ok ? "PASS" : "FAIL"} ${String(l?.label ?? "").replace(/\s+/g, " ").trim()}`)
         .filter(Boolean)
       : [];
@@ -390,7 +409,7 @@ export async function tryExecutePendingRow(
     const reason = nearest
       ? [
         "No live entry signal yet.",
-        `State: LIVE_BAR=${liveFlag} SIDE=${String(row.action).toUpperCase()} PRICE=${pxText}${ts ? ` TIME=${ts}` : ""}${strategyKind ? ` KIND=${strategyKind}` : ""}`,
+        `State: LIVE_BAR=${liveFlag} SIDE=${String((nearest as any)?.side ?? row.action).toUpperCase()} PRICE=${pxText}${ts ? ` TIME=${ts}` : ""}${strategyKind ? ` KIND=${strategyKind}` : ""}`,
         ...(auditLines.length > 0
           ? [`Checks: ${passCount} pass / ${failCount} fail`, ...auditLines]
           : []),
@@ -400,8 +419,7 @@ export async function tryExecutePendingRow(
     return "not_matched";
   }
 
-  const symU = String(row.symbol).toUpperCase();
-  const riskTz = symU.endsWith(".NS") || symU.endsWith(".BO") ? "Asia/Kolkata" : "UTC";
+  const riskTz = sessionProf.timeZone;
   const gateCfg = parseGuideRiskGates(merged.risk_config, riskTz);
   // Only count strategy-linked algo trades (not paper predictions) toward position limit
   const { count: openPosCount } = await supabase
@@ -426,6 +444,84 @@ export async function tryExecutePendingRow(
       `Entry blocked by risk gate (${gateDeny.code}): ${gateDeny.reason}`,
     );
     return "risk_blocked";
+  }
+
+  // ── Paper trade path: skip broker entirely, insert active_trades directly ────
+  if (row.is_paper_trade) {
+    let entryPxPaper = Number((matchedSignal as any)?.priceAtEntry);
+    if (!Number.isFinite(entryPxPaper) || entryPxPaper <= 0) {
+      const fallback = signals.map((s: any) => Number(s?.priceAtEntry)).find((n: number) =>
+        Number.isFinite(n) && n > 0
+      );
+      entryPxPaper = fallback ?? 0;
+    }
+
+    const slPctPaper = merged.stop_loss_pct != null ? Number(merged.stop_loss_pct) : 2;
+    const tpPctPaper = merged.take_profit_pct != null ? Number(merged.take_profit_pct) : 4;
+    const isSellPaper = resolvedAction === "SELL";
+    const presetLevelsPaper = (matchedSignal as any)?.presetPriceLevels as
+      { stopLossPrice?: number; takeProfitPrice?: number } | null | undefined;
+    const slPricePaper = (presetLevelsPaper?.stopLossPrice != null && Number.isFinite(presetLevelsPaper.stopLossPrice))
+      ? presetLevelsPaper.stopLossPrice
+      : (isSellPaper ? entryPxPaper * (1 + slPctPaper / 100) : entryPxPaper * (1 - slPctPaper / 100));
+    const tpPricePaper = (presetLevelsPaper?.takeProfitPrice != null && Number.isFinite(presetLevelsPaper.takeProfitPrice))
+      ? presetLevelsPaper.takeProfitPrice
+      : (isSellPaper ? entryPxPaper * (1 - tpPctPaper / 100) : entryPxPaper * (1 + tpPctPaper / 100));
+
+    const positionConfigPaper = ((strategy as any)?.position_config && typeof (strategy as any).position_config === "object")
+      ? ((strategy as any).position_config as Record<string, unknown>)
+      : {};
+    const resolvedExchangePaper = String(positionConfigPaper.exchange ?? row.exchange ?? "NSE").toUpperCase();
+    const resolvedProductPaper = String(positionConfigPaper.orderProduct ?? row.product ?? "MIS").toUpperCase();
+    const rowQtyPaper = Number(row.quantity);
+    const pcQtyPaper = Number(positionConfigPaper.quantity);
+    const resolvedQtyPaper = Number.isFinite(rowQtyPaper) && rowQtyPaper > 0
+      ? rowQtyPaper
+      : (Number.isFinite(pcQtyPaper) && pcQtyPaper > 0 ? pcQtyPaper : 1);
+    const sharesIntPaper = Math.max(1, Math.round(resolvedQtyPaper));
+    const investmentAmountPaper = Math.round((entryPxPaper > 0 ? entryPxPaper * sharesIntPaper : 0) * 100) / 100;
+    const paperBrokerOrderId = `PAPER-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
+
+    const { error: insertErr } = await supabase
+      .from("active_trades")
+      .insert({
+        user_id: row.user_id,
+        symbol: String(row.symbol).toUpperCase(),
+        action: resolvedAction,
+        status: "active",
+        entry_price: entryPxPaper > 0 ? entryPxPaper : 0.0001,
+        shares: sharesIntPaper,
+        investment_amount: investmentAmountPaper > 0 ? investmentAmountPaper : 0.01,
+        exchange: resolvedExchangePaper,
+        product: resolvedProductPaper,
+        strategy_id: row.strategy_id,
+        strategy_type: String(merged.paper_strategy_type ?? "custom"),
+        broker_order_id: paperBrokerOrderId,
+        stop_loss_price: Number.isFinite(slPricePaper) ? slPricePaper : null,
+        take_profit_price: Number.isFinite(tpPricePaper) ? tpPricePaper : null,
+        stop_loss_percentage: slPctPaper,
+        target_profit_percentage: tpPctPaper,
+        current_price: entryPxPaper > 0 ? entryPxPaper : null,
+        current_pnl: 0,
+        current_pnl_percentage: 0,
+        entry_time: new Date().toISOString(),
+      });
+
+    if (insertErr) {
+      await setPendingReason(supabase, row.id, `Paper trade insert failed: ${insertErr.message}`);
+      return "error";
+    }
+
+    localFireGuard.set(dedupeKey, Date.now());
+    await supabase.from("pending_conditional_orders").update({
+      status: "executed",
+      executed_at: new Date().toISOString(),
+      broker_order_id: paperBrokerOrderId,
+      error_message: null,
+      last_checked_at: new Date().toISOString(),
+    }).eq("id", row.id);
+
+    return "fired";
   }
 
   const { data: integration } = await supabase
@@ -462,7 +558,7 @@ export async function tryExecutePendingRow(
     strategy: strategy.name,
     exchange: resolvedExchange,
     symbol: String(row.symbol).toUpperCase().replace(/\.NS$/i, "").replace(/\.BO$/i, ""),
-    action: row.action,
+    action: resolvedAction,
     product: resolvedProduct,
     pricetype: resolvedPriceType,
     quantity: String(Number.isFinite(resolvedQty) && resolvedQty > 0 ? resolvedQty : 1),
@@ -484,7 +580,7 @@ export async function tryExecutePendingRow(
   }
   const slPct = merged.stop_loss_pct != null ? Number(merged.stop_loss_pct) : 2;
   const tpPct = merged.take_profit_pct != null ? Number(merged.take_profit_pct) : 4;
-  const isSell = String(row.action).toUpperCase() === "SELL";
+  const isSell = resolvedAction === "SELL";
 
   const presetLevels = (matchedSignal as any)?.presetPriceLevels as
     { stopLossPrice?: number; takeProfitPrice?: number } | null | undefined;
@@ -503,7 +599,7 @@ export async function tryExecutePendingRow(
     active_trade_template: {
       user_id: row.user_id,
       symbol: String(row.symbol).toUpperCase(),
-      action: row.action,
+      action: resolvedAction,
       status: "active",
       entry_price: entryPx > 0 ? entryPx : 0.0001,
       shares: sharesInt,
