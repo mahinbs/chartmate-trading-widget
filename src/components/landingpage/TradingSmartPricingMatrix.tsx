@@ -36,10 +36,14 @@ export function TradingSmartPricingMatrix() {
 
   return (
     <div className="container mx-auto px-4 max-w-6xl pb-8 relative">
-      <h2 className="font-bebas text-4xl md:text-5xl text-center text-white mb-10 md:mb-16">
+      <h2 className="font-bebas text-4xl md:text-5xl text-center text-white mb-6 md:mb-16">
         PRICING
       </h2>
-      <div className="-mx-4 px-4 pb-4 scrollbar-thin scrollbar-thumb-zinc-800">
+      {/* Mobile scroll hint */}
+      <p className="md:hidden text-center text-[11px] text-zinc-500 font-ibm-mono mb-4 animate-pulse">
+        ← scroll to see all plans →
+      </p>
+      <div className="-mx-4 px-4 pt-4 pb-4 overflow-x-auto scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent">
         <table className="min-w-[720px] w-full text-left font-ibm-sans border-collapse relative z-10">
           <thead>
             <tr className="border-b border-zinc-800">
