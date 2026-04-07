@@ -6,10 +6,8 @@ import {
   BarChart3,
   Bot,
   CreditCard,
-  ChevronRight,
   HelpCircle,
   LayoutDashboard,
-  Layers,
   LineChart,
   Lock,
   LogOut,
@@ -90,26 +88,9 @@ function useDashboardNavLinks(): DashboardNavLink[] {
       { to: "/news", label: "News Feed", icon: Newspaper },
     ];
 
+    // Affiliates are restricted to /affiliate/dashboard only (ProtectedRoute); keep a single nav item if they ever hit a shelled layout.
     if (isAffiliate) {
-      next.push({
-        to: "/strategies",
-        label: "Strategies",
-        icon: Layers,
-        iconColor: "text-primary opacity-80",
-      });
-      next.push({
-        to: "/ai-trading-analysis",
-        label: "AI Trading Analysis",
-        icon: Target,
-        iconColor: "text-primary opacity-80",
-      });
-      next.push({
-        to: "/backtest",
-        label: "Backtesting",
-        icon: LineChart,
-        iconColor: "text-primary opacity-80",
-      });
-      return next;
+      return [{ to: "/affiliate/dashboard", label: "Affiliate Dashboard", icon: LayoutDashboard }];
     }
 
     if (hasAlgoAccess) {
@@ -270,14 +251,6 @@ export function DashboardSidebar({
         </div>
 
         <div className="p-4 border-t border-sidebar-border mt-auto bg-sidebar pb-6">
-          {isAffiliate ? (
-            <Link
-              to="/affiliate/dashboard"
-              className="flex items-center gap-3 px-3 py-2 rounded-lg text-emerald-300 hover:text-emerald-200 hover:bg-emerald-500/10 transition-all text-sm font-medium mb-3 border-l-[3px] border-emerald-500/40 ml-[1px]"
-            >
-              <ChevronRight className="h-4 w-4 opacity-80" /> Affiliate Dashboard
-            </Link>
-          ) : null}
           <Link
             to="/contact-us"
             className="flex items-center gap-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:text-foreground hover:bg-white/5 glass-button-premium transition-all text-sm font-medium mb-3 border-l-[3px] border-transparent ml-[1px]"

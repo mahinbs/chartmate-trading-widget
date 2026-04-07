@@ -66,6 +66,10 @@ export default function ChangePasswordPage() {
         navigate("/white-label#pricing", { replace: true });
         return;
       }
+      if (role === "affiliate") {
+        navigate("/affiliate/dashboard", { replace: true });
+        return;
+      }
       navigate("/home", { replace: true });
     } catch (err: any) {
       toast({ title: "Update failed", description: err?.message ?? "Please try again.", variant: "destructive" });

@@ -45,5 +45,14 @@ export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
     return <Navigate to="/white-label#pricing" replace />;
   }
 
+  // Affiliates: only the affiliate dashboard (no main platform). Allow password change flow.
+  if (role === 'affiliate' && !isChangePasswordPage) {
+    const path = location.pathname;
+    const onAffiliateDashboard = path === '/affiliate/dashboard' || path.startsWith('/affiliate/dashboard/');
+    if (!onAffiliateDashboard) {
+      return <Navigate to="/affiliate/dashboard" replace />;
+    }
+  }
+
   return <>{children}</>;
 };

@@ -329,6 +329,7 @@ export default function AffiliateDashboard() {
             <p className="text-[10px] sm:text-xs text-muted-foreground truncate">Welcome, {stats.name}</p>
           </div>
           <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+            {/* Temporarily hidden — affiliate "Explore Platform Features" CTA
             <Button
               variant="outline"
               size="sm"
@@ -338,6 +339,7 @@ export default function AffiliateDashboard() {
               <ChevronRight className="h-4 w-4 sm:mr-1.5" />
               <span className="hidden sm:inline text-xs">Explore Platform Features</span>
             </Button>
+            */}
             <Button variant="ghost" size="icon" onClick={() => setActiveTab("notifications")} className="h-9 w-9 text-muted-foreground hover:text-white hover:bg-white/5 relative">
               <Bell className="h-5 w-5" />
               {notifications.filter(n => !n.is_read).length > 0 && (
