@@ -48,20 +48,19 @@ async function recordCheckoutPayment(supabase, params) {
   let commissionPercent = null;
   let commissionAmount = null;
   if (affiliateId) {
-  if (affiliateId) {
     const { data: aff } = await supabase
       .from("affiliates")
       .select("user_id, commission_percent, commission_type, fixed_amount, tier_config, recurring_config, is_active")
       .eq("id", affiliateId)
       .maybeSingle();
 
-    if (!aff || !aff.is_active) {
+    if (!aff || !(aff as { is_active?: boolean }).is_active) {
       affiliateId = null;
     } else {
-      const type = aff.commission_type || "percentage";
-      
+      const type = (aff as { commission_type?: string }).commission_type || "percentage";
+
       if (type === "fixed") {
-        commissionAmount = Number(aff.fixed_amount || 0);
+        commissionAmount = Number((aff as { fixed_amount?: number }).fixed_amount || 0);
         commissionPercent = null;
       } else if (type === "tier-based") {
         const { count } = await supabase
@@ -69,23 +68,25 @@ async function recordCheckoutPayment(supabase, params) {
           .select("user_id", { count: "exact", head: true })
           .eq("affiliate_id", affiliateId)
           .eq("status", "completed");
-        
+
         const referralCount = count || 0;
-        const tiers = aff.tier_config || [];
-        const currentTier = tiers
+        const tiers = (aff as { tier_config?: { min_referrals: number; percent: number }[] }).tier_config || [];
+        const currentTier = [...tiers]
           .sort((a, b) => b.min_referrals - a.min_referrals)
           .find((t) => referralCount >= t.min_referrals);
-          
-        commissionPercent = currentTier ? Number(currentTier.percent) : Number(aff.commission_percent || 0);
+
+        commissionPercent = currentTier
+          ? Number(currentTier.percent)
+          : Number((aff as { commission_percent?: number }).commission_percent || 0);
         commissionAmount = (amount * (commissionPercent || 0)) / 100;
       } else {
-        commissionPercent = Number(aff.commission_percent ?? 0);
+        commissionPercent = Number((aff as { commission_percent?: number }).commission_percent ?? 0);
         commissionAmount = (amount * commissionPercent) / 100;
       }
     }
   }
 
-  const { data: payment } = await supabase.from("user_payments").insert({
+  await supabase.from("user_payments").insert({
     user_id: params.userId,
     amount,
     currency,
@@ -103,17 +104,16 @@ async function recordCheckoutPayment(supabase, params) {
       .select("user_id")
       .eq("id", affiliateId)
       .single();
-    
-    if (affiliateUser?.user_id) {
+
+    if (affiliate?.user_id) {
       await supabase.from("affiliate_notifications").insert({
         user_id: affiliateUser.user_id,
         type: "conversion",
         title: "Conversion Alert!",
-        message: `Congrats! You've earned ₹${commissionAmount.toFixed(2)} from a new conversion (${params.planId}).`
+        message: `Congrats! You've earned ₹${commissionAmount.toFixed(2)} from a new conversion (${params.planId}).`,
       });
     }
   }
-}
 }
 async function fetchStripeSubscription(subId) {
   if (!STRIPE_SECRET) return null;
@@ -126,7 +126,7 @@ async function fetchStripeSubscription(subId) {
   return await res.json();
 }
 async function verifyStripeWebhook(payload, sigHeader, secret) {
-  const parts = sigHeader.split(",").reduce((acc, p)=>{
+  const parts = sigHeader.split(",").reduce((acc, p) => {
     const [k, v] = p.split("=");
     if (k && v) acc[k.trim()] = v;
     return acc;
@@ -143,11 +143,11 @@ async function verifyStripeWebhook(payload, sigHeader, secret) {
     "sign"
   ]);
   const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(payloadToSign));
-  const hex = Array.from(new Uint8Array(sig)).map((b)=>b.toString(16).padStart(2, "0")).join("");
+  const hex = Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, "0")).join("");
   if (hex !== v1) throw new Error("Signature mismatch");
   return JSON.parse(payload);
 }
-Deno.serve(async (req)=>{
+Deno.serve(async (req) => {
   try {
     if (!WEBHOOK_SECRET) {
       return new Response(JSON.stringify({
@@ -327,22 +327,25 @@ Deno.serve(async (req)=>{
         }).eq("stripe_subscription_id", subId);
       }
     } else if (event.type === "invoice.paid") {
-      const inv = obj as { subscription?: string | null; amount_paid?: number; currency?: string; customer?: string };
+      const inv = obj as {
+        subscription?: string | null;
+        amount_paid?: number;
+        currency?: string;
+        customer?: string;
+      };
       const subId = typeof inv.subscription === "string" ? inv.subscription : null;
       if (subId) {
-        // Clear payment_failed_at
         await supabase
           .from("user_subscriptions")
           .update({ payment_failed_at: null, updated_at: new Date().toISOString() })
           .eq("stripe_subscription_id", subId);
 
-        // 1. Handle recurring commissions
         const { data: subRow } = await supabase
           .from("user_subscriptions")
           .select("user_id, plan_id, pending_plan_change")
           .eq("stripe_subscription_id", subId)
           .maybeSingle();
-        
+
         if (subRow?.user_id) {
           const affId = await resolveAffiliateIdForPayment(supabase, subRow.user_id);
           if (affId) {
@@ -351,7 +354,7 @@ Deno.serve(async (req)=>{
               .select("commission_type")
               .eq("id", affId)
               .single();
-            
+
             if (aff?.commission_type === "recurring") {
               await recordCheckoutPayment(supabase, {
                 sessionId: `inv_${inv.customer}_${inv.subscription}_${Date.now()}`, // pseudo-session for recurring
@@ -372,7 +375,6 @@ Deno.serve(async (req)=>{
           const newMonthlyPriceId = resolveMonthlyPriceId(pendingPlan);
 
           if (newMeta && newMonthlyPriceId) {
-            // Switch the Stripe subscription to the lower-tier price for future invoices
             const stripeSub = await fetchStripeSubscription(subId);
             const currentItemId = stripeSub?.items?.data?.[0]?.id ?? "";
             if (currentItemId) {
@@ -395,7 +397,6 @@ Deno.serve(async (req)=>{
               }
             }
 
-            // Update DB: activate the downgraded plan, clear the pending fields
             await supabase
               .from("user_subscriptions")
               .update({
@@ -407,6 +408,34 @@ Deno.serve(async (req)=>{
               .eq("user_id", subRow.user_id);
 
             console.log(`Downgrade applied: user ${subRow.user_id} → ${pendingPlan}`);
+          }
+        }
+
+        const { data: subForAffiliate } = await supabase
+          .from("user_subscriptions")
+          .select("user_id, plan_id")
+          .eq("stripe_subscription_id", subId)
+          .maybeSingle();
+
+        if (subForAffiliate?.user_id) {
+          const affId = await resolveAffiliateIdForPayment(supabase, subForAffiliate.user_id);
+          if (affId) {
+            const { data: aff } = await supabase
+              .from("affiliates")
+              .select("commission_type")
+              .eq("id", affId)
+              .maybeSingle();
+
+            if (aff?.commission_type === "recurring") {
+              await recordCheckoutPayment(supabase, {
+                sessionId: `inv_${inv.customer}_${inv.subscription}_${Date.now()}`,
+                userId: subForAffiliate.user_id,
+                planId: subForAffiliate.plan_id,
+                legacyStripeMetaAffiliateId: affId,
+                amountTotal: inv.amount_paid ?? null,
+                currency: inv.currency ?? null,
+              });
+            }
           }
         }
       }

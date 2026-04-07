@@ -6,10 +6,15 @@
  *   1. Clock-based exit time (clockExitTime or squareoff_time in strategy)
  *   2. Stop-loss / take-profit breach against current price
  *   3. Indicator reversal (opposite side live signal from strategy-entry-signals)
+ *   4. Trailing stop updates:
+ *      - supertrend_7_3: trails SL to current Supertrend line value
+ *      - rsi_divergence: once trade reaches 2R profit, trails SL to EMA(20)
  *
  * When exit conditions are met, marks the active_trades row as completed.
- */ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+ */
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveMarketSessionProfile } from "../_shared/marketSession.ts";
+import { supertrendSeries } from "../_shared/algoGuideDetectors.ts";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
 const ENTRY_DIGEST_SECRET = Deno.env.get("ENTRY_DIGEST_SECRET") ?? "";
@@ -56,6 +61,115 @@ async function fetchCurrentPrice(symbol, exchange) {
   } catch  {}
   return null;
 }
+/** Fetch recent OHLCV bars from Yahoo Finance for trailing stop computation */
+async function fetchOhlcvBars(
+  yahooSymbol: string,
+  interval: string,
+  bars: number,
+): Promise<{ h: number[]; l: number[]; c: number[] } | null> {
+  try {
+    const period2 = Math.floor(Date.now() / 1000);
+    const rangeSeconds = interval === "1h" ? bars * 3600 : bars * 300;
+    const period1 = period2 - rangeSeconds * 2; // fetch 2x to ensure we have enough bars
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?period1=${period1}&period2=${period2}&interval=${interval}`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0" },
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const result = data?.chart?.result?.[0];
+    const timestamps = result?.timestamp as number[] | undefined;
+    const quotes = result?.indicators?.quote?.[0];
+    if (!timestamps || !quotes) return null;
+    const h: number[] = [];
+    const l: number[] = [];
+    const c: number[] = [];
+    for (let i = 0; i < timestamps.length; i++) {
+      const hi = Number(quotes.high?.[i]);
+      const lo = Number(quotes.low?.[i]);
+      const cl = Number(quotes.close?.[i]);
+      if (!Number.isFinite(hi) || !Number.isFinite(lo) || !Number.isFinite(cl)) continue;
+      h.push(hi);
+      l.push(lo);
+      c.push(cl);
+    }
+    if (c.length < 10) return null;
+    return { h, l, c };
+  } catch {
+    return null;
+  }
+}
+
+/** Simple EMA series */
+function emaArr(close: number[], period: number): number[] {
+  const n = close.length;
+  const out = new Array(n).fill(NaN);
+  if (n < period) return out;
+  const k = 2 / (period + 1);
+  let prev = close.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  out[period - 1] = prev;
+  for (let i = period; i < n; i++) {
+    prev = close[i] * k + prev * (1 - k);
+    out[i] = prev;
+  }
+  return out;
+}
+
+/**
+ * For Supertrend trades: fetch recent 5m bars, compute Supertrend(7,3),
+ * and tighten the SL if the Supertrend line has moved in our favor.
+ * For RSI divergence trades: if trade is in 2R profit, trail SL to EMA(20).
+ * Returns the new SL price if it should be updated, or null if no change.
+ */
+async function computeTrailingSlUpdate(
+  yahooSymbol: string,
+  preset: string,
+  action: string,
+  entryPrice: number,
+  currentSl: number,
+  currentPrice: number,
+): Promise<number | null> {
+  const isBuy = String(action).toUpperCase() === "BUY";
+
+  if (preset === "supertrend_7_3") {
+    // Fetch last 60 bars of 5m data
+    const ohlcv = await fetchOhlcvBars(yahooSymbol, "5m", 60);
+    if (!ohlcv || ohlcv.c.length < 15) return null;
+    const { line, trend } = supertrendSeries(ohlcv.h, ohlcv.l, ohlcv.c, 7, 3);
+    const latest = line[line.length - 1];
+    const latestTrend = trend[trend.length - 1];
+    if (!Number.isFinite(latest)) return null;
+    // Only trail if Supertrend agrees with our direction
+    if (isBuy && latestTrend !== 1) return null;
+    if (!isBuy && latestTrend !== -1) return null;
+    // Tighten SL only if new line is better than current SL
+    if (isBuy && latest > currentSl && latest < currentPrice) return latest;
+    if (!isBuy && latest < currentSl && latest > currentPrice) return latest;
+    return null;
+  }
+
+  if (preset === "rsi_divergence") {
+    const initialRisk = Math.abs(entryPrice - currentSl);
+    if (initialRisk <= 0) return null;
+    const profit = isBuy ? currentPrice - entryPrice : entryPrice - currentPrice;
+    // Only trail once trade is in 2R profit
+    if (profit < 2 * initialRisk) return null;
+    // Fetch last 30 bars of 1H data to compute EMA(20)
+    const ohlcv = await fetchOhlcvBars(yahooSymbol, "1h", 30);
+    if (!ohlcv || ohlcv.c.length < 20) return null;
+    const ema20 = emaArr(ohlcv.c, 20);
+    const latestEma = ema20[ema20.length - 1];
+    if (!Number.isFinite(latestEma)) return null;
+    // Trail: move SL to EMA(20) if it's tighter (better protection) than current SL
+    if (isBuy && latestEma > currentSl && latestEma < currentPrice) return latestEma;
+    if (!isBuy && latestEma < currentSl && latestEma > currentPrice) return latestEma;
+    return null;
+  }
+
+  return null;
+}
+
 Deno.serve(async (req)=>{
   if (req.method === "OPTIONS") return new Response(null, {
     status: 200,
@@ -218,7 +332,43 @@ Deno.serve(async (req)=>{
           } catch  {}
         }
       }
-      // 5. SL / TP price breach — always check regardless of autoExitEnabled
+      // 5. Trailing stop update (Supertrend trail + RSI 2R EMA trail)
+      const entryCondCfg = strategy.entry_conditions && typeof strategy.entry_conditions === "object"
+        ? strategy.entry_conditions as Record<string, unknown>
+        : {};
+      const activePreset = String(entryCondCfg.algoGuidePreset ?? "");
+      if (!shouldExit && (activePreset === "supertrend_7_3" || activePreset === "rsi_divergence")) {
+        const currentPxForTrail = await fetchCurrentPrice(String(trade.symbol), String(trade.exchange ?? "NSE"));
+        const currentSlForTrail = trade.stop_loss_price != null ? Number(trade.stop_loss_price) : null;
+        const entryPxForTrail = Number(trade.entry_price);
+        if (
+          currentPxForTrail != null &&
+          currentSlForTrail != null &&
+          Number.isFinite(entryPxForTrail) &&
+          Number.isFinite(currentSlForTrail)
+        ) {
+          const newSl = await computeTrailingSlUpdate(
+            signalSymbol,
+            activePreset,
+            String(trade.action ?? "BUY"),
+            entryPxForTrail,
+            currentSlForTrail,
+            currentPxForTrail,
+          );
+          if (newSl !== null) {
+            await supabase.from("active_trades").update({
+              stop_loss_price: Math.round(newSl * 100) / 100,
+            }).eq("id", trade.id);
+            results.push({
+              trade_id: trade.id,
+              outcome: "trailing_sl_updated",
+              new_sl: Math.round(newSl * 100) / 100,
+            });
+          }
+        }
+      }
+
+      // 6. SL / TP price breach — always check regardless of autoExitEnabled
       if (!shouldExit) {
         const currentPx = exitPrice ?? (trade.current_price != null ? Number(trade.current_price) : null) ?? await fetchCurrentPrice(String(trade.symbol), String(trade.exchange ?? "NSE"));
         if (currentPx != null && Number.isFinite(currentPx)) {
