@@ -25,8 +25,6 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PublicDailyPerformanceChart } from "@/components/public-dashboard/PublicDailyPerformanceChart";
 import {
-  readStoredPublicAffiliates,
-  PUBLIC_DASHBOARD_AFFILIATES_CHANGED_EVENT,
   type PublicDashboardAffiliateSeed as DemoAffiliateSeed,
 } from "@/lib/publicDashboardAffiliateStorage";
 
@@ -1074,19 +1072,14 @@ export default function PublicDashboardPage({ embedInAdmin = false }: PublicDash
     return d;
   }, []);
 
-  const [affiliateStorageRev, setAffiliateStorageRev] = useState(0);
-  useEffect(() => {
-    const onAffiliatesStorage = () => setAffiliateStorageRev((n) => n + 1);
-    window.addEventListener(PUBLIC_DASHBOARD_AFFILIATES_CHANGED_EVENT, onAffiliatesStorage);
-    return () => window.removeEventListener(PUBLIC_DASHBOARD_AFFILIATES_CHANGED_EVENT, onAffiliatesStorage);
-  }, []);
+  const [supabaseAffiliates, setSupabaseAffiliates] = useState<DemoAffiliateSeed[] | null>(null);
 
   const affiliateRows = useMemo(() => {
-    void affiliateStorageRev;
-    const stored = readStoredPublicAffiliates();
-    const base = stored ?? DEMO_AFFILIATES_BASE;
+    const base = supabaseAffiliates !== null && supabaseAffiliates.length > 0
+      ? supabaseAffiliates
+      : DEMO_AFFILIATES_BASE;
     return buildDemoAffiliates(base, subscriberNamesLower, affiliateSalesChartAsOf);
-  }, [subscriberNamesLower, affiliateSalesChartAsOf, affiliateStorageRev]);
+  }, [supabaseAffiliates, subscriberNamesLower, affiliateSalesChartAsOf]);
 
   const whitelabelExcludeLower = useMemo(() => {
     const s = new Set(subscriberNamesLower);
@@ -1103,13 +1096,27 @@ export default function PublicDashboardPage({ embedInAdmin = false }: PublicDash
     const load = async () => {
       try {
         setLoading(true);
-        const [{ data: mData, error: mErr }, { data: sData }] = await Promise.all([
+        const [{ data: mData, error: mErr }, { data: sData }, { data: aData }] = await Promise.all([
           (supabase as any).from("public_dashboard_metrics").select("*").order("sort_order", { ascending: true }),
           (supabase as any).from("recent_subscribers").select("id, name, country, payment_id, subscribed_at").order("subscribed_at", { ascending: false }),
+          (supabase as any).from("public_dashboard_affiliates").select("*").order("created_at", { ascending: true }),
         ]);
         if (mErr) throw mErr;
         setMetrics((mData as any[]) || []);
         setSubscribers((sData as any[]) || []);
+        const mappedAffiliates: DemoAffiliateSeed[] = ((aData as any[]) ?? []).map((r) => ({
+          id: r.id,
+          name: r.name,
+          trackingId: r.tracking_id,
+          userCount: r.user_count,
+          profitShare: r.profit_share,
+          payout: r.payout,
+          joiningDate: r.joining_date,
+          totalEarnings: r.total_earnings,
+          lastPayoutDate: r.last_payout_date,
+          salesWeights: Array.isArray(r.sales_weights) ? r.sales_weights : [20, 24, 18, 28, 26, 22, 30, 24],
+        }));
+        setSupabaseAffiliates(mappedAffiliates.length > 0 ? mappedAffiliates : null);
       } catch (e) {
         console.error("Failed to load public dashboard", e);
       } finally {

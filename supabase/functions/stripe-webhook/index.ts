@@ -95,18 +95,43 @@ async function recordCheckoutPayment(
   if (affiliateId) {
     const { data: aff } = await supabase
       .from("affiliates")
-      .select("commission_percent, is_active")
+      .select("user_id, commission_percent, commission_type, fixed_amount, tier_config, recurring_config, is_active")
       .eq("id", affiliateId)
       .maybeSingle();
-    if (!aff || !(aff as { is_active?: boolean }).is_active) {
+
+    if (!aff || !(aff as any).is_active) {
       affiliateId = null;
     } else {
-      commissionPercent = Number((aff as { commission_percent?: number }).commission_percent ?? 0);
-      commissionAmount = (amount * commissionPercent) / 100;
+      const type = (aff as any).commission_type || "percentage";
+      
+      if (type === "fixed") {
+        commissionAmount = Number((aff as any).fixed_amount || 0);
+        commissionPercent = null;
+      } else if (type === "tier-based") {
+        const { count } = await supabase
+          .from("user_payments")
+          .select("user_id", { count: "exact", head: true })
+          .eq("affiliate_id", affiliateId)
+          .eq("status", "completed");
+        
+        const referralCount = count || 0;
+        const tiers = (aff as any).tier_config || [];
+        // Find tier: sort by min_referrals desc and pick first one where referralCount >= min_referrals
+        const currentTier = tiers
+          .sort((a: any, b: any) => b.min_referrals - a.min_referrals)
+          .find((t: any) => referralCount >= t.min_referrals);
+          
+        commissionPercent = currentTier ? Number(currentTier.percent) : Number((aff as any).commission_percent || 0);
+        commissionAmount = (amount * (commissionPercent || 0)) / 100;
+      } else {
+        // Percentage or Recurring (initial)
+        commissionPercent = Number((aff as any).commission_percent ?? 0);
+        commissionAmount = (amount * commissionPercent) / 100;
+      }
     }
   }
 
-  await supabase.from("user_payments").insert({
+  const { data: payment } = await supabase.from("user_payments").insert({
     user_id: params.userId,
     amount,
     currency,
@@ -116,7 +141,24 @@ async function recordCheckoutPayment(
     commission_amount: commissionAmount,
     plan_id: params.planId,
     stripe_checkout_session_id: params.sessionId,
-  });
+  }).select().single();
+
+  if (affiliateId && commissionAmount && commissionAmount > 0) {
+    const { data: affiliate } = await supabase
+      .from("affiliates")
+      .select("user_id")
+      .eq("id", affiliateId)
+      .single();
+    
+    if (affiliate?.user_id) {
+      await supabase.from("affiliate_notifications").insert({
+        user_id: affiliate.user_id,
+        type: "conversion",
+        title: "Conversion Alert!",
+        message: `Congrats! You've earned ₹${commissionAmount.toFixed(2)} from a new conversion (${params.planId}).`
+      });
+    }
+  }
 }
 
 async function fetchStripeSubscription(subId: string): Promise<Record<string, unknown> | null> {
@@ -385,7 +427,7 @@ Deno.serve(async (req: Request) => {
           .eq("stripe_subscription_id", subId);
       }
     } else if (event.type === "invoice.paid") {
-      const inv = obj as { subscription?: string | null };
+      const inv = obj as { subscription?: string | null; amount_paid?: number; currency?: string; customer?: string };
       const subId = typeof inv.subscription === "string" ? inv.subscription : null;
       if (subId) {
         await supabase
@@ -395,6 +437,35 @@ Deno.serve(async (req: Request) => {
             updated_at: new Date().toISOString(),
           })
           .eq("stripe_subscription_id", subId);
+
+        // Handle recurring commissions
+        const { data: sub } = await supabase
+          .from("user_subscriptions")
+          .select("user_id, plan_id")
+          .eq("stripe_subscription_id", subId)
+          .single();
+        
+        if (sub?.user_id) {
+          const affId = await resolveAffiliateIdForPayment(supabase, sub.user_id);
+          if (affId) {
+            const { data: aff } = await supabase
+              .from("affiliates")
+              .select("commission_type")
+              .eq("id", affId)
+              .single();
+            
+            if (aff?.commission_type === "recurring") {
+              await recordCheckoutPayment(supabase, {
+                sessionId: `inv_${inv.customer}_${inv.subscription}_${Date.now()}`, // pseudo-session for recurring
+                userId: sub.user_id,
+                planId: sub.plan_id,
+                legacyStripeMetaAffiliateId: affId,
+                amountTotal: inv.amount_paid ?? null,
+                currency: inv.currency ?? null,
+              });
+            }
+          }
+        }
       }
     }
 

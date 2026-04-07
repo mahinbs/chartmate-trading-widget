@@ -34,12 +34,31 @@ serve(async (req) => {
 
   try {
     let ref: string | null = null;
+    let utms: any = {};
+    let referrer: string | null = null;
+
     if (req.method === "POST") {
       const body = await req.json().catch(() => ({}));
       ref = body?.ref ?? null;
+      utms = {
+        source: body?.utm_source ?? null,
+        medium: body?.utm_medium ?? null,
+        campaign: body?.utm_campaign ?? null,
+        term: body?.utm_term ?? null,
+        content: body?.utm_content ?? null,
+      };
+      referrer = body?.referrer ?? null;
     } else {
       const url = new URL(req.url);
       ref = url.searchParams.get("ref");
+      utms = {
+        source: url.searchParams.get("utm_source"),
+        medium: url.searchParams.get("utm_medium"),
+        campaign: url.searchParams.get("utm_campaign"),
+        term: url.searchParams.get("utm_term"),
+        content: url.searchParams.get("utm_content"),
+      };
+      referrer = req.headers.get("referer"); // Standard header is 'referer' (misspelled in spec)
     }
 
     if (!ref || typeof ref !== "string" || !ref.trim()) {
@@ -52,6 +71,34 @@ serve(async (req) => {
     const code = ref.trim();
     const visitorIp = getClientIp(req);
     const userAgent = req.headers.get("user-agent") ?? null;
+    
+    // Cloudflare Geo headers
+    const city = req.headers.get("cf-ipcity") ?? null;
+    const region = req.headers.get("cf-region") ?? null;
+    const country = req.headers.get("cf-ipcountry") ?? null;
+
+    // Basic device/browser detection
+    const getDeviceType = (ua: string | null) => {
+      if (!ua) return "unknown";
+      const ual = ua.toLowerCase();
+      if (ual.includes("mobile") || ual.includes("android") || ual.includes("iphone") || ual.includes("ipad")) return "mobile";
+      if (ual.includes("tablet") || ual.includes("ipad")) return "tablet";
+      return "desktop";
+    };
+
+    const getBrowser = (ua: string | null) => {
+      if (!ua) return "unknown";
+      const ual = ua.toLowerCase();
+      if (ual.includes("edg/")) return "Edge";
+      if (ual.includes("chrome/")) return "Chrome";
+      if (ual.includes("firefox/")) return "Firefox";
+      if (ual.includes("safari/") && !ual.includes("chrome/")) return "Safari";
+      if (ual.includes("opera/") || ual.includes("opr/")) return "Opera";
+      return "Other";
+    };
+
+    const deviceType = getDeviceType(userAgent);
+    const browser = getBrowser(userAgent);
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
@@ -77,6 +124,17 @@ serve(async (req) => {
       affiliate_id: affiliate.id,
       visitor_ip: visitorIp,
       user_agent: userAgent,
+      device_type: deviceType,
+      browser: browser,
+      city: city,
+      region: region,
+      country: country,
+      utm_source: utms.source,
+      utm_medium: utms.medium,
+      utm_campaign: utms.campaign,
+      utm_term: utms.term,
+      utm_content: utms.content,
+      referrer: referrer
     });
 
     if (insertError && insertError.code !== "23505") {

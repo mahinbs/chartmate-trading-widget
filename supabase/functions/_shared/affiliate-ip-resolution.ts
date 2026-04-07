@@ -97,4 +97,20 @@ export async function applyAffiliateToUserProfileIfEmpty(
       await supabase.from("user_signup_profiles").update(patch).eq("user_id", userId).is("affiliate_id", null);
     }
   }
+
+  // Trigger Notification for New Referral
+  const { data: affUser } = await supabase
+    .from("affiliates")
+    .select("user_id")
+    .eq("id", affiliateId)
+    .single();
+
+  if (affUser?.user_id) {
+    await supabase.from("affiliate_notifications").insert({
+      user_id: affUser.user_id,
+      type: "referral",
+      title: "New Referral!",
+      message: `A new user (${userEmail || "anonymous"}) has joined using your link.`
+    });
+  }
 }
