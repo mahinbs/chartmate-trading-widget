@@ -108,7 +108,7 @@ serve(async (req) => {
 
     const { data: affiliate, error: affiliateError } = await supabase
       .from("affiliates")
-      .select("id")
+      .select("id, user_id")
       .eq("code", code)
       .eq("is_active", true)
       .maybeSingle();
@@ -137,8 +137,25 @@ serve(async (req) => {
       referrer: referrer
     });
 
-    if (insertError && insertError.code !== "23505") {
+    if (insertError) {
+      if (insertError.code === "23505") {
+        // Already visited - no new notification needed
+        return new Response(JSON.stringify({ ok: true, status: 'already_recorded' }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       throw insertError;
+    }
+
+    // Notify the affiliate about the new unique click
+    if (affiliate.user_id) {
+      const location = [city, country].filter(Boolean).join(", ") || "an unknown location";
+      await supabase.from("affiliate_notifications").insert({
+        user_id: affiliate.user_id,
+        type: "system",
+        title: "New Click!",
+        message: `Someone just visited your referral link from ${location}.`
+      });
     }
 
     return new Response(JSON.stringify({ ok: true }), {
