@@ -2057,6 +2057,12 @@ export function StrategyEntrySignalsPanel({
   const [trackingSignalKey, setTrackingSignalKey] = useState<string | null>(
     null,
   );
+  const [paperDialogOpen, setPaperDialogOpen] = useState(false);
+  const [paperPresetId, setPaperPresetId] = useState<string | null>(null);
+  const [paperInitialSymbol, setPaperInitialSymbol] = useState<string | null>(
+    null,
+  );
+  const liveCustomToastKeyRef = useRef<string | null>(null);
   const mainSignalsScrollRef = useRef<HTMLDivElement | null>(null);
   const historySignalsScrollRef = useRef<HTMLDivElement | null>(null);
   const scanProgressTimerRef = useRef<ReturnType<typeof setInterval> | null>(
