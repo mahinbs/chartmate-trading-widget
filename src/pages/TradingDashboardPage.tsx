@@ -43,7 +43,11 @@ import AlgoStrategyBuilder from "@/components/trading/AlgoStrategyBuilder";
 import { TradingDashboardAccessGate } from "@/components/trading/TradingDashboardAccessGate";
 import { TradingDashboardShell } from "@/components/trading/TradingDashboardShell";
 import { useSubscription } from "@/hooks/useSubscription";
-import { getAlgoStrategyLimits } from "@/lib/algoStrategyLimits";
+import {
+  getAlgoStrategyLimits,
+  isAtCustomStrategyCap,
+  strategyCapToastMessage,
+} from "@/lib/algoStrategyLimits";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const EXCHANGES = [
@@ -222,8 +226,7 @@ function StrategiesPanel({ broker }: { broker: string }) {
   const { subscription } = useSubscription();
   const stratLimits = getAlgoStrategyLimits(subscription?.plan_id);
   const canDeleteStrategies = stratLimits?.allowDeleteStrategies ?? false;
-  const atStrategyCap =
-    stratLimits != null && strategies.length >= stratLimits.maxCustomStrategies;
+  const atStrategyCap = isAtCustomStrategyCap(strategies.length, stratLimits);
 
   const getFireState = (id: string) => firePanel[id] ?? {
     open: false, symbol: "", exchange: "NSE", quantity: "1", product: "MIS", firing: false, aiOverride: false,
@@ -449,10 +452,8 @@ function StrategiesPanel({ broker }: { broker: string }) {
   };
 
   const openCreateBuilder = () => {
-    if (atStrategyCap) {
-      toast.error(
-        `Your plan allows up to ${stratLimits?.maxCustomStrategies} custom strateg${stratLimits?.maxCustomStrategies === 1 ? "y" : "ies"}. Upgrade in billing to add more.`,
-      );
+    if (atStrategyCap && stratLimits) {
+      toast.error(strategyCapToastMessage(stratLimits));
       return;
     }
     setEditingStrategy(null);

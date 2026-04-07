@@ -4,20 +4,20 @@
  *
  * WL 1yr / 2yr     → mode: subscription (recurring yearly)
  * WL 5yr           → mode: payment (one-time, admin-generated link with security token)
- * Premium plans → mode: subscription (recurring yearly)
+ * Premium plans → mode: subscription (monthly recurring).
  *
- * Billing notes (product policy — implement in Stripe Dashboard / Customer Portal as needed):
- * - Downgrades: effective after the current period ends (use cancel_at_period_end + new plan at renewal).
- * - Upgrade to Pro ($129) from Bot ($49) or Probability ($99): charge price difference via proration
- *   (Subscription update + proration_behavior) or Customer Portal.
- * - Adding Probability ($99) while on Bot-only is a separate product purchase (full $99), not a prorated
- *   upgrade from $49; next renewal can be consolidated to $129 in Stripe (merged subscription).
+ * When STRIPE_PRICE_*_SETUP is set for a premium plan, Checkout includes:
+ *   - recurring monthly price + one-time setup price on the first invoice
+ *   - subscription_data.trial_period_days = 30 (monthly billing starts after 30 days)
+ * If setup env is omitted, only the monthly price is used (legacy Stripe products).
  *
  * Env: STRIPE_SECRET_KEY,
- *      STRIPE_PRICE_STARTER, STRIPE_PRICE_GROWTH, STRIPE_PRICE_PROFESSIONAL (new monthly),
- *      STRIPE_PRICE_BOT, STRIPE_PRICE_PROB, STRIPE_PRICE_PRO (legacy Stripe price ids for existing subs),
+ *      STRIPE_PRICE_STARTER, STRIPE_PRICE_GROWTH, STRIPE_PRICE_PROFESSIONAL (monthly),
+ *      STRIPE_PRICE_STARTER_SETUP, STRIPE_PRICE_GROWTH_SETUP, STRIPE_PRICE_PROFESSIONAL_SETUP (one-time, optional),
+ *      STRIPE_PRICE_BOT, STRIPE_PRICE_PROB, STRIPE_PRICE_PRO (legacy),
  *      STRIPE_PRICE_WL_1Y, STRIPE_PRICE_WL_2Y, STRIPE_PRICE_WL_5Y, STRIPE_PRICE_TEST_1R (optional)
- */ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+ */
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { applyAffiliateToUserProfileIfEmpty, getClientIp, resolveAffiliateIdFromVisitorIp } from "../_shared/affiliate-ip-resolution.ts";
 const STRIPE_SECRET = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 const APP_URL = Deno.env.get("APP_URL") ?? "http://localhost:5173";
@@ -27,8 +27,19 @@ const PRICE_IDS = {
   professionalPlan: Deno.env.get("STRIPE_PRICE_PROFESSIONAL") ?? "",
   wl_1_year: Deno.env.get("STRIPE_PRICE_WL_1Y") ?? "",
   wl_2_years: Deno.env.get("STRIPE_PRICE_WL_2Y") ?? "",
-  wl_5_years: Deno.env.get("STRIPE_PRICE_WL_5Y") ?? ""
+  wl_5_years: Deno.env.get("STRIPE_PRICE_WL_5Y") ?? "",
 };
+/** One-time integration fee per premium plan (Stripe one-time Prices). Optional: omit for legacy checkout. */
+const SETUP_PRICE_IDS: Record<string, string> = {
+  starterPlan: Deno.env.get("STRIPE_PRICE_STARTER_SETUP") ?? "",
+  growthPlan: Deno.env.get("STRIPE_PRICE_GROWTH_SETUP") ?? "",
+  professionalPlan: Deno.env.get("STRIPE_PRICE_PROFESSIONAL_SETUP") ?? "",
+};
+const PREMIUM_PLAN_IDS = new Set([
+  "starterPlan",
+  "growthPlan",
+  "professionalPlan",
+]);
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey, x-client-info"
@@ -173,8 +184,20 @@ Deno.serve(async (req)=>{
       // Recurring subscription for 1yr / 2yr WL and all premium plans
       formBody.append("mode", "subscription");
       formBody.append("payment_method_types[]", "card");
-      formBody.append("line_items[0][price]", priceId);
-      formBody.append("line_items[0][quantity]", "1");
+      const setupPriceId =
+        type === "premium" && PREMIUM_PLAN_IDS.has(planId)
+          ? (SETUP_PRICE_IDS[planId] ?? "").trim()
+          : "";
+      if (setupPriceId) {
+        formBody.append("line_items[0][price]", priceId);
+        formBody.append("line_items[0][quantity]", "1");
+        formBody.append("line_items[1][price]", setupPriceId);
+        formBody.append("line_items[1][quantity]", "1");
+        formBody.append("subscription_data[trial_period_days]", "30");
+      } else {
+        formBody.append("line_items[0][price]", priceId);
+        formBody.append("line_items[0][quantity]", "1");
+      }
       formBody.append("subscription_data[metadata][user_id]", user.id);
       formBody.append("subscription_data[metadata][plan_id]", planId);
       formBody.append("subscription_data[metadata][type]", type);

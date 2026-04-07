@@ -39,7 +39,7 @@ export function subscriptionAllowsAnalysis(sub: UserSubscription | null): boolea
 }
 
 /**
- * Subscribed on a non-top tier — show only Professional in-app, or use billing portal to upgrade.
+ * Subscribed on a non-top tier — show only Pro in-app, or use billing portal to upgrade.
  */
 export function isMidTierEligibleForProOnlyUpgrade(planId: string | null | undefined): boolean {
   if (!planId || planId === "professionalPlan") return false;

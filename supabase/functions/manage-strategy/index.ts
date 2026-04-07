@@ -11,7 +11,7 @@
  *   toggle  — toggle is_active
  */ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { planAllowsAlgo } from "../_shared/subscription-plans.ts";
-import { getAlgoStrategyLimits } from "../_shared/algo-strategy-limits.ts";
+import { getAlgoStrategyLimits, UNLIMITED_CUSTOM_STRATEGIES } from "../_shared/algo-strategy-limits.ts";
 const OPENALGO_URL = (Deno.env.get("OPENALGO_URL") ?? "").replace(/\/$/, "");
 const OPENALGO_APP_KEY = Deno.env.get("OPENALGO_APP_KEY") ?? "";
 const corsHeaders = {
@@ -154,9 +154,13 @@ Deno.serve(async (req)=>{
           headers
         });
       }
-      if ((stratCount ?? 0) >= limits.maxCustomStrategies) {
+      if (
+        limits.maxCustomStrategies !== UNLIMITED_CUSTOM_STRATEGIES &&
+        (stratCount ?? 0) >= limits.maxCustomStrategies
+      ) {
+        const n = limits.maxCustomStrategies;
         return new Response(JSON.stringify({
-          error: `Your plan allows up to ${limits.maxCustomStrategies} custom strateg${limits.maxCustomStrategies === 1 ? "y" : "ies"}. Upgrade in billing to add more.`,
+          error: `Your plan allows up to ${n} custom strateg${n === 1 ? "y" : "ies"}. Upgrade in billing to add more.`,
           error_code: "STRATEGY_LIMIT"
         }), {
           status: 403,
@@ -518,7 +522,7 @@ Deno.serve(async (req)=>{
       const delLimits = delPlanId ? getAlgoStrategyLimits(delPlanId) : null;
       if (!delLimits?.allowDeleteStrategies) {
         return new Response(JSON.stringify({
-          error: "Your plan does not include deleting strategies. You can edit existing strategies, or upgrade to Professional to create and remove strategies freely.",
+          error: "Your plan does not include deleting strategies. You can edit existing strategies, or upgrade to Pro to create and remove strategies freely.",
           error_code: "DELETE_NOT_ALLOWED"
         }), {
           status: 403,

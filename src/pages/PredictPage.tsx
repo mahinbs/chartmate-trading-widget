@@ -56,7 +56,7 @@ import {
   STRATEGIES,
 } from "@/components/trading/StrategySelectionDialog";
 import { UsePreviousOrNewStrategyDialog } from "@/components/trading/UsePreviousOrNewStrategyDialog";
-import { PRICING_PLANS } from "@/constants/pricing";
+import { PRICING_PLANS, PRICING_SETUP_AND_MONTHLY_NOTE } from "@/constants/pricing";
 import { isMidTierEligibleForProOnlyUpgrade } from "@/lib/subscriptionEntitlements";
 import {
   createBillingPortalSession,
@@ -2989,14 +2989,15 @@ const PredictPage = () => {
               {midTierProOnlyUpgrade ? (
                 <>
                   You already have an active plan. Upgrade to{" "}
-                  <strong className="text-zinc-200">Professional ($199/mo)</strong> in the billing portal
-                  for the highest limits — Stripe prorates when enabled.
+                  <strong className="text-zinc-200">Pro</strong> in the billing portal for unlimited
+                  strategies and premium support — Stripe prorates when enabled.
                 </>
               ) : (
                 <>
-                  Live OpenAlgo is included on <strong className="text-zinc-200">Starter ($49/mo)</strong>,{" "}
-                  <strong className="text-zinc-200">Growth ($99/mo)</strong>, and{" "}
-                  <strong className="text-zinc-200">Professional ($199/mo)</strong>. Legacy Probability-only
+                  Live OpenAlgo is included on{" "}
+                  <strong className="text-zinc-200">Starter</strong> ($149 setup + $49/mo after 30 days),{" "}
+                  <strong className="text-zinc-200">Growth</strong> ($249 + $79/mo), and{" "}
+                  <strong className="text-zinc-200">Pro</strong> ($399 + $129/mo). Legacy Probability-only
                   plans do not include live broker execution.
                 </>
               )}
@@ -3026,11 +3027,18 @@ const PredictPage = () => {
                     >
                       {plan.name}
                     </h3>
-                <div className="text-3xl font-black mb-4 tracking-tight text-white">
-                  ${plan.price}
-                      <span className="text-sm text-zinc-500 font-normal ml-1">
-                        /{plan.period}
-                      </span>
+                <div className="space-y-1 mb-4 tracking-tight text-white">
+                  <div className="text-2xl font-black">
+                    ${plan.integrationFee}
+                    <span className="text-sm text-zinc-500 font-normal ml-1">one-time setup</span>
+                  </div>
+                  <div className="text-lg font-bold text-zinc-200">
+                    ${plan.price}
+                    <span className="text-sm text-zinc-500 font-normal ml-1">/{plan.period}</span>
+                    <span className="block text-xs text-zinc-500 font-normal mt-0.5">
+                      starting after 30 days
+                    </span>
+                  </div>
                 </div>
                 <ul className="space-y-3 mb-8 flex-1 text-sm text-zinc-300">
                   {plan.features.slice(0, 6).map((feature, i) => (
@@ -3091,6 +3099,9 @@ const PredictPage = () => {
               </div>
             ))}
           </div>
+          <p className="text-center text-[11px] text-zinc-500 mt-4 px-2 max-w-xl mx-auto leading-relaxed">
+            {PRICING_SETUP_AND_MONTHLY_NOTE}
+          </p>
         </DialogContent>
       </Dialog>
 

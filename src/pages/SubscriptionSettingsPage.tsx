@@ -3,7 +3,9 @@ import { Link } from "react-router-dom";
 import { format } from "date-fns";
 import {
   AlertTriangle,
+  ArrowDown,
   ArrowRight,
+  ArrowUp,
   Bot,
   CalendarDays,
   Check,
@@ -31,6 +33,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { DashboardShellLayout } from "@/components/layout/DashboardShellLayout";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -48,6 +58,7 @@ import {
   planAllowsAnalysis,
 } from "@/lib/subscriptionEntitlements";
 import {
+  changePlan,
   createBillingPortalSession,
   hasActiveSubscription,
   listStripeInvoices,
@@ -56,6 +67,7 @@ import {
 } from "@/services/stripeService";
 import { cn } from "@/lib/utils";
 import { planIdToDisplayName } from "@/lib/referredUserPlanDisplay";
+import { PRICING_PLANS, type PricingPlan } from "@/constants/pricing";
 
 function planLabel(planId: string | undefined): string {
   if (!planId) return "No active plan";
@@ -63,13 +75,11 @@ function planLabel(planId: string | undefined): string {
 }
 
 function planPriceHint(planId: string | undefined): string {
+  const fromCatalog = PRICING_PLANS.find((p) => p.id === planId);
+  if (fromCatalog) {
+    return `$${fromCatalog.integrationFee} setup + $${fromCatalog.price}/mo (after 30 days)`;
+  }
   switch (planId) {
-    case "starterPlan":
-      return "$49 / month";
-    case "growthPlan":
-      return "$99 / month";
-    case "professionalPlan":
-      return "$199 / month";
     case "botIntegration":
       return "Legacy — Bot tier";
     case "probIntelligence":
@@ -127,6 +137,13 @@ function formatInvoiceAmount(cents: number, currency: string): string {
   return `${sym} ${currency.toUpperCase()}`;
 }
 
+/** Tier order for the three active plans */
+const PLAN_TIER: Record<string, number> = {
+  starterPlan: 0,
+  growthPlan: 1,
+  professionalPlan: 2,
+};
+
 export default function SubscriptionSettingsPage() {
   const { subscription, loading, manualFullAccessBypass, hasBillingIssue } = useSubscription();
   const [portalLoading, setPortalLoading] = useState(false);
@@ -134,11 +151,20 @@ export default function SubscriptionSettingsPage() {
   const [invoicesLoading, setInvoicesLoading] = useState(false);
   const [invoicesError, setInvoicesError] = useState<string | null>(null);
 
+  // Change-plan dialog state
+  const [changePlanOpen, setChangePlanOpen] = useState(false);
+  const [changePlanTarget, setChangePlanTarget] = useState<PricingPlan | null>(null);
+  const [changePlanLoading, setChangePlanLoading] = useState(false);
+  const [changePlanResult, setChangePlanResult] = useState<string | null>(null);
+
   const paid = hasActiveSubscription(subscription);
   const planId = subscription?.plan_id;
   const showProPortalCta = paid && isMidTierEligibleForProOnlyUpgrade(planId);
   const periodEnd = subscription?.current_period_end
     ? format(new Date(subscription.current_period_end), "PPP")
+    : null;
+  const pendingDowngrade = subscription?.pending_plan_change
+    ? PRICING_PLANS.find((p) => p.id === subscription.pending_plan_change) ?? null
     : null;
 
   const manualStripeProfile = Boolean(
@@ -170,6 +196,29 @@ export default function SubscriptionSettingsPage() {
       cancelled = true;
     };
   }, [stripeReady, loading, subscription?.stripe_customer_id]);
+
+  const openChangePlanDialog = (target: PricingPlan) => {
+    setChangePlanTarget(target);
+    setChangePlanResult(null);
+    setChangePlanOpen(true);
+  };
+
+  const confirmChangePlan = async () => {
+    if (!changePlanTarget) return;
+    setChangePlanLoading(true);
+    const result = await changePlan(changePlanTarget.id);
+    setChangePlanLoading(false);
+    if ("error" in result) {
+      toast.error(result.error);
+      return;
+    }
+    setChangePlanResult(result.message);
+    toast.success(
+      result.action === "upgraded"
+        ? `Upgraded to ${changePlanTarget.name}!`
+        : `Downgrade to ${changePlanTarget.name} scheduled.`,
+    );
+  };
 
   const openBillingSession = async (portal_flow: BillingPortalFlow = "default") => {
     setPortalLoading(true);
@@ -280,7 +329,7 @@ export default function SubscriptionSettingsPage() {
                         <p className="text-xl font-semibold text-foreground">No active subscription</p>
                         <CardDescription className="max-w-lg text-sm leading-relaxed">
                           Subscribe to unlock AI analysis, paper trading, and live algo execution on
-                          Starter, Growth, or Professional. Pick a plan that matches how you trade.
+                          Starter, Growth, or Pro. Pick a plan that matches how you trade.
                         </CardDescription>
                       </>
                     )}
@@ -447,11 +496,11 @@ export default function SubscriptionSettingsPage() {
                   <div className="rounded-2xl border border-primary/25 bg-primary/5 px-5 py-4 text-sm leading-relaxed text-muted-foreground">
                     <span className="inline-flex items-center gap-1.5 font-semibold text-foreground">
                       <Zap className="h-4 w-4 text-primary" />
-                      Upgrade to Professional ($199/mo)
+                      Upgrade to Pro ($399 setup + $129/mo after 30 days)
                     </span>
                     <p className="mt-2">
                       You&apos;re on Starter or Growth (or a legacy mid-tier). In the billing portal,
-                      switch to Professional for the highest strategy limits. Stripe applies proration
+                      switch to Pro for unlimited strategies. Stripe applies proration
                       or schedules the change for the next period depending on your{" "}
                       <strong className="text-foreground">Stripe Customer Portal</strong> and product
                       settings.
@@ -520,26 +569,70 @@ export default function SubscriptionSettingsPage() {
                         </span>
                       </span>
                     </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="h-auto min-h-11 justify-start gap-2 rounded-xl border-white/15 bg-zinc-900/30 py-3 text-left font-medium"
-                      disabled={portalLoading || !hasStripeSub}
-                      onClick={() => openBillingSession("subscription_update")}
-                      title={!hasStripeSub ? "No Stripe subscription id on file" : undefined}
-                    >
-                      {portalLoading ? (
-                        <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-                      ) : (
-                        <Zap className="h-4 w-4 shrink-0 text-primary" />
-                      )}
-                      <span>
-                        <span className="block text-sm font-semibold">Change plan</span>
-                        <span className="block text-xs font-normal text-muted-foreground">
-                          Upgrade or downgrade (portal rules apply)
+                    {/* ── Custom plan-change buttons ── */}
+                    {hasStripeSub && paid && planId && PLAN_TIER[planId] !== undefined && (
+                      <>
+                        {PRICING_PLANS.filter((p) => p.id !== planId).map((p) => {
+                          const isUp = (PLAN_TIER[p.id] ?? -1) > (PLAN_TIER[planId] ?? -1);
+                          const isPendingTarget = pendingDowngrade?.id === p.id;
+                          return (
+                            <Button
+                              key={p.id}
+                              type="button"
+                              variant="outline"
+                              disabled={changePlanLoading || isPendingTarget}
+                              className={cn(
+                                "h-auto min-h-11 justify-start gap-2 rounded-xl py-3 text-left font-medium",
+                                isUp
+                                  ? "border-teal-500/30 bg-teal-950/20 hover:bg-teal-950/40"
+                                  : "border-white/15 bg-zinc-900/30",
+                              )}
+                              onClick={() => openChangePlanDialog(p)}
+                            >
+                              {isUp ? (
+                                <ArrowUp className="h-4 w-4 shrink-0 text-teal-400" />
+                              ) : (
+                                <ArrowDown className="h-4 w-4 shrink-0 text-zinc-400" />
+                              )}
+                              <span>
+                                <span className="block text-sm font-semibold">
+                                  {isUp ? "Upgrade" : "Downgrade"} to {p.name}
+                                </span>
+                                <span className="block text-xs font-normal text-muted-foreground">
+                                  {isUp
+                                    ? `$${p.integrationFee} setup delta + prorated monthly — charged now`
+                                    : isPendingTarget
+                                    ? "Already scheduled for next renewal"
+                                    : `$${p.price}/mo — starts at next renewal`}
+                                </span>
+                              </span>
+                            </Button>
+                          );
+                        })}
+                      </>
+                    )}
+                    {/* Legacy / non-catalog plans: fall back to portal */}
+                    {hasStripeSub && paid && (!planId || PLAN_TIER[planId] === undefined) && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-auto min-h-11 justify-start gap-2 rounded-xl border-white/15 bg-zinc-900/30 py-3 text-left font-medium"
+                        disabled={portalLoading}
+                        onClick={() => openBillingSession("subscription_update")}
+                      >
+                        {portalLoading ? (
+                          <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                        ) : (
+                          <Zap className="h-4 w-4 shrink-0 text-primary" />
+                        )}
+                        <span>
+                          <span className="block text-sm font-semibold">Change plan</span>
+                          <span className="block text-xs font-normal text-muted-foreground">
+                            Upgrade or downgrade via Stripe portal
+                          </span>
                         </span>
-                      </span>
-                    </Button>
+                      </Button>
+                    )}
                     <Button
                       type="button"
                       variant="outline"
@@ -663,35 +756,43 @@ export default function SubscriptionSettingsPage() {
                 <Accordion type="single" collapsible className="w-full">
                   <AccordionItem value="upgrade" className="border-border/50 px-3">
                     <AccordionTrigger className="py-4 text-sm font-semibold hover:no-underline hover:text-primary">
-                      Upgrades & changes
+                      Upgrades — immediate
                     </AccordionTrigger>
                     <AccordionContent className="space-y-2 pb-4 text-sm leading-relaxed text-muted-foreground">
                       <p>
-                        Use <strong className="text-foreground">Open billing portal</strong> to move
-                        between <strong className="text-foreground">Starter</strong>,{" "}
-                        <strong className="text-foreground">Growth</strong>, and{" "}
-                        <strong className="text-foreground">Professional</strong>. Whether the new price
-                        starts immediately with proration or at the next renewal is controlled in{" "}
-                        <strong className="text-foreground">Stripe Dashboard</strong> (Customer Portal
-                        + subscription settings).
+                        Upgrades take effect <strong className="text-foreground">immediately</strong>.
+                        You are charged two amounts in a single invoice today:
                       </p>
+                      <ul className="list-disc list-inside space-y-1">
+                        <li>
+                          <strong className="text-foreground">Integration delta</strong> — new plan&apos;s
+                          setup fee minus what you have already paid (e.g. Starter → Pro: $399 − $149 = $250).
+                        </li>
+                        <li>
+                          <strong className="text-foreground">Monthly proration</strong> — the monthly
+                          rate difference × days remaining in your current billing cycle ÷ 30.
+                        </li>
+                      </ul>
                       <p>
-                        After checkout or portal changes, Stripe webhooks update your{" "}
-                        <code className="text-xs">plan_id</code> in the app automatically.
+                        Your next monthly bill stays on its original date but at the new rate.
+                        New features unlock right away.
                       </p>
                     </AccordionContent>
                   </AccordionItem>
                   <AccordionItem value="downgrade" className="border-border/50 px-3">
                     <AccordionTrigger className="py-4 text-sm font-semibold hover:no-underline hover:text-primary">
-                      Downgrades
+                      Downgrades — next renewal
                     </AccordionTrigger>
                     <AccordionContent className="space-y-2 pb-4 text-sm leading-relaxed text-muted-foreground">
                       <p>
-                        You can schedule a move to a lower tier in the portal. Ideally the cheaper plan
-                        starts only when your{" "}
-                        <strong className="text-foreground">current paid period</strong> ends, so you
-                        keep full access until then — set that in Stripe (e.g. change at period end /
-                        subscription schedules).
+                        Downgrades are <strong className="text-foreground">scheduled</strong>, not
+                        instant. No charge or refund today — you keep your current plan&apos;s full
+                        features until the period ends.
+                      </p>
+                      <p>
+                        At your next renewal the lower monthly rate kicks in automatically.
+                        Integration fees are <strong className="text-foreground">non-refundable</strong>,
+                        but if you upgrade again later you only pay the difference between plans.
                       </p>
                     </AccordionContent>
                   </AccordionItem>
@@ -701,19 +802,15 @@ export default function SubscriptionSettingsPage() {
                     </AccordionTrigger>
                     <AccordionContent className="space-y-2 pb-4 text-sm leading-relaxed text-muted-foreground">
                       <p>
-                        Use <strong className="text-foreground">Cancel subscription</strong> above — it
-                        opens Stripe&apos;s hosted flow (still the official portal, launched from our UI).
-                        You can turn off auto-renew or cancel outright depending on your portal config.
+                        Use <strong className="text-foreground">Cancel subscription</strong> — it opens
+                        Stripe&apos;s secure hosted cancel flow. You can turn off auto-renew or cancel
+                        outright. Access continues until the end of the{" "}
+                        <strong className="text-foreground">current paid period</strong>.
                       </p>
                       <p>
-                        Turning off auto-renew usually keeps access until the end of the{" "}
-                        <strong className="text-foreground">current billing period</strong>. When a
-                        renewal charge succeeds, access continues for the next month.
-                      </p>
-                      <p>
-                        If a renewal payment fails, Stripe marks the subscription{" "}
-                        <strong className="text-foreground">past_due</strong> and this app pauses
-                        premium access until you fix the card in the portal.
+                        If a renewal payment fails, Stripe marks your subscription{" "}
+                        <strong className="text-foreground">past_due</strong> and premium access is
+                        paused until the card is updated.
                       </p>
                     </AccordionContent>
                   </AccordionItem>
@@ -723,6 +820,145 @@ export default function SubscriptionSettingsPage() {
           </aside>
         </div>
       </div>
+      {/* ── Pending downgrade notice ── */}
+      {pendingDowngrade && periodEnd && (
+        <div className="mx-auto mt-4 max-w-5xl flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-200">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+          <span>
+            <strong>Downgrade scheduled:</strong> You will move to{" "}
+            <strong>{pendingDowngrade.name}</strong> (${pendingDowngrade.price}/mo) at your next
+            renewal on <strong>{periodEnd}</strong>. You keep full access to your current plan until
+            then. No refund is issued for the integration fee — if you upgrade again later, you only
+            pay the difference.
+          </span>
+        </div>
+      )}
+
+      {/* ── Change plan confirmation dialog ── */}
+      <Dialog
+        open={changePlanOpen}
+        onOpenChange={(open) => {
+          if (!changePlanLoading) {
+            setChangePlanOpen(open);
+            if (!open) setChangePlanResult(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          {changePlanTarget && (() => {
+            const currentMeta = PRICING_PLANS.find((p) => p.id === planId);
+            const isUp = (PLAN_TIER[changePlanTarget.id] ?? -1) > (PLAN_TIER[planId ?? ""] ?? -1);
+            const integFee = subscription?.integration_fee_paid ?? 0;
+            const integDelta = Math.max(0, changePlanTarget.integrationFee - integFee);
+            const periodEndDate = subscription?.current_period_end
+              ? new Date(subscription.current_period_end)
+              : null;
+            const daysLeft = periodEndDate
+              ? Math.max(0, (periodEndDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+              : 0;
+            const oldMonthly = currentMeta?.price ?? 0;
+            const prorated = isUp
+              ? Math.max(0, ((changePlanTarget.price - oldMonthly) / 30) * daysLeft)
+              : 0;
+            const totalNow = isUp ? integDelta + prorated : 0;
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    {isUp ? (
+                      <ArrowUp className="h-5 w-5 text-teal-400" />
+                    ) : (
+                      <ArrowDown className="h-5 w-5 text-amber-400" />
+                    )}
+                    {isUp ? "Upgrade" : "Downgrade"} to {changePlanTarget.name}
+                  </DialogTitle>
+                  <DialogDescription className="text-sm leading-relaxed text-muted-foreground">
+                    {isUp ? (
+                      <>
+                        You will be charged{" "}
+                        <strong className="text-foreground">${totalNow.toFixed(2)}</strong> immediately:
+                        <ul className="mt-2 space-y-1 list-disc list-inside">
+                          <li>
+                            Integration fee delta:{" "}
+                            <strong className="text-foreground">${integDelta.toFixed(2)}</strong>{" "}
+                            <span className="text-xs">
+                              (${changePlanTarget.integrationFee} − ${integFee.toFixed(2)} already paid)
+                            </span>
+                          </li>
+                          <li>
+                            Monthly proration for ~{Math.round(daysLeft)} days remaining:{" "}
+                            <strong className="text-foreground">${prorated.toFixed(2)}</strong>
+                          </li>
+                        </ul>
+                        <p className="mt-2">
+                          Your next monthly bill will be{" "}
+                          <strong className="text-foreground">${changePlanTarget.price}/mo</strong> and
+                          features unlock immediately.
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p>
+                          <strong className="text-foreground">No charge today.</strong> You keep{" "}
+                          <strong className="text-foreground">{currentMeta?.name}</strong> features
+                          until your current period ends on{" "}
+                          <strong className="text-foreground">{periodEnd ?? "renewal date"}</strong>.
+                        </p>
+                        <p className="mt-2">
+                          At renewal your plan switches to{" "}
+                          <strong className="text-foreground">{changePlanTarget.name}</strong> and you
+                          are charged{" "}
+                          <strong className="text-foreground">${changePlanTarget.price}/mo</strong>.
+                          Integration fees are non-refundable — if you upgrade again later you only
+                          pay the difference.
+                        </p>
+                      </>
+                    )}
+                  </DialogDescription>
+                </DialogHeader>
+
+                {changePlanResult ? (
+                  <div className="rounded-xl border border-teal-500/30 bg-teal-950/20 px-4 py-3 text-sm text-teal-300">
+                    {changePlanResult}
+                  </div>
+                ) : (
+                  <DialogFooter className="mt-2">
+                    <Button
+                      variant="outline"
+                      className="rounded-xl"
+                      disabled={changePlanLoading}
+                      onClick={() => setChangePlanOpen(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      className={cn(
+                        "rounded-xl font-semibold",
+                        isUp
+                          ? "bg-teal-500 text-black hover:bg-teal-400"
+                          : "bg-amber-500 text-black hover:bg-amber-400",
+                      )}
+                      disabled={changePlanLoading}
+                      onClick={confirmChangePlan}
+                    >
+                      {changePlanLoading ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : isUp ? (
+                        <ArrowUp className="mr-2 h-4 w-4" />
+                      ) : (
+                        <ArrowDown className="mr-2 h-4 w-4" />
+                      )}
+                      {isUp
+                        ? `Confirm upgrade — pay $${totalNow.toFixed(2)} now`
+                        : `Schedule downgrade at renewal`}
+                    </Button>
+                  </DialogFooter>
+                )}
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </DashboardShellLayout>
   );
 }

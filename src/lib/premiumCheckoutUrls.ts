@@ -1,4 +1,4 @@
-/** Success/cancel URLs for public premium (Starter / Growth / Professional) checkout. */
+/** Success/cancel URLs for public premium (Starter / Growth / Pro) checkout. */
 export function premiumPlanCheckoutUrls(planId: string) {
   const origin = window.location.origin;
   return {
