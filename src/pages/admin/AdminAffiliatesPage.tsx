@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { RefreshCw, PlusCircle, Pencil, Link2, Copy, Check, Trash2, Ban, RotateCcw, Eye, Users, FileText, DollarSign, Percent, UserPlus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AffiliateDetailModal } from "@/components/affiliate/AffiliateDetailModal";
 
 interface AffiliateRow {
@@ -25,9 +26,25 @@ interface AffiliateRow {
   form_submissions: number;
   total_commission: number;
   payments_count: number;
+  phone?: string;
+  commission_type?: string;
+  fixed_amount?: number;
+  tier_config?: any;
+  recurring_config?: any;
 }
 
-const defaultForm = { code: "", name: "", email: "", commission_percent: 10, is_active: true };
+const defaultForm = {
+  code: "",
+  name: "",
+  email: "",
+  phone: "",
+  commission_percent: 10,
+  commission_type: "percentage",
+  fixed_amount: 0,
+  tier_config: [],
+  recurring_config: {},
+  is_active: true
+};
 
 export default function AdminAffiliatesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -65,7 +82,7 @@ export default function AdminAffiliatesPage() {
     try {
       const { data: affiliates, error: e1 } = await (supabase as any)
         .from("affiliates")
-        .select("id, code, name, email, commission_percent, is_active, created_at")
+        .select("id, code, name, email, phone, commission_percent, commission_type, fixed_amount, tier_config, recurring_config, is_active, created_at")
         .order("created_at", { ascending: false });
 
       if (e1) throw e1;
@@ -156,7 +173,12 @@ export default function AdminAffiliatesPage() {
       code: r.code,
       name: r.name,
       email: r.email,
+      phone: r.phone || "",
       commission_percent: r.commission_percent,
+      commission_type: r.commission_type || "percentage",
+      fixed_amount: r.fixed_amount || 0,
+      tier_config: r.tier_config || [],
+      recurring_config: r.recurring_config || {},
       is_active: r.is_active,
     });
     setEditingId(r.id);
@@ -177,7 +199,12 @@ export default function AdminAffiliatesPage() {
           .update({
             name: form.name.trim(),
             email: form.email.trim(),
+            phone: form.phone.trim(),
             commission_percent: Number(form.commission_percent) || 0,
+            commission_type: form.commission_type,
+            fixed_amount: Number(form.fixed_amount) || 0,
+            tier_config: form.tier_config,
+            recurring_config: form.recurring_config,
             is_active: form.is_active,
           })
           .eq("id", editingId);
@@ -190,7 +217,12 @@ export default function AdminAffiliatesPage() {
             code: form.code.trim().toLowerCase().replace(/\s+/g, ""),
             name: form.name.trim(),
             email: form.email.trim(),
+            phone: form.phone.trim(),
             commission_percent: Number(form.commission_percent) || 10,
+            commission_type: form.commission_type,
+            fixed_amount: Number(form.fixed_amount) || 0,
+            tier_config: form.tier_config,
+            recurring_config: form.recurring_config,
           },
         });
         if (error) throw error;
@@ -474,17 +506,93 @@ export default function AdminAffiliatesPage() {
               />
             </div>
             <div className="grid gap-2">
-              <Label>Commission % (when their referred user pays)</Label>
+              <Label>Phone Number</Label>
               <Input
-                type="number"
-                min={0}
-                max={100}
-                step={0.5}
-                value={form.commission_percent}
-                onChange={(e) => setForm((f) => ({ ...f, commission_percent: Number(e.target.value) || 0 }))}
+                value={form.phone}
+                onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                placeholder="+91 98765 43210"
                 className="bg-white/5 border-white/10"
               />
             </div>
+            <div className="grid gap-2">
+              <Label>Commission System</Label>
+              <Select
+                value={form.commission_type}
+                onValueChange={(v) => setForm((f) => ({ ...f, commission_type: v }))}
+              >
+                <SelectTrigger className="bg-white/5 border-white/10">
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent className="bg-zinc-900 border-white/10 text-white">
+                  <SelectItem value="percentage">Percentage commission</SelectItem>
+                  <SelectItem value="fixed">Fixed commission</SelectItem>
+                  <SelectItem value="tier">Tier-based commission</SelectItem>
+                  <SelectItem value="recurring">Recurring commission</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {form.commission_type === "percentage" && (
+              <div className="grid gap-2">
+                <Label>Commission % (when their referred user pays)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.5}
+                  value={form.commission_percent}
+                  onChange={(e) => setForm((f) => ({ ...f, commission_percent: Number(e.target.value) || 0 }))}
+                  className="bg-white/5 border-white/10"
+                />
+              </div>
+            )}
+
+            {form.commission_type === "fixed" && (
+              <div className="grid gap-2">
+                <Label>Fixed Commission Amount (₹)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={form.fixed_amount}
+                  onChange={(e) => setForm((f) => ({ ...f, fixed_amount: Number(e.target.value) || 0 }))}
+                  placeholder="e.g. 500"
+                  className="bg-white/5 border-white/10"
+                />
+              </div>
+            )}
+
+            {form.commission_type === "tier" && (
+              <div className="space-y-4 p-3 border border-white/10 rounded-lg bg-white/5">
+                <Label className="text-sm font-medium">Tier Configuration</Label>
+                <p className="text-[10px] text-zinc-500">Define tiers based on sales volume.</p>
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <Input placeholder="Threshold (e.g. 10)" className="h-8 bg-zinc-950/50 border-white/10 text-xs" />
+                    <Input placeholder="Rate % (e.g. 15)" className="h-8 bg-zinc-950/50 border-white/10 text-xs" />
+                    <Button size="sm" className="h-8 bg-white/10 hover:bg-white/20">Add</Button>
+                  </div>
+                  {/* Tier list would go here */}
+                  <p className="text-[10px] text-zinc-600 italic">Advanced tier management coming soon in detail view.</p>
+                </div>
+              </div>
+            )}
+
+            {form.commission_type === "recurring" && (
+              <div className="grid gap-2">
+                <Label>Recurring Commission %</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.5}
+                  value={form.commission_percent}
+                  onChange={(e) => setForm((f) => ({ ...f, commission_percent: Number(e.target.value) || 0 }))}
+                  placeholder="e.g. 10"
+                  className="bg-white/5 border-white/10"
+                />
+                <p className="text-[10px] text-zinc-500 italic">This percentage will be paid for every renewal.</p>
+              </div>
+            )}
             {editingId && (
               <div className="flex items-center gap-2">
                 <input
