@@ -318,6 +318,63 @@ function splitIndexedIntoColumns<T>(
   return [left, right];
 }
 
+function metricBoxValues(row: SignalRow, currSymbol: string): {
+  entry: string;
+  sl: string;
+  target: string;
+  rr: string;
+} {
+  const sv = row.score_vector;
+  const entry = Number.isFinite(row.priceAtEntry)
+    ? `${currSymbol}${fmtNum(row.priceAtEntry)}`
+    : "—";
+  const sl =
+    sv?.stop_loss_price != null && Number.isFinite(sv.stop_loss_price)
+      ? `${currSymbol}${fmtNum(sv.stop_loss_price)}`
+      : "—";
+  const target =
+    sv?.take_profit_price != null && Number.isFinite(sv.take_profit_price)
+      ? `${currSymbol}${fmtNum(sv.take_profit_price)}`
+      : "—";
+  const rr =
+    sv?.rr_ratio != null && Number.isFinite(sv.rr_ratio)
+      ? `1:${sv.rr_ratio >= 10 ? sv.rr_ratio.toFixed(0) : sv.rr_ratio.toFixed(1)}`
+      : "—";
+  return { entry, sl, target, rr };
+}
+
+function mergeEquivalentSignals(rows: SignalRow[]): SignalRow[] {
+  const merged = new Map<string, SignalRow>();
+  for (const row of rows) {
+    const sv = row.score_vector;
+    const key = [
+      row.side,
+      finalDisplayScore(row),
+      row.priceAtEntry,
+      sv?.stop_loss_price ?? "n",
+      sv?.take_profit_price ?? "n",
+      sv?.rr_ratio ?? "n",
+      (row.whyThisScore ?? "").trim(),
+      (row.rationale ?? "").trim(),
+    ].join("|");
+    const prev = merged.get(key);
+    if (!prev) {
+      merged.set(key, row);
+      continue;
+    }
+    const names = Array.from(
+      new Set(
+        `${prev.strategyLabel} + ${row.strategyLabel}`
+          .split("+")
+          .map((s) => s.trim())
+          .filter(Boolean),
+      ),
+    );
+    merged.set(key, { ...prev, strategyLabel: names.join(" + ") });
+  }
+  return Array.from(merged.values());
+}
+
 function finalDisplayScore(row: SignalRow): number {
   const v = row.score_vector?.final_score;
   if (typeof v === "number" && Number.isFinite(v)) return v;
@@ -363,26 +420,6 @@ function verdictStatusShortLabel(verdict: string): string {
   return verdictUiLabel(verdict);
 }
 
-function traderLevel1MetricsLine(row: SignalRow, currSymbol: string): string {
-  const sv = row.score_vector;
-  const entry = row.priceAtEntry;
-  const ep = Number.isFinite(entry) ? `${currSymbol}${fmtNum(entry)}` : "—";
-  if (!sv) return `Entry: ${ep}`;
-  const sl =
-    sv.stop_loss_price != null && Number.isFinite(sv.stop_loss_price)
-      ? `${currSymbol}${fmtNum(sv.stop_loss_price)}`
-      : "—";
-  const tp =
-    sv.take_profit_price != null && Number.isFinite(sv.take_profit_price)
-      ? `${currSymbol}${fmtNum(sv.take_profit_price)}`
-      : "—";
-  const rr =
-    sv.rr_ratio != null && Number.isFinite(sv.rr_ratio)
-      ? `1:${sv.rr_ratio >= 10 ? sv.rr_ratio.toFixed(0) : sv.rr_ratio.toFixed(1)}`
-      : "—";
-  return `Entry: ${ep}   SL: ${sl}   Target: ${tp}   RR: ${rr}`;
-}
-
 type ScanSynthesis = {
   strategyCount: number;
   strongestLine: string;
@@ -418,7 +455,8 @@ function buildScanSynthesis(signals: SignalRow[]): ScanSynthesis {
     buyHigh >= 45 &&
     sellHigh >= 45;
 
-  const sideWord = String(best.side || "").toUpperCase() === "SELL" ? "SELL" : "BUY";
+  const sideWord =
+    String(best.side || "").toUpperCase() === "SELL" ? "SELL" : "BUY";
   const strongestLine = `${best.strategyLabel} — ${sideWord}`;
   const grade = displayGrade(best);
   const statusLabel = verdictStatusShortLabel(best.verdict);
@@ -445,7 +483,8 @@ function buildScanSynthesis(signals: SignalRow[]): ScanSynthesis {
   if (sv?.execute_trade && bestScore >= 75) {
     nextStep = "Act from your plan or track the live window on that card.";
   } else {
-    nextStep = "Set an alert when scan scores cross 75 or wait for cleaner modules.";
+    nextStep =
+      "Set an alert when scan scores cross 75 or wait for cleaner modules.";
   }
 
   return {
@@ -925,7 +964,10 @@ function CustomStrategySavedPlanBlock({
       </p>
       <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1.5 text-[12px]">
         {rows.map((r) => (
-          <div key={r.k} className="min-w-0">
+          <div
+            key={r.k}
+            className={`min-w-0 ${r.k === "Notes" ? "col-span-2" : ""}`}
+          >
             <dt className="text-zinc-500 font-medium">{r.k}</dt>
             <dd className="text-zinc-200 font-mono break-words">{r.v}</dd>
           </div>
@@ -1005,6 +1047,7 @@ function SignalAnalysisCard(props: {
   const headerScore = Math.round(finalDisplayScore(row));
   const grade = displayGrade(row);
   const statusShort = verdictStatusShortLabel(row.verdict);
+  const metricBoxes = metricBoxValues(row, currSymbol);
   const entrySignalLabel =
     String(row.side || "").toUpperCase() === "SELL"
       ? "SELL ENTRY"
@@ -1107,9 +1150,24 @@ function SignalAnalysisCard(props: {
         <p className={`text-sm font-bold ${sideClass(row.side)}`}>
           ● {entrySignalLabel}
         </p>
-        <p className="font-mono text-[11px] text-zinc-200 leading-relaxed break-words">
-          {traderLevel1MetricsLine(row, currSymbol)}
-        </p>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="rounded border border-white/10 bg-zinc-900/50 px-2 py-1.5">
+            <p className="text-[9px] uppercase tracking-wider text-zinc-500">Entry</p>
+            <p className="text-sm font-mono text-zinc-100">{metricBoxes.entry}</p>
+          </div>
+          <div className="rounded border border-red-500/30 bg-red-950/20 px-2 py-1.5">
+            <p className="text-[9px] uppercase tracking-wider text-zinc-500">SL</p>
+            <p className="text-sm font-mono text-red-300">{metricBoxes.sl}</p>
+          </div>
+          <div className="rounded border border-emerald-500/30 bg-emerald-950/20 px-2 py-1.5">
+            <p className="text-[9px] uppercase tracking-wider text-zinc-500">Target</p>
+            <p className="text-sm font-mono text-emerald-300">{metricBoxes.target}</p>
+          </div>
+          <div className="rounded border border-teal-500/30 bg-teal-950/20 px-2 py-1.5">
+            <p className="text-[9px] uppercase tracking-wider text-zinc-500">RR</p>
+            <p className="text-sm font-mono text-teal-300">{metricBoxes.rr}</p>
+          </div>
+        </div>
         {slTpHint ? (
           <p className="text-[10px] text-cyan-200/90 leading-snug border-l-2 border-cyan-500/40 pl-2">
             {slTpHint}
@@ -1134,9 +1192,9 @@ function SignalAnalysisCard(props: {
       ) : null}
 
       <details className="rounded-lg border border-zinc-800/80 bg-zinc-950/25 group">
-        <summary className="cursor-pointer list-none flex items-center justify-between gap-2 px-3 py-2 text-[11px] font-semibold text-zinc-500 hover:text-zinc-300 [&::-webkit-details-marker]:hidden">
-          <span>Technical details & full rationale</span>
-          <span className="text-zinc-600 transition-transform group-open:rotate-180 inline-block">
+        <summary className="cursor-pointer list-none flex items-center justify-between gap-2 px-3 py-2 font-semibold text-zinc-500 hover:text-zinc-300 [&::-webkit-details-marker]:hidden">
+          <span className="text-[11px]">Technical details</span>
+          <span className="text-zinc-600 transition-transform group-open:rotate-180 inline-block w-4 h-4 min-w-4">
             ▾
           </span>
         </summary>
@@ -1275,9 +1333,8 @@ function SignalAnalysisCard(props: {
               {row.forwardMaxFavorablePct != null &&
               row.forwardMaxAdversePct != null ? (
                 <p className="text-[11px] text-zinc-500">
-                  Max favorable ≈ {row.forwardMaxFavorablePct}% · Max adverse
-                  ≈ {row.forwardMaxAdversePct}% over{" "}
-                  {row.forwardProbeBars ?? "?"}
+                  Max favorable ≈ {row.forwardMaxFavorablePct}% · Max adverse ≈{" "}
+                  {row.forwardMaxAdversePct}% over {row.forwardProbeBars ?? "?"}
                   bars — not a full trade result.
                 </p>
               ) : null}
@@ -1330,11 +1387,11 @@ function SignalAnalysisCard(props: {
               </ul>
               {row.conditionAudit.snapshot &&
               Object.keys(row.conditionAudit.snapshot).length > 0 ? (
-                <div className="pt-2 border-t border-white/10">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-zinc-500 mb-1">
-                    Values at bar
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] font-mono text-zinc-400">
+                <details className="pt-2 border-t border-white/10">
+                  <summary className="cursor-pointer list-none text-[10px] font-semibold uppercase tracking-wide text-zinc-500 hover:text-zinc-300 [&::-webkit-details-marker]:hidden">
+                    Show raw data ▾
+                  </summary>
+                  <div className="mt-1.5 grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] font-mono text-zinc-400">
                     {Object.entries(row.conditionAudit.snapshot).map(
                       ([k, v]) => (
                         <span
@@ -1342,13 +1399,12 @@ function SignalAnalysisCard(props: {
                           className="truncate"
                           title={`${k}: ${String(v)}`}
                         >
-                          <span className="text-zinc-600">{k}</span>=
-                          {String(v)}
+                          <span className="text-zinc-600">{k}</span>={String(v)}
                         </span>
                       ),
                     )}
                   </div>
-                </div>
+                </details>
               ) : null}
             </div>
           ) : null}
@@ -1374,15 +1430,6 @@ function SignalAnalysisCard(props: {
               </p>
             </div>
           ) : null}
-
-          <div className="space-y-1">
-            <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">
-              Full rationale
-            </p>
-            <p className="text-sm text-zinc-300 leading-relaxed">
-              {row.rationale || "—"}
-            </p>
-          </div>
 
           {row.isLive && row.liveViability ? (
             <div className="rounded-lg border border-teal-500/25 bg-teal-950/15 p-3 space-y-1">
@@ -1462,7 +1509,7 @@ const MODULE_ROWS: {
   { key: "volume_confirmation_score", label: "Volume & Flow" },
   { key: "volatility_score", label: "Volatility" },
   { key: "rr_score", label: "Risk-Reward" },
-  { key: "trap_probability", label: "Trap Risk", invert: true },
+  { key: "trap_probability", label: "Trap Risk" },
 ];
 
 function scoreBandBarClass(score0to100: number): string {
@@ -1612,20 +1659,36 @@ function ScanSignalSummaryBanner({
   synthesis,
   symbol,
   titleSuffix = "Today's Signal Summary",
+  onSetAlert,
 }: {
   synthesis: ScanSynthesis;
   symbol: string;
   titleSuffix?: string;
+  onSetAlert?: () => void;
 }) {
   const sym = symbol.trim().toUpperCase() || "—";
   return (
     <div className="rounded-xl border border-teal-500/30 bg-gradient-to-br from-teal-950/35 via-zinc-950/50 to-black/50 p-4 space-y-2.5 shadow-[0_0_24px_rgba(20,184,166,0.06)]">
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <span className="font-mono text-sm font-semibold text-white tracking-tight">
-          {sym}
-        </span>
-        <span className="text-zinc-600 hidden sm:inline">|</span>
-        <span className="text-xs font-medium text-teal-200/95">{titleSuffix}</span>
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <span className="font-mono text-sm font-semibold text-white tracking-tight">
+            {sym}
+          </span>
+          <span className="text-zinc-600 hidden sm:inline">|</span>
+          <span className="text-xs font-medium text-teal-200/95">
+            {titleSuffix}
+          </span>
+        </div>
+        {onSetAlert ? (
+          <Button
+            type="button"
+            size="sm"
+            className="h-7 px-2.5 text-[11px] bg-teal-600 hover:bg-teal-500 text-white shrink-0"
+            onClick={onSetAlert}
+          >
+            Set Alert
+          </Button>
+        ) : null}
       </div>
       <p className="text-[11px] text-zinc-500">
         {synthesis.strategyCount} strategies analyzed
@@ -1647,7 +1710,9 @@ function ScanSignalSummaryBanner({
         Score: {synthesis.score}/100 | Grade: {synthesis.grade} |{" "}
         {synthesis.statusLabel}
       </p>
-      <p className="text-sm text-zinc-200 leading-relaxed">{synthesis.conclusion}</p>
+      <p className="text-sm text-zinc-200 leading-relaxed">
+        {synthesis.conclusion}
+      </p>
       <p className="text-xs text-teal-200/90 font-medium leading-snug">
         {synthesis.nextStep}
       </p>
@@ -1660,6 +1725,11 @@ function ScorecardPanel({ sv, symbol }: { sv: ScoreVector; symbol?: string }) {
   const [open, setOpen] = useState(false);
   const qc = qualityColors(sv.entry_quality);
   const gc = gateColors(sv.execute_trade);
+  const moduleContexts = MODULE_ROWS.map(({ key, label, invert }) => {
+    const rawVal = sv[key] as number;
+    const displayVal = invert ? 100 - rawVal : rawVal;
+    return { label, ctx: moduleShortContext(key, sv, rawVal, displayVal) };
+  });
 
   return (
     <div className="rounded-lg border border-zinc-700/60 bg-zinc-900/40 overflow-hidden">
@@ -1706,13 +1776,50 @@ function ScorecardPanel({ sv, symbol }: { sv: ScoreVector; symbol?: string }) {
             {sv.final_score}/100
           </span>
           <span
-            className={`text-zinc-500 transition-transform ${open ? "rotate-180" : ""}`}
+            className={`text-zinc-500 transition-transform w-4 h-4 ${open ? "rotate-180" : ""}`}
             style={{ display: "inline-block" }}
           >
             ▾
           </span>
         </div>
       </button>
+
+      {(sv.stop_loss_price !== null || sv.take_profit_price !== null) && (
+        <div className="mx-3 mb-2 rounded border border-zinc-700/50 bg-zinc-800/40 px-3 py-2 grid grid-cols-3 gap-2 text-center">
+          {sv.stop_loss_price !== null && (
+            <div>
+              <p className="text-[9px] uppercase tracking-wider text-zinc-500">
+                Stop Loss
+              </p>
+              <p className="text-sm font-mono text-red-300">
+                {currSymbol}
+                {sv.stop_loss_price.toFixed(2)}
+              </p>
+            </div>
+          )}
+          {sv.take_profit_price !== null && (
+            <div>
+              <p className="text-[9px] uppercase tracking-wider text-zinc-500">
+                Target
+              </p>
+              <p className="text-sm font-mono text-emerald-300">
+                {currSymbol}
+                {sv.take_profit_price.toFixed(2)}
+              </p>
+            </div>
+          )}
+          {sv.rr_ratio !== null && (
+            <div>
+              <p className="text-[9px] uppercase tracking-wider text-zinc-500">
+                RR Ratio
+              </p>
+              <p className="text-sm font-mono text-teal-300">
+                1:{sv.rr_ratio.toFixed(1)}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Trap warning — shown inline if probability is high */}
       {sv.trap_probability >= 50 && (
@@ -1774,42 +1881,6 @@ function ScorecardPanel({ sv, symbol }: { sv: ScoreVector; symbol?: string }) {
               );
             })}
           </div>
-
-          {/* SL/TP + RR */}
-          {(sv.stop_loss_price !== null || sv.take_profit_price !== null) && (
-            <div className="rounded border border-zinc-700/50 bg-zinc-800/40 px-3 py-2 grid grid-cols-3 gap-2 text-center">
-              {sv.stop_loss_price !== null && (
-                <div>
-                  <p className="text-[9px] uppercase tracking-wider text-zinc-500">
-                    Stop Loss
-                  </p>
-                  <p className="text-sm font-mono text-red-300">
-                    {currSymbol}{sv.stop_loss_price.toFixed(2)}
-                  </p>
-                </div>
-              )}
-              {sv.take_profit_price !== null && (
-                <div>
-                  <p className="text-[9px] uppercase tracking-wider text-zinc-500">
-                    Target
-                  </p>
-                  <p className="text-sm font-mono text-emerald-300">
-                    {currSymbol}{sv.take_profit_price.toFixed(2)}
-                  </p>
-                </div>
-              )}
-              {sv.rr_ratio !== null && (
-                <div>
-                  <p className="text-[9px] uppercase tracking-wider text-zinc-500">
-                    RR Ratio
-                  </p>
-                  <p className="text-sm font-mono text-zinc-200">
-                    1:{sv.rr_ratio.toFixed(1)}
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
 
           {/* ADX + Phase */}
           {(sv.adx_value !== null || sv.market_phase !== null) && (
@@ -2784,7 +2855,8 @@ export function StrategyEntrySignalsPanel({
       .map((row) => applyRowLiveWindow(row, nowMs, w))
       .map((row) => stripLiveWhenVenueClosed(row, venueAllowsLive))
       .filter((s) => !s.isPredicted);
-    return mapped.sort((a, b) => {
+    const deduped = mergeEquivalentSignals(mapped);
+    return deduped.sort((a, b) => {
       if (a.isLive !== b.isLive) return a.isLive ? -1 : 1;
       const ta = entryBarMs(a) ?? 0;
       const tb = entryBarMs(b) ?? 0;
@@ -2829,10 +2901,12 @@ export function StrategyEntrySignalsPanel({
   const historySignals = useMemo(() => {
     const w = liveWindowMsHistory;
     const venueAllowsLive = allowsLiveEntryExitUI(marketStatus, nowMs);
-    return (historyDetail?.signals ?? [])
+    return mergeEquivalentSignals(
+      (historyDetail?.signals ?? [])
       .filter((s) => !s.isPredicted)
       .map((row) => applyRowLiveWindow(row, nowMs, w))
-      .map((row) => stripLiveWhenVenueClosed(row, venueAllowsLive));
+      .map((row) => stripLiveWhenVenueClosed(row, venueAllowsLive)),
+    );
   }, [historyDetail, nowMs, liveWindowMsHistory, marketStatus]);
   const historySignalTotalPages = Math.max(
     1,
@@ -3216,8 +3290,8 @@ export function StrategyEntrySignalsPanel({
                 <p className="text-[10px] text-zinc-500 leading-snug">
                   Only entry/exit points from the last{" "}
                   <span className="text-zinc-400">{resultWindowDays} days</span>{" "}
-                  through now are returned. Data fetch uses at least 60 days when
-                  needed for indicators.
+                  through now are returned. Data fetch uses at least 60 days
+                  when needed for indicators.
                 </p>
                 <div className="flex flex-col sm:flex-row sm:items-end gap-2">
                   <div className="flex-1 min-w-0 space-y-1">
@@ -3235,7 +3309,9 @@ export function StrategyEntrySignalsPanel({
                         <SelectItem value="1d">Last 1 day</SelectItem>
                         <SelectItem value="7d">Last 7 days</SelectItem>
                         <SelectItem value="30d">Last 1 month (~30d)</SelectItem>
-                        <SelectItem value="90d">Last 3 months (~90d)</SelectItem>
+                        <SelectItem value="90d">
+                          Last 3 months (~90d)
+                        </SelectItem>
                         <SelectItem value="180d">
                           Last 6 months (~180d)
                         </SelectItem>
@@ -3494,6 +3570,7 @@ export function StrategyEntrySignalsPanel({
                           <ScanSignalSummaryBanner
                             synthesis={scanSynthesis}
                             symbol={symbol.trim()}
+                            onSetAlert={() => setEntryAlarmsOpen(true)}
                           />
                         </div>
                       ) : null}
@@ -3519,44 +3596,52 @@ export function StrategyEntrySignalsPanel({
                       </div>
                       <div className="hidden xl:grid xl:grid-cols-2 xl:gap-4">
                         <div className="space-y-4">
-                          {mainLeftColumn.map(({ item: row, originalIndex }) => (
-                            <SignalAnalysisCard
-                              key={`${row.strategyId}-${row.entryDate}-${row.side}-${effectiveMainPage}-${originalIndex}`}
-                              row={row}
-                              symbolForExecution={symbol}
-                              todayKey={todayKey}
-                              nowMs={nowMs}
-                              liveWindowMs={liveWindowMsMain}
-                              formatEntry={formatEntry}
-                              formatEntryWithZone={formatEntryWithZone}
-                              formatMarketData={formatMarketData}
-                              sideLabel={sideLabel}
-                              sideClass={sideClass}
-                              verdictVariant={verdictVariant}
-                              onStartTradeSession={startTradeSessionFromSignal}
-                              trackingSignalKey={trackingSignalKey}
-                            />
-                          ))}
+                          {mainLeftColumn.map(
+                            ({ item: row, originalIndex }) => (
+                              <SignalAnalysisCard
+                                key={`${row.strategyId}-${row.entryDate}-${row.side}-${effectiveMainPage}-${originalIndex}`}
+                                row={row}
+                                symbolForExecution={symbol}
+                                todayKey={todayKey}
+                                nowMs={nowMs}
+                                liveWindowMs={liveWindowMsMain}
+                                formatEntry={formatEntry}
+                                formatEntryWithZone={formatEntryWithZone}
+                                formatMarketData={formatMarketData}
+                                sideLabel={sideLabel}
+                                sideClass={sideClass}
+                                verdictVariant={verdictVariant}
+                                onStartTradeSession={
+                                  startTradeSessionFromSignal
+                                }
+                                trackingSignalKey={trackingSignalKey}
+                              />
+                            ),
+                          )}
                         </div>
                         <div className="space-y-4">
-                          {mainRightColumn.map(({ item: row, originalIndex }) => (
-                            <SignalAnalysisCard
-                              key={`${row.strategyId}-${row.entryDate}-${row.side}-${effectiveMainPage}-${originalIndex}`}
-                              row={row}
-                              symbolForExecution={symbol}
-                              todayKey={todayKey}
-                              nowMs={nowMs}
-                              liveWindowMs={liveWindowMsMain}
-                              formatEntry={formatEntry}
-                              formatEntryWithZone={formatEntryWithZone}
-                              formatMarketData={formatMarketData}
-                              sideLabel={sideLabel}
-                              sideClass={sideClass}
-                              verdictVariant={verdictVariant}
-                              onStartTradeSession={startTradeSessionFromSignal}
-                              trackingSignalKey={trackingSignalKey}
-                            />
-                          ))}
+                          {mainRightColumn.map(
+                            ({ item: row, originalIndex }) => (
+                              <SignalAnalysisCard
+                                key={`${row.strategyId}-${row.entryDate}-${row.side}-${effectiveMainPage}-${originalIndex}`}
+                                row={row}
+                                symbolForExecution={symbol}
+                                todayKey={todayKey}
+                                nowMs={nowMs}
+                                liveWindowMs={liveWindowMsMain}
+                                formatEntry={formatEntry}
+                                formatEntryWithZone={formatEntryWithZone}
+                                formatMarketData={formatMarketData}
+                                sideLabel={sideLabel}
+                                sideClass={sideClass}
+                                verdictVariant={verdictVariant}
+                                onStartTradeSession={
+                                  startTradeSessionFromSignal
+                                }
+                                trackingSignalKey={trackingSignalKey}
+                              />
+                            ),
+                          )}
                         </div>
                       </div>
                     </div>
@@ -3753,6 +3838,7 @@ export function StrategyEntrySignalsPanel({
                             synthesis={historyScanSynthesis}
                             symbol={historyDetail.symbol}
                             titleSuffix="Saved scan summary"
+                            onSetAlert={() => setEntryAlarmsOpen(true)}
                           />
                         </div>
                       ) : null}
@@ -3778,32 +3864,14 @@ export function StrategyEntrySignalsPanel({
                       </div>
                       <div className="hidden lg:grid lg:grid-cols-2 lg:gap-4">
                         <div className="space-y-4">
-                          {historyLeftColumn.map(({ item: row, originalIndex }) => (
-                            <SignalAnalysisCard
-                              key={`${row.strategyId}-${row.entryDate}-${row.side}-${effectiveHistorySignalPage}-${originalIndex}`}
-                              row={row}
-                              symbolForExecution={historyDetail?.symbol ?? symbol}
-                              todayKey={todayKey}
-                              nowMs={nowMs}
-                              liveWindowMs={liveWindowMsHistory}
-                              formatEntry={formatEntry}
-                              formatEntryWithZone={formatEntryWithZone}
-                              formatMarketData={formatMarketData}
-                              sideLabel={sideLabel}
-                              sideClass={sideClass}
-                              verdictVariant={verdictVariant}
-                              onStartTradeSession={startTradeSessionFromSignal}
-                              trackingSignalKey={trackingSignalKey}
-                            />
-                          ))}
-                        </div>
-                        <div className="space-y-4">
-                          {historyRightColumn.map(
+                          {historyLeftColumn.map(
                             ({ item: row, originalIndex }) => (
                               <SignalAnalysisCard
                                 key={`${row.strategyId}-${row.entryDate}-${row.side}-${effectiveHistorySignalPage}-${originalIndex}`}
                                 row={row}
-                                symbolForExecution={historyDetail?.symbol ?? symbol}
+                                symbolForExecution={
+                                  historyDetail?.symbol ?? symbol
+                                }
                                 todayKey={todayKey}
                                 nowMs={nowMs}
                                 liveWindowMs={liveWindowMsHistory}
@@ -3813,7 +3881,35 @@ export function StrategyEntrySignalsPanel({
                                 sideLabel={sideLabel}
                                 sideClass={sideClass}
                                 verdictVariant={verdictVariant}
-                                onStartTradeSession={startTradeSessionFromSignal}
+                                onStartTradeSession={
+                                  startTradeSessionFromSignal
+                                }
+                                trackingSignalKey={trackingSignalKey}
+                              />
+                            ),
+                          )}
+                        </div>
+                        <div className="space-y-4">
+                          {historyRightColumn.map(
+                            ({ item: row, originalIndex }) => (
+                              <SignalAnalysisCard
+                                key={`${row.strategyId}-${row.entryDate}-${row.side}-${effectiveHistorySignalPage}-${originalIndex}`}
+                                row={row}
+                                symbolForExecution={
+                                  historyDetail?.symbol ?? symbol
+                                }
+                                todayKey={todayKey}
+                                nowMs={nowMs}
+                                liveWindowMs={liveWindowMsHistory}
+                                formatEntry={formatEntry}
+                                formatEntryWithZone={formatEntryWithZone}
+                                formatMarketData={formatMarketData}
+                                sideLabel={sideLabel}
+                                sideClass={sideClass}
+                                verdictVariant={verdictVariant}
+                                onStartTradeSession={
+                                  startTradeSessionFromSignal
+                                }
                                 trackingSignalKey={trackingSignalKey}
                               />
                             ),
