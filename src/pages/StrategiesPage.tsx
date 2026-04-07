@@ -61,7 +61,12 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useSubscription } from "@/hooks/useSubscription";
-import { getAlgoStrategyLimits } from "@/lib/algoStrategyLimits";
+import {
+  getAlgoStrategyLimits,
+  isAtCustomStrategyCap,
+  strategyCapToastMessage,
+  UNLIMITED_CUSTOM_STRATEGIES,
+} from "@/lib/algoStrategyLimits";
 import { PaperTradeSetupDialog } from "@/components/trading/PaperTradeSetupDialog";
 
 interface StrategySymbol {
@@ -169,14 +174,11 @@ export default function StrategiesPage() {
 
   const stratLimits = getAlgoStrategyLimits(subscription?.plan_id);
   const canDeleteStrategies = stratLimits?.allowDeleteStrategies ?? false;
-  const atStrategyCap =
-    stratLimits != null && strategies.length >= stratLimits.maxCustomStrategies;
+  const atStrategyCap = isAtCustomStrategyCap(strategies.length, stratLimits);
 
   const openCreateDialog = () => {
-    if (atStrategyCap) {
-      toast.error(
-        `Your plan allows up to ${stratLimits?.maxCustomStrategies} custom strateg${stratLimits?.maxCustomStrategies === 1 ? "y" : "ies"}. Upgrade in billing to add more.`,
-      );
+    if (atStrategyCap && stratLimits) {
+      toast.error(strategyCapToastMessage(stratLimits));
       return;
     }
     setShowCreate(true);
@@ -335,9 +337,15 @@ export default function StrategiesPage() {
               Create trading strategies — our AI analyzes and backtests each one.
               {stratLimits ? (
                 <span className="block text-zinc-500 text-xs mt-1">
-                  Your plan: up to {stratLimits.maxCustomStrategies} custom strateg
-                  {stratLimits.maxCustomStrategies === 1 ? "y" : "ies"}
-                  {stratLimits.allowDeleteStrategies ? " (you may delete and create new ones)." : " (edit only; delete requires Professional)."}
+                  Your plan:{" "}
+                  {stratLimits.maxCustomStrategies === UNLIMITED_CUSTOM_STRATEGIES
+                    ? "Unlimited custom strategies"
+                    : `up to ${stratLimits.maxCustomStrategies} custom strateg${
+                        stratLimits.maxCustomStrategies === 1 ? "y" : "ies"
+                      }`}
+                  {stratLimits.allowDeleteStrategies
+                    ? " (create, edit, delete)."
+                    : " (edit only; upgrade to Pro to delete and add freely)."}
                 </span>
               ) : null}
             </p>

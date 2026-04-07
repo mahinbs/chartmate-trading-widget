@@ -1,51 +1,70 @@
 export type PricingPlan = {
   id: string;
   name: string;
+  /** Monthly recurring amount (charged after the first 30 days). */
   price: number;
   period: string;
+  /** One-time integration / setup fee (charged at checkout with the subscription). */
+  integrationFee: number;
   description: string;
   features: string[];
   recommended?: boolean;
 };
 
-/** New subscribers: three monthly tiers. Legacy `plan_id`s stay valid in the database. */
+/** Shown under pricing tables. */
+export const PRICING_SETUP_AND_MONTHLY_NOTE =
+  "All plans include one-time setup + recurring monthly maintenance starting after 30 days.";
+
+/** New subscribers: setup fee + monthly after 30-day trial on the subscription. Legacy `plan_id`s stay valid in the database. */
 export const PRICING_PLANS: PricingPlan[] = [
   {
     id: "starterPlan",
     name: "Starter",
+    integrationFee: 149,
     price: 49,
     period: "month",
-    description: "Full platform access with one custom algo strategy (edit only; no delete).",
+    description:
+      "Full platform access with one custom algo strategy (edit access), backtesting, broker/OpenAlgo integration, and basic support.",
     features: [
-      "Everything locked for free users — unlocked",
-      "AI analysis, paper trading, and predict flows",
-      "Live OpenAlgo and broker execution",
-      "1 custom algo strategy (edit only; replace by contacting support if needed)",
+      "Full platform access",
+      "1 custom algo strategy (edit access)",
+      "Backtesting & analytics",
+      "Broker / OpenAlgo integration",
+      "Basic support",
     ],
   },
   {
     id: "growthPlan",
     name: "Growth",
-    price: 99,
+    integrationFee: 249,
+    price: 79,
     period: "month",
-    description: "Full platform access with up to three custom strategies (edit only).",
+    description:
+      "Full platform access with up to three algo strategies, advanced backtesting & analytics, broker/OpenAlgo integration, and priority support.",
     features: [
-      "Everything in Starter",
-      "Up to 3 custom algo strategies (edit only; no delete)",
-      "Priority-friendly usage for active traders",
+      "Full platform access",
+      "Up to 3 algo strategies",
+      "Advanced backtesting & analytics",
+      "Broker / OpenAlgo integration",
+      "Priority support",
     ],
     recommended: true,
   },
   {
     id: "professionalPlan",
-    name: "Professional",
-    price: 199,
+    name: "Pro",
+    integrationFee: 399,
+    price: 129,
     period: "month",
-    description: "Full platform access with up to ten strategies; create and delete freely.",
+    description:
+      "Full platform access with unlimited algo strategies, advanced analytics & optimization, multi-broker integration, dedicated support, and fast execution setup.",
     features: [
-      "Everything in Growth",
-      "Up to 10 custom algo strategies",
-      "Create, edit, and delete strategies anytime",
+      "Full platform access",
+      "Unlimited algo strategies",
+      "Advanced analytics & optimization",
+      "Multi-broker integration",
+      "Dedicated support",
+      "Fast execution setup",
     ],
   },
 ];

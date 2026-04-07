@@ -6,11 +6,13 @@
  * - customer.subscription.updated
  * - customer.subscription.deleted
  * - invoice.payment_failed  (sets payment_failed_at)
- * - invoice.paid              (clears payment_failed_at when subscription renews)
+ * - invoice.paid              (clears payment_failed_at; applies pending downgrade if scheduled)
  *
  * Env: STRIPE_WEBHOOK_SECRET, STRIPE_SECRET_KEY (fetch full subscription on checkout)
- */ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+ */
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { stripePriceToPlanId } from "../_shared/subscription-plans.ts";
+import { getPlanMeta, resolveMonthlyPriceId } from "../_shared/plan-catalog.ts";
 const WEBHOOK_SECRET = Deno.env.get("STRIPE_WEBHOOK_SECRET") ?? "";
 const STRIPE_SECRET = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 function planIdFromStripeSubscription(sub) {
@@ -281,10 +283,62 @@ Deno.serve(async (req)=>{
       const inv = obj;
       const subId = typeof inv.subscription === "string" ? inv.subscription : null;
       if (subId) {
-        await supabase.from("user_subscriptions").update({
-          payment_failed_at: null,
-          updated_at: new Date().toISOString()
-        }).eq("stripe_subscription_id", subId);
+        // Clear payment_failed_at
+        await supabase
+          .from("user_subscriptions")
+          .update({ payment_failed_at: null, updated_at: new Date().toISOString() })
+          .eq("stripe_subscription_id", subId);
+
+        // Apply pending downgrade if one was scheduled
+        const { data: subRow } = await supabase
+          .from("user_subscriptions")
+          .select("user_id, pending_plan_change")
+          .eq("stripe_subscription_id", subId)
+          .maybeSingle();
+
+        const pendingPlan = subRow?.pending_plan_change;
+        if (pendingPlan && subRow?.user_id) {
+          const newMeta = getPlanMeta(pendingPlan);
+          const newMonthlyPriceId = resolveMonthlyPriceId(pendingPlan);
+
+          if (newMeta && newMonthlyPriceId) {
+            // Switch the Stripe subscription to the lower-tier price for future invoices
+            const stripeSub = await fetchStripeSubscription(subId);
+            const currentItemId = stripeSub?.items?.data?.[0]?.id ?? "";
+            if (currentItemId) {
+              try {
+                const updateForm = new URLSearchParams();
+                updateForm.append(`items[0][id]`, currentItemId);
+                updateForm.append(`items[0][price]`, newMonthlyPriceId);
+                updateForm.append("proration_behavior", "none");
+                updateForm.append("metadata[plan_id]", pendingPlan);
+                await fetch(`https://api.stripe.com/v1/subscriptions/${subId}`, {
+                  method: "POST",
+                  headers: {
+                    Authorization: `Bearer ${STRIPE_SECRET}`,
+                    "Content-Type": "application/x-www-form-urlencoded",
+                  },
+                  body: updateForm.toString(),
+                });
+              } catch (e) {
+                console.error("change-plan downgrade Stripe update failed:", e);
+              }
+            }
+
+            // Update DB: activate the downgraded plan, clear the pending fields
+            await supabase
+              .from("user_subscriptions")
+              .update({
+                plan_id: pendingPlan,
+                pending_plan_change: null,
+                pending_plan_change_at: null,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("user_id", subRow.user_id);
+
+            console.log(`Downgrade applied: user ${subRow.user_id} → ${pendingPlan}`);
+          }
+        }
       }
     }
     return new Response(JSON.stringify({

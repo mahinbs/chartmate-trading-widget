@@ -43,7 +43,11 @@ import {
 import { getStrategyParams } from "@/constants/strategyParams";
 import AlgoStrategyBuilder from "@/components/trading/AlgoStrategyBuilder";
 import { useSubscription } from "@/hooks/useSubscription";
-import { getAlgoStrategyLimits } from "@/lib/algoStrategyLimits";
+import {
+  getAlgoStrategyLimits,
+  isAtCustomStrategyCap,
+  strategyCapToastMessage,
+} from "@/lib/algoStrategyLimits";
 import YahooChartPanel from "@/components/YahooChartPanel";
 import { runLiveEntryConditionScan, type LiveScanStrategyRow } from "@/lib/strategyLiveScan";
 import { PaperTradeSetupDialog } from "@/components/trading/PaperTradeSetupDialog";
@@ -827,14 +831,11 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
   const { subscription } = useSubscription();
   const strategyLimits = getAlgoStrategyLimits(subscription?.plan_id);
   const canDeleteStrategies = strategyLimits?.allowDeleteStrategies ?? false;
-  const atStrategyCap =
-    strategyLimits != null && strategies.length >= strategyLimits.maxCustomStrategies;
+  const atStrategyCap = isAtCustomStrategyCap(strategies.length, strategyLimits);
 
   const openNewStrategyForm = () => {
-    if (atStrategyCap) {
-      toast.error(
-        `Your plan allows up to ${strategyLimits?.maxCustomStrategies} custom strateg${strategyLimits?.maxCustomStrategies === 1 ? "y" : "ies"}. Upgrade in billing to add more.`,
-      );
+    if (atStrategyCap && strategyLimits) {
+      toast.error(strategyCapToastMessage(strategyLimits));
       return;
     }
     setEditingAlgoStrategy(null);
