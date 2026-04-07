@@ -61,6 +61,13 @@ interface Props {
    * and skips the strategy picker. Starts at Instrument + Schedule.
    */
   preselectedStrategyId?: string | null;
+  /** Pre-filled symbol from Strategy scanner (Yahoo format, e.g. RELIANCE.NS) */
+  initialSymbol?: string | null;
+  /**
+   * From scanner: single step — strategy locked, symbol locked, quantity + one button to queue
+   * monitoring now (skips schedule step).
+   */
+  scannerQuickMode?: boolean;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -310,9 +317,18 @@ function pendingRowActionFromTradingMode(tradingMode: string | null): "BUY" | "S
 const STRATEGY_SELECT =
   "id,name,description,paper_strategy_type,trading_mode,stop_loss_pct,take_profit_pct,is_intraday,entry_conditions,exit_conditions,execution_days,position_config,start_time,end_time,squareoff_time";
 
-export function PaperTradeSetupDialog({ open, onOpenChange, onCreated, preselectedStrategyId }: Props) {
+export function PaperTradeSetupDialog({
+  open,
+  onOpenChange,
+  onCreated,
+  preselectedStrategyId,
+  initialSymbol,
+  scannerQuickMode = false,
+}: Props) {
   const { toast } = useToast();
   const presetId = preselectedStrategyId?.trim() || null;
+  const initialSymTrim = initialSymbol?.trim() || null;
+  const quick = Boolean(scannerQuickMode && presetId && initialSymTrim);
 
   // Step state
   const [step, setStep] = useState<Step>("strategy");
@@ -337,6 +353,9 @@ export function PaperTradeSetupDialog({ open, onOpenChange, onCreated, preselect
   const isPreset = Boolean(presetId);
 
   const stepLabels = useMemo(() => {
+    if (isPreset && quick) {
+      return [{ id: "instrument" as const, label: "Quantity" }];
+    }
     if (isPreset) {
       return [
         { id: "instrument" as const, label: "Instrument" },
@@ -348,7 +367,7 @@ export function PaperTradeSetupDialog({ open, onOpenChange, onCreated, preselect
       { id: "instrument" as const, label: "Instrument" },
       { id: "schedule" as const, label: "Schedule" },
     ];
-  }, [isPreset]);
+  }, [isPreset, quick]);
 
   const stepIndex = stepLabels.findIndex((s) => s.id === step);
 
@@ -394,6 +413,7 @@ export function PaperTradeSetupDialog({ open, onOpenChange, onCreated, preselect
           }
           setSelectedStrategy(data as UserStrategyRow);
           setStep("instrument");
+          if (initialSymTrim) setSymbolValue(initialSymTrim);
           setStrategies([]);
         } else {
           setSelectedStrategy(null);
@@ -410,7 +430,7 @@ export function PaperTradeSetupDialog({ open, onOpenChange, onCreated, preselect
         setStrategiesLoading(false);
       }
     })();
-  }, [open, presetId, onOpenChange, toast]);
+  }, [open, presetId, initialSymTrim, onOpenChange, toast]);
 
   // ── Navigation ──────────────────────────────────────────────────────────────
 
@@ -453,11 +473,13 @@ export function PaperTradeSetupDialog({ open, onOpenChange, onCreated, preselect
     const qty = Math.max(1, Math.round(Number(quantity)));
     if (!sym || !qty) return;
 
+    const schedMode = quick ? "now" : scheduleMode;
+
     const positionConfig = selectedStrategy.position_config as Record<string, unknown> | null;
 
     let scheduledFor: string | null = null;
     let initialStatus: "pending" | "scheduled" = "pending";
-    if (scheduleMode === "later") {
+    if (schedMode === "later") {
       if (!scheduleDatetime) {
         toast({ title: "Schedule time required", description: "Pick a future date and time.", variant: "destructive" });
         return;
@@ -473,12 +495,17 @@ export function PaperTradeSetupDialog({ open, onOpenChange, onCreated, preselect
       } = await supabase.auth.getSession();
       if (!session?.user?.id) throw new Error("Not authenticated");
 
-      const exchange = String(
+      const symUpperCheck = sym.toUpperCase();
+      let exchange = String(
         (positionConfig?.exchange ?? symbolData?.exchange ?? "NSE"),
       ).toUpperCase();
-      const product = String(
+      if (symUpperCheck.includes("-USD") || symUpperCheck.includes("-USDT")) {
+        exchange = "CRYPTO";
+      }
+      let product = String(
         (positionConfig?.orderProduct ?? (selectedStrategy.is_intraday ? "MIS" : "CNC")),
       ).toUpperCase();
+      if (exchange === "CRYPTO") product = "SPOT";
 
       const rowAction = pendingRowActionFromTradingMode(selectedStrategy.trading_mode);
 
@@ -502,9 +529,9 @@ export function PaperTradeSetupDialog({ open, onOpenChange, onCreated, preselect
       if (error) throw error;
 
       toast({
-        title: scheduleMode === "now" ? "Paper strategy activated" : "Paper trade scheduled",
+        title: schedMode === "now" ? "Paper strategy activated" : "Paper trade scheduled",
         description:
-          scheduleMode === "now"
+          schedMode === "now"
             ? `Watching ${sym} for ${selectedStrategy.name} entry conditions…`
             : `Will start monitoring ${sym} at ${new Date(scheduledFor!).toLocaleString()}.`,
       });
@@ -524,6 +551,7 @@ export function PaperTradeSetupDialog({ open, onOpenChange, onCreated, preselect
     quantity,
     scheduleMode,
     scheduleDatetime,
+    quick,
     onOpenChange,
     onCreated,
     toast,
@@ -667,12 +695,23 @@ export function PaperTradeSetupDialog({ open, onOpenChange, onCreated, preselect
           <div className="space-y-4 mt-2">
             <div className="space-y-2">
               <Label>Symbol</Label>
-              <SymbolSearch
-                value={symbolValue}
-                onValueChange={setSymbolValue}
-                onSelectSymbol={setSymbolData}
-                placeholder="Search symbol (NSE, BSE, crypto, forex)"
-              />
+              {quick && initialSymTrim ? (
+                <div className="space-y-1">
+                  <div className="rounded-md border border-teal-500/30 bg-teal-950/20 px-3 py-2.5 text-sm text-teal-100 font-mono">
+                    {initialSymTrim}
+                  </div>
+                  <p className="text-[11px] text-zinc-500">
+                    Locked to this scanner run — change symbol by closing and selecting another ticker above.
+                  </p>
+                </div>
+              ) : (
+                <SymbolSearch
+                  value={symbolValue}
+                  onValueChange={setSymbolValue}
+                  onSelectSymbol={setSymbolData}
+                  placeholder="Search symbol (NSE, BSE, crypto, forex)"
+                />
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="pt-qty">Quantity</Label>
@@ -847,7 +886,27 @@ export function PaperTradeSetupDialog({ open, onOpenChange, onCreated, preselect
             <Button variant="outline" size="sm" onClick={() => onOpenChange(false)} disabled={submitting}>
               Cancel
             </Button>
-            {step !== "schedule" ? (
+            {quick && step === "instrument" ? (
+              <Button
+                size="sm"
+                onClick={() => void handleSubmit()}
+                disabled={
+                  submitting ||
+                  (isPreset && strategiesLoading && !selectedStrategy) ||
+                  !symbolValue.trim() ||
+                  !Number.isFinite(Number(quantity)) ||
+                  Number(quantity) <= 0
+                }
+                className="shadow-[0_0_20px_rgba(20,184,166,0.2)]"
+              >
+                {submitting ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                ) : (
+                  <FlaskConical className="h-4 w-4 mr-1" />
+                )}
+                Queue paper trade
+              </Button>
+            ) : step !== "schedule" ? (
               <Button
                 size="sm"
                 onClick={goNext}
