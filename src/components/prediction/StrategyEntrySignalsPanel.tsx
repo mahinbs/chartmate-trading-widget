@@ -26,6 +26,7 @@ import {
   ChevronRight,
   Clock3,
   Trash2,
+  FlaskConical,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -64,6 +65,8 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { tradeTrackingService } from "@/services/tradeTrackingService";
 import { isUsdDenominatedSymbol } from "@/lib/tradingview-symbols";
+import { PaperTradeSetupDialog } from "@/components/trading/PaperTradeSetupDialog";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export interface PostAnalysisContext {
   result?: string;
@@ -152,6 +155,17 @@ const HISTORY_LIST_PAGE_SIZE = 25;
 const DETAIL_SIGNALS_PAGE_SIZE = 12;
 /** Main scanner card grid — paginate so tall cards don’t bury controls */
 const MAIN_SIGNALS_PAGE_SIZE = 8;
+
+/** Row is from a user-defined strategy (Algo Guide preset or custom builder), not built-in momentum/trend/mean_reversion ids. */
+function isCustomStrategySignalRow(
+  row: SignalRow,
+  customStrategies: CustomStrategy[],
+): boolean {
+  if (row.customStrategyMeta && typeof row.customStrategyMeta === "object") {
+    return true;
+  }
+  return customStrategies.some((c) => c.id === row.strategyId);
+}
 
 type CustomStrategy = {
   id: string;
@@ -796,6 +810,9 @@ function SignalAnalysisCard(props: {
   ) => Promise<void>;
   trackingSignalKey?: string | null;
   compactZone?: boolean;
+  /** Live custom-strategy row: show one-tap paper trade (strategy + symbol pre-filled). */
+  onPaperTrade?: () => void;
+  paperTradeEnabled?: boolean;
 }) {
   const {
     row,
@@ -812,6 +829,8 @@ function SignalAnalysisCard(props: {
     onStartTradeSession,
     trackingSignalKey,
     compactZone,
+    onPaperTrade,
+    paperTradeEnabled,
   } = props;
   const currSymbol = isUsdDenominatedSymbol(symbolForExecution) ? "$" : "₹";
   const isPast = !row.isLive && row.entryDate !== todayKey;
@@ -1215,6 +1234,19 @@ function SignalAnalysisCard(props: {
             use stops.
           </p>
         </div>
+      ) : null}
+
+      {paperTradeEnabled && onPaperTrade ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="w-full border-teal-500/45 bg-teal-500/10 text-teal-200 hover:bg-teal-500/15 hover:text-white"
+          onClick={onPaperTrade}
+        >
+          <FlaskConical className="h-3.5 w-3.5 mr-2 shrink-0" />
+          Paper trade — strategy &amp; symbol set · enter quantity
+        </Button>
       ) : null}
     </div>
   );
@@ -1648,6 +1680,12 @@ export function StrategyEntrySignalsPanel({
   const [trackingSignalKey, setTrackingSignalKey] = useState<string | null>(
     null,
   );
+  const [paperDialogOpen, setPaperDialogOpen] = useState(false);
+  const [paperPresetId, setPaperPresetId] = useState<string | null>(null);
+  const [paperInitialSymbol, setPaperInitialSymbol] = useState<string | null>(
+    null,
+  );
+  const liveCustomToastKeyRef = useRef<string | null>(null);
   const scanProgressTimerRef = useRef<ReturnType<typeof setInterval> | null>(
     null,
   );
@@ -2303,6 +2341,24 @@ export function StrategyEntrySignalsPanel({
     marketStatus,
   ]);
 
+  const openPaperTradeFromSignal = useCallback(
+    (row: SignalRow) => {
+      const sym = String(symbol || "").trim();
+      if (!sym) {
+        toast({
+          title: "Symbol missing",
+          description: "Select a symbol before paper trading.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setPaperPresetId(row.strategyId);
+      setPaperInitialSymbol(sym);
+      setPaperDialogOpen(true);
+    },
+    [symbol, toast],
+  );
+
   const startTradeSessionFromSignal = useCallback(
     async (row: SignalRow, symbolForExecution: string) => {
       const signalKey = `${row.strategyId}|${row.entryDate}|${row.side}|${row.entryTimestamp ?? ""}`;
@@ -2470,6 +2526,35 @@ export function StrategyEntrySignalsPanel({
       return tb - ta;
     });
   }, [signals, nowMs, liveWindowMsMain, marketStatus]);
+
+  useEffect(() => {
+    if (loading || !scanResultsOpen) return;
+    const liveCustom = visibleSignals.filter(
+      (s) => s.isLive && isCustomStrategySignalRow(s, customStrategies),
+    );
+    if (liveCustom.length === 0) return;
+    const key = `${symbol}:${liveCustom
+      .map((x) => x.strategyId)
+      .sort()
+      .join(",")}`;
+    if (liveCustomToastKeyRef.current === key) return;
+    liveCustomToastKeyRef.current = key;
+    toast({
+      title: "Live custom strategy signal",
+      description: `Found ${liveCustom.length} live signal(s) for your saved strategies. Use Paper trade on a card — only quantity is required.`,
+    });
+  }, [
+    loading,
+    scanResultsOpen,
+    visibleSignals,
+    customStrategies,
+    symbol,
+    toast,
+  ]);
+
+  useEffect(() => {
+    if (loading) liveCustomToastKeyRef.current = null;
+  }, [loading]);
 
   useEffect(() => {
     setMainResultsPage(1);
@@ -3142,6 +3227,25 @@ export function StrategyEntrySignalsPanel({
                       ) : null}
                     </div>
 
+                    {visibleSignals.some(
+                      (s) =>
+                        s.isLive &&
+                        isCustomStrategySignalRow(s, customStrategies),
+                    ) ? (
+                      <Alert className="shrink-0 border-teal-500/35 bg-teal-950/30 py-3">
+                        <FlaskConical className="h-4 w-4 text-teal-400" />
+                        <AlertTitle className="text-teal-100 text-sm">
+                          Live entry — paper trade ready
+                        </AlertTitle>
+                        <AlertDescription className="text-xs text-zinc-400 leading-relaxed">
+                          Your saved strategy matched with a live tag. Use{" "}
+                          <span className="text-teal-300/95">Paper trade</span>{" "}
+                          on the card: strategy and symbol are fixed — set
+                          quantity and queue monitoring.
+                        </AlertDescription>
+                      </Alert>
+                    ) : null}
+
                     <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded-lg border border-white/10 bg-black/20 p-3">
                       <div className="grid gap-4 sm:grid-cols-1 xl:grid-cols-2">
                         {pagedMainSignals.map((row, i) => (
@@ -3160,6 +3264,16 @@ export function StrategyEntrySignalsPanel({
                             verdictVariant={verdictVariant}
                             onStartTradeSession={startTradeSessionFromSignal}
                             trackingSignalKey={trackingSignalKey}
+                            paperTradeEnabled={
+                              row.isLive &&
+                              isCustomStrategySignalRow(
+                                row,
+                                customStrategies,
+                              )
+                            }
+                            onPaperTrade={() =>
+                              openPaperTradeFromSignal(row)
+                            }
                           />
                         ))}
                       </div>
@@ -3471,6 +3585,20 @@ export function StrategyEntrySignalsPanel({
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        <PaperTradeSetupDialog
+          open={paperDialogOpen}
+          onOpenChange={(o) => {
+            setPaperDialogOpen(o);
+            if (!o) {
+              setPaperPresetId(null);
+              setPaperInitialSymbol(null);
+            }
+          }}
+          preselectedStrategyId={paperPresetId}
+          initialSymbol={paperInitialSymbol}
+          scannerQuickMode
+        />
       </CardContent>
     </Card>
   );
