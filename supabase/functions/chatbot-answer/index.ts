@@ -19,7 +19,14 @@ const GEMINI_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 const ALPHA_VANTAGE = Deno.env.get("ALPHA_VANTAGE_API_KEY") ?? "";
 const FINNHUB_KEY = Deno.env.get("FINNHUB_API_KEY") ?? "";
 const TWELVE_DATA_KEY = Deno.env.get("TWELVE_DATA_API_KEY") ?? "";
-const GEMINI_MODEL = "gemini-3.1-pro-preview";
+// Ordered fallback list of Gemini models — first that responds 200 wins
+const GEMINI_MODELS = [
+  "gemini-1.5-flash",
+  "gemini-1.5-flash-latest",
+  "gemini-1.5-pro-latest",
+  "gemini-pro",
+  "gemini-3.1-pro-preview",
+];
 const PHONE = "+91 96329 53355";
 // ── Symbol mapping: natural language → EODHD symbol ─────────────────────────
 const SYMBOL_MAP = {
@@ -137,7 +144,7 @@ function isFinanceOrPlatformQuery(msg) {
   if (isSmallTalk(lower)) return true;
   if (Object.keys(SYMBOL_MAP).some((k)=>lower.includes(k))) return true;
   if (/\b([A-Z]{1,5}(?:-USD)?)\b/.test(msg)) return true;
-  return /\b(stock|share|market|price|trading|trade|invest|investment|buy|sell|hold|sentiment|news|economy|inflation|fed|rbi|crypto|bitcoin|ethereum|nifty|sensex|forex|commodity|gold|oil|portfolio|risk|analysis|chartmate|platform|backtest|paper trade|strategy)\b/.test(lower);
+  return /\b(stock|share|market|price|trading|trade|invest|investment|buy|sell|hold|sentiment|news|economy|inflation|fed|rbi|crypto|bitcoin|ethereum|nifty|sensex|forex|commodity|gold|oil|portfolio|risk|analysis|chartmate|platform|backtest|paper.?trade|strategy|strategies|algo|signal|indicator|custom|ema|rsi|macd|supertrend|vwap|bollinger)\b/.test(lower);
 }
 function isFollowUpQuery(msg) {
   const lower = msg.toLowerCase().trim();
@@ -159,7 +166,7 @@ function detectIntent(msg) {
   if (/\b(sentiment|news about|latest news|what.?s happening with|headlines|updates on|trending|buzz|is there news)\b/.test(lower)) return "sentiment";
   if (/\b(should i buy|should i sell|buy or sell|good time to buy|right time|is it a good time|analysis|recommend|what do you think about|worth buying|worth investing|hold or|invest in)\b/.test(lower)) return "analysis";
   if (/\b(impact|affect|effect|how is.*(market|stock)|market.*doing|why is market|oil.*market|crude.*market|gold.*market|rate hike|fed|rbi|inflation|recession)\b/.test(lower)) return "impact";
-  if (/\b(chartmate|platform|backtest|paper trade|strategy|prediction|signal|active trade|market picks|daily analysis)\b/.test(lower)) return "platform";
+  if (/\b(chartmate|platform|backtest|paper.?trade|strategy|strategies|all strategies|custom strategy|algo.?guide|prediction|signal|active trade|market picks|daily analysis|what strategies|which strategies|my strategies)\b/.test(lower)) return "platform";
   return "general";
 }
 // ── Symbol extraction ─────────────────────────────────────────────────────────
@@ -480,32 +487,44 @@ function buildHistoryBlock(history) {
 const PLATFORM_KNOWLEDGE = `
 TradingSmart is an AI-powered trading intelligence platform.
 • AI Predictions: analyses live price, RSI, MACD, news & global macro → BUY/SELL/HOLD with probability score.
-• 11 Strategies ranked for current market: Trend Following, Swing, Scalping, Mean Reversion, Breakout, Momentum, Range, News-based, Options Buying, Options Selling, Pairs Trading.
-• Backtesting: validates strategy on 100+ days real OHLCV; shows win rate, drawdown, profit factor.
-• Paper Trading: risk-free simulation with virtual money; all gates bypassed.
-• Daily Analysis (/market-picks): admins publish AI predictions for all users to see.
+• Backtesting: validates strategy on 100+ days real OHLCV; shows win rate, drawdown, profit factor, Sharpe ratio, equity curve.
+• Paper Trading: risk-free simulation with virtual money; tracks all open/closed positions.
 • Active Trades: live P&L, stop-loss, take-profit tracking.
 • Capital Scenarios: Best/Likely/Worst case ROI for $10k / $100k / $1M investors.
-• Contact: ${PHONE}
+
+BUILT-IN ALGO GUIDE STRATEGIES (available to all users for backtesting and paper trade):
+1. EMA 20/50 Trend Crossover — Buy when EMA20 crosses above EMA50. Classic trend-following entry.
+2. RSI Oversold Bounce — Buy when RSI14 drops below 30 (oversold) then recovers. Contrarian mean-reversion.
+3. MACD Momentum — Buy when MACD line crosses above signal line; uses momentum confirmation.
+4. Volume Spike Breakout — Buy when price breaks a 20-day high with volume 2× its average.
+5. Opening Range Breakout (ORB) — Buy on breakout above first 15-min high. Intraday strategy.
+6. Supertrend (7, ATR mult 3) — Buy when price crosses above Supertrend indicator. Trend-following.
+7. VWAP Bounce — Buy when price dips to VWAP and bounces. Intraday mean-reversion around fair value.
+8. Bollinger Band Squeeze — Buy on breakout from tight Bollinger Band (low volatility squeeze). Volatility expansion play.
+9. Previous Day High Breakout — Buy when price breaks above previous day's high. Momentum/continuation.
+10. Stochastic Oversold — Buy when Stochastic %K crosses above %D in oversold zone. Oscillator-based timing.
+11. Inside Bar Breakout — Buy when today's candle breaks above an inside bar (tight range day). Consolidation breakout.
+
+USER CUSTOM STRATEGIES: users can build fully custom strategies with any combination of entry/exit conditions (EMA, RSI, MACD, Volume, Supertrend, Stochastic, Bollinger Bands, ATR), stop-loss %, take-profit %, max hold days, intraday/delivery mode, and specific execution days.
 `;
 // ── Gemini prompt builder ─────────────────────────────────────────────────────
 function buildPrompt(opts) {
-  const { message, intent, symbol, priceBlock, newsBlock, trendBlock, historyText } = opts;
+  const { message, intent, symbol, priceBlock, newsBlock, trendBlock, historyText, userStrategiesBlock } = opts;
   const intentGuidance = {
     price: `User is asking for the current price/rate. Present the LIVE PRICE DATA clearly and naturally — like a trader reading a screen. If the price is up say it enthusiastically; if down, acknowledge it. Add a one-line context about what this means.`,
     sentiment: `User wants to know the news/sentiment around an asset. Summarise the key headlines and what the overall mood is — bullish, bearish, or mixed. Be like a market analyst who follows news closely. Give 2–3 key themes from the news.`,
     analysis: `User wants a buy/sell/hold recommendation. Analyse the situation like a seasoned trader: look at the price trend (up/down/sideways), the news sentiment (positive/negative), and any macro context. Give a clear recommendation — BUY / SELL / HOLD — with 3–4 solid reasons. Be direct; don't hedge too much. End with one risk warning.`,
     impact: `User is asking how a macro factor (oil price, Fed rates, inflation, etc.) is affecting the market. Walk them through the cause-effect chain clearly: e.g., rising oil → higher transport & input costs → margin pressure on companies → selling pressure on equities → but energy stocks benefit. Use the news data to make it real and current.`,
-    platform: `User is asking about the TradingSmart platform. Answer using the PLATFORM KNOWLEDGE provided. Be helpful and concise.`,
+    platform: `User is asking about the TradingSmart platform or its strategies. Answer using the PLATFORM KNOWLEDGE and USER STRATEGIES provided. Be helpful and specific — list the strategies they have created if asked.`,
     general: `User has a general finance/trading question. Answer intelligently using the available data and your knowledge. Be conversational and genuinely useful.`
   };
   return `You are a sharp, friendly market intelligence assistant for the TradingSmart platform. You speak like a knowledgeable trader friend, not a corporate chatbot. You're direct, insightful, and human. You use real data (prices, news sentiment) to back up what you say.
 
 YOUR TASK: ${intentGuidance[intent]}
 
-PLATFORM KNOWLEDGE (for platform questions):
+PLATFORM KNOWLEDGE (strategies, features, contact):
 ${PLATFORM_KNOWLEDGE}
-
+${userStrategiesBlock ? `\nTHIS USER'S CUSTOM STRATEGIES:\n${userStrategiesBlock}\n` : ""}
 ${priceBlock ? `---\n${priceBlock}\n---` : ""}
 ${trendBlock ? `${trendBlock}\n---` : ""}
 ${newsBlock ? `${newsBlock}\n---` : ""}
@@ -525,15 +544,14 @@ HOW TO RESPOND:
 3. For analysis questions: give BUY / SELL / HOLD clearly, explain WHY in 3-4 reasons (use news + price trend), then add one risk note.
 4. For sentiment questions: summarise 2-3 key news themes and overall mood (bullish/bearish/mixed).
 5. For commodity impact (e.g., crude oil): explain the full cause-effect chain on different market sectors.
-6. For platform questions: answer based on platform knowledge only.
+6. For platform/strategy questions: list the user's custom strategies (if provided) AND the 11 built-in Algo Guide strategies. Be specific.
 7. Give complete, thorough answers. Do NOT cut off mid-sentence. Use 6-12 sentences for analysis questions. Use bullets for lists.
 8. Never use double dashes (--) or em dashes. Never leave stray asterisks. Use **bold** for emphasis.
 9. Understand typos and rephrasings naturally.
 10. If live data was unavailable, be upfront ("I don't have live data right now, but based on recent trends...") and still give your best take.
 11. Use conversation context for follow-up questions. If user says "why?", "what about now?", "and for tomorrow?", infer they mean the last discussed asset/topic unless they specify a new one.
 12. ALWAYS end analysis/recommendation responses with: "⚠️ This is market analysis based on news and sentiment, not financial advice. Always manage your risk."
-13. For BUY/SELL/HOLD analysis, after your recommendation add: "For a full in-depth technical analysis with backtesting, indicators and strategy matching, use our **Detailed Analysis** page."
-14. For contact/support requests: mention ${PHONE}.`;
+13. For contact/support requests: do NOT mention any phone number or contact details.`;
 }
 // ── Main handler ──────────────────────────────────────────────────────────────
 serve(async (req)=>{
@@ -553,6 +571,9 @@ serve(async (req)=>{
     const message = typeof body?.message === "string" ? body.message.trim() : "";
     const history = Array.isArray(body?.history) ? body.history : [];
     const mode = typeof body?.mode === "string" ? body.mode : "market";
+    // User's custom strategies passed from the client for contextual answers
+    const userStrategies: Array<{ name: string; description?: string; is_intraday?: boolean; trading_mode?: string }> =
+      Array.isArray(body?.strategies) ? body.strategies : [];
     if (!message) {
       return new Response(JSON.stringify({
         error: "Missing message"
@@ -653,10 +674,19 @@ serve(async (req)=>{
     const newsBlock = buildNewsBlock(newsArr);
     const trendBlock = buildHistoryBlock(historyArr);
     const historyText = history.length ? history.slice(-15).map((h)=>`${h.role === "user" ? "User" : "Assistant"}: ${String(h.text ?? "").replace(/\n/g, " ")}`).join("\n") : "No previous messages.";
+    const userStrategiesBlock = userStrategies.length
+      ? userStrategies.map((s, i) => {
+          const parts = [`${i + 1}. **${s.name}**`];
+          if (s.is_intraday) parts.push("(Intraday)");
+          if (s.trading_mode) parts.push(`Mode: ${s.trading_mode}`);
+          if (s.description) parts.push(`— ${s.description}`);
+          return parts.join(" ");
+        }).join("\n")
+      : "";
     // ── Gemini inference ───────────────────────────────────────────────────
     if (!GEMINI_KEY) {
       return new Response(JSON.stringify({
-        answer: `AI analysis is temporarily offline. For market questions or platform support, please call or WhatsApp ${PHONE}.`,
+        answer: `AI analysis is temporarily offline. For platform questions, try asking about a specific strategy or feature.`,
         suggestContact: true
       }), {
         status: 200,
@@ -670,43 +700,45 @@ serve(async (req)=>{
       priceBlock,
       newsBlock,
       trendBlock,
-      historyText
+      historyText,
+      userStrategiesBlock
     });
-    const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_KEY}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [
-              {
-                text: prompt
-              }
-            ]
-          }
-        ],
-        generationConfig: {
-          maxOutputTokens: 3000,
-          temperature: 0.72
+    // ── Try each Gemini model in order until one succeeds ─────────────────
+    const geminiBody = JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: { maxOutputTokens: 3000, temperature: 0.72 }
+    });
+    let geminiText: string | null = null;
+    for (const model of GEMINI_MODELS) {
+      try {
+        const r = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`,
+          { method: "POST", headers: { "Content-Type": "application/json" }, body: geminiBody, signal: AbortSignal.timeout(15000) }
+        );
+        if (r.ok) {
+          const data = await r.json();
+          const t = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+          if (t) { geminiText = t; break; }
+        } else {
+          console.error(`Gemini model ${model} failed:`, r.status, await r.text().catch(()=>""));
         }
-      })
-    });
-    if (!geminiRes.ok) {
-      const errText = await geminiRes.text();
-      console.error("Gemini error", geminiRes.status, errText);
-      return new Response(JSON.stringify({
-        answer: "I'm having trouble connecting to my analysis engine right now. Please try again in a moment.",
-        suggestContact: false
-      }), {
-        status: 200,
-        headers: JSON_HEADERS
-      });
+      } catch (e) {
+        console.error(`Gemini model ${model} threw:`, e);
+      }
     }
-    const geminiData = await geminiRes.json();
-    let answer = sanitizeAnswerText(geminiData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "I couldn't generate a response. Please try again.");
+    // ── If all Gemini models failed, use built-in fallback ─────────────────
+    if (!geminiText) {
+      // For platform/strategy questions we can answer directly from our knowledge base
+      if (intent === "platform") {
+        const stratList = userStrategiesBlock
+          ? `\n\nYour custom strategies:\n${userStrategiesBlock}`
+          : "";
+          geminiText = `Here are the strategies available on TradingSmart:\n\n**Built-in Algo Guide Strategies** (ready to backtest):\n1. EMA 20/50 Trend Crossover\n2. RSI Oversold Bounce\n3. MACD Momentum\n4. Volume Spike Breakout\n5. Opening Range Breakout (ORB) — intraday\n6. Supertrend (7, ATR mult 3)\n7. VWAP Bounce — intraday\n8. Bollinger Band Squeeze\n9. Previous Day High Breakout\n10. Stochastic Oversold\n11. Inside Bar Breakout${stratList}\n\nYou can run any of these through **Backtesting** to see historical win rate, drawdown, and profit factor. You can also build fully custom strategies under **Strategies** → New Strategy.`;
+      } else {
+        geminiText = "I'm having trouble reaching the AI engine right now. For live prices, try searching the symbol directly in the platform.";
+      }
+    }
+    let answer = sanitizeAnswerText(geminiText);
     answer = enforceRiskLine(answer, intent, message);
     const lowerMsg = message.toLowerCase();
     const suggestContact = intent === "platform" && /\b(contact|support|human|call|whatsapp|phone|reach|speak)\b/i.test(lowerMsg);

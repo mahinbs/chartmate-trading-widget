@@ -2,12 +2,11 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import {
   X, Send, ChevronDown, Bot, User,
-  Newspaper, Loader2, ExternalLink, Plus, History, Trash2,
+  Newspaper, Loader2, Plus, History, Trash2,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useNavigate } from "react-router-dom";
 import { useSubscription } from "@/hooks/useSubscription";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -134,8 +133,9 @@ Ask me anything:
 • **News & sentiment** "What's happening with Reliance?"
 • **Buy/Sell/Hold advice** "Should I buy Bitcoin now?"
 • **Market impact** "How is crude oil affecting markets?"
+• **Strategies** "What strategies are available?" or "What custom strategies do I have?"
 
-I'll give you a real answer based on current news, sentiment, and market trends. For an in-depth technical analysis with backtesting, use our **Detailed Analysis** page.`;
+I'll give you real answers based on current news, sentiment, and market trends.`;
 
 const WELCOME_TEXT_FREE = `Hey! 👋 I'm your **TradingSmart Bot** powered by real-time market data, news and sentiment analysis.
 
@@ -168,10 +168,23 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [showHistory, setShowHistory]   = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [userStrategies, setUserStrategies] = useState<Array<{ name: string; is_intraday?: boolean; trading_mode?: string }>>([]);
   const bottomRef  = useRef<HTMLDivElement>(null);
   const inputRef   = useRef<HTMLInputElement>(null);
-  const navigate   = useNavigate();
   const [modalActive, setModalActive] = useState(false);
+
+  // Load user's custom strategies once
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (!data?.user) return;
+      (supabase.from("user_strategies" as any) as any)
+        .select("name, is_intraday, trading_mode")
+        .eq("user_id", data.user.id)
+        .then(({ data: rows }: { data: any[] | null }) => {
+          if (rows?.length) setUserStrategies(rows.map(r => ({ name: r.name, is_intraday: r.is_intraday, trading_mode: r.trading_mode })));
+        });
+    });
+  }, []);
 
   // Monitor DOM for open dialogs to hide chatbot
   useEffect(() => {
@@ -223,17 +236,15 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
         text: welcome,
         component: (
         <div className="flex flex-wrap gap-2 mt-3">
-          {hasAnalysisAccess && (
-            <Button variant="outline" size="sm"
-                className="bg-primary/10 border-primary/20 hover:bg-primary/20 text-xs gap-1.5"
-                onClick={() => { setOpen(false); navigate("/predict"); }}>
-                <ExternalLink className="h-3 w-3" /> Open Detailed Analysis
-            </Button>
-          )}
           <Button variant="outline" size="sm"
               className="bg-purple-500/10 border-purple-500/20 hover:bg-purple-500/20 text-xs gap-1.5"
               onClick={() => sendMessage("What's the latest market news and sentiment?")}>
               <Newspaper className="h-3 w-3" /> Market News
+          </Button>
+          <Button variant="outline" size="sm"
+              className="bg-teal-500/10 border-teal-500/20 hover:bg-teal-500/20 text-xs gap-1.5"
+              onClick={() => sendMessage("What strategies are available on this platform?")}>
+              📊 View Strategies
           </Button>
         </div>
         ),
@@ -241,7 +252,8 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
       setTimeout(() => inputRef.current?.focus(), 200);
     }, 200);
     return () => clearTimeout(t);
-  }, [navigate, setOpen, hasAnalysisAccess]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasAnalysisAccess]);
 
   // Auto-start new chat on first open if no history panel
   useEffect(() => {
@@ -319,31 +331,19 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
       .slice(-15)
       .map(m => ({ role: m.role, text: m.text }));
     const minDelay = new Promise<void>(r => setTimeout(r, 500));
-    const wasAnalysis = isAnalysisQuery(trimmed);
 
     try {
       const [, res] = await Promise.all([
         minDelay,
         supabase.functions.invoke("chatbot-answer", {
-          body: { message: trimmed, history: historyPayload },
+          body: { message: trimmed, history: historyPayload, strategies: userStrategies },
         }),
       ]);
       const { data, error } = res;
       if (!error && data?.answer) {
         const answer = data.answer;
         if (cId) persistMessage(cId, "bot", answer);
-
-        if (wasAnalysis && hasAnalysisAccess) {
-          addBotMsg(answer, (
-            <Button variant="outline" size="sm"
-              className="bg-primary/10 border-primary/20 hover:bg-primary/20 text-xs gap-1.5 mt-1"
-              onClick={() => { setOpen(false); navigate("/predict"); }}>
-              <ExternalLink className="h-3 w-3" /> Run Full Detailed Analysis
-            </Button>
-          ));
-        } else {
-          addBotMsg(answer);
-        }
+        addBotMsg(answer);
       } else {
         addBotMsg("I'm having trouble fetching market data right now. Please try again in a moment.");
       }
@@ -352,7 +352,7 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
     } finally {
       setTyping(false);
     }
-  }, [messages, navigate, setOpen, convId, hasAnalysisAccess]);
+  }, [messages, convId, userStrategies]);
 
   const handleSend = () => {
     if (input.trim()) sendMessage(input);

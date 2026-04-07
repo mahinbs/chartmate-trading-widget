@@ -45,10 +45,5 @@ export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
     return <Navigate to="/white-label#pricing" replace />;
   }
 
-  // Affiliates must not access regular user pages — send them to their own dashboard
-  if (role === 'affiliate' && !isChangePasswordPage) {
-    return <Navigate to="/affiliate/dashboard" replace />;
-  }
-
   return <>{children}</>;
 };

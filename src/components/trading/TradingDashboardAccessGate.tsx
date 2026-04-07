@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { useUserRole } from "@/hooks/useUserRole";
 import { supabase } from "@/integrations/supabase/client";
 import { hasActiveSubscription, type UserSubscription } from "@/services/stripeService";
 import { planAllowsAlgo } from "@/lib/subscriptionEntitlements";
@@ -37,6 +38,7 @@ export function TradingDashboardAccessGate({
 }: TradingDashboardAccessGateProps) {
   const { pathname, search } = useLocation();
   const { user, loading: authLoading } = useAuth();
+  const { isAffiliate, loading: roleLoading } = useUserRole();
   const [status, setStatus] = useState<GateState>({
     loading: true,
     provisioned: false,
@@ -45,6 +47,10 @@ export function TradingDashboardAccessGate({
   });
 
   useEffect(() => {
+    if (isAffiliate) {
+      setStatus({ loading: false, provisioned: true, broker: null, redirectTo: null });
+      return;
+    }
     if (!user?.id) return;
     if (isManualFullAccessEmail(user.email)) {
       setStatus({ loading: false, provisioned: true, broker: null, redirectTo: null });
@@ -99,9 +105,9 @@ export function TradingDashboardAccessGate({
         redirectTo: isProvisioned ? null : notReadyRedirect,
       });
     })();
-  }, [user?.id, notReadyRedirect, skipProvisioningCheck]);
+  }, [user?.id, notReadyRedirect, skipProvisioningCheck, isAffiliate]);
 
-  if (authLoading || status.loading) {
+  if (authLoading || roleLoading || status.loading) {
     return <TradingDashboardLoadingScreen />;
   }
 
