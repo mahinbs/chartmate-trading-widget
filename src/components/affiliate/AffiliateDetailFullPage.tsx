@@ -765,7 +765,7 @@ export function AffiliateDetailFullPage({ affiliateId, onBack, backLabel = "Back
             </Card>
           </TabsContent>
 
-          <TabsContent value="marketing">
+          <TabsContent value="resources">
             <Card className={cardClass}>
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">

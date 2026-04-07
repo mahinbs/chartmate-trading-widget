@@ -99,7 +99,7 @@ async function recordCheckoutPayment(supabase, params) {
   }).select().single();
 
   if (affiliateId && commissionAmount && commissionAmount > 0) {
-    const { data: affiliate } = await supabase
+    const { data: affiliateUser } = await supabase
       .from("affiliates")
       .select("user_id")
       .eq("id", affiliateId)
@@ -107,7 +107,7 @@ async function recordCheckoutPayment(supabase, params) {
 
     if (affiliate?.user_id) {
       await supabase.from("affiliate_notifications").insert({
-        user_id: affiliate.user_id,
+        user_id: affiliateUser.user_id,
         type: "conversion",
         title: "Conversion Alert!",
         message: `Congrats! You've earned ₹${commissionAmount.toFixed(2)} from a new conversion (${params.planId}).`,
@@ -126,7 +126,7 @@ async function fetchStripeSubscription(subId) {
   return await res.json();
 }
 async function verifyStripeWebhook(payload, sigHeader, secret) {
-  const parts = sigHeader.split(",").reduce((acc, p)=>{
+  const parts = sigHeader.split(",").reduce((acc, p) => {
     const [k, v] = p.split("=");
     if (k && v) acc[k.trim()] = v;
     return acc;
@@ -143,11 +143,11 @@ async function verifyStripeWebhook(payload, sigHeader, secret) {
     "sign"
   ]);
   const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(payloadToSign));
-  const hex = Array.from(new Uint8Array(sig)).map((b)=>b.toString(16).padStart(2, "0")).join("");
+  const hex = Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, "0")).join("");
   if (hex !== v1) throw new Error("Signature mismatch");
   return JSON.parse(payload);
 }
-Deno.serve(async (req)=>{
+Deno.serve(async (req) => {
   try {
     if (!WEBHOOK_SECRET) {
       return new Response(JSON.stringify({
@@ -342,10 +342,33 @@ Deno.serve(async (req)=>{
 
         const { data: subRow } = await supabase
           .from("user_subscriptions")
-          .select("user_id, pending_plan_change")
+          .select("user_id, plan_id, pending_plan_change")
           .eq("stripe_subscription_id", subId)
           .maybeSingle();
 
+        if (subRow?.user_id) {
+          const affId = await resolveAffiliateIdForPayment(supabase, subRow.user_id);
+          if (affId) {
+            const { data: aff } = await supabase
+              .from("affiliates")
+              .select("commission_type")
+              .eq("id", affId)
+              .single();
+
+            if (aff?.commission_type === "recurring") {
+              await recordCheckoutPayment(supabase, {
+                sessionId: `inv_${inv.customer}_${inv.subscription}_${Date.now()}`, // pseudo-session for recurring
+                userId: subRow.user_id,
+                planId: subRow.plan_id,
+                legacyStripeMetaAffiliateId: affId,
+                amountTotal: inv.amount_paid ?? null,
+                currency: inv.currency ?? null,
+              });
+            }
+          }
+        }
+
+        // 2. Apply pending downgrade if one was scheduled
         const pendingPlan = subRow?.pending_plan_change;
         if (pendingPlan && subRow?.user_id) {
           const newMeta = getPlanMeta(pendingPlan);
