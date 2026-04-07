@@ -51,7 +51,7 @@ import {
 import { toast } from "sonner";
 import { fetchUsdInr } from "@/lib/fxRates";
 import {
-  deriveMaxHoldDaysFromExit,
+  deriveMaxHoldDaysForStrategy,
   entryConditionsConfigured,
   resolveEngineStrategyIdForCustom,
   mergeSnapshotWithBacktestRun,
@@ -171,6 +171,113 @@ type BacktestResult = {
     price: number; sma20: number; rsi14: number;
     macd: number; macdSignal: number; high20d: number; low20d: number;
   };
+};
+
+/**
+ * VectorBT sometimes returns summary fields as 0 while the trades array has data,
+ * OR returns trades with returnPct=0 when entryPrice/exitPrice are both set.
+ * This function:
+ *  1. Patches each trade's returnPct from entryPrice/exitPrice if returnPct is 0
+ *  2. Recomputes all summary metrics from the fixed trades array
+ */
+function normalizeBacktestResult(d: BacktestResult): BacktestResult {
+  const rawTrades = Array.isArray(d.trades) ? d.trades : [];
+  if (rawTrades.length === 0) return d;
+
+  // Step 1 — patch returnPct where entry/exit prices are available but return is 0
+  const trades = rawTrades.map((t) => {
+    if (Number(t.returnPct) !== 0) return t;
+    const entry = Number(t.entryPrice);
+    const exit  = Number(t.exitPrice);
+    if (entry > 0 && exit > 0 && Number.isFinite(entry) && Number.isFinite(exit) && entry !== exit) {
+      const returnPct = Number((((exit - entry) / entry) * 100).toFixed(2));
+      return { ...t, returnPct, profitable: returnPct > 0 };
+    }
+    return t;
+  });
+
+  // Step 2 — decide whether to recompute the summary
+  const summaryLooksWrong =
+    d.totalTrades !== trades.length ||
+    (trades.length > 0 && d.winRate === 0 && d.totalReturn === 0 && d.profitFactor === 0);
+  if (!summaryLooksWrong) return { ...d, trades };
+
+  const returns = trades.map((t) => Number(t.returnPct ?? 0));
+  const wins = trades.filter((t) => t.profitable || Number(t.returnPct ?? 0) > 0).length;
+  const losses = trades.length - wins;
+  const totalReturn = Number(returns.reduce((a, b) => a + b, 0).toFixed(2));
+  const winRate = Number(((wins / trades.length) * 100).toFixed(2));
+  const avgReturn = Number((totalReturn / trades.length).toFixed(2));
+  const winsArr = returns.filter((r) => r > 0);
+  const lossArr = returns.filter((r) => r <= 0);
+  const grossProfit = winsArr.reduce((a, b) => a + b, 0);
+  const grossLoss = Math.abs(lossArr.reduce((a, b) => a + b, 0));
+  const profitFactor = grossLoss > 0 ? Number((grossProfit / grossLoss).toFixed(2)) : winsArr.length ? 99 : 0;
+  const bestTrade = Number(Math.max(...returns).toFixed(2));
+  const worstTrade = Number(Math.min(...returns).toFixed(2));
+  const avgWin = winsArr.length ? Number((grossProfit / winsArr.length).toFixed(2)) : 0;
+  const avgLoss = lossArr.length ? Number((Math.abs(lossArr.reduce((a,b)=>a+b,0)) / lossArr.length).toFixed(2)) : 0;
+  const avgHoldingDays = Number((trades.reduce((a, t) => a + Number(t.holdingDays ?? 0), 0) / trades.length).toFixed(2));
+  let eq = 0, peak = 0, maxDd = 0;
+  const equityCurve = trades.map((t) => {
+    eq += Number(t.returnPct ?? 0);
+    peak = Math.max(peak, eq);
+    maxDd = Math.max(maxDd, peak - eq);
+    return { date: String(t.exitDate ?? ""), value: Number(eq.toFixed(2)) };
+  });
+  const mean = avgReturn;
+  const variance = returns.reduce((a, b) => a + (b - mean) ** 2, 0) / returns.length;
+  const stdDev = Math.sqrt(variance);
+  const sharpeRatio = stdDev > 0 ? Number(((mean / stdDev) * Math.sqrt(252)).toFixed(2)) : 0;
+  const exitReasonCounts: Record<string, number> = {};
+  for (const t of trades) {
+    const r = String(t.exitReason ?? "unknown");
+    exitReasonCounts[r] = (exitReasonCounts[r] ?? 0) + 1;
+  }
+  return {
+    ...d,
+    trades,          // use the price-patched trades
+    totalTrades: trades.length,
+    wins, losses, winRate, totalReturn, avgReturn,
+    maxDrawdown: Number(maxDd.toFixed(2)),
+    profitFactor, sharpeRatio, bestTrade, worstTrade,
+    avgHoldingDays, avgWin, avgLoss,
+    expectancy: avgReturn,
+    exitReasonCounts,
+    equityCurve: equityCurve.length ? equityCurve : (d.equityCurve ?? []),
+  };
+}
+
+type FilterSignal = { label: string; positive: boolean };
+
+type ScoredTrade = Trade & {
+  score?: number;
+  signals?: FilterSignal[];
+  reason?: string;
+};
+
+type AiFilterResponse = {
+  filterThreshold: number;
+  effectiveThreshold?: number;
+  filterNote?: string;
+  usedGemini?: boolean;
+  rawTrades: ScoredTrade[];
+  filteredTrades: ScoredTrade[];
+  removedTrades?: ScoredTrade[];
+  rawMetrics: {
+    totalTrades: number; wins: number; losses: number; winRate: number;
+    totalReturn: number; avgReturn: number; maxDrawdown: number;
+    profitFactor: number; sharpeRatio: number; bestTrade: number; worstTrade: number;
+    avgHoldingDays: number; expectancy: number; equityCurve: Array<{ date: string; value: number }>;
+  };
+  aiMetrics: {
+    totalTrades: number; wins: number; losses: number; winRate: number;
+    totalReturn: number; avgReturn: number; maxDrawdown: number;
+    profitFactor: number; sharpeRatio: number; bestTrade: number; worstTrade: number;
+    avgHoldingDays: number; expectancy: number; equityCurve: Array<{ date: string; value: number }>;
+  };
+  avgRawScore: number;
+  avgFilteredScore: number;
 };
 
 /** Prefer `result_snapshot` (full run); else rebuild from summary + trades (equity curve may be empty). */
@@ -1310,8 +1417,12 @@ export default function BacktestingSection() {
   const [squareoff, setSquareoff] = useState("15:15");
   const [days, setDays] = useState("365");
   const [loading, setLoading] = useState(false);
+  const [aiFilterLoading, setAiFilterLoading] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [result, setResult] = useState<BacktestResult | null>(null);
+  const [aiFilterResult, setAiFilterResult] = useState<AiFilterResponse | null>(null);
+  const [resultView, setResultView] = useState<"raw" | "ai">("raw");
+  const [showFilterAnalysis, setShowFilterAnalysis] = useState(false);
   const [timingReview, setTimingReview] = useState<string | null>(null);
   const [tradesPage, setTradesPage] = useState(1);
   const tradesPerPage = 15;
@@ -1523,7 +1634,16 @@ export default function BacktestingSection() {
       historyId: hid.length > 0 ? hid : null,
       savedAt: String(h.created_at ?? ""),
     });
-    setResult(restored);
+    setResult(normalizeBacktestResult(restored));
+    // Restore saved AI filter result if present
+    const saved = (h as any).ai_filter_snapshot;
+    if (saved && saved.rawMetrics && saved.aiMetrics) {
+      setAiFilterResult(saved as AiFilterResponse);
+      setResultView("ai");
+    } else {
+      setAiFilterResult(null);
+      setResultView("raw");
+    }
     setTradesPage(1);
     setActiveTab("trades");
     setTradePopup(null);
@@ -1576,6 +1696,8 @@ export default function BacktestingSection() {
     const sym = symbol.trim().toUpperCase();
     if (!sym) { toast.error("Enter a symbol"); return; }
     setLoading(true);
+    setAiFilterResult(null);
+    setResultView("raw");
     setResult(null); setTimingReview(null);
     setTradesPage(1); setTradePopup(null); setActiveTab("trades");
     const runStarted = performance.now();
@@ -1593,7 +1715,7 @@ export default function BacktestingSection() {
         : null;
       const derivedMaxHold =
         mode === "strategy" && selectedCustom
-          ? deriveMaxHoldDaysFromExit(selectedCustom.exit_conditions)
+          ? deriveMaxHoldDaysForStrategy(selectedCustom)
           : null;
 
       const engineStrategy =
@@ -1630,9 +1752,9 @@ export default function BacktestingSection() {
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
 
-      const d = res.data as BacktestResult & { error?: string };
+      const d = normalizeBacktestResult(res.data as BacktestResult & { error?: string });
       setLastBacktestClientMs(Math.round(performance.now() - runStarted));
-      if (res.error || d?.error) { toast.error(String(d?.error ?? "Backtest failed")); return; }
+      if (res.error || (d as any)?.error) { toast.error(String((d as any)?.error ?? "Backtest failed")); return; }
       setResult(d);
       setResultViewContext({
         mode,
@@ -1693,6 +1815,55 @@ export default function BacktestingSection() {
     finally { setLoading(false); }
   }, [symbol, exchange, strategy, action, slPct, tpPct, days, mode, selectedCustom, stratLabel, startTime, endTime, squareoff, loadHistory, displayCurrency, initialCapital]);
 
+  const runAiFilteredComparison = useCallback(async () => {
+    if (!result) {
+      toast.error("Run Backtesting first");
+      return;
+    }
+    const sym = symbol.trim().toUpperCase() || result.symbol;
+    setAiFilterLoading(true);
+    setShowFilterAnalysis(false);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await supabase.functions.invoke("backtest-ai-filter", {
+        body: {
+          symbol: sym,
+          exchange,
+          strategy: result.strategy,
+          trades: result.trades,
+          days: Math.min(730, Math.max(30, parseInt(days, 10) || 365)),
+          filterThreshold: 50,
+        },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      const d = res.data as (AiFilterResponse & { error?: string }) | null;
+      if (res.error || !d || d.error) {
+        toast.error(String(d?.error ?? res.error?.message ?? "AI filter failed"));
+        return;
+      }
+      setAiFilterResult(d);
+      setResultView("ai");
+      setResultPopupOpen(true);  // open the dialog showing comparison
+      const note = typeof d.filterNote === "string" && d.filterNote ? ` ${d.filterNote}` : "";
+      toast.success(
+        `AI filter ready · ${d.aiMetrics.totalTrades}/${d.rawMetrics.totalTrades} trades kept · WR ${d.aiMetrics.winRate}%${note}`,
+        { duration: 10000 },
+      );
+      // Persist AI filter result into the history row (if it was saved)
+      if (resultViewContext?.historyId) {
+        try {
+          await (supabase.from("backtest_runs" as any) as any)
+            .update({ ai_filter_snapshot: d })
+            .eq("id", resultViewContext.historyId);
+        } catch { /* non-fatal */ }
+      }
+    } catch {
+      toast.error("AI filter failed");
+    } finally {
+      setAiFilterLoading(false);
+    }
+  }, [result, symbol, exchange, days, resultViewContext?.historyId]);
+
   const runTimingReview = useCallback(async () => {
     if (!result) { toast.error("Run backtest first"); return; }
     const sym = symbol.trim().toUpperCase();
@@ -1728,8 +1899,11 @@ export default function BacktestingSection() {
     finally { setAiLoading(false); }
   }, [result, symbol, exchange, action, slPct, tpPct, startTime, endTime, squareoff, mode, strategy, stratLabel, selectedCustom]);
 
-  const pagedTrades = result ? (result.trades ?? []).slice((tradesPage - 1) * tradesPerPage, tradesPage * tradesPerPage) : [];
-  const totalTradePages = result ? Math.max(1, Math.ceil((result.trades ?? []).length / tradesPerPage)) : 1;
+  const activeTrades = resultView === "ai" && aiFilterResult
+    ? (aiFilterResult.filteredTrades ?? [])
+    : (result?.trades ?? []);
+  const pagedTrades = activeTrades.slice((tradesPage - 1) * tradesPerPage, tradesPage * tradesPerPage);
+  const totalTradePages = Math.max(1, Math.ceil(activeTrades.length / tradesPerPage));
 
   const reportNotional = Math.max(1000, parseFloat(initialCapital) || 100000);
 
@@ -1793,6 +1967,9 @@ export default function BacktestingSection() {
   const rvAction = rv?.action ?? action;
   const rvNotional = rv?.reportNotional ?? reportNotional;
   const rvCurrency = rv?.displayCurrency ?? displayCurrency;
+  const activeMetrics = resultView === "ai" && aiFilterResult
+    ? aiFilterResult.aiMetrics
+    : result;
   const strategyTitleForPdf = rvMode === "strategy" ? rvStrat : `Simple ${rvAction}`;
 
   return (
@@ -2028,6 +2205,15 @@ export default function BacktestingSection() {
             {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <BarChart3 className="h-4 w-4 mr-2" />}
             Run Backtesting
           </Button>
+          <Button
+            variant="outline"
+            onClick={runAiFilteredComparison}
+            disabled={!result || aiFilterLoading}
+            className="border-emerald-600/50 text-emerald-300"
+          >
+            {aiFilterLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Zap className="h-4 w-4 mr-2" />}
+            Run AI-Filtered Comparison
+          </Button>
           <Button variant="outline" onClick={runTimingReview} disabled={!result || aiLoading} className="border-purple-600/50 text-purple-300">
             {aiLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Brain className="h-4 w-4 mr-2" />}
             AI Review SL/TP & Timing
@@ -2085,38 +2271,241 @@ export default function BacktestingSection() {
                             <Badge className="bg-teal-500/10 text-teal-300 border-teal-500/30 text-[9px] px-2 py-0">CUSTOM LOGIC</Badge>
                           )}
                         </div>
+                        {aiFilterResult && (
+                          <div className="flex items-center gap-2 mt-2">
+                            <button
+                              type="button"
+                              onClick={() => setResultView("raw")}
+                              className={`px-2 py-1 text-[10px] rounded border ${resultView === "raw" ? "text-teal-300 border-teal-500/40 bg-teal-500/10" : "text-zinc-400 border-zinc-700"}`}
+                            >
+                              Raw
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setResultView("ai")}
+                              className={`px-2 py-1 text-[10px] rounded border ${resultView === "ai" ? "text-emerald-300 border-emerald-500/40 bg-emerald-500/10" : "text-zinc-400 border-zinc-700"}`}
+                            >
+                              AI-Filtered
+                            </button>
+                          </div>
+                        )}
                       </div>
                       <div className="flex items-center gap-8">
                         <div className="text-right">
                           <p className="text-[10px] text-zinc-500 uppercase tracking-[0.2em] font-bold mb-1">Net Return</p>
-                          <p className={`text-3xl font-black font-mono leading-none ${result.totalReturn >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                            {result.totalReturn >= 0 ? "+" : ""}{result.totalReturn}%
+                          <p className={`text-3xl font-black font-mono leading-none ${Number(activeMetrics?.totalReturn ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                            {Number(activeMetrics?.totalReturn ?? 0) >= 0 ? "+" : ""}{Number(activeMetrics?.totalReturn ?? 0)}%
                           </p>
                         </div>
                         <div className="w-px h-10 bg-zinc-800/50 hidden sm:block" />
                         <div className="text-right">
                           <p className="text-[10px] text-zinc-500 uppercase tracking-[0.2em] font-bold mb-1">Win Rate</p>
-                          <p className={`text-3xl font-black font-mono leading-none ${result.winRate >= 50 ? "text-emerald-400" : "text-amber-400"}`}>
-                            {result.winRate}%
+                          <p className={`text-3xl font-black font-mono leading-none ${Number(activeMetrics?.winRate ?? 0) >= 50 ? "text-emerald-400" : "text-amber-400"}`}>
+                            {Number(activeMetrics?.winRate ?? 0)}%
                           </p>
                         </div>
                       </div>
                     </div>
                   </div>
 
+                  {/* AI Filter comparison strip or run button */}
+                  {aiFilterResult ? (
+                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 space-y-2">
+                      {/* Summary row — Raw side uses actual result metrics (portfolio compound), AI side uses simple-sum */}
+                      {(() => {
+                        const rawTotal = result?.totalReturn ?? 0;
+                        const rawWR    = result?.winRate ?? 0;
+                        const rawCount = result?.totalTrades ?? aiFilterResult.rawMetrics.totalTrades;
+                        const aiTotal  = aiFilterResult.aiMetrics.totalReturn;
+                        const aiWR     = aiFilterResult.aiMetrics.winRate;
+                        const aiCount  = aiFilterResult.aiMetrics.totalTrades;
+                        const filteredPct = rawCount > 0 ? Math.max(0, Math.round(((rawCount - aiCount) / rawCount) * 100)) : 0;
+                        // Detect when same trade count but return values differ (compound vs simple-sum mismatch)
+                        const sameCount = rawCount === aiCount;
+                        const returnsDiffer = sameCount && Math.abs(rawTotal - aiTotal) > 0.5;
+                        return (
+                          <>
+                            <div className="flex flex-wrap items-center gap-3 text-xs">
+                              <span className="text-zinc-400 font-semibold uppercase tracking-wide text-[10px]">Comparison</span>
+                              {aiFilterResult.usedGemini ? (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-300 font-semibold">✦ Gemini AI</span>
+                              ) : (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-zinc-700/50 border border-zinc-600/30 text-zinc-400">Indicator fallback</span>
+                              )}
+                              <div className="flex items-center gap-2">
+                                <span className="text-zinc-300 font-medium">Raw:</span>
+                                <span className="text-zinc-100">{rawCount} trades</span>
+                                <span className="text-zinc-400">·</span>
+                                <span className="text-zinc-100">{rawWR}% WR</span>
+                                <span className="text-zinc-400">·</span>
+                                <span className={rawTotal >= 0 ? "text-emerald-400" : "text-red-400"}>
+                                  {rawTotal >= 0 ? "+" : ""}{rawTotal}%
+                                </span>
+                              </div>
+                              <span className="text-zinc-600">→</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-emerald-300 font-medium">AI-Filtered:</span>
+                                <span className="text-zinc-100">{aiCount} trades</span>
+                                <span className="text-zinc-400">·</span>
+                                <span className={aiWR >= rawWR ? "text-emerald-300" : "text-amber-300"}>{aiWR}% WR</span>
+                                <span className="text-zinc-400">·</span>
+                                <span className={aiTotal >= 0 ? "text-emerald-400" : "text-red-400"}>
+                                  {aiTotal >= 0 ? "+" : ""}{aiTotal}%
+                                </span>
+                              </div>
+                              <div className="ml-auto flex items-center gap-3">
+                                <span className="text-zinc-500 text-[10px]">
+                                  {filteredPct}% filtered out
+                                  {aiFilterResult.effectiveThreshold != null && aiFilterResult.effectiveThreshold !== aiFilterResult.filterThreshold
+                                    ? ` · cutoff ${aiFilterResult.effectiveThreshold}` : ""}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowFilterAnalysis(v => !v)}
+                                  className="text-[10px] text-emerald-400 hover:text-emerald-300 border border-emerald-500/30 rounded px-2 py-0.5 hover:bg-emerald-500/10 transition-colors"
+                                >
+                                  {showFilterAnalysis ? "Hide Analysis ▲" : "Why? Show Analysis ▼"}
+                                </button>
+                              </div>
+                            </div>
+                            {/* Explain when same trade count but return numbers differ between views */}
+                            {returnsDiffer && (
+                              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-200/80 flex gap-2 items-start">
+                                <span className="text-amber-400 mt-0.5 shrink-0">ℹ</span>
+                                <span>
+                                  <strong>Why does Net Return differ even though all {rawCount} trades were kept?</strong>{" "}
+                                  The Raw view shows the backtest engine's <em>portfolio compound return</em> ({rawTotal >= 0 ? "+" : ""}{rawTotal}%) — each trade reinvests on a running balance, so losses compound.
+                                  The AI-Filtered view shows the <em>simple sum</em> of individual trade returns ({aiTotal >= 0 ? "+" : ""}{aiTotal}%) — trades are treated as equal-sized independent bets.
+                                  Both use the exact same trades; only the return formula differs.
+                                </span>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
+                      {aiFilterResult.filterNote ? (
+                        <p className="text-[11px] text-zinc-500">{aiFilterResult.filterNote}</p>
+                      ) : null}
+
+                      {/* Expandable filter analysis */}
+                      {showFilterAnalysis && (() => {
+                        const kept = aiFilterResult.filteredTrades ?? [];
+                        const removed = aiFilterResult.removedTrades ?? [];
+                        const TradeCard = ({ t, isKept }: { t: ScoredTrade; isKept: boolean }) => (
+                          <div className={`rounded-lg border px-3 py-2.5 space-y-2 ${isKept ? "border-emerald-500/20 bg-emerald-500/5" : "border-red-500/20 bg-red-500/5"}`}>
+                            {/* Header row */}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isKept ? "bg-emerald-500/20 text-emerald-300" : "bg-red-500/20 text-red-300"}`}>
+                                {isKept ? "✓ KEPT" : "✕ REMOVED"}
+                              </span>
+                              <span className="text-[11px] text-zinc-300 font-medium">Trade #{t.tradeNo}</span>
+                              <span className="text-[10px] text-zinc-500">{t.entryDate ?? "—"}</span>
+                              <span className={`text-[11px] font-mono font-semibold ${Number(t.returnPct ?? 0) > 0 ? "text-emerald-400" : Number(t.returnPct ?? 0) < 0 ? "text-red-400" : "text-zinc-400"}`}>
+                                {Number(t.returnPct ?? 0) > 0 ? "+" : ""}{Number(t.returnPct ?? 0).toFixed(2)}% actual result
+                              </span>
+                              {t.score != null && (
+                                <span className="text-[10px] text-zinc-500 ml-auto">Entry score: <span className="text-zinc-300 font-semibold">{t.score}</span>/100</span>
+                              )}
+                            </div>
+                            {/* Signal tags */}
+                            {Array.isArray(t.signals) && t.signals.length > 0 && (
+                              <div className="flex flex-wrap gap-1">
+                                {t.signals.map((sig, si) => (
+                                  <span
+                                    key={si}
+                                    className={`text-[10px] px-1.5 py-0.5 rounded-full border ${sig.positive ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-red-500/30 bg-red-500/10 text-red-300"}`}
+                                  >
+                                    {sig.positive ? "↑" : "↓"} {sig.label}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {/* Plain-English reasoning paragraph */}
+                            {t.reason && (
+                              <p className={`text-[11px] leading-relaxed ${isKept ? "text-emerald-200/70" : "text-red-200/60"}`}>
+                                {t.reason}
+                              </p>
+                            )}
+                          </div>
+                        );
+                        return (
+                          <div className="pt-2 space-y-3 border-t border-zinc-800/50 mt-1">
+                            {kept.length > 0 && (
+                              <div className="space-y-1.5">
+                                <p className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider">
+                                  ✓ Kept — {kept.length} trade{kept.length !== 1 ? "s" : ""} {aiFilterResult.usedGemini ? "selected by Gemini AI" : "had strong entry conditions"}
+                                </p>
+                                <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                                  {kept.map((t) => <TradeCard key={t.tradeNo} t={t} isKept={true} />)}
+                                </div>
+                              </div>
+                            )}
+                            {removed.length > 0 && (
+                              <div className="space-y-1.5">
+                                <p className="text-[10px] font-semibold text-red-400 uppercase tracking-wider">
+                                  ✕ Removed — {removed.length} trade{removed.length !== 1 ? "s" : ""} {aiFilterResult.usedGemini ? "rejected by Gemini AI" : "filtered out (entry conditions)"}
+                                </p>
+                                <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                                  {removed.map((t) => <TradeCard key={t.tradeNo} t={t} isKept={false} />)}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 px-4 py-3 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold text-zinc-300">AI-Filtered Comparison</p>
+                        <p className="text-[11px] text-zinc-500 mt-0.5">Scores each entry purely on EMA / RSI / Volume at entry time (no outcome knowledge). Realistic simulation of what an AI filter would have done before the trade happened.</p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="shrink-0 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 gap-1.5 text-xs"
+                        onClick={runAiFilteredComparison}
+                        disabled={aiFilterLoading}
+                      >
+                        {aiFilterLoading ? <><Loader2 className="h-3 w-3 animate-spin" /> Running…</> : <><Zap className="h-3 w-3" /> Run AI Filter</>}
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Warning: all trades have 0% return */}
+                  {(() => {
+                    const trades = resultView === "ai" && aiFilterResult
+                      ? aiFilterResult.filteredTrades
+                      : result?.trades ?? [];
+                    const allZero = trades.length > 0 && trades.every(t => Number(t.returnPct ?? 0) === 0);
+                    const allHold = allZero && trades.every(t => { const r = String(t.exitReason ?? "").toLowerCase(); return r === "hold" || r === "max_hold"; });
+                    if (!allZero) return null;
+                    return (
+                      <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-xs text-amber-200/80 flex gap-2 items-start">
+                        <span className="text-amber-400 mt-0.5">⚠</span>
+                        <span>
+                          {allHold
+                            ? "All trades exited via max hold period with 0% return. This usually happens when an intraday strategy (ORB, VWAP, Supertrend) is tested on daily OHLCV — the engine fires entry signals but cannot compute intraday TP/SL exits on daily bars. Try a delivery-mode strategy or set a TP/SL that the daily high/low can realistically hit."
+                            : "All trades show 0% return. The backtesting engine may not have received valid entry/exit price data for this strategy/instrument combination."
+                          }
+                        </span>
+                      </div>
+                    );
+                  })()}
+
                   {/* Key Metrics Grid */}
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    <StatCard label="Executed Trades" value={result.totalTrades} sub={`${result.wins}W / ${result.losses}L`} />
-                    <StatCard label="Profit Factor" value={result.profitFactor} color={result.profitFactor >= 1.5 ? "green" : result.profitFactor >= 1 ? "yellow" : "red"} />
-                    <StatCard label="Avg. Return" value={`${result.expectancy >= 0 ? "+" : ""}${result.expectancy}%`} color={result.expectancy >= 0 ? "green" : "red"} />
-                    <StatCard label="Max Drawdown" value={`${result.maxDrawdown}%`} color="red" />
+                    <StatCard label="Executed Trades" value={activeMetrics?.totalTrades ?? 0} sub={`${activeMetrics?.wins ?? 0}W / ${activeMetrics?.losses ?? 0}L`} />
+                    <StatCard label="Profit Factor" value={activeMetrics?.profitFactor ?? 0} color={Number(activeMetrics?.profitFactor ?? 0) >= 1.5 ? "green" : Number(activeMetrics?.profitFactor ?? 0) >= 1 ? "yellow" : "red"} />
+                    <StatCard label="Avg. Return" value={`${Number(activeMetrics?.expectancy ?? 0) >= 0 ? "+" : ""}${Number(activeMetrics?.expectancy ?? 0)}%`} color={Number(activeMetrics?.expectancy ?? 0) >= 0 ? "green" : "red"} />
+                    <StatCard label="Max Drawdown" value={`${Number(activeMetrics?.maxDrawdown ?? 0)}%`} color="red" />
                   </div>
 
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    <StatCard label="Sharpe Ratio" value={result.sharpeRatio} color={result.sharpeRatio >= 1 ? "green" : "default"} />
-                    <StatCard label="Avg Hold Time" value={`${result.avgHoldingDays}d`} />
-                    <StatCard label="Best Trade" value={`+${result.bestTrade}%`} color="green" />
-                    <StatCard label="Worst Trade" value={`${result.worstTrade}%`} color="red" />
+                    <StatCard label="Sharpe Ratio" value={activeMetrics?.sharpeRatio ?? 0} color={Number(activeMetrics?.sharpeRatio ?? 0) >= 1 ? "green" : "default"} />
+                    <StatCard label="Avg Hold Time" value={`${Number(activeMetrics?.avgHoldingDays ?? 0)}d`} />
+                    <StatCard label="Best Trade" value={`+${Number(activeMetrics?.bestTrade ?? 0)}%`} color="green" />
+                    <StatCard label="Worst Trade" value={`${Number(activeMetrics?.worstTrade ?? 0)}%`} color="red" />
                   </div>
 
                   {/* Analysis Tabs */}
@@ -2133,7 +2522,7 @@ export default function BacktestingSection() {
                               : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
                           }`}
                         >
-                          {tab === "trades" ? `Trade Log (${result.totalTrades})` : tab === "equity" ? "Equity Curve" : tab === "returns" ? "Return Distribution" : "Daily Returns"}
+                          {tab === "trades" ? `Trade Log (${activeTrades.length})` : tab === "equity" ? "Equity Curve" : tab === "returns" ? "Return Distribution" : "Daily Returns"}
                         </button>
                       ))}
                     </div>
@@ -2151,7 +2540,7 @@ export default function BacktestingSection() {
                           <div className="space-y-8">
                             {/* Card View for Recent Trades */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                              {result.trades.slice(0, 12).map(t => (
+                              {activeTrades.slice(0, 12).map(t => (
                                 <button
                                   key={t.tradeNo}
                                   type="button"
@@ -2254,9 +2643,9 @@ export default function BacktestingSection() {
 
                         {activeTab === "equity" && (
                           <div className="max-w-5xl mx-auto py-4">
-                            {result.equityCurve && result.equityCurve.length > 0 ? (
+                            {(resultView === "ai" && aiFilterResult ? aiFilterResult.aiMetrics.equityCurve : result.equityCurve) && (resultView === "ai" && aiFilterResult ? aiFilterResult.aiMetrics.equityCurve : result.equityCurve).length > 0 ? (
                               <EquityCurveChart
-                                data={result.equityCurve}
+                                data={(resultView === "ai" && aiFilterResult ? aiFilterResult.aiMetrics.equityCurve : result.equityCurve) ?? []}
                                 initialCapital={rvNotional}
                                 displayCurrency={rvCurrency}
                               />
@@ -2270,7 +2659,7 @@ export default function BacktestingSection() {
 
                         {activeTab === "returns" && (
                           <div className="max-w-5xl mx-auto py-4">
-                            <TradeReturnsChart trades={result.trades} />
+                            <TradeReturnsChart trades={activeTrades} />
                           </div>
                         )}
 
