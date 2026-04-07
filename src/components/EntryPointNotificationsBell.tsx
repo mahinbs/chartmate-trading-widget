@@ -186,7 +186,7 @@ function EntryPointNotificationsSheetPanel({ userId, state }: PanelProps) {
         <SheetHeader className="text-left space-y-1 pr-8">
           <SheetTitle className="text-lg">Entry point notifications</SheetTitle>
           <SheetDescription className="text-xs text-muted-foreground">
-            Digests from your entry-point alarms (all symbols). Same list as &quot;Past entry digests&quot; in Live Trading.
+            Entry-point digests, scheduled scanner runs, and when a scheduled strategy / paper trade starts live monitoring.
           </SheetDescription>
         </SheetHeader>
 
@@ -226,7 +226,7 @@ function EntryPointNotificationsSheetPanel({ userId, state }: PanelProps) {
             </div>
           ) : alerts.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No digest notifications yet. Enable entry-point alarms in Live Trading (scanner) or wait for your scheduled time.
+              No notifications yet. Enable entry-point alarms in Live Trading, or you’ll see one when a scheduled strategy / paper trade begins monitoring.
             </p>
           ) : (
             alerts.map((a) => (
@@ -333,7 +333,7 @@ export function EntryPointNotificationsHeaderButton({ className }: { className?:
             type="button"
             variant="outline"
             size="icon"
-            aria-label="Entry point digest notifications"
+            aria-label="Entry and strategy notifications"
             className={cn(
               "relative h-9 w-9 shrink-0 rounded-full border-zinc-700 bg-zinc-900/80 text-zinc-200 overflow-visible",
               "hover:border-teal-500/50 hover:text-teal-300 hover:bg-teal-500/10",
@@ -353,7 +353,7 @@ export function EntryPointNotificationsHeaderButton({ className }: { className?:
           </Button>
         </TooltipTrigger>
         <TooltipContent side="bottom" className="max-w-xs">
-          Entry point digest notifications (all symbols)
+          Entry digests and scheduled monitoring alerts
         </TooltipContent>
       </Tooltip>
 
@@ -389,7 +389,7 @@ export function EntryPointNotificationsBell() {
             type="button"
             variant="outline"
             size="icon"
-            aria-label="Entry point digest notifications"
+            aria-label="Entry and strategy notifications"
             className={cn(
               "fixed z-40 top-[max(1rem,env(safe-area-inset-top))] right-[max(1rem,env(safe-area-inset-right))]",
               "h-10 w-10 rounded-full border-border/80 bg-background/90 backdrop-blur-md shadow-md overflow-visible",
@@ -409,7 +409,7 @@ export function EntryPointNotificationsBell() {
           </Button>
         </TooltipTrigger>
         <TooltipContent side="left" className="max-w-xs">
-          Entry point digests — scheduled alarms &amp; background scans. Opens your notification history.
+          Entry notifications — digests, scheduled scans, and scheduled strategy monitoring start. Opens history.
         </TooltipContent>
       </Tooltip>
 

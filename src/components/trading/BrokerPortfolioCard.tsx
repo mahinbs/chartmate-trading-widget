@@ -28,6 +28,7 @@ import {
   AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3,
   Briefcase, ClipboardList, Loader2, RefreshCw, Wallet, X, Pencil, Zap,
   TrendingUp, TrendingDown, BookOpen, Plus, Trash2, CheckCircle2, Send, Brain, Search, LineChart,
+  FlaskConical,
 } from "lucide-react";
 import { toast } from "sonner";
 import PlaceOrderPanel from "@/components/trading/PlaceOrderPanel";
@@ -42,9 +43,14 @@ import {
 import { getStrategyParams } from "@/constants/strategyParams";
 import AlgoStrategyBuilder from "@/components/trading/AlgoStrategyBuilder";
 import { useSubscription } from "@/hooks/useSubscription";
-import { getAlgoStrategyLimits } from "@/lib/algoStrategyLimits";
+import {
+  getAlgoStrategyLimits,
+  isAtCustomStrategyCap,
+  strategyCapToastMessage,
+} from "@/lib/algoStrategyLimits";
 import YahooChartPanel from "@/components/YahooChartPanel";
 import { runLiveEntryConditionScan, type LiveScanStrategyRow } from "@/lib/strategyLiveScan";
+import { PaperTradeSetupDialog } from "@/components/trading/PaperTradeSetupDialog";
 
 function firstListedSymbol(symbols: unknown): string {
   if (!Array.isArray(symbols) || symbols.length === 0) return "";
@@ -788,6 +794,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
     product: string;
   } | null>(null);
   const [goLiveLoading, setGoLiveLoading] = useState(false);
+  const [paperTradeStrategyId, setPaperTradeStrategyId] = useState<string | null>(null);
   const [liveDiagStrategy, setLiveDiagStrategy] = useState<Strategy | null>(null);
   const [liveDiagLastPrice, setLiveDiagLastPrice] = useState<number | null>(null);
   const [liveDiagScan, setLiveDiagScan] = useState<{
@@ -824,14 +831,11 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
   const { subscription } = useSubscription();
   const strategyLimits = getAlgoStrategyLimits(subscription?.plan_id);
   const canDeleteStrategies = strategyLimits?.allowDeleteStrategies ?? false;
-  const atStrategyCap =
-    strategyLimits != null && strategies.length >= strategyLimits.maxCustomStrategies;
+  const atStrategyCap = isAtCustomStrategyCap(strategies.length, strategyLimits);
 
   const openNewStrategyForm = () => {
-    if (atStrategyCap) {
-      toast.error(
-        `Your plan allows up to ${strategyLimits?.maxCustomStrategies} custom strateg${strategyLimits?.maxCustomStrategies === 1 ? "y" : "ies"}. Upgrade in billing to add more.`,
-      );
+    if (atStrategyCap && strategyLimits) {
+      toast.error(strategyCapToastMessage(strategyLimits));
       return;
     }
     setEditingAlgoStrategy(null);
@@ -2195,6 +2199,14 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                           >
                             <LineChart className="h-3.5 w-3.5" /> Edit
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => setPaperTradeStrategyId(s.id)}
+                            className="flex items-center gap-1 px-2 py-1.5 rounded-md text-xs font-bold border border-teal-700/50 text-teal-400 hover:bg-teal-500/10 transition-all shrink-0"
+                            title="Paper trade when this strategy’s conditions are met (no broker required)"
+                          >
+                            <FlaskConical className="h-3.5 w-3.5" /> Paper Trade
+                          </button>
                           {/* Active toggle */}
                           <button
                             type="button"
@@ -3040,6 +3052,18 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <PaperTradeSetupDialog
+        open={paperTradeStrategyId != null}
+        onOpenChange={(o) => {
+          if (!o) setPaperTradeStrategyId(null);
+        }}
+        preselectedStrategyId={paperTradeStrategyId}
+        onCreated={() => {
+          setPaperTradeStrategyId(null);
+          toast.success("Paper strategy queued. Check Active Trades → Pending Paper Strategies.");
+        }}
+      />
     </>
   );
 }

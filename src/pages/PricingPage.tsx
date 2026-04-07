@@ -42,7 +42,7 @@ const PricingPage = () => {
         <title>Pricing — TradingSmart.ai</title>
         <meta
           name="description"
-          content="Starter, Growth, and Professional monthly plans — full platform access with flexible algo strategy limits."
+          content="Starter, Growth, and Pro — one-time setup plus monthly plans after 30 days. Full platform access and flexible algo strategy limits."
         />
       </Helmet>
 

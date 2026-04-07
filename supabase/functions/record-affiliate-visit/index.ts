@@ -1,13 +1,11 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
-
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type"
 };
-
-function getClientIp(req: Request): string {
+function getClientIp(req) {
   const xff = req.headers.get("x-forwarded-for");
   if (xff) {
     const first = xff.split(",")[0]?.trim();
@@ -19,23 +17,27 @@ function getClientIp(req: Request): string {
   if (cf) return cf;
   return "unknown";
 }
-
-serve(async (req) => {
+serve(async (req)=>{
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
-
-  if (req.method !== "POST" && req.method !== "GET") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    return new Response(null, {
+      headers: corsHeaders
     });
   }
-
+  if (req.method !== "POST" && req.method !== "GET") {
+    return new Response(JSON.stringify({
+      error: "Method not allowed"
+    }), {
+      status: 405,
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "application/json"
+      }
+    });
+  }
   try {
-    let ref: string | null = null;
-    let utms: any = {};
-    let referrer: string | null = null;
+    let ref = null;
+    let utms = {};
+    let referrer = null;
 
     if (req.method === "POST") {
       const body = await req.json().catch(() => ({}));
@@ -62,23 +64,28 @@ serve(async (req) => {
     }
 
     if (!ref || typeof ref !== "string" || !ref.trim()) {
-      return new Response(JSON.stringify({ error: "Missing ref" }), {
+      return new Response(JSON.stringify({
+        error: "Missing ref"
+      }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json"
+        }
       });
     }
 
     const code = ref.trim();
     const visitorIp = getClientIp(req);
     const userAgent = req.headers.get("user-agent") ?? null;
-    
+
     // Cloudflare Geo headers
     const city = req.headers.get("cf-ipcity") ?? null;
     const region = req.headers.get("cf-region") ?? null;
     const country = req.headers.get("cf-ipcountry") ?? null;
 
     // Basic device/browser detection
-    const getDeviceType = (ua: string | null) => {
+    const getDeviceType = (ua) => {
       if (!ua) return "unknown";
       const ual = ua.toLowerCase();
       if (ual.includes("mobile") || ual.includes("android") || ual.includes("iphone") || ual.includes("ipad")) return "mobile";
@@ -86,7 +93,7 @@ serve(async (req) => {
       return "desktop";
     };
 
-    const getBrowser = (ua: string | null) => {
+    const getBrowser = (ua) => {
       if (!ua) return "unknown";
       const ual = ua.toLowerCase();
       if (ual.includes("edg/")) return "Edge";
@@ -100,11 +107,12 @@ serve(async (req) => {
     const deviceType = getDeviceType(userAgent);
     const browser = getBrowser(userAgent);
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
-      { auth: { autoRefreshToken: false, persistSession: false } }
-    );
+    const supabase = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "", {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    });
 
     const { data: affiliate, error: affiliateError } = await supabase
       .from("affiliates")
@@ -114,9 +122,14 @@ serve(async (req) => {
       .maybeSingle();
 
     if (affiliateError || !affiliate) {
-      return new Response(JSON.stringify({ error: "Invalid or inactive affiliate code" }), {
+      return new Response(JSON.stringify({
+        error: "Invalid or inactive affiliate code"
+      }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json"
+        }
       });
     }
 
@@ -140,8 +153,14 @@ serve(async (req) => {
     if (insertError) {
       if (insertError.code === "23505") {
         // Already visited - no new notification needed
-        return new Response(JSON.stringify({ ok: true, status: 'already_recorded' }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        return new Response(JSON.stringify({
+          ok: true,
+          status: 'already_recorded'
+        }), {
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json"
+          }
         });
       }
       throw insertError;
@@ -158,14 +177,24 @@ serve(async (req) => {
       });
     }
 
-    return new Response(JSON.stringify({ ok: true }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    return new Response(JSON.stringify({
+      ok: true
+    }), {
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "application/json"
+      }
     });
   } catch (e) {
     console.error("record-affiliate-visit error:", e);
-    return new Response(JSON.stringify({ error: "Internal server error" }), {
+    return new Response(JSON.stringify({
+      error: "Internal server error"
+    }), {
       status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "application/json"
+      }
     });
   }
 });

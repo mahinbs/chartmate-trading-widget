@@ -12,7 +12,6 @@ import {
   ActiveTrade,
 } from "@/services/tradeTrackingService";
 import {
-  getTradingViewSymbol,
   isUsdDenominatedSymbol,
 } from "@/lib/tradingview-symbols";
 import {
@@ -23,11 +22,21 @@ import {
   CheckCircle,
   Bell,
   BarChart3,
-  Home,
   History,
   Loader2,
   ShieldAlert,
   Target,
+  FlaskConical,
+  ChevronDown,
+  ChevronUp,
+  LogOut,
+  Trash2,
+  BookOpen,
+  CheckCircle2,
+  XCircle,
+  Ban,
+  Clock,
+  AlertTriangle,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { toast as sonnerToast } from "sonner";
@@ -39,6 +48,7 @@ import { cn } from "@/lib/utils";
 import { SymbolSearch, SymbolData } from "@/components/SymbolSearch";
 import { StrategySelectionDialog, STRATEGIES } from "@/components/trading/StrategySelectionDialog";
 import { getStrategyParams } from "@/constants/strategyParams";
+import { PendingPaperTradeCard, PendingPaperTradeRow } from "@/components/trading/PendingPaperTradeCard";
 import {
   Dialog,
   DialogContent,
@@ -67,6 +77,22 @@ interface BrokerOrder {
   rejection_reason: string | null;
   order_timestamp: string | null;
   synced_at: string;
+}
+
+interface StrategyHistoryRow {
+  id: string;
+  symbol: string;
+  exchange: string;
+  action: "BUY" | "SELL";
+  quantity: number;
+  status: "executed" | "cancelled" | "expired" | string;
+  is_paper_trade: boolean;
+  scheduled_for: string | null;
+  error_message: string | null;
+  created_at: string;
+  last_checked_at: string | null;
+  strategy_id: string;
+  strategy_name: string | null;
 }
 
 function decodeYFProto(bytes: Uint8Array): { id?: string; price?: number } {
@@ -123,6 +149,7 @@ export default function ActiveTradesPage() {
   const [brokerOrders, setBrokerOrders] = useState<BrokerOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersSyncing, setOrdersSyncing] = useState(false);
+  // Quick paper trade (immediate entry — same as before)
   const [showQuickPaperDialog, setShowQuickPaperDialog] = useState(false);
   const [showPaperStrategyDialog, setShowPaperStrategyDialog] = useState(false);
   const [paperSymbolValue, setPaperSymbolValue] = useState("");
@@ -131,6 +158,19 @@ export default function ActiveTradesPage() {
   const [paperEntryPrice, setPaperEntryPrice] = useState<number | null>(null);
   const [paperPriceLoading, setPaperPriceLoading] = useState(false);
   const [paperCreating, setPaperCreating] = useState(false);
+  // Pending paper trades (strategies waiting for conditions)
+  const [pendingPaperTrades, setPendingPaperTrades] = useState<PendingPaperTradeRow[]>([]);
+  const [pendingPaperLoading, setPendingPaperLoading] = useState(false);
+  const [pendingPaperExpanded, setPendingPaperExpanded] = useState(true);
+  // Close paper trade dialog
+  const [closePaperTradeId, setClosePaperTradeId] = useState<string | null>(null);
+  const [closePaperPrice, setClosePaperPrice] = useState<string>("");
+  const [closingPaper, setClosingPaper] = useState(false);
+  // Delete paper trade
+  const [deletingTradeId, setDeletingTradeId] = useState<string | null>(null);
+  // Strategy history tab
+  const [strategyHistory, setStrategyHistory] = useState<StrategyHistoryRow[]>([]);
+  const [strategyHistoryLoading, setStrategyHistoryLoading] = useState(false);
   const yahooWsRef = useRef<WebSocket | null>(null);
   const yahooReconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Track trade IDs already auto-exited this session to avoid duplicate orders
@@ -143,7 +183,7 @@ export default function ActiveTradesPage() {
 
   const rawTab = searchParams.get("tab") || "active";
   const tabValue = useMemo(() => {
-    const allowed = ["active", "completed", "orders", "performance"];
+    const allowed = ["active", "completed", "orders", "performance", "strategy-history"];
     return allowed.includes(rawTab) ? rawTab : "active";
   }, [rawTab]);
 
@@ -194,7 +234,7 @@ export default function ActiveTradesPage() {
       const reason = slHit ? "Stop Loss" : "Take Profit";
       const emoji = slHit ? "🛑" : "🎯";
       sonnerToast(
-        `${emoji} ${reason} hit for ${trade.symbol} @ ₹${price.toFixed(2)}`,
+        `${emoji} ${reason} hit for ${trade.symbol} @ ${isUsdDenominatedSymbol(trade.symbol) ? "$" : "₹"}${price.toFixed(2)}`,
         {
           description: "Placing auto-exit order…",
           duration: 6000,
@@ -436,7 +476,6 @@ export default function ActiveTradesPage() {
         let stopLossPct = getStrategyParams(strategyCode).stopLossPercentage;
         let takeProfitPct = getStrategyParams(strategyCode).targetProfitPercentage;
 
-        // For custom strategies, prefer saved SL/TP from user_strategies.
         if (!STRATEGIES.some((s) => s.value === strategyCode)) {
           const { data: customRow } = await (supabase as any)
             .from("user_strategies")
@@ -451,7 +490,6 @@ export default function ActiveTradesPage() {
           action === "SELL" && sellPosition?.shares
             ? sellPosition.shares
             : Math.max(1, Math.round(qty));
-        // Entry at market snapshot when user confirms — not the price from the earlier “Continue” step.
         const liveAtConfirm = await resolveLatestPrice(symbol);
         const entryPrice =
           action === "SELL" && sellPosition?.entryPrice
@@ -512,8 +550,122 @@ export default function ActiveTradesPage() {
     [paperSymbolData, paperSymbolValue, paperQuantity, resolveLatestPrice, toast, navigate],
   );
 
+  // ── Pending paper trades ────────────────────────────────────────────────────
+
+  const loadPendingPaperTrades = useCallback(async () => {
+    setPendingPaperLoading(true);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.user?.id) return;
+
+      const { data, error } = await (supabase as any)
+        .from("pending_conditional_orders")
+        .select(`
+          id, symbol, exchange, action, quantity, status,
+          is_paper_trade, scheduled_for, error_message, created_at,
+          last_checked_at, strategy_id,
+          user_strategies!inner(name)
+        `)
+        .eq("user_id", session.user.id)
+        .eq("is_paper_trade", true)
+        .in("status", ["pending", "scheduled"])
+        .order("created_at", { ascending: false });
+
+      if (!error && data) {
+        const rows = (data as any[]).map((r) => ({
+          ...r,
+          strategy_name: r.user_strategies?.name ?? null,
+        })) as PendingPaperTradeRow[];
+        setPendingPaperTrades(rows);
+      }
+    } catch {
+      // non-fatal
+    } finally {
+      setPendingPaperLoading(false);
+    }
+  }, []);
+
+  const loadStrategyHistory = useCallback(async () => {
+    setStrategyHistoryLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user?.id) return;
+      const { data, error } = await (supabase as any)
+        .from("pending_conditional_orders")
+        .select(`
+          id, symbol, exchange, action, quantity, status,
+          is_paper_trade, scheduled_for, error_message, created_at,
+          last_checked_at, strategy_id,
+          user_strategies(name)
+        `)
+        .eq("user_id", session.user.id)
+        .eq("is_paper_trade", true)
+        .in("status", ["executed", "cancelled", "expired"])
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (!error && data) {
+        const rows = (data as any[]).map((r) => ({
+          ...r,
+          strategy_name: r.user_strategies?.name ?? null,
+        })) as StrategyHistoryRow[];
+        setStrategyHistory(rows);
+      }
+    } catch {
+      // non-fatal
+    } finally {
+      setStrategyHistoryLoading(false);
+    }
+  }, []);
+
+  // ── Close active paper trade (manual override) ──────────────────────────────
+
+  const handleOpenClosePaperTrade = useCallback((trade: ActiveTrade) => {
+    setClosePaperTradeId(trade.id);
+    setClosePaperPrice(String(trade.currentPrice ?? trade.entryPrice));
+  }, []);
+
+  const handleClosePaperTrade = useCallback(async () => {
+    if (!closePaperTradeId) return;
+    const px = Number(closePaperPrice);
+    if (!Number.isFinite(px) || px <= 0) {
+      toast({ title: "Invalid price", description: "Enter a valid exit price.", variant: "destructive" });
+      return;
+    }
+    setClosingPaper(true);
+    try {
+      const { error } = await tradeTrackingService.closeActivePaperTrade(closePaperTradeId, px);
+      if (error) throw new Error(error);
+      toast({ title: "Paper trade closed", description: `Position closed at ${px.toFixed(2)}.` });
+      setClosePaperTradeId(null);
+      loadTrades();
+    } catch (e: unknown) {
+      toast({ title: "Close failed", description: e instanceof Error ? e.message : "Error", variant: "destructive" });
+    } finally {
+      setClosingPaper(false);
+    }
+  }, [closePaperTradeId, closePaperPrice, toast]);
+
+  // ── Delete completed paper trade ────────────────────────────────────────────
+
+  const handleDeletePaperTrade = useCallback(async (tradeId: string) => {
+    setDeletingTradeId(tradeId);
+    try {
+      const { error } = await tradeTrackingService.deletePaperTrade(tradeId);
+      if (error) throw new Error(error);
+      toast({ title: "Paper trade deleted" });
+      loadTrades();
+    } catch (e: unknown) {
+      toast({ title: "Delete failed", description: e instanceof Error ? e.message : "Error", variant: "destructive" });
+    } finally {
+      setDeletingTradeId(null);
+    }
+  }, [toast]);
+
   useEffect(() => {
     loadTrades();
+    loadPendingPaperTrades();
 
     // Subscribe to real-time updates
     const subscription = tradeTrackingService.subscribeToTrades((payload) => {
@@ -533,9 +685,31 @@ export default function ActiveTradesPage() {
       },
     );
 
+    let pendingRealtime: ReturnType<typeof supabase.channel> | null = null;
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      const uid = session?.user?.id;
+      if (!uid) return;
+      pendingRealtime = supabase
+        .channel(`pending_conditional_${uid}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "pending_conditional_orders",
+            filter: `user_id=eq.${uid}`,
+          },
+          () => {
+            loadPendingPaperTrades();
+          },
+        )
+        .subscribe();
+    });
+
     return () => {
       subscription.unsubscribe();
       notifSubscription.unsubscribe();
+      if (pendingRealtime) supabase.removeChannel(pendingRealtime);
     };
   }, []); // Remove dependency to avoid re-creating subscriptions
 
@@ -543,6 +717,16 @@ export default function ActiveTradesPage() {
     const hasUsdAssets =
       activeTrades.some((t) => isUsdDenominatedSymbol(t.symbol)) ||
       completedTrades.some((t) => isUsdDenominatedSymbol(t.symbol));
+
+    // Auto-switch display currency to match the majority of loaded trades
+    const hasInrAssets =
+      activeTrades.some((t) => !isUsdDenominatedSymbol(t.symbol)) ||
+      completedTrades.some((t) => !isUsdDenominatedSymbol(t.symbol));
+    if (hasUsdAssets && !hasInrAssets) {
+      setDisplayCurrency("USD");
+    } else if (hasInrAssets && !hasUsdAssets) {
+      setDisplayCurrency("INR");
+    }
 
     if (usdPerInr == null && !fxLoading && hasUsdAssets) {
       loadFxRate();
@@ -871,6 +1055,49 @@ export default function ActiveTradesPage() {
           </div>
         </div>
 
+        {/* Pending Paper Strategies */}
+        {(pendingPaperTrades.length > 0 || pendingPaperLoading) && (
+          <div className="rounded-xl border border-violet-500/20 bg-violet-500/5">
+            <button
+              type="button"
+              className="w-full flex items-center justify-between px-4 py-3 text-left"
+              onClick={() => setPendingPaperExpanded((v) => !v)}
+            >
+              <div className="flex items-center gap-2">
+                <FlaskConical className="h-4 w-4 text-violet-400" />
+                <span className="text-sm font-semibold text-violet-300">
+                  Pending Paper Strategies
+                </span>
+                <Badge className="text-[10px] bg-violet-500/20 text-violet-300 border-violet-500/30 border">
+                  {pendingPaperTrades.length}
+                </Badge>
+              </div>
+              {pendingPaperExpanded ? (
+                <ChevronUp className="h-4 w-4 text-violet-400" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-violet-400" />
+              )}
+            </button>
+            {pendingPaperExpanded && (
+              <div className="px-4 pb-4 space-y-3">
+                {pendingPaperLoading ? (
+                  <div className="flex justify-center py-4">
+                    <Loader2 className="h-4 w-4 animate-spin text-violet-400" />
+                  </div>
+                ) : (
+                  pendingPaperTrades.map((row) => (
+                    <PendingPaperTradeCard
+                      key={row.id}
+                      row={row}
+                      onCancelled={loadPendingPaperTrades}
+                    />
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Portfolio Summary */}
         {activeTrades.length > 0 && (
           <>
@@ -1027,10 +1254,12 @@ export default function ActiveTradesPage() {
             onTabChange(v);
             if (v === "orders" && brokerOrders.length === 0)
               loadBrokerOrders(false);
+            if (v === "strategy-history")
+              void loadStrategyHistory();
           }}
         >
           <div className="overflow-x-auto pb-1">
-            <TabsList className="grid w-full max-w-3xl min-w-[360px] grid-cols-4">
+            <TabsList className="grid w-full max-w-4xl min-w-[420px] grid-cols-5">
               <TabsTrigger value="active" className="text-xs sm:text-sm">
                 <Activity className="h-3.5 w-3.5 mr-1" />
                 <span>Active ({activeTrades.length})</span>
@@ -1045,6 +1274,11 @@ export default function ActiveTradesPage() {
                 <History className="h-3.5 w-3.5 mr-1" />
                 <span className="hidden sm:inline">Broker Orders</span>
                 <span className="sm:hidden">Orders</span>
+              </TabsTrigger>
+              <TabsTrigger value="strategy-history" className="text-xs sm:text-sm">
+                <BookOpen className="h-3.5 w-3.5 mr-1" />
+                <span className="hidden sm:inline">Strategy Log</span>
+                <span className="sm:hidden">Log</span>
               </TabsTrigger>
               <TabsTrigger value="performance" className="text-xs sm:text-sm">
                 <BarChart3 className="h-3.5 w-3.5 mr-1" />
@@ -1075,8 +1309,13 @@ export default function ActiveTradesPage() {
                   ) : (
                     <>Use </>
                   )}
-                  <span className="font-medium text-primary">New Paper Trade</span> above to open a
-                  paper position.
+                  <span className="font-medium text-primary">New Paper Trade</span> above for a quick
+                  paper position, or use{" "}
+                  <span className="font-medium text-primary">Paper Trade</span> on a strategy in{" "}
+                  <a href="/strategies" className="underline font-medium text-primary">
+                    My Strategies
+                  </a>{" "}
+                  / Algo Trade to wait for your strategy conditions.
                 </AlertDescription>
               </Alert>
             ) : (
@@ -1107,6 +1346,8 @@ export default function ActiveTradesPage() {
                       const pnlPrefix = isNeutral ? "" : isPositive ? "+" : "";
                       const displayPnl = isNeutral ? 0 : pnl;
 
+                      const isPaper = Boolean(trade.brokerOrderId?.startsWith("PAPER"));
+
                       return (
                         <div
                           key={trade.id}
@@ -1129,6 +1370,11 @@ export default function ActiveTradesPage() {
                                 >
                                   {trade.action}
                                 </span>
+                                {isPaper && (
+                                  <span className="shrink-0 text-[9px] px-1.5 py-0.5 rounded leading-none uppercase font-bold bg-violet-500/10 text-violet-400">
+                                    Paper
+                                  </span>
+                                )}
                               </div>
                               {/* Mobile-only P/L on the right */}
                               <div
@@ -1197,6 +1443,19 @@ export default function ActiveTradesPage() {
                                   ).toFixed(2)}
                                 </span>
                               )}
+                              {isPaper && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenClosePaperTrade(trade);
+                                  }}
+                                  className="flex items-center gap-0.5 text-[9px] text-orange-400 bg-orange-500/10 border border-orange-500/20 px-1.5 py-0.5 rounded hover:bg-orange-500/20 transition-colors"
+                                >
+                                  <LogOut className="h-2.5 w-2.5" />
+                                  Close
+                                </button>
+                              )}
                             </div>
                           </div>
 
@@ -1251,7 +1510,9 @@ export default function ActiveTradesPage() {
               </Alert>
             ) : (
               <div className="space-y-3">
-                {completedTrades.map((trade) => (
+                {completedTrades.map((trade) => {
+                  const isCompletedPaper = Boolean(trade.brokerOrderId?.startsWith("PAPER"));
+                  return (
                   <Card
                     key={trade.id}
                     className="p-4 sm:p-6 border-white/5 bg-card hover:bg-white/5 transition-colors"
@@ -1267,6 +1528,11 @@ export default function ActiveTradesPage() {
                             confidence={trade.confidence || 0}
                             size="sm"
                           />
+                          {isCompletedPaper && (
+                            <Badge className="text-[10px] bg-violet-500/20 text-violet-300 border-violet-500/30 border">
+                              Paper
+                            </Badge>
+                          )}
                         </div>
                         <p className="text-xs sm:text-sm text-muted-foreground mt-1">
                           {new Date(trade.entryTime).toLocaleDateString()} -{" "}
@@ -1316,22 +1582,41 @@ export default function ActiveTradesPage() {
                         </p>
                       </div>
                     </div>
-                    <div className="mt-3 flex items-center gap-2 flex-wrap">
-                      <Badge
-                        variant="outline"
-                        className="capitalize border-white/10 text-muted-foreground text-xs"
-                      >
-                        {trade.exitReason?.replace(/_/g, " ")}
-                      </Badge>
-                      <Badge
-                        variant="secondary"
-                        className="bg-white/10 text-zinc-300 hover:bg-white/20 text-xs"
-                      >
-                        {trade.shares} shares
-                      </Badge>
+                    <div className="mt-3 flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge
+                          variant="outline"
+                          className="capitalize border-white/10 text-muted-foreground text-xs"
+                        >
+                          {trade.exitReason?.replace(/_/g, " ")}
+                        </Badge>
+                        <Badge
+                          variant="secondary"
+                          className="bg-white/10 text-zinc-300 hover:bg-white/20 text-xs"
+                        >
+                          {trade.shares} shares
+                        </Badge>
+                      </div>
+                      {isCompletedPaper && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleDeletePaperTrade(trade.id)}
+                          disabled={deletingTradeId === trade.id}
+                          className="h-7 text-xs text-zinc-500 hover:text-red-400 hover:bg-red-500/10"
+                        >
+                          {deletingTradeId === trade.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                          ) : (
+                            <Trash2 className="h-3.5 w-3.5 mr-1" />
+                          )}
+                          Delete
+                        </Button>
+                      )}
                     </div>
                   </Card>
-                ))}
+                  );
+                })}
               </div>
             )}
           </TabsContent>
@@ -1578,6 +1863,165 @@ export default function ActiveTradesPage() {
             )}
           </TabsContent>
 
+          {/* Strategy History Tab */}
+          <TabsContent value="strategy-history" className="space-y-4 mt-4">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <h2 className="text-base font-semibold text-white">Strategy Trade Log</h2>
+                <p className="text-xs text-zinc-500 mt-0.5">All paper strategy entries — executed, cancelled, and expired — grouped by strategy.</p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs border-zinc-700"
+                onClick={() => void loadStrategyHistory()}
+                disabled={strategyHistoryLoading}
+              >
+                {strategyHistoryLoading
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                  : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
+                Refresh
+              </Button>
+            </div>
+
+            {strategyHistoryLoading ? (
+              <div className="flex items-center gap-2 text-sm text-zinc-500 py-8 justify-center">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading strategy history…
+              </div>
+            ) : strategyHistory.length === 0 ? (
+              <div className="rounded-xl border border-white/10 bg-white/5 p-8 text-center space-y-2">
+                <BookOpen className="h-8 w-8 text-zinc-600 mx-auto" />
+                <p className="text-sm text-zinc-400">No strategy history yet.</p>
+                <p className="text-xs text-zinc-600">Executed, cancelled, and expired paper strategies will appear here.</p>
+              </div>
+            ) : (() => {
+              // Group by strategy name
+              const grouped: Record<string, StrategyHistoryRow[]> = {};
+              for (const r of strategyHistory) {
+                const key = r.strategy_name ?? r.strategy_id ?? "Unknown Strategy";
+                if (!grouped[key]) grouped[key] = [];
+                grouped[key].push(r);
+              }
+              return (
+                <div className="space-y-4">
+                  {Object.entries(grouped).map(([stratName, rows]) => {
+                    const executed = rows.filter((r) => r.status === "executed").length;
+                    const cancelled = rows.filter((r) => r.status === "cancelled").length;
+                    const expired = rows.filter((r) => r.status === "expired").length;
+                    return (
+                      <div key={stratName} className="rounded-xl border border-white/10 bg-zinc-900/40 overflow-hidden">
+                        {/* Strategy header */}
+                        <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-zinc-800 bg-zinc-900/60">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <FlaskConical className="h-4 w-4 text-teal-400 shrink-0" />
+                            <span className="font-semibold text-sm text-white truncate">{stratName}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-[11px] shrink-0">
+                            {executed > 0 && (
+                              <span className="flex items-center gap-1 text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                                <CheckCircle2 className="h-3 w-3" />{executed} executed
+                              </span>
+                            )}
+                            {cancelled > 0 && (
+                              <span className="flex items-center gap-1 text-zinc-400 bg-zinc-700/30 border border-zinc-600/30 px-2 py-0.5 rounded-full">
+                                <Ban className="h-3 w-3" />{cancelled} cancelled
+                              </span>
+                            )}
+                            {expired > 0 && (
+                              <span className="flex items-center gap-1 text-orange-400 bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 rounded-full">
+                                <Clock className="h-3 w-3" />{expired} expired
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Rows */}
+                        <div className="divide-y divide-zinc-800/60">
+                          {rows.map((r) => {
+                            const statusColor =
+                              r.status === "executed"
+                                ? "text-emerald-400"
+                                : r.status === "expired"
+                                ? "text-orange-400"
+                                : "text-zinc-400";
+                            const StatusIcon =
+                              r.status === "executed"
+                                ? CheckCircle2
+                                : r.status === "expired"
+                                ? Clock
+                                : r.status === "cancelled"
+                                ? Ban
+                                : AlertTriangle;
+                            const isUserCancel = r.error_message === "Cancelled by user";
+                            const isTimeCancel = r.error_message?.startsWith("Auto-cancelled:");
+                            return (
+                              <div key={r.id} className="flex items-start gap-3 px-4 py-2.5 hover:bg-white/[0.02] transition-colors">
+                                <StatusIcon className={cn("h-3.5 w-3.5 mt-0.5 shrink-0", statusColor)} />
+                                <div className="flex-1 min-w-0 space-y-0.5">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-medium text-sm text-white">{r.symbol}</span>
+                                    <span className={cn(
+                                      "text-[9px] px-1.5 py-0.5 rounded font-bold uppercase",
+                                      r.action === "BUY" ? "bg-teal-500/10 text-teal-400" : "bg-red-500/10 text-red-400"
+                                    )}>
+                                      {r.action}
+                                    </span>
+                                    <span className="text-[10px] text-zinc-500">×{r.quantity}</span>
+                                    <span className={cn("text-[10px] font-medium capitalize", statusColor)}>
+                                      {r.status}
+                                    </span>
+                                    <span className="text-[10px] text-zinc-600">
+                                      {new Date(r.created_at).toLocaleDateString("en-IN", {
+                                        day: "2-digit", month: "short", year: "2-digit",
+                                        hour: "2-digit", minute: "2-digit",
+                                      })}
+                                    </span>
+                                  </div>
+                                  {r.error_message && !isUserCancel && !isTimeCancel && (
+                                    <p className="text-[11px] text-zinc-500 leading-snug truncate" title={r.error_message}>
+                                      {r.error_message}
+                                    </p>
+                                  )}
+                                  {isUserCancel && (
+                                    <p className="text-[11px] text-zinc-600">Manually cancelled</p>
+                                  )}
+                                  {isTimeCancel && (
+                                    <p className="text-[11px] text-orange-400/70">Window expired for the day</p>
+                                  )}
+                                  {r.last_checked_at && (
+                                    <p className="text-[10px] text-zinc-700">
+                                      Last checked {new Date(r.last_checked_at).toLocaleTimeString()}
+                                    </p>
+                                  )}
+                                </div>
+                                {/* Pass/fail summary from error_message audit lines */}
+                                {(() => {
+                                  const lines = (r.error_message ?? "")
+                                    .split("\n")
+                                    .filter((l) => l.startsWith("PASS ") || l.startsWith("FAIL "));
+                                  if (lines.length === 0) return null;
+                                  const p = lines.filter((l) => l.startsWith("PASS ")).length;
+                                  const f = lines.filter((l) => l.startsWith("FAIL ")).length;
+                                  return (
+                                    <div className="text-[10px] text-right shrink-0 space-y-0.5">
+                                      <div className="text-emerald-400">{p} ✓</div>
+                                      <div className="text-red-400">{f} ✗</div>
+                                    </div>
+                                  );
+                                })()}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </TabsContent>
+
           {/* Performance Tab - Failure Transparency & Stats */}
           <TabsContent value="performance" className="space-y-6 mt-6">
             <PerformanceDashboard />
@@ -1587,9 +2031,9 @@ export default function ActiveTradesPage() {
         <Dialog open={showQuickPaperDialog} onOpenChange={setShowQuickPaperDialog}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Start New Paper Trade</DialogTitle>
+              <DialogTitle>Quick Paper Trade</DialogTitle>
               <DialogDescription>
-                Enter symbol and quantity. In the next step, you can choose any strategy and run AI analysis across built-in and your custom strategies.
+                Enter symbol and quantity, then pick a strategy for an immediate paper position (entry at current price).
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -1642,6 +2086,46 @@ export default function ActiveTradesPage() {
           isPaperTrade={true}
           onConfirm={handleCreatePaperTrade}
         />
+
+        {/* Manual close active paper trade dialog */}
+        <Dialog
+          open={Boolean(closePaperTradeId)}
+          onOpenChange={(o) => { if (!o) setClosePaperTradeId(null); }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Close Paper Position</DialogTitle>
+              <DialogDescription>
+                Enter the exit price to manually close this paper trade.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2 py-2">
+              <Label htmlFor="close-paper-price">Exit Price</Label>
+              <Input
+                id="close-paper-price"
+                type="number"
+                min={0.01}
+                step={0.01}
+                value={closePaperPrice}
+                onChange={(e) => setClosePaperPrice(e.target.value)}
+                placeholder="e.g. 2450.50"
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setClosePaperTradeId(null)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleClosePaperTrade}
+                disabled={closingPaper}
+                className="bg-orange-600 hover:bg-orange-700"
+              >
+                {closingPaper ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <LogOut className="h-4 w-4 mr-1" />}
+                Close Position
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardShellLayout>
   );

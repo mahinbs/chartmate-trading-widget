@@ -50,6 +50,7 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  FlaskConical,
   Loader2,
   Plus,
   RefreshCw,
@@ -60,7 +61,13 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useSubscription } from "@/hooks/useSubscription";
-import { getAlgoStrategyLimits } from "@/lib/algoStrategyLimits";
+import {
+  getAlgoStrategyLimits,
+  isAtCustomStrategyCap,
+  strategyCapToastMessage,
+  UNLIMITED_CUSTOM_STRATEGIES,
+} from "@/lib/algoStrategyLimits";
+import { PaperTradeSetupDialog } from "@/components/trading/PaperTradeSetupDialog";
 
 interface StrategySymbol {
   symbol:       string;
@@ -163,17 +170,15 @@ export default function StrategiesPage() {
   const [showCreate, setShowCreate]     = useState(false);
   const [creating, setCreating]         = useState(false);
   const [form, setForm]                 = useState({ ...EMPTY_FORM });
+  const [paperTradeStrategyId, setPaperTradeStrategyId] = useState<string | null>(null);
 
   const stratLimits = getAlgoStrategyLimits(subscription?.plan_id);
   const canDeleteStrategies = stratLimits?.allowDeleteStrategies ?? false;
-  const atStrategyCap =
-    stratLimits != null && strategies.length >= stratLimits.maxCustomStrategies;
+  const atStrategyCap = isAtCustomStrategyCap(strategies.length, stratLimits);
 
   const openCreateDialog = () => {
-    if (atStrategyCap) {
-      toast.error(
-        `Your plan allows up to ${stratLimits?.maxCustomStrategies} custom strateg${stratLimits?.maxCustomStrategies === 1 ? "y" : "ies"}. Upgrade in billing to add more.`,
-      );
+    if (atStrategyCap && stratLimits) {
+      toast.error(strategyCapToastMessage(stratLimits));
       return;
     }
     setShowCreate(true);
@@ -332,9 +337,15 @@ export default function StrategiesPage() {
               Create trading strategies — our AI analyzes and backtests each one.
               {stratLimits ? (
                 <span className="block text-zinc-500 text-xs mt-1">
-                  Your plan: up to {stratLimits.maxCustomStrategies} custom strateg
-                  {stratLimits.maxCustomStrategies === 1 ? "y" : "ies"}
-                  {stratLimits.allowDeleteStrategies ? " (you may delete and create new ones)." : " (edit only; delete requires Professional)."}
+                  Your plan:{" "}
+                  {stratLimits.maxCustomStrategies === UNLIMITED_CUSTOM_STRATEGIES
+                    ? "Unlimited custom strategies"
+                    : `up to ${stratLimits.maxCustomStrategies} custom strateg${
+                        stratLimits.maxCustomStrategies === 1 ? "y" : "ies"
+                      }`}
+                  {stratLimits.allowDeleteStrategies
+                    ? " (create, edit, delete)."
+                    : " (edit only; upgrade to Pro to delete and add freely)."}
                 </span>
               ) : null}
             </p>
@@ -431,7 +442,17 @@ export default function StrategiesPage() {
                       </div>
 
                       {/* Action buttons */}
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setPaperTradeStrategyId(s.id)}
+                          className="border-teal-700/50 text-teal-400 hover:bg-teal-500/10 text-xs"
+                          title="Paper trade when this strategy’s entry conditions are met (scheduled or now)"
+                        >
+                          <FlaskConical className="h-3.5 w-3.5 sm:mr-1" />
+                          <span className="hidden sm:inline">Paper Trade</span>
+                        </Button>
                         <Switch
                           checked={s.is_active}
                           onCheckedChange={() => handleToggle(s.id)}
@@ -907,6 +928,18 @@ export default function StrategiesPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <PaperTradeSetupDialog
+        open={paperTradeStrategyId != null}
+        onOpenChange={(o) => {
+          if (!o) setPaperTradeStrategyId(null);
+        }}
+        preselectedStrategyId={paperTradeStrategyId}
+        onCreated={() => {
+          setPaperTradeStrategyId(null);
+          toast.success("Paper strategy queued. View progress under Active Trades → Pending Paper Strategies.");
+        }}
+      />
     </div>
   );
 }

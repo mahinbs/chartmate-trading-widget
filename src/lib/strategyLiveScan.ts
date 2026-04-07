@@ -77,12 +77,22 @@ export async function runLiveEntryConditionScan(
   }
 
   const customId = `custom_${strategy.id}`;
-  const actionUpper = String(dep.action ?? "BUY").toUpperCase();
+  const tradingModeUpper = String(merged.trading_mode ?? "BOTH").toUpperCase();
+  /** Match edge `tryExecutePendingRow` / `strategy-entry-signals` scan sides. */
+  const signalsRequestAction =
+    tradingModeUpper === "LONG" ? "BUY" : tradingModeUpper === "SHORT" ? "SELL" : "BOTH";
+
+  const sideMatchesTradingMode = (s: Record<string, unknown>) => {
+    const side = String(s?.side ?? "").toUpperCase();
+    if (tradingModeUpper === "LONG") return side === "BUY";
+    if (tradingModeUpper === "SHORT") return side === "SELL";
+    return side === "BUY" || side === "SELL";
+  };
 
   const body = {
     symbol,
     strategies: [] as string[],
-    action: actionUpper,
+    action: signalsRequestAction,
     days: 90,
     preferIntraday: true,
     intradayInterval,
@@ -127,7 +137,7 @@ export async function runLiveEntryConditionScan(
 
   const matchedSignal = signals.find((s) =>
     String(s?.strategyId ?? "") === customId &&
-    String(s?.side ?? "").toUpperCase() === actionUpper &&
+    sideMatchesTradingMode(s) &&
     Boolean(s?.isLive) &&
     !Boolean(s?.isPredicted),
   );
@@ -138,7 +148,7 @@ export async function runLiveEntryConditionScan(
     const lines = (audit as { lines?: unknown }).lines;
     if (!Array.isArray(lines)) return [];
     return lines
-      .slice(0, 24)
+      .slice(0, 32)
       .map((l) => {
         const row = l as { ok?: boolean; label?: string };
         return {
@@ -150,7 +160,22 @@ export async function runLiveEntryConditionScan(
   };
 
   if (matchedSignal) {
-    const checks = pickAudit(matchedSignal);
+    let checks = pickAudit(matchedSignal);
+    if (checks.length === 0) {
+      const alt = signals
+        .filter((s) => String(s?.strategyId ?? "") === customId && sideMatchesTradingMode(s))
+        .map((s) => ({ s, c: pickAudit(s) }))
+        .filter((x) => x.c.length > 0)
+        .sort((a, b) => b.c.length - a.c.length)[0];
+      if (alt) checks = alt.c;
+    }
+    if (checks.length === 0) {
+      const side = String((matchedSignal as { side?: string }).side ?? "").toUpperCase();
+      checks = [{
+        ok: true,
+        label: `Latest bar satisfies this strategy’s entry (${side || "BUY/SELL"}) — preset/summary path (expand chart below).`,
+      }];
+    }
     return {
       error: null,
       headline: "Live entry conditions are satisfied on the latest evaluated bar.",
@@ -161,28 +186,29 @@ export async function runLiveEntryConditionScan(
 
   const sideCandidates = signals.filter((s) =>
     String(s?.strategyId ?? "") === customId &&
-    String(s?.side ?? "").toUpperCase() === actionUpper &&
+    sideMatchesTradingMode(s) &&
     !Boolean(s?.isPredicted),
   );
   const nearest = sideCandidates[0];
   const checks = pickAudit(nearest);
 
   const liveFlag = Boolean(nearest?.isLive) ? "YES" : "NO";
-  const px = Number((nearest as { priceAtEntry?: number })?.priceAtEntry ?? 0);
+  const px = Number((nearest as { priceAtEntry?: number } | undefined)?.priceAtEntry ?? 0);
   const pxText = Number.isFinite(px) && px > 0 ? px.toFixed(2) : "—";
-  const ts = String((nearest as { entryTimestamp?: string; entryTime?: string })?.entryTimestamp
-    ?? (nearest as { entryTime?: string }).entryTime ?? "").trim();
+  const nearestAny = nearest as { entryTimestamp?: string; entryTime?: string } | undefined;
+  const ts = String(nearestAny?.entryTimestamp ?? nearestAny?.entryTime ?? "").trim();
   // `typeof null === "object"` — must exclude null before reading `.kind`
   const auditObj = nearest?.conditionAudit;
   const kind =
     auditObj != null && typeof auditObj === "object"
       ? String((auditObj as { kind?: string }).kind ?? "").trim()
       : "";
+  const sideLabel = String((nearest as { side?: string })?.side ?? dep.action ?? "—").toUpperCase();
 
   const headline = nearest
     ? [
       "No live entry firing yet (order still pending).",
-      `State: LIVE_BAR=${liveFlag} SIDE=${actionUpper} PRICE=${pxText}${ts ? ` TIME=${ts}` : ""}${kind ? ` KIND=${kind}` : ""}`,
+      `State: LIVE_BAR=${liveFlag} SIDE=${sideLabel} PRICE=${pxText}${ts ? ` TIME=${ts}` : ""}${kind ? ` KIND=${kind}` : ""}`,
     ].join(" ")
     : "No candidate signal returned for this symbol yet. Data may still be loading or the engine returned no row for this custom strategy.";
 

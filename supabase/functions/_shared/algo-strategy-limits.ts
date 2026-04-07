@@ -1,5 +1,7 @@
 /** Mirrors src/lib/algoStrategyLimits.ts for Edge Functions. */
 
+export const UNLIMITED_CUSTOM_STRATEGIES = -1;
+
 export type AlgoStrategyLimits = {
   maxCustomStrategies: number;
   allowDeleteStrategies: boolean;
@@ -19,7 +21,7 @@ export function getAlgoStrategyLimits(planId: string | null | undefined): AlgoSt
       return { maxCustomStrategies: 3, allowDeleteStrategies: false };
     case "professionalPlan":
     case "proPlan":
-      return { maxCustomStrategies: 10, allowDeleteStrategies: true };
+      return { maxCustomStrategies: UNLIMITED_CUSTOM_STRATEGIES, allowDeleteStrategies: true };
     default:
       return null;
   }

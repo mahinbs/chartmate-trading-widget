@@ -23,6 +23,7 @@
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
+  detectLiquiditySweepBosHits,
   detectOrbHits,
   detectRsiDivergenceHits,
   detectSupertrendDualTfHits,
@@ -31,6 +32,17 @@ import {
   extractAlgoGuidePreset,
   type PresetHit,
 } from "../_shared/algoGuideDetectors.ts";
+import {
+  resolveMarketSessionProfile,
+  type MarketSessionProfile,
+} from "../_shared/marketSession.ts";
+import {
+  buildScoringContext,
+  runScoringEngine,
+  DEFAULT_WEIGHTS,
+  type ScoreVector,
+  type ScoringContext,
+} from "../_shared/scoringEngine.ts";
 
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 const TWELVE_DATA_API_KEY = Deno.env.get("TWELVE_DATA_API_KEY") ?? "";
@@ -385,6 +397,21 @@ function computePresetPriceLevels(
     };
   }
 
+  if (preset === "liquidity_sweep_bos") {
+    const sweepExtreme = Number(meta.sweepExtreme);
+    const bosLevel = Number(meta.bosLevel);
+    const targetZone = Number(meta.targetZonePrice);
+    const atrGuess = entryPrice * 0.005; // 0.5% fallback ATR
+    if (!Number.isFinite(sweepExtreme)) return undefined;
+    return {
+      stopLossPrice: isBuy ? sweepExtreme - atrGuess : sweepExtreme + atrGuess,
+      takeProfitPrice: Number.isFinite(targetZone) ? targetZone
+        : (Number.isFinite(bosLevel)
+            ? (isBuy ? entryPrice + 2 * Math.abs(entryPrice - sweepExtreme) : entryPrice - 2 * Math.abs(sweepExtreme - entryPrice))
+            : undefined),
+    };
+  }
+
   return undefined;
 }
 
@@ -677,7 +704,7 @@ type ConditionEvalCtx = {
   volSmaCache: Map<number, number[]>;
   /** Unix seconds per candle — required for TIME_IS(...) */
   timestamps?: number[];
-  /** IANA zone for wall-clock rules (IST for Indian symbols, UTC otherwise) */
+  /** IANA zone for wall-clock rules (Asia/Kolkata, America/New_York, or UTC — from symbol class) */
   timeZone?: string;
   /**
    * 0 = exact saved rules; 1–2 = mild / wider slack on numeric compares, crosses, and clock gates
@@ -1215,8 +1242,8 @@ function buildCustomScanMeta(args: {
 
 /**
  * Applies execution_days + session only to bars that actually fired from **custom rule evaluation**
- * (custom_time | custom_raw | custom_visual | custom_hybrid). Template / template-fallback rows have no
- * such audit — otherwise strict schedule would strip every fallback bar and scans stay empty.
+ * (custom_time | custom_raw | custom_visual | custom_hybrid). Default/base-type inherited rows have no
+ * such audit — otherwise strict schedule would strip inherited baseline bars and scans stay empty.
  */
 function filterRawSignalsByCustomSchedule(
   signals: RawSignal[],
@@ -1396,12 +1423,12 @@ function wallClockMinutesScan(tsSec: number, tz: string): number | null {
   }
 }
 
-/** Skip entries on opening-range candles (guide: avoid first 15 minutes). */
-function guideBlocksOpenQuarterBar(entryCfg: EntryConditionsConfig, tsSec: number, scanTimeZone: string): boolean {
+/** Skip entries during local ORB formation window (India 9:15–9:30, US 9:30–9:45, crypto/FX UTC 0:00–0:15). */
+function guideBlocksOpenQuarterBar(entryCfg: EntryConditionsConfig, tsSec: number, profile: MarketSessionProfile): boolean {
   if (!entryCfg.algoGuideBlockFirstSessionMinutes) return false;
-  const m = wallClockMinutesScan(tsSec, scanTimeZone);
+  const m = wallClockMinutesScan(tsSec, profile.timeZone);
   if (m == null) return false;
-  return m >= 9 * 60 + 15 && m < 9 * 60 + 30;
+  return m >= profile.orbOpenStartMin && m < profile.orbOpenEndMin;
 }
 
 function customEntryConfigRunnable(
@@ -1438,8 +1465,9 @@ function customEntryConditionsMatchAt(
   ctx: ConditionEvalCtx,
   timestamps: number[],
   scanTimeZone: string,
+  sessionProfile: MarketSessionProfile,
 ): boolean {
-  if (guideBlocksOpenQuarterBar(entryCfg, timestamps[idx], scanTimeZone)) return false;
+  if (guideBlocksOpenQuarterBar(entryCfg, timestamps[idx], sessionProfile)) return false;
   if (subtype === "time_based") {
     const hhmm =
       String(entryCfg.clockEntryTime ?? "").trim() ||
@@ -1617,6 +1645,7 @@ function detectCustomEntrySignals(
   realIndicators: RealIndicators,
   requestedActions: Array<"BUY" | "SELL">,
   scanTimeZone: string,
+  sessionProfile: MarketSessionProfile,
   maxSignals: number,
   realtimeMode: boolean,
   barMinutesApprox: number,
@@ -1680,7 +1709,7 @@ function detectCustomEntrySignals(
   const preset = extractAlgoGuidePreset(entryCfg);
   if (preset) {
     let presetHits: PresetHit[] = [];
-    if (preset === "orb") presetHits = detectOrbHits(timestamps, c, h, l, scanTimeZone);
+    if (preset === "orb") presetHits = detectOrbHits(timestamps, c, h, l, sessionProfile);
     else if (preset === "supertrend_7_3") {
       if (
         supertrendSlow &&
@@ -1696,16 +1725,20 @@ function detectCustomEntrySignals(
           supertrendSlow.h,
           supertrendSlow.l,
           supertrendSlow.c,
-          scanTimeZone,
+          sessionProfile,
         );
       } else {
-        presetHits = detectSupertrendFlipHits(h, l, c, timestamps, scanTimeZone);
+        presetHits = detectSupertrendFlipHits(h, l, c, timestamps, sessionProfile);
       }
     } else if (preset === "vwap_bounce") {
       presetHits = vBars && vBars.length === c.length
-        ? detectVwapBounceHits(timestamps, h, l, c, vBars, scanTimeZone, oBars)
+        ? detectVwapBounceHits(timestamps, h, l, c, vBars, sessionProfile, oBars)
         : [];
-    } else if (preset === "rsi_divergence") presetHits = detectRsiDivergenceHits(c, h, l);
+    } else if (preset === "rsi_divergence") {
+      presetHits = detectRsiDivergenceHits(c, h, l);
+    } else if (preset === "liquidity_sweep_bos") {
+      presetHits = detectLiquiditySweepBosHits(c, h, l);
+    }
 
     const collectPresetAtTier = (relaxationTier: number): RawSignal[] => {
       ctx.ruleRelaxation = relaxationTier;
@@ -1742,17 +1775,68 @@ function detectCustomEntrySignals(
           if (!barAllowedByCustomSchedule(entryTs, cs.executionDays, cs.startTime, cs.endTime, scanTimeZone)) {
             continue;
           }
+          // Build rich per-preset PASS/FAIL audit lines shown in the detail view
+          const auditLines: Array<{ ok: boolean; label: string }> = [];
+          const priceLvls = computePresetPriceLevels(preset, side, c[ei], hit.meta);
+          if (preset === "orb") {
+            const orbH = Number(hit.meta?.orbH);
+            const orbL = Number(hit.meta?.orbL);
+            auditLines.push({ ok: true, label: `Opening range captured: High ${Number.isFinite(orbH) ? orbH.toFixed(2) : "?"} / Low ${Number.isFinite(orbL) ? orbL.toFixed(2) : "?"}` });
+            auditLines.push({ ok: true, label: `Breakout direction: ${side} (5m candle closed ${side === "BUY" ? "above Range High" : "below Range Low"})` });
+            auditLines.push({ ok: priceLvls?.stopLossPrice != null, label: `SL set at ${side === "BUY" ? "Range Low" : "Range High"}: ${priceLvls?.stopLossPrice?.toFixed(2) ?? "—"}` });
+            auditLines.push({ ok: priceLvls?.takeProfitPrice != null, label: `TP set at 2× range: ${priceLvls?.takeProfitPrice?.toFixed(2) ?? "—"}` });
+            if (Number.isFinite(orbH) && Number.isFinite(orbL)) {
+              const rng = orbH - orbL;
+              const midP = (orbH + orbL) / 2;
+              const rngPct = midP > 0 ? (rng / midP * 100).toFixed(2) : "?";
+              auditLines.push({ ok: midP > 0 && rng / midP >= 0.002 && rng / midP <= 0.01, label: `Range width: ${rngPct}% (must be 0.2%–1.0%)` });
+            }
+          } else if (preset === "supertrend_7_3") {
+            const stSl = Number(hit.meta?.supertrendSl);
+            auditLines.push({ ok: true, label: `Supertrend(7,3) flipped to ${side === "BUY" ? "GREEN (bullish)" : "RED (bearish)"} on 5m` });
+            auditLines.push({ ok: true, label: `15m trend confirmed: ${side === "BUY" ? "Uptrend (green)" : "Downtrend (red)"}` });
+            auditLines.push({ ok: Number.isFinite(stSl), label: `Dynamic SL at Supertrend line: ${Number.isFinite(stSl) ? stSl.toFixed(2) : "—"}` });
+            auditLines.push({ ok: true, label: `Exit signal: when Supertrend flips against position (trailing)` });
+          } else if (preset === "vwap_bounce") {
+            const vw = Number(hit.meta?.vwapAtEntry);
+            const sd1 = Number(hit.meta?.vwapSd1);
+            const sd2 = Number(hit.meta?.vwapSd2);
+            auditLines.push({ ok: true, label: `VWAP test: ${side === "BUY" ? "price touched VWAP from above with rejection" : "price tested VWAP from below with rejection"}` });
+            auditLines.push({ ok: true, label: `Rejection candle confirmed (lower/upper wick ≥ 30% of range)` });
+            auditLines.push({ ok: true, label: `Volume above 10-bar average at test candle` });
+            auditLines.push({ ok: true, label: `1st or 2nd VWAP touch only (lower probability on 3rd+)` });
+            auditLines.push({ ok: Number.isFinite(vw), label: `VWAP at entry: ${Number.isFinite(vw) ? vw.toFixed(2) : "—"}` });
+            auditLines.push({ ok: Number.isFinite(sd1), label: `TP1 (VWAP +1 SD): ${Number.isFinite(sd1) ? sd1.toFixed(2) : "—"} — close 50% here` });
+            auditLines.push({ ok: Number.isFinite(sd2), label: `TP2 (VWAP +2 SD): ${Number.isFinite(sd2) ? sd2.toFixed(2) : "—"} — close remaining 50%` });
+            auditLines.push({ ok: Number.isFinite(priceLvls?.stopLossPrice), label: `SL at 0.5% ${side === "BUY" ? "below" : "above"} VWAP: ${priceLvls?.stopLossPrice?.toFixed(2) ?? "—"}` });
+          } else if (preset === "rsi_divergence") {
+            const swing = Number(hit.meta?.rsiSwingPoint);
+            const prior = Number(hit.meta?.rsiPriorSwing);
+            auditLines.push({ ok: true, label: `RSI(14) divergence detected: price made ${side === "BUY" ? "lower low, RSI made higher low" : "higher high, RSI made lower high"}` });
+            auditLines.push({ ok: true, label: `Divergence spans ≥ 5 candles between pivot points` });
+            auditLines.push({ ok: true, label: `MACD histogram turning in trade direction (confirmation)` });
+            auditLines.push({ ok: true, label: `Confirmation candle: ${side === "BUY" ? "close above prior candle high" : "close below prior candle low"}` });
+            auditLines.push({ ok: Number.isFinite(swing), label: `SL beyond divergence swing point: ${Number.isFinite(swing) ? swing.toFixed(2) : "—"}` });
+            auditLines.push({ ok: Number.isFinite(prior), label: `TP at prior swing ${side === "BUY" ? "high" : "low"}: ${Number.isFinite(prior) ? prior.toFixed(2) : "—"} (50% exit)` });
+            auditLines.push({ ok: Number.isFinite(priceLvls?.takeProfitPrice), label: `TP full: ${priceLvls?.takeProfitPrice?.toFixed(2) ?? "—"} (3× SL distance)` });
+          } else if (preset === "liquidity_sweep_bos") {
+            const sweptZone = Number(hit.meta?.sweptZonePrice);
+            const sweepEx = Number(hit.meta?.sweepExtreme);
+            const bosLvl = Number(hit.meta?.bosLevel);
+            const targetZone = Number(hit.meta?.targetZonePrice);
+            auditLines.push({ ok: Number.isFinite(sweptZone), label: `Liquidity zone swept: ${side === "BUY" ? "equal lows / buy-side stops" : "equal highs / sell-side stops"} at ${Number.isFinite(sweptZone) ? sweptZone.toFixed(2) : "—"}` });
+            auditLines.push({ ok: Number.isFinite(sweepEx), label: `Sweep extreme: ${Number.isFinite(sweepEx) ? sweepEx.toFixed(2) : "—"} (price wicked beyond zone by ≥ 0.1%, then closed back)` });
+            auditLines.push({ ok: Number.isFinite(bosLvl), label: `Break of Structure (BOS) confirmed: close ${side === "BUY" ? "above prior swing high" : "below prior swing low"} at ${Number.isFinite(bosLvl) ? bosLvl.toFixed(2) : "—"}` });
+            auditLines.push({ ok: Number.isFinite(priceLvls?.stopLossPrice), label: `SL placed 1 ATR beyond sweep extreme: ${priceLvls?.stopLossPrice?.toFixed(2) ?? "—"}` });
+            auditLines.push({ ok: Number.isFinite(targetZone), label: `TP at next opposing liquidity zone: ${Number.isFinite(targetZone) ? targetZone.toFixed(2) : "—"}` });
+          } else {
+            auditLines.push({ ok: true, label: `Preset "${preset}" matched at bar ${signalBar} (${side})` });
+          }
+
           const conditionAudit: StrategyConditionAudit = {
             kind: "custom_visual",
             overallMatch: true,
-            lines: [
-              {
-                ok: true,
-                label: `Algo guide preset "${preset}" at bar ${signalBar}${
-                  hitBar !== signalBar ? ` (setup ${hitBar})` : ""
-                } (${side})`,
-              },
-            ],
+            lines: auditLines,
             snapshot: {
               barIndex: signalBar,
               barTimeIso: new Date(timestamps[signalBar] * 1000).toISOString(),
@@ -1820,7 +1904,7 @@ function detectCustomEntrySignals(
           continue;
         }
 
-        if (!customEntryConditionsMatchAt(entryCfg, subtype, i, ctx, timestamps, scanTimeZone)) continue;
+        if (!customEntryConditionsMatchAt(entryCfg, subtype, i, ctx, timestamps, scanTimeZone, sessionProfile)) continue;
 
         const ei = realtimeMode ? i : i + 1;
         if (ei >= n) continue;
@@ -2218,6 +2302,8 @@ type MergedAiRow = {
   confirmationDetail: string;
   whyThisScore: string;
   scoreSource: string;
+  /** Full 7-module score breakdown */
+  score_vector: ScoreVector | null;
 };
 
 function strField(v: unknown): string {
@@ -2247,8 +2333,8 @@ function whyThisScoreAligned(body: string, finalScore: number): string {
   return `Blended score ${finalScore}/100 — ${cleaned}`;
 }
 
-/** Rule-based quality read so we never silently default to 50 with no basis. */
-function heuristicMergeRow(raw: RawSignal, ind: RealIndicators | null): MergedAiRow {
+/** Strict rule-engine scoring (no heuristic fallback). */
+function heuristicMergeRow(raw: RawSignal, ind: RealIndicators | null, scoringCtx?: ScoringContext | null): MergedAiRow {
   const rsiBar = raw.marketData?.rsi14;
   const rsiSnap = ind?.rsi14;
   const rsi = rsiBar != null && Number.isFinite(rsiBar) ? rsiBar : rsiSnap;
@@ -2341,12 +2427,24 @@ function heuristicMergeRow(raw: RawSignal, ind: RealIndicators | null): MergedAi
     reasons.push("Matches latest bar — actionable now if liquidity and risk limits allow.");
   }
 
-  score = Math.max(14, Math.min(93, Math.round(score)));
+  if (!scoringCtx) {
+    throw new Error("[heuristicMergeRow] Strict mode requires scoring context.");
+  }
+
+  // ── 7-module scoring engine (required) ──
+  const sv = runScoringEngine(
+    { side: raw.side, entryIndex: raw.entryIndex, priceAtEntry: raw.priceAtEntry, isLive: raw.isLive, strategyId: raw.strategyId, customScanMeta: raw.customScanMeta ?? null },
+    scoringCtx,
+    DEFAULT_WEIGHTS,
+  );
+  score = Math.max(14, Math.min(93, sv.final_score));
+
   const verdict = score >= 69 ? "confirm" : score <= 37 ? "reject" : "mixed";
-  const whyThisScore = reasons.join(" ");
+  const whyThisScore =
+    `7-module score: Market=${sv.market_strength_score} Trend=${sv.trend_alignment_score} Signal=${sv.signal_strength_score} Volume=${sv.volume_confirmation_score} Volatility=${sv.volatility_score} RR=${sv.rr_score} TrapRisk=${sv.trap_probability} (${sv.trend_direction}, grade=${sv.entry_quality}, execute=${sv.execute_trade}). ${reasons.join(" ")}`;
   const entryExitRuleSummary = raw.side === "BUY"
-    ? `Strategy rule produced a long (BUY) candidate for “${raw.strategyLabel}”.`
-    : `Strategy rule produced an exit/short (SELL) candidate for “${raw.strategyLabel}”.`;
+    ? `Strategy rule produced a long (BUY) candidate for "${raw.strategyLabel}".`
+    : `Strategy rule produced an exit/short (SELL) candidate for "${raw.strategyLabel}".`;
   const liveViability = raw.isLive
     ? "Live: conditions match the current candle; invalid if a gap, headline, or volatility regime breaks the setup."
     : "";
@@ -2355,7 +2453,7 @@ function heuristicMergeRow(raw: RawSignal, ind: RealIndicators | null): MergedAi
     : verdict === "mixed"
     ? `Mixed evidence — not a clean confirm: ${whyThisScore}`
     : "";
-  const rationale = `${whyThisScore} Composite → ${score}/100 (${verdict}).`;
+  const rationale = `${whyThisScore} Composite score: ${score}/100 (${verdict}).`;
   const confirmationDetail = verdict === "confirm"
     ? stripStaleScoreClaims(`Rule-based confirm: ${whyThisScore}`, score)
     : "";
@@ -2369,15 +2467,17 @@ function heuristicMergeRow(raw: RawSignal, ind: RealIndicators | null): MergedAi
     rejectionDetail,
     confirmationDetail,
     whyThisScore,
-    scoreSource: "heuristic",
+    scoreSource: "scoring_engine",
+    score_vector: sv,
   };
 }
 
-/** Map AI rows by strategyId+entryDate+side, blend with heuristic (no blind 50s). */
+/** Map AI rows by strategyId+entryDate+side, keeping scoring-engine output as source of truth. */
 function mergeAiScoresIntoRaw(
   raw: RawSignal[],
   parsed: unknown[] | null,
   ind: RealIndicators | null,
+  scoringCtx?: ScoringContext | null,
 ): MergedAiRow[] {
   const map = new Map<string, Record<string, unknown>>();
   if (parsed) {
@@ -2395,58 +2495,29 @@ function mergeAiScoresIntoRaw(
   }
 
   return raw.map((s) => {
-    const h = heuristicMergeRow(s, ind);
+    const h = heuristicMergeRow(s, ind, scoringCtx);
     const r = map.get(`${s.strategyId}|${s.entryDate}|${s.side}`) ?? map.get(`${s.strategyId}|${s.entryDate}`);
 
     if (!r) {
       const extra = parsed === null
-        ? " Gemini pass failed or empty — showing rule-based breakdown only."
-        : " No matching AI row — showing rule-based breakdown only.";
+        ? " Gemini pass failed or empty — using strict scoring-engine output."
+        : " No matching AI row — using strict scoring-engine output.";
     return {
         ...h,
         rationale: h.rationale + extra,
-        scoreSource: "heuristic",
+        scoreSource: h.scoreSource,
+        score_vector: h.score_vector ?? null,
       };
     }
 
-    const aiScoreRaw = r.probabilityScore;
-    const aiScore = typeof aiScoreRaw === "number" && Number.isFinite(aiScoreRaw)
-      ? Math.max(0, Math.min(100, aiScoreRaw))
-      : null;
-    const aiVerdict = typeof r.verdict === "string" ? r.verdict.toLowerCase() : "";
     const aiRationale = strField(r.rationale);
     const aiEntry = strField(r.entryExitRuleSummary);
     const aiLive = strField(r.liveViability);
     const aiReject = strField(r.rejectionDetail);
     const aiConfirm = strField(r.confirmationDetail);
     const aiWhy = strField(r.whyThisScore);
-
-    if (aiScore === null) {
-      const fs = h.probabilityScore;
-      const confirmText = h.verdict === "confirm"
-        ? stripStaleScoreClaims(aiConfirm || h.confirmationDetail, fs)
-        : "";
-      return {
-        ...h,
-        whyThisScore: whyThisScoreAligned(aiWhy || h.whyThisScore, fs),
-        rationale:
-          `${stripStaleScoreClaims((aiRationale || h.rationale) + " (AI omitted numeric score; rule-based score used.)", fs)} Same blended score as the headline: ${fs}/100.`,
-        rejectionDetail: stripStaleScoreClaims(h.rejectionDetail, fs),
-        confirmationDetail: confirmText,
-        scoreSource: "heuristic",
-      };
-    }
-
-    const aiVague = aiScore === 50 && aiRationale.length < 50;
-    const blended = aiVague
-      ? Math.round(0.22 * aiScore + 0.78 * h.probabilityScore)
-      : Math.round(0.52 * aiScore + 0.48 * h.probabilityScore);
-    const probabilityScore = Math.max(14, Math.min(93, blended));
-
-    const verdictOk =
-      aiVerdict === "confirm" || aiVerdict === "reject" || aiVerdict === "mixed" || aiVerdict === "review";
-    const verdictRaw = aiVague ? h.verdict : verdictOk ? aiVerdict : h.verdict;
-    const verdict = verdictRaw === "review" ? "mixed" : verdictRaw;
+    const probabilityScore = h.probabilityScore;
+    const verdict = h.verdict;
 
     const entryExitRuleSummary = aiEntry || h.entryExitRuleSummary;
     const whyThisScore = whyThisScoreAligned(aiWhy || h.whyThisScore, probabilityScore);
@@ -2472,10 +2543,10 @@ function mergeAiScoresIntoRaw(
       );
     }
 
-    const rationaleCore = aiVague
-      ? `${h.whyThisScore} Model returned a neutral score with thin text; prioritizing structured rule read.`
-      : `${aiRationale || "Model assessment."} Rule-based cross-check: ${h.whyThisScore}`;
-    const rationale = `${stripStaleScoreClaims(rationaleCore, probabilityScore)} Same blended score as the headline: ${probabilityScore}/100.`;
+    const rationaleCore = aiRationale
+      ? `${aiRationale} Rule-engine lock: ${h.whyThisScore}`
+      : h.whyThisScore;
+    const rationale = `${stripStaleScoreClaims(rationaleCore, probabilityScore)} Same strict score as the headline: ${probabilityScore}/100.`;
 
     return {
       probabilityScore,
@@ -2486,7 +2557,8 @@ function mergeAiScoresIntoRaw(
       rejectionDetail,
       confirmationDetail,
       whyThisScore,
-      scoreSource: aiVague ? "heuristic+gemini" : "gemini+heuristic",
+      scoreSource: aiRationale ? "scoring_engine+gemini_context" : "scoring_engine",
+      score_vector: h.score_vector ?? null,
     };
   }).map((row) => ({
     ...row,
@@ -2603,12 +2675,13 @@ async function scoreWithGemini(
   raw: RawSignal[],
   indicators: RealIndicators | null,
   post?: { result?: string; actualChangePercent?: number; predictedDirection?: string },
+  scoringCtx?: ScoringContext | null,
 ): Promise<MergedAiRow[]> {
   const indForMerge = indicators ?? null;
   if (raw.length === 0) return [];
 
   if (!GEMINI_API_KEY) {
-    return mergeAiScoresIntoRaw(raw, null, indForMerge);
+    return mergeAiScoresIntoRaw(raw, null, indForMerge, scoringCtx);
   }
 
   const indBlock = indicators
@@ -2619,6 +2692,14 @@ Bollinger Bands: Upper ${indicators.bbUpper?.toFixed(2) ?? "N/A"} | Middle ${ind
 Current Price: ${indicators.currentPrice?.toFixed(2) ?? "N/A"}, Change: ${indicators.changePct?.toFixed(2) ?? "N/A"}%`
     : "\nNo external indicator data available — using OHLCV-computed values.";
 
+  // Build per-signal score_vector context block for Gemini
+  const scoreVectorBlock = raw.map((s, idx) => {
+    const sv = mergeAiScoresIntoRaw([s], null, null, scoringCtx)[0]?.score_vector;
+    if (!sv) return null;
+    return `Signal[${idx}] ${s.strategyId} ${s.side} pre-scored: Market=${sv.market_strength_score} Trend=${sv.trend_alignment_score} Signal=${sv.signal_strength_score} Volume=${sv.volume_confirmation_score} Volatility=${sv.volatility_score} RR=${sv.rr_score} Trap=${sv.trap_probability} => final=${sv.final_score} grade=${sv.entry_quality} trend=${sv.trend_direction} execute=${sv.execute_trade}`;
+  }).filter(Boolean).join("\n");
+  const moduleScoresBlock = scoreVectorBlock ? `\n\n7-Module Rule Engine Pre-Scores (your probabilityScore must be consistent with these):\n${scoreVectorBlock}` : "";
+
   const prompt = `You are a trading risk assistant. Score ONLY real historical or live-detected signals (not forecasts). Not financial advice.
 BUY = long entry candidate. SELL = exit or short-side candidate.
 Do NOT assume future price paths. Score based on indicator snapshot + bar context.
@@ -2626,7 +2707,7 @@ Do NOT assume future price paths. Score based on indicator snapshot + bar contex
 Symbol: ${symbol} (data: ${yahooSymbol})
 Last close: ${lastClose}
 ${indBlock}
-${post?.result ? `Post-analysis outcome context: ${post.result}, actual move ~${post.actualChangePercent ?? "?"}%, predicted direction was ${post.predictedDirection ?? "?"}.` : "No post-analysis context."}
+${post?.result ? `Post-analysis outcome context: ${post.result}, actual move ~${post.actualChangePercent ?? "?"}%, predicted direction was ${post.predictedDirection ?? "?"}.` : "No post-analysis context."}${moduleScoresBlock}
 
 Signals (JSON array):
 ${JSON.stringify(raw.map((x) => ({
@@ -2657,10 +2738,11 @@ Return ONLY a JSON array (no markdown), SAME LENGTH AND SAME ORDER as input. Eac
   "confirmationDetail": string (if verdict is confirm: 2-3 sentences why this setup passes — cite RSI/MACD/BB/bar context and rule alignment; if reject or mixed: "") }
 
 Scoring guide:
-- BUY: higher if oversold RSI, price near lower BB, MACD not bearish; lower if overbought or stale without reset.
+- BUY: higher if oversold RSI, price near lower BB, MACD not bearish, market trending up, low trap risk; lower if overbought or stale without reset.
 - SELL: higher if overbought RSI, price near upper BB, MACD not bullish; lower if washed-out RSI.
 - Live signals: mention immediacy and gap/news risk.
-- If evidence is mixed, use verdict "mixed" and explain the conflict in rejectionDetail.`;
+- If evidence is mixed, use verdict "mixed" and explain the conflict in rejectionDetail.
+- When 7-Module Pre-Scores are provided above, your probabilityScore must be broadly consistent with the rule-engine final_score (within ~20 pts). Do NOT contradict a high trap probability with a "confirm" verdict.`;
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
   const res = await fetch(url, {
@@ -2681,27 +2763,27 @@ Scoring guide:
   if (!res.ok) {
     const errText = await res.text();
     console.error(`Gemini ${res.status} (${GEMINI_MODEL}):`, errText);
-    return mergeAiScoresIntoRaw(raw, null, indForMerge);
+    return mergeAiScoresIntoRaw(raw, null, indForMerge, scoringCtx);
   }
   let data: GeminiLikeResponse = {};
   try {
     data = await res.json() as GeminiLikeResponse;
   } catch (e) {
     console.error("Gemini JSON decode failed:", e);
-    return mergeAiScoresIntoRaw(raw, null, indForMerge);
+    return mergeAiScoresIntoRaw(raw, null, indForMerge, scoringCtx);
   }
   const text = geminiAllText(data);
   const finish = (data as { candidates?: Array<{ finishReason?: string }> })?.candidates?.[0]?.finishReason;
   if (!text.trim()) {
     console.error("Gemini empty output", { finish, snippet: JSON.stringify(data).slice(0, 600) });
-    return mergeAiScoresIntoRaw(raw, null, indForMerge);
+    return mergeAiScoresIntoRaw(raw, null, indForMerge, scoringCtx);
   }
   const parsed = parseJsonArrayFromModelText(text);
   if (!parsed) {
     console.error("Gemini JSON parse failed; text head:", text.slice(0, 1500));
-    return mergeAiScoresIntoRaw(raw, null, indForMerge);
+    return mergeAiScoresIntoRaw(raw, null, indForMerge, scoringCtx);
   }
-  return mergeAiScoresIntoRaw(raw, parsed, indForMerge);
+  return mergeAiScoresIntoRaw(raw, parsed, indForMerge, scoringCtx);
 }
 
 Deno.serve(async (req: Request) => {
@@ -2917,10 +2999,41 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // ── Fetch HTF candles for market context (1H used as higher-TF for M1/M2) ──
+    let htf1hOhlcv: { t: number[]; c: number[]; h: number[]; l: number[]; o: number[]; v: number[] } | null = null;
+    if (!customSelectionDailyOnly && usedInterval !== "1d") {
+      try {
+        const htf = await fetchYahooChart({ yahooSymbol, period1: period1Intraday - 7 * 24 * 3600, period2, interval: "1h" });
+        if (htf.c.length >= 50) htf1hOhlcv = htf;
+      } catch { /* best-effort */ }
+    }
+
     // ── Fetch real indicators from APIs (enriches Gemini scoring context) ──
     const realIndicators = await fetchRealIndicators(yahooSymbol, assetType, c);
-    /** Wall-clock evaluation for TIME_IS / clock exit (Indian sessions → IST; else UTC) */
-    const scanTimeZone = isIndian ? "Asia/Kolkata" : "UTC";
+    // ── Build 7-module ScoringContext (shared across all signals in this scan) ──
+    const vForCtx = v.length === c.length ? v : new Array(c.length).fill(0);
+    const oForCtx = o.length === c.length ? o : c.slice();
+    const htfForCtx = htf1hOhlcv
+      ? { h: htf1hOhlcv.h, l: htf1hOhlcv.l, c: htf1hOhlcv.c, o: htf1hOhlcv.o ?? htf1hOhlcv.c.slice(), v: htf1hOhlcv.v ?? [], t: htf1hOhlcv.t }
+      : null;
+    const scoringCtx = buildScoringContext(
+      { h, l, c, o: oForCtx, v: vForCtx, t },
+      {
+        rsi14: realIndicators.rsi14,
+        macdLine: realIndicators.macdLine,
+        macdSignal: realIndicators.macdSignal,
+        bbUpper: realIndicators.bbUpper,
+        bbMiddle: realIndicators.bbMiddle,
+        bbLower: realIndicators.bbLower,
+        currentPrice: realIndicators.currentPrice,
+        changePct: realIndicators.changePct,
+      },
+      htfForCtx,
+    );
+
+    /** Wall-clock evaluation: IST for NSE/BSE, America/New_York for US stocks, UTC for crypto/forex */
+    const sessionProfile = resolveMarketSessionProfile(yahooSymbol);
+    const scanTimeZone = sessionProfile.timeZone;
     const maxPerStrategy = 4;
     const allRaw: RawSignal[] = [];
     const realtimeMode = usedInterval !== "1d";
@@ -2943,7 +3056,7 @@ Deno.serve(async (req: Request) => {
     //     - Usable entry_conditions → full-series custom detection first.
     //     - If that matches nothing (or no usable conditions) → paper_strategy_type template (trend_following, …).
     const customLabelMap: Record<string, string> = {};
-    /** Custom ids that use base-type live radar (no custom bar matches, or no usable custom rules). */
+    /** Custom ids that explicitly inherit default/base-type rule set (no custom entry conditions provided). */
     const customTemplateLiveRelabelIds = new Set<string>();
     const hasCustomConditions = (cs: CustomStrategyConfig): boolean =>
       entryConditionsAreUsableForScan(cs.entryConditions ?? null);
@@ -2981,13 +3094,15 @@ Deno.serve(async (req: Request) => {
           realIndicators,
         scanActions,
         scanTimeZone,
+          sessionProfile,
           maxPerStrategy,
           realtimeMode,
           barMinutesApprox,
           supertrendSlow,
       );
         allRaw.push(...fromCustom);
-        if (fromCustom.length > 0) continue;
+        // Strict mode: custom strategy with explicit entry rules does not fall back to base templates.
+        continue;
       }
       customTemplateLiveRelabelIds.add(csId);
       const csActions: Array<"BUY" | "SELL"> =
@@ -3160,12 +3275,15 @@ Deno.serve(async (req: Request) => {
       return b.entryIndex - a.entryIndex;
     });
     const capped = pipelineRaw.slice(0, 80);
-    const scored = await scoreWithGemini(symbol, yahooSymbol, c[c.length - 1] ?? 0, capped, realIndicators, postAnalysis);
+    const scored = await scoreWithGemini(symbol, yahooSymbol, c[c.length - 1] ?? 0, capped, realIndicators, postAnalysis, scoringCtx);
     const scanEvaluatedAt = new Date().toISOString();
     const scanEvaluatedAtMs = Date.parse(scanEvaluatedAt);
 
     const merged = capped.map((rawSig, i) => {
       const ai = scored[i];
+      if (!ai || !ai.score_vector) {
+        throw new Error(`[strategy-entry-signals] Strict scoring is required; missing score_vector for ${rawSig.strategyId} ${rawSig.side} ${rawSig.entryDate}`);
+      }
       const fwd = simpleForwardRead(
         rawSig.entryIndex,
         rawSig.side,
@@ -3190,7 +3308,7 @@ Deno.serve(async (req: Request) => {
         liveViability: ai?.liveViability ?? "",
         rejectionDetail: ai?.rejectionDetail ?? "",
         confirmationDetail: ai?.confirmationDetail ?? "",
-        scoreSource: ai?.scoreSource ?? "heuristic",
+        scoreSource: ai.scoreSource,
         isLive: rawSig.isLive ?? false,
         isPredicted: false,
         /** UI-only: full `liveWindowMs` after results arrive (does not change bar time/price). */
@@ -3210,6 +3328,11 @@ Deno.serve(async (req: Request) => {
         conditionAudit: rawSig.conditionAudit ?? null,
         customStrategyMeta: rawSig.customScanMeta ?? null,
         presetPriceLevels: rawSig.presetPriceLevels ?? null,
+        score_vector: ai.score_vector,
+        /** Convenience top-level fields from score_vector */
+        trend_direction: ai.score_vector.trend_direction,
+        execute_trade: ai.score_vector.execute_trade,
+        entry_quality: ai.score_vector.entry_quality,
       };
     });
 

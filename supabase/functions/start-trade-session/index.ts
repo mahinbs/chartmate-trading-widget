@@ -32,6 +32,10 @@ interface StartTradeRequest {
   expectedRoiWorst?: number;
   predictionId?: string;
   isPaperTrade?: boolean;
+  /** Strategy type used for paper trade (e.g. trend_following, orb, vwap_bounce) */
+  paperStrategyType?: string | null;
+  /** Optional 7-module scoring snapshot at trade-open time */
+  scoreVector?: Record<string, unknown> | null;
 }
 
 serve(async (req) => {
@@ -93,6 +97,9 @@ serve(async (req) => {
     const isPaperTrade =
       requestBody.isPaperTrade === true ||
       (requestBody.brokerOrderId ?? "").toUpperCase().startsWith("PAPER-");
+    const paperStrategyType = isPaperTrade
+      ? (requestBody.paperStrategyType ?? requestBody.strategyType ?? null)
+      : null;
 
     // Enforce backend prerequisites for live trading only.
     if (!isPaperTrade) {
@@ -252,11 +259,17 @@ serve(async (req) => {
       last_price_update: now.toISOString(),
       
       prediction_id: requestBody.predictionId,
+      score_vector:
+        requestBody.scoreVector && typeof requestBody.scoreVector === "object"
+          ? requestBody.scoreVector
+          : null,
       confidence: requestBody.confidence,
       risk_grade: requestBody.riskGrade,
       expected_roi_best: requestBody.expectedRoiBest,
       expected_roi_likely: requestBody.expectedRoiLikely,
-      expected_roi_worst: requestBody.expectedRoiWorst
+      expected_roi_worst: requestBody.expectedRoiWorst,
+      is_paper_trade: isPaperTrade,
+      paper_strategy_type: paperStrategyType,
     };
 
     // Insert trade

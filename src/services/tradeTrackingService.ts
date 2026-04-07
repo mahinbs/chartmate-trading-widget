@@ -41,6 +41,7 @@ export interface ActiveTrade {
   
   confidence?: number;
   riskGrade?: string;
+  scoreVector?: Record<string, unknown> | null;
   
   exitPrice?: number;
   exitTime?: string;
@@ -96,6 +97,8 @@ class TradeTrackingService {
     expectedRoiWorst?: number;
     predictionId?: string;
     isPaperTrade?: boolean;
+    /** Optional 7-module score snapshot to persist on active_trades */
+    scoreVector?: Record<string, unknown> | null;
   }) {
     try {
       const { data, error } = await supabase.functions.invoke('start-trade-session', {
@@ -468,6 +471,81 @@ class TradeTrackingService {
   }
 
   /**
+   * Manually close an active paper trade at the current market price.
+   * This is the "manual override" exit — bypasses broker, updates DB directly.
+   */
+  async closeActivePaperTrade(tradeId: string, exitPrice: number): Promise<{ error: string | null }> {
+    try {
+      const { data: trade, error: fetchErr } = await supabase
+        .from('active_trades')
+        .select('id, action, entry_price, shares, investment_amount, broker_order_id')
+        .eq('id', tradeId)
+        .single();
+
+      if (fetchErr || !trade) throw fetchErr || new Error('Trade not found');
+      if (!(trade as any).broker_order_id?.startsWith('PAPER')) {
+        throw new Error('closeActivePaperTrade can only be used on paper trades');
+      }
+
+      const isBuy = (trade as any).action === 'BUY';
+      const pnl = (exitPrice - (trade as any).entry_price) * (trade as any).shares * (isBuy ? 1 : -1);
+      const investAmt = Number((trade as any).investment_amount) || 1;
+      const pnlPct = (pnl / investAmt) * 100;
+
+      const { error } = await supabase
+        .from('active_trades')
+        .update({
+          status: 'completed',
+          exit_price: exitPrice,
+          exit_time: new Date().toISOString(),
+          exit_reason: 'manual_close',
+          actual_pnl: Math.round(pnl * 100) / 100,
+          actual_pnl_percentage: Math.round(pnlPct * 100) / 100,
+        })
+        .eq('id', tradeId);
+
+      if (error) throw error;
+      return { error: null };
+    } catch (e: any) {
+      return { error: e?.message || 'Close failed' };
+    }
+  }
+
+  /**
+   * Permanently delete a paper trade (completed/cancelled only).
+   * Guards against accidentally deleting live broker trades.
+   */
+  async deletePaperTrade(tradeId: string): Promise<{ error: string | null }> {
+    try {
+      const userId = await this.getCurrentUserId();
+      if (!userId) return { error: 'Not authenticated' };
+
+      const { data: trade, error: fetchErr } = await supabase
+        .from('active_trades')
+        .select('id, broker_order_id, status')
+        .eq('id', tradeId)
+        .eq('user_id', userId)
+        .single();
+
+      if (fetchErr || !trade) throw fetchErr || new Error('Trade not found');
+      if (!(trade as any).broker_order_id?.startsWith('PAPER')) {
+        throw new Error('deletePaperTrade can only delete paper trades');
+      }
+
+      const { error } = await supabase
+        .from('active_trades')
+        .delete()
+        .eq('id', tradeId)
+        .eq('user_id', userId);
+
+      if (error) throw error;
+      return { error: null };
+    } catch (e: any) {
+      return { error: e?.message || 'Delete failed' };
+    }
+  }
+
+  /**
    * Update prices for all active trades
    */
   async updateAllPrices() {
@@ -570,6 +648,9 @@ class TradeTrackingService {
       
       confidence: data.confidence,
       riskGrade: data.risk_grade,
+      scoreVector: (data.score_vector && typeof data.score_vector === "object")
+        ? data.score_vector as Record<string, unknown>
+        : null,
       
       exitPrice: data.exit_price ? parseFloat(data.exit_price) : undefined,
       exitTime: data.exit_time,

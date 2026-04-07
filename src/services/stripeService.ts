@@ -11,6 +11,12 @@ export interface UserSubscription {
   stripe_subscription_id?: string | null;
   /** Set by stripe-webhook on invoice.payment_failed; cleared on invoice.paid */
   payment_failed_at?: string | null;
+  /** Running total of one-time integration fees collected. Used to compute upgrade deltas. */
+  integration_fee_paid?: number | null;
+  /** Scheduled downgrade plan_id — applies at next renewal. */
+  pending_plan_change?: string | null;
+  /** When the downgrade was requested. */
+  pending_plan_change_at?: string | null;
 }
 
 export async function createCheckoutSession(params: {
@@ -113,6 +119,37 @@ export async function listStripeInvoices(): Promise<
   const errMsg = data?.error ?? res.error?.message ?? "Failed to load invoices";
   if (res.error || data?.error) return { error: errMsg };
   return { invoices: data?.invoices ?? [] };
+}
+
+export interface ChangePlanResult {
+  ok: true;
+  action: "upgraded" | "downgrade_scheduled";
+  message: string;
+  effective_date?: string;
+  total_charged_usd?: string;
+  integration_delta_usd?: string;
+  proration_usd?: string;
+  new_plan_id?: string;
+}
+
+export async function changePlan(
+  newPlanId: string,
+): Promise<ChangePlanResult | { error: string }> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    return { error: "Please sign in to continue" };
+  }
+
+  const res = await supabase.functions.invoke("change-plan", {
+    body: { new_plan_id: newPlanId },
+    headers: { Authorization: `Bearer ${session.access_token}` },
+  });
+
+  const data = res.data as (ChangePlanResult & { error?: string }) | null;
+  const errMsg = data?.error ?? res.error?.message ?? "Failed to change plan";
+  if (res.error || data?.error) return { error: errMsg };
+  if (!data?.ok) return { error: "Unexpected response from server" };
+  return data as ChangePlanResult;
 }
 
 export async function getSubscription(): Promise<UserSubscription | null> {
