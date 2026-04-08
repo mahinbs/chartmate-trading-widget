@@ -71,7 +71,7 @@ export async function runLiveEntryConditionScan(
     intradayInterval = "5m";
   }
 
-  const symbol = signalSymbolForScan(dep.symbol, String(dep.exchange ?? "NSE"));
+  const symbol = signalSymbolForScan(dep.symbol, String(dep.exchange ?? ""));
   if (!symbol) {
     return { ...empty, error: "No symbol for scan" };
   }
@@ -111,7 +111,9 @@ export async function runLiveEntryConditionScan(
       riskConfig: merged.risk_config ?? null,
       chartConfig: merged.chart_config ?? null,
       executionDays: Array.isArray(merged.execution_days) ? merged.execution_days : [],
-      marketType: String(merged.market_type ?? "stocks"),
+      marketType: merged.market_type === "global_equity"
+        ? "stocks"
+        : String(merged.market_type ?? "stocks"),
       startTime: merged.start_time != null ? String(merged.start_time) : undefined,
       endTime: merged.end_time != null ? String(merged.end_time) : undefined,
       squareoffTime: merged.squareoff_time != null ? String(merged.squareoff_time) : undefined,

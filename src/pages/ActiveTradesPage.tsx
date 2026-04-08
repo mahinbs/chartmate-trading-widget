@@ -2043,7 +2043,7 @@ export default function ActiveTradesPage() {
                   value={paperSymbolValue}
                   onValueChange={setPaperSymbolValue}
                   onSelectSymbol={setPaperSymbolData}
-                  placeholder="Search symbol (NSE, BSE, crypto, forex)"
+                  placeholder="Search symbol (NYSE, LSE, NSE, BSE, crypto, forex)"
                 />
               </div>
               <div className="space-y-2">

@@ -549,7 +549,7 @@ export function StrategySelectionDialog({
             riskConfig: cfg.risk_config ?? null,
             chartConfig: cfg.chart_config ?? null,
             executionDays: Array.isArray(cfg.execution_days) ? cfg.execution_days : [],
-            marketType: cfg.market_type || "stocks",
+            marketType: cfg.market_type === "global_equity" ? "stocks" : (cfg.market_type || "stocks"),
             startTime: cfg.start_time || undefined,
             endTime: cfg.end_time || undefined,
             squareoffTime: cfg.squareoff_time || undefined,

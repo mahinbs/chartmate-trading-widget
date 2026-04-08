@@ -20,6 +20,7 @@ import {
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie,
   LineChart as RechartsLineChart, Line, CartesianGrid, ReferenceLine,
@@ -447,13 +448,41 @@ function parseDeployReasonDetails(message?: string | null): {
   return { headline, checks };
 }
 
+// Well-known short US/global tickers that must never get .NS appended
+const KNOWN_GLOBAL_TICKERS = new Set([
+  "AAPL","MSFT","GOOGL","GOOG","AMZN","META","TSLA","NVDA","NFLX","AMD",
+  "INTC","ORCL","CSCO","ADBE","CRM","PYPL","UBER","LYFT","SNAP","TWTR",
+  "JPM","BAC","GS","MS","C","WFC","BRK","V","MA","AXP",
+  "JNJ","PFE","MRK","ABBV","LLY","UNH","CVS","WBA",
+  "XOM","CVX","COP","BP","SHEL",
+  "DIS","CMCSA","T","VZ","TMUS",
+  "WMT","COST","TGT","AMGN","GILD","BIIB","REGN","VRTX",
+  "SPY","QQQ","IWM","GLD","SLV","USO",
+  "BTC","ETH","BNB","SOL","ADA","DOGE","XRP",
+]);
+
 function toYahooChartSymbol(sym: string, exchange?: string | null): string {
   const s = String(sym ?? "").trim().toUpperCase();
   const ex = String(exchange ?? "").trim().toUpperCase();
   if (!s) return "";
-  if (s.includes("=") || s.includes("-") || s.endsWith(".NS") || s.endsWith(".BO")) return s;
-  if (ex === "BSE") return `${s}.BO`;
-  return `${s}.NS`;
+  // Already has a Yahoo suffix — pass through unchanged
+  if (
+    s.includes("=") || s.includes("-") || s.includes("^") ||
+    s.endsWith(".NS") || s.endsWith(".BO") || s.endsWith(".L") ||
+    s.endsWith(".DE") || s.endsWith(".PA") || s.endsWith(".HK") ||
+    s.endsWith(".T")  || s.endsWith(".AX") || s.endsWith(".TO")
+  ) return s;
+  // Known global/US ticker → never append .NS regardless of stored exchange
+  if (KNOWN_GLOBAL_TICKERS.has(s)) return s;
+  // Explicitly Indian exchanges → add suffix (but only if symbol looks Indian)
+  if ((ex === "BSE") && /^[A-Z]{2,}$/.test(s)) return `${s}.BO`;
+  if ((ex === "NSE") && /^[A-Z]{6,}$/.test(s)) return `${s}.NS`;
+  // Indian multi-char ticker (≥6 letters, only alpha, no other exchange clue)
+  if (/^[A-Z]{6,}$/.test(s) && ex !== "GLOBAL" && ex !== "NMS" && ex !== "NYQ" && ex !== "NGM") {
+    return `${s}.NS`;
+  }
+  // Everything else (US, global) → use as-is
+  return s;
 }
 
 /** Stringify RHS from algo builder (`rhs: { kind, value } | { kind, id, period }`) or plain scalars. */
@@ -1020,14 +1049,10 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
           const sid = String(r.strategy_id ?? "");
           if (!sid) continue;
           const rStatus = String(r.status ?? "pending");
+          if (rStatus === "cancelled") continue;
           const existing = map[sid];
           // Prefer pending > executed > expired > cancelled; within same priority, most recent wins (already sorted by created_at desc)
           if (existing && (statusPriority[existing.status] ?? 0) >= (statusPriority[rStatus] ?? 0)) continue;
-          // Don't show stale cancelled status older than 1 hour — hide it so user sees clean state
-          if (rStatus === "cancelled" && r.created_at) {
-            const age = Date.now() - Date.parse(String(r.created_at));
-            if (age > 3600_000) continue;
-          }
           map[sid] = {
             status: rStatus,
             action: String(r.action ?? "BUY"),
@@ -1045,11 +1070,16 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
           };
         }
         setDeployStateByStrategy(map);
-        // Strategy history: all deploy rows for the history tab
-        setStratHistory((pendingRows ?? []).map((r: any) => ({
-          ...r,
-          strategyName: list.find((s) => s.id === r.strategy_id)?.name ?? "Unknown",
-        })));
+        // Deploy history: only rows that are still relevant (hide removed / cancelled)
+        const historyRows = (pendingRows ?? []).filter(
+          (r: { status?: string }) => String(r.status ?? "") !== "cancelled",
+        );
+        setStratHistory(
+          historyRows.map((r: any) => ({
+            ...r,
+            strategyName: list.find((s) => s.id === r.strategy_id)?.name ?? "Unknown",
+          })),
+        );
       } else {
         setDeployStateByStrategy({});
         setStratHistory([]);
@@ -2430,13 +2460,17 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
           setLiveDiagScan(null);
         }
       }}>
-        <DialogContent className="bg-zinc-950 border-zinc-800 text-white sm:max-w-[100vw] max-w-[100vw] w-screen h-screen p-0 overflow-hidden rounded-none">
-          <DialogHeader>
-            <DialogTitle className="text-white px-4 pt-4">Live Strategy Diagnostics</DialogTitle>
-            <DialogDescription className="text-zinc-400 text-xs">
-              Real-time status for current symbol, chart, and condition checks from latest live evaluation tick.
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="!fixed !inset-0 !translate-x-0 !translate-y-0 !left-0 !top-0 !max-w-none !max-h-none !w-screen !h-screen !rounded-none bg-zinc-950 border-0 text-white p-0 !overflow-hidden flex flex-col">
+          {/* header row */}
+          <div className="flex-none flex items-center justify-between px-4 py-3 border-b border-zinc-800">
+            <div>
+              <div className="text-base font-semibold text-white">Live Strategy Diagnostics</div>
+              <div className="text-xs text-zinc-400">Real-time chart + condition pass/fail from latest live tick.</div>
+            </div>
+            <DialogPrimitive.Close className="rounded-sm opacity-70 hover:opacity-100 text-zinc-400 hover:text-white transition-opacity">
+              <X className="h-5 w-5" />
+            </DialogPrimitive.Close>
+          </div>
           {(() => {
             if (!liveDiagStrategy) return null;
             const dep = deployStateForDisplay(liveDiagStrategy, deployStateByStrategy[liveDiagStrategy.id]);
@@ -2470,8 +2504,8 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
               Number.isFinite(tpPct) && tpPct > 0 ? tpPct : 2.5,
             );
             return (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-0 h-[calc(100vh-92px)]">
-                <div className="lg:col-span-2 p-4 border-b lg:border-b-0 lg:border-r border-zinc-800 overflow-y-auto space-y-3">
+              <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-3 divide-x divide-zinc-800">
+                <div className="lg:col-span-2 p-4 overflow-y-auto space-y-3">
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
                     <div className="rounded border border-zinc-800 bg-zinc-900/50 px-2 py-1.5">
                       <div className="text-zinc-500">Strategy</div>
@@ -2510,7 +2544,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                   )}
                 </div>
 
-                <div className="p-4 overflow-y-auto space-y-3">
+                <div className="p-4 overflow-y-auto space-y-3 min-h-0 h-full">
                   <div className="rounded border border-zinc-800 bg-zinc-900/60 px-3 py-2">
                     <div className="flex items-center justify-between gap-2 mb-1">
                       <div className="text-[11px] text-zinc-500 uppercase tracking-wide">Condition status</div>

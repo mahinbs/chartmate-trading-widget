@@ -26,11 +26,13 @@ import {
   detectLiquiditySweepBosHits,
   detectOrbHits,
   detectRsiDivergenceHits,
+  detectSmcMtfConfluence,
   detectSupertrendDualTfHits,
   detectSupertrendFlipHits,
   detectVwapBounceHits,
   extractAlgoGuidePreset,
   type PresetHit,
+  type SmcFeeds,
 } from "../_shared/algoGuideDetectors.ts";
 import {
   resolveMarketSessionProfile,
@@ -409,6 +411,18 @@ function computePresetPriceLevels(
         : (Number.isFinite(bosLevel)
             ? (isBuy ? entryPrice + 2 * Math.abs(entryPrice - sweepExtreme) : entryPrice - 2 * Math.abs(sweepExtreme - entryPrice))
             : undefined),
+    };
+  }
+
+  if (preset === "smc_mtf_confluence") {
+    const structureSl  = Number(meta.structureSl);
+    const liquidityTp  = Number(meta.liquidityTp);
+    const breakevenLvl = Number(meta.breakevenLevel);
+    if (!Number.isFinite(structureSl)) return undefined;
+    return {
+      stopLossPrice:      structureSl,
+      takeProfitPrice:    Number.isFinite(liquidityTp)  ? liquidityTp  : undefined,
+      trailingReference:  Number.isFinite(breakevenLvl) ? breakevenLvl : undefined,
     };
   }
 
@@ -1650,6 +1664,7 @@ function detectCustomEntrySignals(
   realtimeMode: boolean,
   barMinutesApprox: number,
   supertrendSlow: SupertrendSlowPack | null,
+  smcFeeds: SmcFeeds | null,
 ): RawSignal[] {
   const entryCfg = cs.entryConditions;
   if (!entryCfg || typeof entryCfg !== "object") return [];
@@ -1738,6 +1753,14 @@ function detectCustomEntrySignals(
       presetHits = detectRsiDivergenceHits(c, h, l);
     } else if (preset === "liquidity_sweep_bos") {
       presetHits = detectLiquiditySweepBosHits(c, h, l);
+    } else if (preset === "smc_mtf_confluence") {
+      // Use real Yahoo Finance feeds when available (1H→4H bias, 15M zones, 1M entry).
+      // Falls back to empty hits (no signal) when feeds are missing.
+      if (smcFeeds && smcFeeds.htf1h.c.length >= 8 && smcFeeds.slow15m.c.length >= 10 && smcFeeds.fast1m.c.length >= 20) {
+        presetHits = detectSmcMtfConfluence(smcFeeds);
+      } else {
+        presetHits = [];
+      }
     }
 
     const collectPresetAtTier = (relaxationTier: number): RawSignal[] => {
@@ -1829,6 +1852,29 @@ function detectCustomEntrySignals(
             auditLines.push({ ok: Number.isFinite(bosLvl), label: `Break of Structure (BOS) confirmed: close ${side === "BUY" ? "above prior swing high" : "below prior swing low"} at ${Number.isFinite(bosLvl) ? bosLvl.toFixed(2) : "—"}` });
             auditLines.push({ ok: Number.isFinite(priceLvls?.stopLossPrice), label: `SL placed 1 ATR beyond sweep extreme: ${priceLvls?.stopLossPrice?.toFixed(2) ?? "—"}` });
             auditLines.push({ ok: Number.isFinite(targetZone), label: `TP at next opposing liquidity zone: ${Number.isFinite(targetZone) ? targetZone.toFixed(2) : "—"}` });
+          } else if (preset === "smc_mtf_confluence") {
+            const m = hit.meta as Record<string, unknown> | undefined;
+            const htfBias     = String(m?.htfBias ?? "—");
+            const zoneType    = String(m?.zoneType ?? "—");
+            const zoneHigh    = Number(m?.zoneHigh);
+            const zoneLow     = Number(m?.zoneLow);
+            const sweptLiq    = Number(m?.sweptLiquidityPrice);
+            const sweepEx     = Number(m?.sweepExtreme);
+            const chochLvl    = Number(m?.chochLevel);
+            const slPx        = Number(m?.structureSl);
+            const tpPx        = Number(m?.liquidityTp);
+            const beLvl       = Number(m?.breakevenLevel);
+            const sess        = Array.isArray(m?.sessions) ? (m.sessions as string[]).join(", ") : "—";
+
+            auditLines.push({ ok: true,                          label: `HTF Bias (4H/15M): ${htfBias.toUpperCase()}` });
+            auditLines.push({ ok: true,                          label: `Session: ${sess} (London / New York only)` });
+            auditLines.push({ ok: Number.isFinite(zoneHigh),     label: `HTF ${zoneType.toUpperCase()} zone identified: ${Number.isFinite(zoneLow) ? zoneLow.toFixed(4) : "—"} – ${Number.isFinite(zoneHigh) ? zoneHigh.toFixed(4) : "—"}` });
+            auditLines.push({ ok: Number.isFinite(sweptLiq),     label: `Liquidity sweep: ${side === "BUY" ? "equal lows" : "equal highs"} swept at ${Number.isFinite(sweptLiq) ? sweptLiq.toFixed(4) : "—"} (extreme: ${Number.isFinite(sweepEx) ? sweepEx.toFixed(4) : "—"})` });
+            auditLines.push({ ok: Number.isFinite(chochLvl),     label: `ChoCH confirmed on 1M: price broke ${side === "BUY" ? "above" : "below"} structural level ${Number.isFinite(chochLvl) ? chochLvl.toFixed(4) : "—"}` });
+            auditLines.push({ ok: true,                          label: `Mitigation entry: retraced into ${zoneType} zone / FVG — entry at ${Number.isFinite(chochLvl) ? c[signalBar]?.toFixed(4) ?? "—" : "—"}` });
+            auditLines.push({ ok: Number.isFinite(slPx),         label: `SL at 15M ${side === "BUY" ? "demand" : "supply"} zone extreme: ${Number.isFinite(slPx) ? slPx.toFixed(4) : "—"}` });
+            auditLines.push({ ok: Number.isFinite(tpPx),         label: `TP at nearest swing/liquidity level: ${Number.isFinite(tpPx) ? tpPx.toFixed(4) : "—"}` });
+            auditLines.push({ ok: Number.isFinite(beLvl),        label: `Breakeven at 1:2 RR triggers at: ${Number.isFinite(beLvl) ? beLvl.toFixed(4) : "—"} (move SL to entry price)` });
           } else {
             auditLines.push({ ok: true, label: `Preset "${preset}" matched at bar ${signalBar} (${side})` });
           }
@@ -3008,6 +3054,43 @@ Deno.serve(async (req: Request) => {
       } catch { /* best-effort */ }
     }
 
+    // ── SMC MTF feeds: fetch REAL 1H, 15M, 1M candles from Yahoo Finance ────────
+    // Only fetched when at least one custom strategy uses the smc_mtf_confluence preset.
+    // 1H → aggregated to 4H inside detectSmcMtfConfluence for exact HTF bias.
+    // 15M → demand/supply zones, FVG, SL level.
+    // 1M  → liquidity sweep, ChoCH, mitigation entry (Yahoo provides 7 days of 1M data).
+    let smcFeeds: SmcFeeds | null = null;
+    const needsSmcFeeds = !customSelectionDailyOnly &&
+      customStrategies.some((cs) => extractAlgoGuidePreset(cs.entryConditions) === "smc_mtf_confluence");
+    if (needsSmcFeeds) {
+      try {
+        const now = Math.floor(Date.now() / 1000);
+        const [r1h, r15m, r1m] = await Promise.allSettled([
+          // 1H: up to 90 days gives enough 4H bars for HTF bias
+          fetchYahooChart({ yahooSymbol, period1: now - 90 * 24 * 3600, period2: now, interval: "1h" }),
+          // 15M: 60-day limit from Yahoo, take what we can
+          fetchYahooChart({ yahooSymbol, period1: now - 60 * 24 * 3600, period2: now, interval: "15m" }),
+          // 1M: 7-day limit from Yahoo — enough for recent ChoCH/mitigation
+          fetchYahooChart({ yahooSymbol, period1: now - 7 * 24 * 3600, period2: now, interval: "1m" }),
+        ]);
+        const feed1h  = r1h.status  === "fulfilled" && r1h.value.c.length  >= 8  ? r1h.value  : null;
+        const feed15m = r15m.status === "fulfilled" && r15m.value.c.length >= 10 ? r15m.value : null;
+        const feed1m  = r1m.status  === "fulfilled" && r1m.value.c.length  >= 20 ? r1m.value  : null;
+        if (feed1h && feed15m && feed1m) {
+          smcFeeds = {
+            htf1h:  { t: feed1h.t,  h: feed1h.h,  l: feed1h.l,  c: feed1h.c,  o: feed1h.o  ?? feed1h.c.slice()  },
+            slow15m:{ t: feed15m.t, h: feed15m.h, l: feed15m.l, c: feed15m.c, o: feed15m.o ?? feed15m.c.slice() },
+            fast1m: { t: feed1m.t,  h: feed1m.h,  l: feed1m.l,  c: feed1m.c,  o: feed1m.o  ?? feed1m.c.slice()  },
+          };
+          console.log(`[SMC] feeds: 1H=${feed1h.c.length} 15M=${feed15m.c.length} 1M=${feed1m.c.length} bars`);
+        } else {
+          console.warn(`[SMC] feed fetch incomplete: 1H=${r1h.status} 15M=${r15m.status} 1M=${r1m.status}`);
+        }
+      } catch (smcErr) {
+        console.error("[SMC] feed fetch error:", smcErr);
+      }
+    }
+
     // ── Fetch real indicators from APIs (enriches Gemini scoring context) ──
     const realIndicators = await fetchRealIndicators(yahooSymbol, assetType, c);
     // ── Build 7-module ScoringContext (shared across all signals in this scan) ──
@@ -3099,6 +3182,7 @@ Deno.serve(async (req: Request) => {
           realtimeMode,
           barMinutesApprox,
           supertrendSlow,
+          smcFeeds,
       );
         allRaw.push(...fromCustom);
         // Strict mode: custom strategy with explicit entry rules does not fall back to base templates.
