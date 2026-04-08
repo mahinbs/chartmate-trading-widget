@@ -28,6 +28,8 @@ interface VisitorRow {
   city?: string;
   region?: string;
   country?: string;
+  country_name?: string;
+  country_code?: string;
   utm_source?: string;
   utm_medium?: string;
   utm_campaign?: string;
@@ -89,6 +91,8 @@ interface SignupRow {
   full_name: string;
   phone: string | null;
   country: string | null;
+  region: string | null;
+  city: string | null;
   referral_code_at_signup: string | null;
   created_at: string;
   subscription?: { plan_id: string; status: string; current_period_end: string | null } | null;
@@ -387,220 +391,39 @@ export default function AffiliateDashboard() {
               </CardContent>
             </Card>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              <Card className="glass-panel border-white/10 bg-gradient-to-br from-green-500/5 to-transparent">
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-3 mb-1">
-                    <DollarSign className="h-4 w-4 text-green-400" />
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Total Earned</span>
-                  </div>
-                  <p className="text-2xl font-bold text-white">₹{stats.total_commission_earned.toFixed(0)}</p>
-                </CardContent>
-              </Card>
-              <Card className="glass-panel border-white/10 bg-gradient-to-br from-blue-500/5 to-transparent">
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-3 mb-1">
-                    <CheckCircle2 className="h-4 w-4 text-blue-400" />
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Paid</span>
-                  </div>
-                  <p className="text-2xl font-bold text-white">₹{stats.paid_commission_earned.toFixed(0)}</p>
-                </CardContent>
-              </Card>
-              <Card className="glass-panel border-white/10 bg-gradient-to-br from-amber-500/5 to-transparent">
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-3 mb-1">
-                    <Clock className="h-4 w-4 text-amber-400" />
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Pending</span>
-                  </div>
-                  <p className="text-2xl font-bold text-white">₹{stats.pending_commission_earned.toFixed(0)}</p>
-                </CardContent>
-              </Card>
-              <Card className="glass-panel border-white/10 bg-gradient-to-br from-purple-500/5 to-transparent">
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-3 mb-1">
-                    <UserPlus className="h-4 w-4 text-purple-400" />
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Active Refs</span>
-                  </div>
-                  <p className="text-2xl font-bold text-white">{stats.active_referrals}</p>
-                </CardContent>
-              </Card>
-              <Card className="glass-panel border-white/10">
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-3 mb-1">
-                    <Activity className="h-4 w-4 text-cyan-400" />
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Clicks</span>
-                  </div>
-                  <p className="text-2xl font-bold text-white">{stats.clicks}</p>
-                </CardContent>
-              </Card>
-              <Card className="glass-panel border-white/10">
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-3 mb-1">
-                    <Zap className="h-4 w-4 text-yellow-400" />
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Conversions</span>
-                  </div>
-                  <p className="text-2xl font-bold text-white">{stats.conversions}</p>
-                </CardContent>
-              </Card>
-              <Card className="glass-panel border-white/10">
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-3 mb-1">
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Conv. Rate</span>
-                  </div>
-                  <p className="text-2xl font-bold text-white">{stats.conversion_rate.toFixed(1)}%</p>
-                </CardContent>
-              </Card>
-              <Card className="glass-panel border-white/10">
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-3 mb-1">
-                    <DollarSign className="h-4 w-4 text-green-400" />
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Total Payouts</span>
-                  </div>
-                  <p className="text-2xl font-bold text-white">₹{stats.payout_records.reduce((sum, p) => sum + Number(p.amount), 0).toFixed(0)}</p>
-                </CardContent>
-              </Card>
-            </div>
-
-            <div className="grid lg:grid-cols-3 gap-6">
-              <Card className="lg:col-span-2 glass-panel border-white/10">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-zinc-400 flex items-center gap-2">
-                    <LineChart className="h-4 w-4 text-cyan-400" />
-                    Daily Performance (Last 30 Days)
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="h-[250px] w-full mt-4">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={stats.daily_stats}>
-                        <defs>
-                          <linearGradient id="colorClicks" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.3}/>
-                            <stop offset="95%" stopColor="#22d3ee" stopOpacity={0}/>
-                          </linearGradient>
-                          <linearGradient id="colorConversions" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#4ade80" stopOpacity={0.3}/>
-                            <stop offset="95%" stopColor="#4ade80" stopOpacity={0}/>
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
-                        <XAxis 
-                          dataKey="date" 
-                          stroke="#ffffff30" 
-                          fontSize={10} 
-                          tickLine={false} 
-                          axisLine={false} 
-                        />
-                        <YAxis 
-                          stroke="#ffffff30" 
-                          fontSize={10} 
-                          tickLine={false} 
-                          axisLine={false} 
-                        />
-                        <RechartsTooltip 
-                          contentStyle={{ backgroundColor: '#09090b', border: '1px solid #ffffff10', borderRadius: '8px', fontSize: '12px' }}
-                          itemStyle={{ fontSize: '12px' }}
-                        />
-                        <Area 
-                          type="monotone" 
-                          dataKey="clicks" 
-                          name="Clicks"
-                          stroke="#22d3ee" 
-                          fillOpacity={1} 
-                          fill="url(#colorClicks)" 
-                          strokeWidth={2}
-                        />
-                        <Area 
-                          type="monotone" 
-                          dataKey="conversions" 
-                          name="Conversions"
-                          stroke="#4ade80" 
-                          fillOpacity={1} 
-                          fill="url(#colorConversions)" 
-                          strokeWidth={2}
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="glass-panel border-white/10 overflow-hidden">
-                <CardHeader>
-                  <CardTitle className="text-sm font-medium text-zinc-400">Referral Breakdown</CardTitle>
-                </CardHeader>
-                <CardContent className="pt-2">
-                  <div className="space-y-6">
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-1">
-                        <p className="text-2xl font-bold text-white">{stats.active_referrals}</p>
-                        <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-semibold flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
-                          Active Subscriptions
-                        </p>
-                      </div>
-                      <div className="text-right space-y-1">
-                        <p className="text-2xl font-bold text-zinc-400">{stats.referred_signups.length}</p>
-                        <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-semibold">Total Signups</p>
-                      </div>
-                    </div>
-                    
-                    <div className="w-full bg-white/5 rounded-full h-2 overflow-hidden flex">
-                      <div 
-                        className="bg-green-500 h-full transition-all duration-500" 
-                        style={{ width: `${stats.referred_signups.length > 0 ? (stats.active_referrals / stats.referred_signups.length) * 100 : 0}%` }}
-                      />
-                    </div>
-                    
-                    <div className="pt-4 border-t border-white/5">
-                      <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-semibold mb-3">Top Referral Channels</p>
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-zinc-300">Direct Link</span>
-                          <span className="text-xs font-mono text-zinc-500">{stats.referred_signups.length} users</span>
-                        </div>
-                        <div className="w-full bg-white/5 rounded-full h-1">
-                          <div className="bg-cyan-500 h-full w-[100%] rounded-full" />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
             <Tabs value={activeTabSecondary} onValueChange={(v) => setActiveTabSecondary(v as any)} className="space-y-4">
-              <TabsList className="bg-white/5 border border-white/10 flex-wrap h-auto gap-1 py-1">
-                <TabsTrigger value="visitors" className="text-xs flex items-center gap-2">
+              <TabsList className="bg-white/5 border border-white/10 flex overflow-x-auto no-scrollbar whitespace-nowrap h-auto gap-1 p-1 justify-start">
+                <TabsTrigger value="visitors" className="text-[10px] sm:text-xs flex items-center gap-2 px-2 sm:px-3">
                   <Users className="h-3.5 w-3.5 text-blue-400" />
                   Unique visitors ({stats.visitor_rows.length})
                 </TabsTrigger>
-                <TabsTrigger value="signups" className="text-xs flex items-center gap-2">
+                <TabsTrigger value="signups" className="text-[10px] sm:text-xs flex items-center gap-2 px-2 sm:px-3">
                   <UserPlus className="h-3.5 w-3.5 text-sky-400" />
                   Sign-ups ({stats.referred_signups.length})
                 </TabsTrigger>
-                <TabsTrigger value="forms" className="text-xs flex items-center gap-2">
+                <TabsTrigger value="resources" className="text-[10px] sm:text-xs gap-1.5 flex items-center px-2 sm:px-3">
+                  <Video className="h-3.5 w-3.5 text-purple-400" />
+                  <span>Marketing Resources</span>
+                </TabsTrigger>
+                <TabsTrigger value="analytics" className="text-[10px] sm:text-xs gap-1.5 flex items-center px-2 sm:px-3">
+                  <Activity className="h-3.5 w-3.5 text-blue-400" />
+                  <span>Reporting & Analytics</span>
+                </TabsTrigger>
+                <TabsTrigger value="attribution" className="text-[10px] sm:text-xs gap-1.5 flex items-center px-2 sm:px-3">
+                  <Shield className="h-3.5 w-3.5 text-orange-400" />
+                  <span>Traffic Attribution (UTM)</span>
+                </TabsTrigger>
+                <TabsTrigger value="forms" className="text-[10px] sm:text-xs flex items-center gap-2 px-2 sm:px-3">
                   <FileText className="h-3.5 w-3.5 text-amber-400" />
                   Forms ({stats.form_submissions.length})
                 </TabsTrigger>
-                <TabsTrigger value="payments" className="text-xs gap-1.5 min-w-[100px] sm:min-w-0 flex items-center">
+                <TabsTrigger value="payments" className="text-[10px] sm:text-xs gap-1.5 flex items-center px-2 sm:px-3">
                   <DollarSign className="h-3.5 w-3.5 text-green-400" />
-                  <span className="truncate">Money earned</span>
+                  <span>Money earned</span>
                 </TabsTrigger>
-                <TabsTrigger value="payout_records" className="text-xs gap-1.5 min-w-[100px] sm:min-w-0 flex items-center">
+                <TabsTrigger value="payout_records" className="text-[10px] sm:text-xs gap-1.5 flex items-center px-2 sm:px-3">
                   <RefreshCw className="h-3.5 w-3.5 text-blue-400" />
-                  <span className="truncate">Money Received</span>
-                </TabsTrigger>
-                <TabsTrigger value="resources" className="text-xs gap-1.5 min-w-[100px] sm:min-w-0 flex items-center">
-                  <Video className="h-3.5 w-3.5 text-purple-400" />
-                  <span className="truncate">Marketing Resources</span>
-                </TabsTrigger>
-                <TabsTrigger value="analytics" className="text-xs gap-1.5 min-w-[100px] sm:min-w-0 flex items-center">
-                  <Activity className="h-3.5 w-3.5 text-blue-400" />
-                  <span className="truncate">Reporting & Analytics</span>
-                </TabsTrigger>
-                <TabsTrigger value="attribution" className="text-xs gap-1.5 min-w-[100px] sm:min-w-0 flex items-center">
-                  <Shield className="h-3.5 w-3.5 text-orange-400" />
-                  <span className="truncate">Traffic Attribution (UTM)</span>
+                  <span>Money Received</span>
                 </TabsTrigger>
               </TabsList>
 
@@ -758,6 +581,8 @@ export default function AffiliateDashboard() {
                           <TableHeader>
                             <TableRow className="border-white/10 hover:bg-transparent">
                               <TableHead className="text-muted-foreground">IP address</TableHead>
+                              <TableHead className="text-muted-foreground">Region</TableHead>
+                              <TableHead className="text-muted-foreground">Country</TableHead>
                               <TableHead className="text-muted-foreground">Source</TableHead>
                               <TableHead className="text-muted-foreground">Campaign</TableHead>
                               <TableHead className="text-muted-foreground">First visited</TableHead>
@@ -769,6 +594,8 @@ export default function AffiliateDashboard() {
                               .map((v, idx) => (
                                 <TableRow key={`${v.visitor_ip}-${idx}`} className="border-white/5 hover:bg-white/5">
                                   <TableCell className="font-mono text-sm text-zinc-400">{v.visitor_ip}</TableCell>
+                                  <TableCell className="text-zinc-400 text-sm whitespace-nowrap">{v.region || "—"}</TableCell>
+                                  <TableCell className="text-zinc-400 text-sm whitespace-nowrap">{v.country || "—"}</TableCell>
                                   <TableCell className="text-zinc-500 text-xs uppercase">{v.utm_source || "—"}</TableCell>
                                   <TableCell className="text-zinc-500 text-xs">{v.utm_campaign || "—"}</TableCell>
                                   <TableCell className="text-zinc-500 text-xs">
@@ -835,9 +662,8 @@ export default function AffiliateDashboard() {
                             <TableRow className="border-white/10 hover:bg-transparent">
                               <TableHead className="text-muted-foreground">Name</TableHead>
                               <TableHead className="text-muted-foreground">Email</TableHead>
-                              <TableHead className="text-muted-foreground">Phone</TableHead>
+                              <TableHead className="text-muted-foreground">Region</TableHead>
                               <TableHead className="text-muted-foreground">Country</TableHead>
-                              <TableHead className="text-muted-foreground">Ref code</TableHead>
                               <TableHead className="text-muted-foreground">Billing</TableHead>
                               <TableHead className="text-muted-foreground">Plan</TableHead>
                               <TableHead className="text-muted-foreground">Signed up</TableHead>
@@ -852,11 +678,8 @@ export default function AffiliateDashboard() {
                                 <TableRow key={s.user_id} className="border-white/5 hover:bg-white/5">
                                   <TableCell className="text-zinc-300">{s.full_name || "—"}</TableCell>
                                   <TableCell className="text-zinc-400 text-sm">{s.email || "—"}</TableCell>
-                                  <TableCell className="text-zinc-400 text-sm">{s.phone || "—"}</TableCell>
-                                  <TableCell className="text-zinc-400 text-sm">{s.country || "—"}</TableCell>
-                                  <TableCell className="text-zinc-500 text-xs font-mono">
-                                    {s.referral_code_at_signup || "—"}
-                                  </TableCell>
+                                  <TableCell className="text-zinc-400 text-sm whitespace-nowrap">{s.region || "—"}</TableCell>
+                                  <TableCell className="text-zinc-400 text-sm whitespace-nowrap">{s.country || "—"}</TableCell>
                                   <TableCell>
                                     <Badge
                                       variant={d.billing === "Paid" ? "default" : "secondary"}
@@ -1282,8 +1105,7 @@ export default function AffiliateDashboard() {
               </TabsContent>
 
               <TabsContent value="analytics" className="mt-6 space-y-6">
-                <div className="grid lg:grid-cols-3 gap-6">
-                  <Card className="glass-panel border-white/10 lg:col-span-2">
+                <Card className="glass-panel border-white/10">
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm font-medium flex items-center gap-2">
                         <TrendingUp className="h-4 w-4 text-emerald-400" />
@@ -1348,6 +1170,48 @@ export default function AffiliateDashboard() {
                     </CardContent>
                   </Card>
 
+                <div className="grid lg:grid-cols-2 gap-6">
+                  <Card className="glass-panel border-white/10">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-medium flex items-center gap-2">
+                        <Globe className="h-4 w-4 text-emerald-400" />
+                        Visitors by Region
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="h-[300px] pt-4">
+                      {(() => {
+                        const counts: Record<string, number> = {};
+                        stats.visitor_rows.forEach(v => {
+                          const key = v.region || v.country || 'Unknown';
+                          counts[key] = (counts[key] || 0) + 1;
+                        });
+                        const data = Object.entries(counts)
+                          .map(([name, value]) => ({ name, value }))
+                          .sort((a,b) => b.value - a.value)
+                          .slice(0, 8);
+                        
+                        if (data.length === 0) {
+                          return <div className="h-full flex items-center justify-center text-zinc-500 text-xs italic">No region data available</div>;
+                        }
+
+                        return (
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={data} layout="vertical" margin={{ left: 10, right: 30 }}>
+                              <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="rgba(255,255,255,0.05)" />
+                              <XAxis type="number" hide />
+                              <YAxis dataKey="name" type="category" stroke="#a1a1aa" fontSize={10} axisLine={false} tickLine={false} width={100} />
+                              <RechartsTooltip 
+                                contentStyle={{ backgroundColor: 'rgba(0,0,0,0.8)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }}
+                                itemStyle={{ color: '#10b981', fontSize: '12px' }}
+                              />
+                              <Bar dataKey="value" fill="#10b981" radius={[0, 4, 4, 0]} barSize={20} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        );
+                      })()}
+                    </CardContent>
+                  </Card>
+
                   <Card className="glass-panel border-white/10">
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -1407,8 +1271,14 @@ export default function AffiliateDashboard() {
                                 </TableCell>
                                 <TableCell>
                                   <div className="flex items-center gap-2">
-                                    <span className="text-xs text-zinc-300">{row.city || row.country || '—'}</span>
-                                    {row.country && <Badge variant="secondary" className="bg-white/5 text-[9px] px-1 h-4">{row.country}</Badge>}
+                                    <span className="text-xs text-zinc-300">
+                                      {row.region ? `${row.region}, ` : ''}{row.city || row.country || '—'}
+                                    </span>
+                                    {row.country_code && (
+                                      <Badge variant="secondary" className="bg-white/5 text-[9px] px-1 h-4 uppercase">
+                                        {row.country_code}
+                                      </Badge>
+                                    )}
                                   </div>
                                 </TableCell>
                                 <TableCell className="text-[11px] text-zinc-500">{format(new Date(row.visited_at), 'MMM dd, HH:mm')}</TableCell>
@@ -1463,6 +1333,212 @@ export default function AffiliateDashboard() {
                 </div>
               </TabsContent>
             </Tabs>
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 pt-8">
+              <Card className="glass-panel border-white/10 bg-gradient-to-br from-emerald-500/10 to-transparent">
+                <CardContent className="p-4 flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center border border-emerald-500/20 text-emerald-400">
+                    <DollarSign className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Total Earned</p>
+                    <p className="text-lg font-bold text-white font-mono">₹{stats.total_commission_earned.toFixed(0)}</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="glass-panel border-white/10 bg-gradient-to-br from-cyan-500/10 to-transparent">
+                <CardContent className="p-4 flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center border border-cyan-500/20 text-cyan-400">
+                    <CheckCircle2 className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Paid</p>
+                    <p className="text-lg font-bold text-white font-mono">₹{stats.paid_commission_earned.toFixed(0)}</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="glass-panel border-white/10 bg-gradient-to-br from-amber-500/10 to-transparent">
+                <CardContent className="p-4 flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center border border-amber-500/20 text-amber-500">
+                    <Clock className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Pending</p>
+                    <p className="text-lg font-bold text-white font-mono">₹{stats.pending_commission_earned.toFixed(0)}</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="glass-panel border-white/10 bg-gradient-to-br from-blue-500/10 to-transparent">
+                <CardContent className="p-4 flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center border border-blue-500/20 text-blue-400">
+                    <Users className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Active Refs</p>
+                    <p className="text-lg font-bold text-white">{stats.active_referrals}</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="glass-panel border-white/10 bg-gradient-to-br from-sky-500/10 to-transparent">
+                <CardContent className="p-4 flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-lg bg-sky-500/20 flex items-center justify-center border border-sky-500/20 text-sky-400">
+                    <Activity className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Clicks</p>
+                    <p className="text-lg font-bold text-white">{stats.clicks}</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="glass-panel border-white/10 bg-gradient-to-br from-purple-500/10 to-transparent">
+                <CardContent className="p-4 flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center border border-purple-500/20 text-purple-400">
+                    <Zap className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Conversions</p>
+                    <p className="text-lg font-bold text-white">{stats.conversions}</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="glass-panel border-white/10 bg-gradient-to-br from-rose-500/10 to-transparent">
+                <CardContent className="p-4 flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-lg bg-rose-500/20 flex items-center justify-center border border-rose-500/20 text-rose-400">
+                    <Percent className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Conv. Rate</p>
+                    <p className="text-lg font-bold text-white">{stats.conversion_rate.toFixed(1)}%</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="glass-panel border-white/10 bg-gradient-to-br from-indigo-500/10 to-transparent">
+                <CardContent className="p-4 flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-lg bg-indigo-500/20 flex items-center justify-center border border-indigo-500/20 text-indigo-400">
+                    <RefreshCw className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Total Payouts</p>
+                    <p className="text-lg font-bold text-white font-mono">₹{stats.payout_records.reduce((sum, p) => sum + Number(p.amount), 0).toFixed(0)}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="grid lg:grid-cols-3 gap-6 pt-6">
+              <Card className="lg:col-span-2 glass-panel border-white/10">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-zinc-400 flex items-center gap-2">
+                    <LineChart className="h-4 w-4 text-cyan-400" />
+                    Daily Performance (Last 30 Days)
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-[250px] w-full mt-4">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={stats.daily_stats}>
+                        <defs>
+                          <linearGradient id="colorClicks" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor="#22d3ee" stopOpacity={0}/>
+                          </linearGradient>
+                          <linearGradient id="colorConversions" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#4ade80" stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor="#4ade80" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
+                        <XAxis 
+                          dataKey="date" 
+                          stroke="#ffffff30" 
+                          fontSize={10} 
+                          tickLine={false} 
+                          axisLine={false} 
+                        />
+                        <YAxis 
+                          stroke="#ffffff30" 
+                          fontSize={10} 
+                          tickLine={false} 
+                          axisLine={false} 
+                        />
+                        <RechartsTooltip 
+                          contentStyle={{ backgroundColor: '#09090b', border: '1px solid #ffffff10', borderRadius: '8px', fontSize: '12px' }}
+                          itemStyle={{ fontSize: '12px' }}
+                        />
+                        <Area 
+                          type="monotone" 
+                          dataKey="clicks" 
+                          name="Clicks"
+                          stroke="#22d3ee" 
+                          fillOpacity={1} 
+                          fill="url(#colorClicks)" 
+                          strokeWidth={2}
+                        />
+                        <Area 
+                          type="monotone" 
+                          dataKey="conversions" 
+                          name="Conversions"
+                          stroke="#4ade80" 
+                          fillOpacity={1} 
+                          fill="url(#colorConversions)" 
+                          strokeWidth={2}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="glass-panel border-white/10 overflow-hidden">
+                <CardHeader>
+                  <CardTitle className="text-sm font-medium text-zinc-400">Referral Breakdown</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-2">
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-1">
+                        <p className="text-2xl font-bold text-white">{stats.active_referrals}</p>
+                        <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-semibold flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                          Active Subscriptions
+                        </p>
+                      </div>
+                      <div className="text-right space-y-1">
+                        <p className="text-2xl font-bold text-zinc-400">{stats.referred_signups.length}</p>
+                        <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-semibold">Total Signups</p>
+                      </div>
+                    </div>
+                    
+                    <div className="w-full bg-white/5 rounded-full h-2 overflow-hidden flex">
+                      <div 
+                        className="bg-green-500 h-full transition-all duration-500" 
+                        style={{ width: `${stats.referred_signups.length > 0 ? (stats.active_referrals / stats.referred_signups.length) * 100 : 0}%` }}
+                      />
+                    </div>
+                    
+                    <div className="pt-4 border-t border-white/5">
+                      <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-semibold mb-3">Top Referral Channels</p>
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-zinc-300">Direct Link</span>
+                          <span className="text-xs font-mono text-zinc-500">{stats.referred_signups.length} users</span>
+                        </div>
+                        <div className="w-full bg-white/5 rounded-full h-1">
+                          <div className="bg-cyan-500 h-full w-[100%] rounded-full" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
           <TabsContent value="profile" className="space-y-6 mt-0">

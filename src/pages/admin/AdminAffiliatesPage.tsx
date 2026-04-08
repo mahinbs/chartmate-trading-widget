@@ -200,9 +200,11 @@ export default function AdminAffiliatesPage() {
             name: form.name.trim(),
             email: form.email.trim(),
             phone: form.phone.trim(),
-            commission_percent: Number(form.commission_percent) || 0,
+            commission_percent: form.commission_type === "percentage" || form.commission_type === "recurring" 
+              ? (Number(form.commission_percent) || 0) 
+              : 0,
             commission_type: form.commission_type,
-            fixed_amount: Number(form.fixed_amount) || 0,
+            fixed_amount: form.commission_type === "fixed" ? (Number(form.fixed_amount) || 0) : 0,
             tier_config: form.tier_config,
             recurring_config: form.recurring_config,
             is_active: form.is_active,
@@ -218,9 +220,11 @@ export default function AdminAffiliatesPage() {
             name: form.name.trim(),
             email: form.email.trim(),
             phone: form.phone.trim(),
-            commission_percent: Number(form.commission_percent) || 10,
+            commission_percent: form.commission_type === "percentage" || form.commission_type === "recurring" 
+              ? (Number(form.commission_percent) || 0) 
+              : 0,
             commission_type: form.commission_type,
-            fixed_amount: Number(form.fixed_amount) || 0,
+            fixed_amount: form.commission_type === "fixed" ? (Number(form.fixed_amount) || 0) : 0,
             tier_config: form.tier_config,
             recurring_config: form.recurring_config,
           },
@@ -373,7 +377,7 @@ export default function AdminAffiliatesPage() {
                 <TableHead className="text-muted-foreground">Code / Link</TableHead>
                 <TableHead className="text-muted-foreground">Name</TableHead>
                 <TableHead className="text-muted-foreground">Email</TableHead>
-                <TableHead className="text-muted-foreground">Commission %</TableHead>
+                <TableHead className="text-muted-foreground">Commission </TableHead>
                 <TableHead className="text-muted-foreground">Unique visitors (IPs)</TableHead>
                 <TableHead className="text-muted-foreground">Sign-ups</TableHead>
                 <TableHead className="text-muted-foreground">Form submissions</TableHead>
@@ -393,7 +397,15 @@ export default function AdminAffiliatesPage() {
                   </TableCell>
                   <TableCell className="text-zinc-300">{r.name}</TableCell>
                   <TableCell className="text-zinc-400 text-sm">{r.email}</TableCell>
-                  <TableCell>{r.commission_percent}%</TableCell>
+                  <TableCell className="font-medium">
+                    {r.commission_type === "fixed" ? (
+                      <span className="text-zinc-300">₹{r.fixed_amount} <span className="text-[10px] text-zinc-500 uppercase ml-1">(Fixed)</span></span>
+                    ) : r.commission_type === "tier" ? (
+                      <span className="text-zinc-300">Tiered <span className="text-[10px] text-zinc-500 uppercase ml-1">(System)</span></span>
+                    ) : (
+                      <span className="text-zinc-300">{r.commission_percent}% <span className="text-[10px] text-zinc-500 uppercase ml-1">({r.commission_type || "Percent"})</span></span>
+                    )}
+                  </TableCell>
                   <TableCell className="font-medium text-white">{r.unique_visitors}</TableCell>
                   <TableCell className="font-medium text-sky-300">{r.referred_signups}</TableCell>
                   <TableCell>{r.form_submissions}</TableCell>
