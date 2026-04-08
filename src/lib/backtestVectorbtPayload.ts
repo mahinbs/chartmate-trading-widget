@@ -14,6 +14,15 @@ export function deriveMaxHoldDaysFromExit(xc: unknown): number | null {
   return null;
 }
 
+/**
+ * Intraday strategies should not carry overnight in backtests.
+ * We cap them to 1 day; non-intraday keeps existing exit-derived behavior.
+ */
+export function deriveMaxHoldDaysForStrategy(cs: Pick<FullCustomStrategy, "is_intraday" | "exit_conditions">): number | null {
+  if (cs.is_intraday === true) return 1;
+  return deriveMaxHoldDaysFromExit(cs.exit_conditions);
+}
+
 /** True when custom entry rules should be sent to VectorBT (matches strategy-entry-signals idea). */
 export function entryConditionsConfigured(ec: unknown): boolean {
   if (!ec || typeof ec !== "object") return false;

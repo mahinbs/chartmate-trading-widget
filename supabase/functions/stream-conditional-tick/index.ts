@@ -5,9 +5,11 @@
  * Auth: X-Stream-Tick-Secret must match env STREAM_TICK_SECRET (set in ChartMate monitor + Supabase secrets).
  *
  * POST { "symbol": "RELIANCE" }  // any casing / optional .NS — matching is normalized server-side
- */ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+ */
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { activateScheduledConditionalOrdersAndNotify } from "../_shared/activateScheduledConditionalOrders.ts";
 import { tryExecutePendingRow } from "../_shared/pendingConditionalExecution.ts";
+import { runRsiDivergenceTickScan } from "../_shared/rsiDivergenceTickScan.ts";
 const STREAM_TICK_SECRET = Deno.env.get("STREAM_TICK_SECRET") ?? "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const OPENALGO_URL = (Deno.env.get("OPENALGO_URL") ?? "").replace(/\/$/, "");
@@ -100,6 +102,13 @@ Deno.serve(async (req)=>{
         if (outcome === "fired") fired += 1;
       }
     }
+    /** RSI divergence: re-scan this symbol on each LTP tick (min 1s between Yahoo pulls per symbol). */
+    let rsi_divergence_tick: { created: number; skipped?: string } = { created: 0 };
+    try {
+      rsi_divergence_tick = await runRsiDivergenceTickScan(supabase, rawSym);
+    } catch (rsiErr) {
+      console.error("stream-conditional-tick rsi tick scan:", rsiErr);
+    }
     return new Response(JSON.stringify({
       ok: true,
       symbol: rawSym,
@@ -107,7 +116,8 @@ Deno.serve(async (req)=>{
       checked: rows.length,
       fired,
       results,
-      fires_pending: firesPending
+      fires_pending: firesPending,
+      rsi_divergence_tick,
     }), {
       status: 200,
       headers

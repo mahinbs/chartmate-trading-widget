@@ -35,13 +35,36 @@ serve(async (req)=>{
     });
   }
   try {
+<<<<<<< HEAD
     let ref = null;
+=======
+    let ref: string | null = null;
+    let utms: any = {};
+    let referrer: string | null = null;
+
+>>>>>>> origin/affiliate-dashboard-changes
     if (req.method === "POST") {
       const body = await req.json().catch(()=>({}));
       ref = body?.ref ?? null;
+      utms = {
+        source: body?.utm_source ?? null,
+        medium: body?.utm_medium ?? null,
+        campaign: body?.utm_campaign ?? null,
+        term: body?.utm_term ?? null,
+        content: body?.utm_content ?? null,
+      };
+      referrer = body?.referrer ?? null;
     } else {
       const url = new URL(req.url);
       ref = url.searchParams.get("ref");
+      utms = {
+        source: url.searchParams.get("utm_source"),
+        medium: url.searchParams.get("utm_medium"),
+        campaign: url.searchParams.get("utm_campaign"),
+        term: url.searchParams.get("utm_term"),
+        content: url.searchParams.get("utm_content"),
+      };
+      referrer = req.headers.get("referer"); // Standard header is 'referer' (misspelled in spec)
     }
     if (!ref || typeof ref !== "string" || !ref.trim()) {
       return new Response(JSON.stringify({
@@ -57,6 +80,7 @@ serve(async (req)=>{
     const code = ref.trim();
     const visitorIp = getClientIp(req);
     const userAgent = req.headers.get("user-agent") ?? null;
+<<<<<<< HEAD
     const supabase = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "", {
       auth: {
         autoRefreshToken: false,
@@ -64,6 +88,50 @@ serve(async (req)=>{
       }
     });
     const { data: affiliate, error: affiliateError } = await supabase.from("affiliates").select("id").eq("code", code).eq("is_active", true).maybeSingle();
+=======
+    
+    // Cloudflare Geo headers
+    const city = req.headers.get("cf-ipcity") ?? null;
+    const region = req.headers.get("cf-region") ?? null;
+    const country = req.headers.get("cf-ipcountry") ?? null;
+
+    // Basic device/browser detection
+    const getDeviceType = (ua: string | null) => {
+      if (!ua) return "unknown";
+      const ual = ua.toLowerCase();
+      if (ual.includes("mobile") || ual.includes("android") || ual.includes("iphone") || ual.includes("ipad")) return "mobile";
+      if (ual.includes("tablet") || ual.includes("ipad")) return "tablet";
+      return "desktop";
+    };
+
+    const getBrowser = (ua: string | null) => {
+      if (!ua) return "unknown";
+      const ual = ua.toLowerCase();
+      if (ual.includes("edg/")) return "Edge";
+      if (ual.includes("chrome/")) return "Chrome";
+      if (ual.includes("firefox/")) return "Firefox";
+      if (ual.includes("safari/") && !ual.includes("chrome/")) return "Safari";
+      if (ual.includes("opera/") || ual.includes("opr/")) return "Opera";
+      return "Other";
+    };
+
+    const deviceType = getDeviceType(userAgent);
+    const browser = getBrowser(userAgent);
+
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    );
+
+    const { data: affiliate, error: affiliateError } = await supabase
+      .from("affiliates")
+      .select("id, user_id")
+      .eq("code", code)
+      .eq("is_active", true)
+      .maybeSingle();
+
+>>>>>>> origin/affiliate-dashboard-changes
     if (affiliateError || !affiliate) {
       return new Response(JSON.stringify({
         error: "Invalid or inactive affiliate code"
@@ -78,6 +146,7 @@ serve(async (req)=>{
     const { error: insertError } = await supabase.from("affiliate_visitors").insert({
       affiliate_id: affiliate.id,
       visitor_ip: visitorIp,
+<<<<<<< HEAD
       user_agent: userAgent
     });
     if (insertError && insertError.code !== "23505") {
@@ -90,6 +159,45 @@ serve(async (req)=>{
         ...corsHeaders,
         "Content-Type": "application/json"
       }
+=======
+      user_agent: userAgent,
+      device_type: deviceType,
+      browser: browser,
+      city: city,
+      region: region,
+      country: country,
+      utm_source: utms.source,
+      utm_medium: utms.medium,
+      utm_campaign: utms.campaign,
+      utm_term: utms.term,
+      utm_content: utms.content,
+      referrer: referrer
+    });
+
+    if (insertError) {
+      if (insertError.code === "23505") {
+        // Already visited - no new notification needed
+        return new Response(JSON.stringify({ ok: true, status: 'already_recorded' }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      throw insertError;
+    }
+
+    // Notify the affiliate about the new unique click
+    if (affiliate.user_id) {
+      const location = [city, country].filter(Boolean).join(", ") || "an unknown location";
+      await supabase.from("affiliate_notifications").insert({
+        user_id: affiliate.user_id,
+        type: "system",
+        title: "New Click!",
+        message: `Someone just visited your referral link from ${location}.`
+      });
+    }
+
+    return new Response(JSON.stringify({ ok: true }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+>>>>>>> origin/affiliate-dashboard-changes
     });
   } catch (e) {
     console.error("record-affiliate-visit error:", e);

@@ -28,6 +28,7 @@ import { isDashboardNavActive } from "./dashboard-nav-types";
 import { DashboardMobileDrawer } from "./DashboardMobileDrawer";
 import { cn } from "@/lib/utils";
 import { useSignupProfile } from "@/hooks/useSignupProfile";
+import { useUserRole } from "@/hooks/useUserRole";
 
 export interface DashboardSidebarProps {
   className?: string;
@@ -36,6 +37,7 @@ export interface DashboardSidebarProps {
 
 function useDashboardNavLinks(): DashboardNavLink[] {
   const { isAdmin } = useAdmin();
+  const { isAffiliate } = useUserRole();
   const { hasAlgoAccess } = useSubscription();
   const { user } = useAuth();
   /** New Analysis + Past Analyses — exception list only (not all Pro / Probability users). */
@@ -85,6 +87,11 @@ function useDashboardNavLinks(): DashboardNavLink[] {
       },
       { to: "/news", label: "News Feed", icon: Newspaper },
     ];
+
+    // Affiliates are restricted to /affiliate/dashboard only (ProtectedRoute); keep a single nav item if they ever hit a shelled layout.
+    if (isAffiliate) {
+      return [{ to: "/affiliate/dashboard", label: "Affiliate Dashboard", icon: LayoutDashboard }];
+    }
 
     if (hasAlgoAccess) {
       if (canUseAlgoTools) {
@@ -142,7 +149,7 @@ function useDashboardNavLinks(): DashboardNavLink[] {
     }
 
     return next;
-  }, [isAdmin, hasAlgoAccess, canUseAlgoTools, canSeePredictPastTabs]);
+  }, [isAdmin, hasAlgoAccess, canUseAlgoTools, canSeePredictPastTabs, isAffiliate]);
 }
 
 export function DashboardSidebar({
@@ -151,6 +158,7 @@ export function DashboardSidebar({
 }: DashboardSidebarProps) {
   const { pathname, search } = useLocation();
   const { signOut, user } = useAuth();
+  const { isAffiliate } = useUserRole();
   const { displayName } = useSignupProfile();
   const links = useDashboardNavLinks();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);

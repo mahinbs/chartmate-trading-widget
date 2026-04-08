@@ -9,9 +9,6 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Loader2, PlusCircle, Save, Trash2, Pencil, ChevronDown, ChevronUp, BarChart3, TrendingUp, Activity, LayoutDashboard, Users, Globe, ChevronLeft, ChevronRight, Search, Link2 } from "lucide-react";
 import {
-  readStoredPublicAffiliates,
-  writeStoredPublicAffiliates,
-  notifyPublicDashboardAffiliatesChanged,
   isValidAffiliateJoinDate,
   type PublicDashboardAffiliateSeed,
 } from "@/lib/publicDashboardAffiliateStorage";
@@ -224,7 +221,9 @@ export default function AdminPublicDashboardPage() {
   const [editingSub, setEditingSub] = useState<Subscriber | null>(null);
   const [editForm, setEditForm] = useState({ name: "", country: "", email: "", payment_id: "", subscribed_at: "" });
 
-  const [customAffiliates, setCustomAffiliates] = useState<PublicDashboardAffiliateSeed[]>(() => readStoredPublicAffiliates() ?? []);
+  const [customAffiliates, setCustomAffiliates] = useState<PublicDashboardAffiliateSeed[]>([]);
+  const [affLoading, setAffLoading] = useState(true);
+  const [affSaving, setAffSaving] = useState(false);
   const [newAffiliate, setNewAffiliate] = useState({
     name: "",
     trackingId: "",
@@ -235,13 +234,37 @@ export default function AdminPublicDashboardPage() {
     salesWeights: "",
   });
 
-  const persistCustomAffiliates = (rows: PublicDashboardAffiliateSeed[]) => {
-    writeStoredPublicAffiliates(rows);
-    notifyPublicDashboardAffiliatesChanged();
-    setCustomAffiliates(rows);
+  const loadAffiliates = async () => {
+    try {
+      setAffLoading(true);
+      const { data, error } = await (supabase as any)
+        .from("public_dashboard_affiliates")
+        .select("*")
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      const rows: PublicDashboardAffiliateSeed[] = ((data as any[]) ?? []).map((r) => ({
+        id: r.id,
+        name: r.name,
+        trackingId: r.tracking_id,
+        userCount: r.user_count,
+        profitShare: r.profit_share,
+        payout: r.payout,
+        joiningDate: r.joining_date,
+        totalEarnings: r.total_earnings,
+        lastPayoutDate: r.last_payout_date,
+        salesWeights: Array.isArray(r.sales_weights) ? r.sales_weights : [20, 24, 18, 28, 26, 22, 30, 24],
+      }));
+      setCustomAffiliates(rows);
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to load affiliates");
+    } finally {
+      setAffLoading(false);
+    }
   };
 
-  const addCustomAffiliate = () => {
+  useEffect(() => { loadAffiliates(); }, []);
+
+  const addCustomAffiliate = async () => {
     const name = newAffiliate.name.trim();
     const trackingId = newAffiliate.trackingId.trim();
     const userCount = Math.max(0, Math.floor(parseNumeric(newAffiliate.userCount)));
@@ -261,43 +284,71 @@ export default function AdminPublicDashboardPage() {
     }
     const salesWeights = parseSalesWeightsInput(newAffiliate.salesWeights);
     const profitShare = newAffiliate.profitShare.trim() || "30%";
-    const row: PublicDashboardAffiliateSeed = {
-      id: `af-${typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Date.now()}`,
-      name,
-      trackingId,
-      userCount,
-      profitShare,
-      payout: formatAffiliatePayoutPreview(userCount, profitShare),
-      joiningDate,
-      totalEarnings: "$0",
-      lastPayoutDate,
-      salesWeights,
-    };
-    const next = [...customAffiliates, row];
-    persistCustomAffiliates(next);
-    setNewAffiliate({
-      name: "",
-      trackingId: "",
-      userCount: "",
-      profitShare: "30%",
-      joiningDate: "",
-      lastPayoutDate: "",
-      salesWeights: "",
-    });
-    toast.success("Affiliate added — public dashboard will use this list");
+    const payout = formatAffiliatePayoutPreview(userCount, profitShare);
+    try {
+      setAffSaving(true);
+      const payload = {
+        name,
+        tracking_id: trackingId,
+        user_count: userCount,
+        profit_share: profitShare,
+        payout,
+        joining_date: joiningDate,
+        total_earnings: "$0",
+        last_payout_date: lastPayoutDate,
+        sales_weights: salesWeights,
+      };
+      const { error } = await (supabase as any)
+        .from("public_dashboard_affiliates")
+        .insert(payload);
+      if (error) throw error;
+      setNewAffiliate({
+        name: "",
+        trackingId: "",
+        userCount: "",
+        profitShare: "30%",
+        joiningDate: "",
+        lastPayoutDate: "",
+        salesWeights: "",
+      });
+      toast.success("Affiliate saved to db — public dashboard will use this list");
+      loadAffiliates();
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to save affiliate");
+    } finally {
+      setAffSaving(false);
+    }
   };
 
-  const removeCustomAffiliate = (id: string) => {
-    const next = customAffiliates.filter((a) => a.id !== id);
-    persistCustomAffiliates(next);
-    toast.success(next.length === 0 ? "Restored default demo affiliates" : "Affiliate removed");
+  const removeCustomAffiliate = async (id: string) => {
+    try {
+      const { error } = await (supabase as any)
+        .from("public_dashboard_affiliates")
+        .delete()
+        .eq("id", id);
+      if (error) throw error;
+      const next = customAffiliates.filter((a) => a.id !== id);
+      setCustomAffiliates(next);
+      toast.success(next.length === 0 ? "Restored default demo affiliates" : "Affiliate removed");
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to remove affiliate");
+    }
   };
 
-  const resetCustomAffiliates = () => {
+  const resetCustomAffiliates = async () => {
     if (customAffiliates.length === 0) return;
     if (!confirm("Remove all custom affiliates and restore the built-in demo list on the public dashboard?")) return;
-    persistCustomAffiliates([]);
-    toast.success("Default demo affiliates restored");
+    try {
+      const { error } = await (supabase as any)
+        .from("public_dashboard_affiliates")
+        .delete()
+        .neq("id", "");
+      if (error) throw error;
+      setCustomAffiliates([]);
+      toast.success("Default demo affiliates restored");
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to reset affiliates");
+    }
   };
 
   const loadMetrics = async () => {
@@ -576,25 +627,25 @@ export default function AdminPublicDashboardPage() {
                           <TableRow className="border-white/5 hover:bg-white/5 transition-colors">
                             <TableCell className="text-xs font-mono text-zinc-500">{m.key}</TableCell>
                             <TableCell>
-                              <Input 
-                                value={m.label} 
-                                onChange={(e) => handleMetricChange(m.id, "label", e.target.value)} 
-                                className="min-w-[120px] bg-zinc-950/50 border-white/10 h-8 text-sm focus-visible:ring-primary/50" 
+                              <Input
+                                value={m.label}
+                                onChange={(e) => handleMetricChange(m.id, "label", e.target.value)}
+                                className="min-w-[120px] bg-zinc-950/50 border-white/10 h-8 text-sm focus-visible:ring-primary/50"
                               />
                             </TableCell>
                             <TableCell>
-                              <Input 
-                                value={m.value} 
-                                onChange={(e) => handleMetricChange(m.id, "value", e.target.value)} 
-                                className="min-w-[100px] bg-zinc-950/50 border-white/10 h-8 text-sm focus-visible:ring-primary/50" 
+                              <Input
+                                value={m.value}
+                                onChange={(e) => handleMetricChange(m.id, "value", e.target.value)}
+                                className="min-w-[100px] bg-zinc-950/50 border-white/10 h-8 text-sm focus-visible:ring-primary/50"
                               />
                             </TableCell>
                             <TableCell className="w-[100px]">
-                              <Input 
-                                value={m.unit || ""} 
-                                onChange={(e) => handleMetricChange(m.id, "unit", e.target.value)} 
+                              <Input
+                                value={m.unit || ""}
+                                onChange={(e) => handleMetricChange(m.id, "unit", e.target.value)}
                                 placeholder="Unit"
-                                className="bg-zinc-950/50 border-white/10 h-8 text-sm focus-visible:ring-primary/50" 
+                                className="bg-zinc-950/50 border-white/10 h-8 text-sm focus-visible:ring-primary/50"
                               />
                             </TableCell>
                             <TableCell className="w-[130px]">
@@ -620,9 +671,9 @@ export default function AdminPublicDashboardPage() {
                               </Select>
                             </TableCell>
                             <TableCell className="max-w-[200px]">
-                              <Input 
-                                value={m.description || ""} 
-                                onChange={(e) => handleMetricChange(m.id, "description", e.target.value)} 
+                              <Input
+                                value={m.description || ""}
+                                onChange={(e) => handleMetricChange(m.id, "description", e.target.value)}
                                 className="bg-zinc-950/50 border-white/10 h-8 text-sm focus-visible:ring-primary/50 truncate"
                                 title={m.description || ""}
                               />
@@ -689,8 +740,8 @@ export default function AdminPublicDashboardPage() {
               </div>
 
               <div className="flex justify-end pt-2">
-                <Button 
-                  onClick={saveMetrics} 
+                <Button
+                  onClick={saveMetrics}
                   disabled={saving}
                   className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20"
                 >
@@ -712,9 +763,9 @@ export default function AdminPublicDashboardPage() {
                 Public dashboard affiliates
               </CardTitle>
               <CardDescription className="text-zinc-400 mt-1">
-                Add affiliates here to replace the built-in demo rows on the live public dashboard. Stored in this browser only (
-                <code className="text-zinc-500">localStorage</code>
-                ). Open the public dashboard preview or home dashboard to see changes; same-tab updates apply instantly.
+                Add affiliates here to replace the built-in demo rows on the live dashboard. Stored in Supabase — changes are visible site-wide immediately. Open{" "}
+                <code className="text-zinc-500">/admin/dashboard</code>
+                {" "}or the public dashboard to see changes.
               </CardDescription>
             </div>
             {customAffiliates.length > 0 && (
@@ -731,7 +782,11 @@ export default function AdminPublicDashboardPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {customAffiliates.length === 0 ? (
+          {affLoading ? (
+            <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin mr-2 text-primary" /> Loading affiliates…
+            </div>
+          ) : customAffiliates.length === 0 ? (
             <p className="text-sm text-zinc-500 border border-dashed border-white/10 rounded-xl px-4 py-6 text-center bg-white/[0.02]">
               No custom affiliates — the public dashboard shows the default 15 demo partners. Add at least one row below to override.
             </p>
@@ -768,7 +823,7 @@ export default function AdminPublicDashboardPage() {
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8 text-zinc-500 hover:text-red-400 hover:bg-red-500/10"
-                          onClick={() => removeCustomAffiliate(a.id)}
+                          onClick={() => void removeCustomAffiliate(a.id)}
                           aria-label={`Remove ${a.name}`}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -873,8 +928,17 @@ export default function AdminPublicDashboardPage() {
               <p className="text-[10px] text-zinc-500">Shapes the demo bar chart; totals still follow $49/unit × share. Leave blank for defaults.</p>
             </div>
             <div className="flex justify-end">
-              <Button type="button" onClick={addCustomAffiliate} className="bg-white/10 hover:bg-white/20 text-white border border-white/10">
-                <PlusCircle className="h-4 w-4 mr-2" /> Add affiliate
+              <Button
+                type="button"
+                onClick={() => void addCustomAffiliate()}
+                disabled={affSaving}
+                className="bg-white/10 hover:bg-white/20 text-white border border-white/10"
+              >
+                {affSaving ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving…</>
+                ) : (
+                  <><PlusCircle className="h-4 w-4 mr-2" /> Add affiliate</>
+                )}
               </Button>
             </div>
           </div>
@@ -1108,42 +1172,42 @@ export default function AdminPublicDashboardPage() {
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
             <div className="space-y-2">
               <Label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Metric Key</Label>
-              <Input 
-                value={newMetric.key || ""} 
-                onChange={(e) => setNewMetric((p) => ({ ...p, key: e.target.value }))} 
-                placeholder="e.g. total_profit" 
+              <Input
+                value={newMetric.key || ""}
+                onChange={(e) => setNewMetric((p) => ({ ...p, key: e.target.value }))}
+                placeholder="e.g. total_profit"
                 className="bg-zinc-950/50 border-white/10 focus-visible:ring-primary/50"
               />
             </div>
             <div className="space-y-2">
               <Label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Display Label</Label>
-              <Input 
-                value={newMetric.label || ""} 
-                onChange={(e) => setNewMetric((p) => ({ ...p, label: e.target.value }))} 
-                placeholder="e.g. Total Profit" 
+              <Input
+                value={newMetric.label || ""}
+                onChange={(e) => setNewMetric((p) => ({ ...p, label: e.target.value }))}
+                placeholder="e.g. Total Profit"
                 className="bg-zinc-950/50 border-white/10 focus-visible:ring-primary/50"
               />
             </div>
             <div className="space-y-2">
               <Label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Current Value</Label>
-              <Input 
-                value={newMetric.value || ""} 
-                onChange={(e) => setNewMetric((p) => ({ ...p, value: e.target.value }))} 
-                placeholder="e.g. 1250000" 
+              <Input
+                value={newMetric.value || ""}
+                onChange={(e) => setNewMetric((p) => ({ ...p, value: e.target.value }))}
+                placeholder="e.g. 1250000"
                 className="bg-zinc-950/50 border-white/10 focus-visible:ring-primary/50"
               />
             </div>
             <div className="space-y-2">
               <Label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Unit</Label>
-              <Input 
-                value={newMetric.unit || ""} 
-                onChange={(e) => setNewMetric((p) => ({ ...p, unit: e.target.value }))} 
-                placeholder="e.g. USD, %, Users" 
+              <Input
+                value={newMetric.unit || ""}
+                onChange={(e) => setNewMetric((p) => ({ ...p, unit: e.target.value }))}
+                placeholder="e.g. USD, %, Users"
                 className="bg-zinc-950/50 border-white/10 focus-visible:ring-primary/50"
               />
             </div>
           </div>
-          
+
           <div className="grid gap-6 md:grid-cols-2">
             <div className="space-y-2">
               <Label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Chart Type</Label>
@@ -1170,17 +1234,17 @@ export default function AdminPublicDashboardPage() {
             </div>
             <div className="space-y-2">
               <Label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Description</Label>
-              <Input 
-                value={newMetric.description || ""} 
-                onChange={(e) => setNewMetric((p) => ({ ...p, description: e.target.value }))} 
-                placeholder="Short description shown on hover" 
+              <Input
+                value={newMetric.description || ""}
+                onChange={(e) => setNewMetric((p) => ({ ...p, description: e.target.value }))}
+                placeholder="Short description shown on hover"
                 className="bg-zinc-950/50 border-white/10 focus-visible:ring-primary/50"
               />
             </div>
           </div>
 
           <div className="flex justify-end pt-2">
-            <Button 
+            <Button
               onClick={addMetric}
               className="bg-white/10 hover:bg-white/20 text-white border border-white/10"
             >
