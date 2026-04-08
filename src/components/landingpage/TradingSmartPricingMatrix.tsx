@@ -47,9 +47,21 @@ export function TradingSmartPricingMatrix() {
 
   return (
     <div className="container mx-auto px-4 max-w-6xl pb-8 relative">
-      <h2 className="font-bebas text-4xl md:text-5xl lg:text-7xl text-center text-white mb-6 md:mb-16">
+      <h2 className="font-bebas text-4xl md:text-5xl lg:text-7xl text-center text-white mb-6 md:mb-10">
         Pricing
       </h2>
+
+      {/* ROI Anchor Banner */}
+      <div className="mb-10 rounded-2xl bg-teal-500/[0.06] border border-teal-500/20 px-6 py-5 flex flex-col md:flex-row gap-3 md:items-center md:gap-6">
+        <div className="shrink-0 text-teal-400 font-black font-ibm-mono text-sm uppercase tracking-widest">vs. freelancer</div>
+        <p className="text-zinc-300 text-sm font-light leading-relaxed">
+          A freelance developer charges{" "}
+          <span className="text-white font-bold">$500–$2,000+</span> for a single algo — with no platform, no backtesting, and no ongoing support.
+          Our Starter plan gets your strategy coded, tested, and live for{" "}
+          <span className="text-teal-400 font-bold">${starter.integrationFee} one-time</span>.
+        </p>
+      </div>
+
       {/* Mobile scroll hint */}
       <p className="md:hidden text-center text-[11px] text-zinc-500 font-ibm-mono mb-4 animate-pulse">
         ← scroll to see all plans →
@@ -99,11 +111,18 @@ export function TradingSmartPricingMatrix() {
           <tbody className="text-zinc-300">
             <tr className="border-b border-zinc-800/50 hover:bg-white/[0.01]">
               <td className="py-5 px-4 font-light text-zinc-400 text-sm">Platform access</td>
-              <td className="py-5 px-6 text-center font-ibm-mono text-sm text-teal-400">Full unlock</td>
-              <td className="py-5 px-6 text-center font-ibm-mono text-sm bg-amber-400/[0.03] border-x border-amber-400/20 text-amber-200">
-                Full unlock
+              <td className="py-5 px-6 text-center font-ibm-mono text-sm text-teal-400">
+                Full access
+                <span className="block text-[10px] text-zinc-500 font-light normal-case mt-0.5">(AI engine, backtesting, broker sync, trade tracking)</span>
               </td>
-              <td className="py-5 px-6 text-center font-ibm-mono text-sm text-teal-400">Full unlock</td>
+              <td className="py-5 px-6 text-center font-ibm-mono text-sm bg-amber-400/[0.03] border-x border-amber-400/20 text-amber-200">
+                Full access
+                <span className="block text-[10px] text-zinc-500 font-light normal-case mt-0.5">(AI engine, backtesting, broker sync, trade tracking)</span>
+              </td>
+              <td className="py-5 px-6 text-center font-ibm-mono text-sm text-teal-400">
+                Full access
+                <span className="block text-[10px] text-zinc-500 font-light normal-case mt-0.5">(AI engine, backtesting, broker sync, trade tracking)</span>
+              </td>
             </tr>
             <tr className="border-b border-zinc-800/50 hover:bg-white/[0.01]">
               <td className="py-5 px-4 font-light text-zinc-400 text-sm">Custom algo strategies</td>

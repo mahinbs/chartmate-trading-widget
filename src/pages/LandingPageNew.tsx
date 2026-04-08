@@ -7,17 +7,20 @@ import { useAuth } from "@/hooks/useAuth";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useMyTenantMembership } from "@/hooks/useWhitelabel";
 import { supabase } from "@/integrations/supabase/client";
-import { motion, Variants } from "framer-motion";
-import heroBg from "@/assets/premium_hero_bg.png";
-
-import { FaCheckCircle } from "react-icons/fa";
-import { Shield, Eye, Pause, Lock, LayoutGrid, Search, Calculator, Clock, HelpCircle, UserPlus, Code2, Rocket, Link2, Lightbulb, Cpu, LineChart } from "lucide-react";
+import { motion, AnimatePresence, Variants } from "framer-motion";
+import { Shield, Eye, Pause, Lock, Clock, UserPlus, Code2, Rocket, Link2, Lightbulb, Cpu, LineChart, Globe, CheckCircle2, TrendingDown, DollarSign, Wrench, ChevronDown } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import heroVid from '../assets/landingpage/hero-vid.webm'
 import bgVid from '../assets/landingpage/bg.mp4'
-import chartsMockup from '../assets/landingpage/charts-mockup.png'
+import dash1 from '../assets/landingpage/dash-1.png'
+import dash2 from '../assets/landingpage/dash-2.png'
+import dash3 from '../assets/landingpage/dash-3.png'
+import dash4 from '../assets/landingpage/dash-4.png'
+import dash5 from '../assets/landingpage/dash-5.png'
+
+const dashScreenshots = [dash1, dash2, dash3, dash4, dash5];
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -30,7 +33,6 @@ import {
   Dialog,
   DialogContent,
   DialogTitle,
-  DialogClose,
 } from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
@@ -69,6 +71,17 @@ const LandingPageNew = () => {
   const [isEnquiryModalOpen, setIsEnquiryModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitSuccess, setIsSubmitSuccess] = useState(false);
+  const [isInlineSubmitting, setIsInlineSubmitting] = useState(false);
+  const [isInlineSubmitSuccess, setIsInlineSubmitSuccess] = useState(false);
+  const [openFaq, setOpenFaq] = useState<number | null>(null);
+  const [dashIndex, setDashIndex] = useState(0);
+
+  React.useEffect(() => {
+    const timer = setInterval(() => {
+      setDashIndex((prev) => (prev + 1) % dashScreenshots.length);
+    }, 4000);
+    return () => clearInterval(timer);
+  }, []);
 
   const navigate = useNavigate();
 
@@ -180,6 +193,23 @@ const LandingPageNew = () => {
     },
   });
 
+  const {
+    register: inlineRegister,
+    handleSubmit: inlineHandleSubmit,
+    control: inlineControl,
+    reset: inlineReset,
+    formState: { errors: inlineErrors },
+  } = useForm<FormData>({
+    defaultValues: {
+      name: "",
+      email: "",
+      phone: "",
+      message: "",
+      plan: "",
+      referral_code: "",
+    },
+  });
+
   const handleFormSubmit = async (data: FormData) => {
     setIsSubmitting(true);
 
@@ -243,6 +273,55 @@ const LandingPageNew = () => {
     }
   };
 
+  const handleInlineFormSubmit = async (data: FormData) => {
+    setIsInlineSubmitting(true);
+    try {
+      const planNames: Record<string, string> = {
+        starterPlan: "Starter Plan - $49/mo",
+        growthPlan: "Growth Plan - $79/mo",
+        professionalPlan: "Pro Plan - $129/mo",
+      };
+      const emailBody = `Name : ${data.name}\nEmail : ${data.email}\nPhone : ${data.phone}\nInterested Plan : ${planNames[data.plan] || data.plan}\nMessage : \n ${data.message || ""}`;
+      const { affiliateId } = getSessionAffiliateAttribution();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any)
+        .from("contact_submissions")
+        .insert([{
+          name: data.name,
+          email: data.email,
+          phone: data.phone,
+          description: `Plan: ${planNames[data.plan] || data.plan}\n${data.message || ""}`,
+          ...(affiliateId && { affiliate_id: affiliateId }),
+          ...(data.referral_code?.trim() && { referral_code: data.referral_code.trim() }),
+        }])
+        .then(() => {}).catch(() => {});
+      const response = await fetch(
+        "https://send-mail-redirect-boostmysites.vercel.app/send-email",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            body: emailBody,
+            name: "Tradingsmart.AI",
+            subject: `New Enquiry from ${data.name} - ${planNames[data.plan] || data.plan}`,
+            to: "partnerships@tradingsmart.ai",
+          }),
+        }
+      );
+      if (response.ok) {
+        inlineReset();
+        setIsInlineSubmitSuccess(true);
+      } else {
+        alert("Failed to submit form. Please try again.");
+      }
+    } catch (error) {
+      console.error("Error submitting form:", error);
+      alert("An error occurred. Please try again later.");
+    } finally {
+      setIsInlineSubmitting(false);
+    }
+  };
+
   const sectionTitle =
     "text-3xl md:text-4xl lg:text-7xl !capitalize font-black mb-8 text-white tracking-tight font-syne";
   const bodyMuted = "text-zinc-400 font-light leading-relaxed font-dm-sans";
@@ -281,7 +360,7 @@ const LandingPageNew = () => {
           onContextMenu={(e) => e.preventDefault()}
           className="absolute inset-0 w-full h-full object-cover z-0 opacity-60"
         >
-          <source src={bgVid} type="video/webm" />
+          <source src={bgVid} type="video/mp4" />
         </video>
 
         <div className="absolute inset-0 z-[1] pointer-events-none">
@@ -297,12 +376,10 @@ const LandingPageNew = () => {
         >
           <motion.div
             variants={fadeUp}
-            className="mb-8 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 backdrop-blur-md"
+            className="mb-8 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-teal-500/10 border border-teal-500/20 backdrop-blur-md"
           >
-            <span className="text-[10px] font-bold tracking-widest text-zinc-500 uppercase">What's New</span>
-            <div className="w-1 h-1 rounded-full bg-teal-500" />
-            <span className="text-xs text-zinc-300">Zagreb market now live</span>
-            <span className="text-zinc-500 text-xs ml-1">›</span>
+            <div className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse" />
+            <span className="text-xs font-bold text-teal-400 tracking-wide">1,500+ Algo Systems Deployed</span>
           </motion.div>
           <motion.h1
             variants={fadeUp}
@@ -315,17 +392,15 @@ const LandingPageNew = () => {
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary inline-block mr-[0.3em]"> Automate your strategy in 72 hours.</span>
             </span>
           </motion.h1>
-          {/* <motion.p
-            variants={fadeUp}
-            className={`text-lg md:text-xl ${bodyMuted} max-w-3xl mx-auto mb-6`}
-          >
-            Build, backtest, and deploy trading strategies with AI — without
-            writing a single line of code. Our developers build everything for
-            you and integrate your strategy within 72 hours.
-          </motion.p> */}
           <motion.p
             variants={fadeUp}
-            className={`text-sm md:text-base text-zinc-300 font-light max-w-2xl mx-auto mb-12 leading-relaxed`}
+            className={`text-base md:text-lg text-white font-medium max-w-2xl mx-auto mb-3 leading-relaxed`}
+          >
+            We build your AI trading system and connect it to your broker — no coding, no complexity, live within 72 hours.
+          </motion.p>
+          <motion.p
+            variants={fadeUp}
+            className={`text-xs md:text-sm text-zinc-500 font-light max-w-2xl mx-auto mb-12 leading-relaxed`}
           >
             We are a technology platform that enables users to integrate and automate their own trading systems. We do not provide any trading strategies, investment advice, or recommendations.
           </motion.p>
@@ -338,20 +413,16 @@ const LandingPageNew = () => {
               onClick={() => navigate("/auth")}
               className="bg-teal-500 hover:bg-teal-400 text-black font-bold text-lg px-10 py-7 rounded-xl shadow-[0_0_30px_rgba(20,184,166,0.3)] border border-teal-400/50 transition-all duration-300 hover:-translate-y-0.5"
             >
-              Get Started
+              Automate My Strategy
             </Button>
             <Button
               onClick={() => setIsEnquiryModalOpen(true)}
               variant="outline"
               className="bg-zinc-900/50 border border-zinc-700 hover:border-teal-500 hover:bg-teal-500/10 text-white font-bold text-lg px-10 py-7 rounded-xl transition-all duration-300 hover:-translate-y-0.5 backdrop-blur-md"
             >
-              Book Demo
+              Book Free Automation Call
             </Button>
           </motion.div>
-          <motion.p variants={fadeUp} className="text-zinc-300 text-xs mt-4">
-            No advisory. No strategy. Pure technology platform.
-          </motion.p>
-
           <motion.div
             variants={fadeUp}
             className="mt-20 relative w-full max-w-5xl mx-auto"
@@ -394,7 +465,27 @@ const LandingPageNew = () => {
         </div>
       </section>
 
-      {/* CHARTS THAT MOVE MARKETS */}
+      {/* TRUST BAR */}
+      <div className="bg-zinc-950 border-y border-zinc-900">
+        <div className="container mx-auto px-4 max-w-7xl">
+          <div className="grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 divide-x divide-zinc-800/60">
+            {[
+              { icon: Rocket, value: "1,500+", label: "Algo Systems Deployed" },
+              { icon: Clock, value: "72 hrs", label: "Avg. Integration Time" },
+              { icon: Globe, value: "All API Brokers", label: "Supported" },
+              { icon: CheckCircle2, value: "Completely", label: "Done For You" },
+            ].map((tile, i) => (
+              <div key={i} className="flex flex-col items-center justify-center py-8 px-6 text-center gap-2">
+                <tile.icon className="w-5 h-5 text-teal-500 mb-1" />
+                <span className="text-xl md:text-2xl font-black text-white font-syne">{tile.value}</span>
+                <span className="text-xs text-zinc-500 font-light">{tile.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* THE PROBLEM */}
       <motion.section
         initial="hidden"
         whileInView="visible"
@@ -402,87 +493,80 @@ const LandingPageNew = () => {
         variants={staggerContainer}
         className="py-24 bg-black relative overflow-hidden"
       >
+        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-teal-500/30 to-transparent" />
         <div className="container mx-auto px-4 max-w-7xl relative z-10">
-          <div className="text-center mb-16 relative z-10">
-            <motion.h2 variants={fadeUp} className={`${sectionTitle} justify-center flex items-center gap-4 !mb-4`}>
-              Charts that move markets
+          <div className="text-center mb-16">
+            <motion.h2 variants={fadeUp} className={`${sectionTitle}`}>
+              Still trading manually?
             </motion.h2>
-            <motion.p variants={fadeUp} className={`${bodyMuted} max-w-3xl mx-auto text-lg md:text-xl`}>
-              Whether you'd like to simply look up the latest stock price, or analyze price patterns with lengthy scripts — we got you covered.
+            <motion.p variants={fadeUp} className={`${bodyMuted} max-w-2xl mx-auto text-lg`}>
+              Here's what that's actually costing you.
             </motion.p>
           </div>
 
-          <motion.div
-            variants={fadeUp}
-            className="relative px-4 md:px-12 mb-20"
-          >
-            {/* Perspective Mockup Container */}
-            <div className="relative mx-auto max-w-5xl">
-              {/* Decorative backgrounds to simulate depth */}
-              <div className="absolute -left-10 top-1/2 -translate-y-1/2 w-full h-[80%] bg-zinc-900/50 rounded-2xl -rotate-2 scale-95 blur-sm border border-white/5 opacity-50 hidden md:block" />
-              <div className="absolute -right-10 top-1/2 -translate-y-1/2 w-full h-[80%] bg-zinc-900/50 rounded-2xl rotate-2 scale-95 blur-sm border border-white/5 opacity-50 hidden md:block" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-20">
+            {[
+              {
+                icon: Clock,
+                title: "Hours lost every day",
+                body: "Watching screens for 4–6 hours, missing signals the moment you look away. Your strategy only runs when you're physically present.",
+              },
+              {
+                icon: TrendingDown,
+                title: "Emotional execution",
+                body: "Fear on the entry. Greed on the exit. One bad news spike and the whole plan goes out the window.",
+              },
+              {
+                icon: Lightbulb,
+                title: "Strategy stuck in your head",
+                body: "You know what works. You've tested it mentally. But it never actually runs because no one built it for you.",
+              },
+              {
+                icon: DollarSign,
+                title: "Developer quotes are brutal",
+                body: "$500–$2,000+ to build one basic algo — and developers disappear the moment you need a change.",
+              },
+            ].map((item, i) => (
+              <motion.div key={i} variants={fadeUp} className={`${card} flex flex-col gap-5`}>
+                <div className="w-12 h-12 flex items-center justify-center rounded-xl bg-teal-500/5 border border-teal-500/10">
+                  <item.icon className="w-6 h-6 text-teal-500" />
+                </div>
+                <h3 className="text-white font-bold text-lg leading-snug">{item.title}</h3>
+                <p className="text-zinc-400 text-sm font-light leading-relaxed">{item.body}</p>
+              </motion.div>
+            ))}
+          </div>
 
-              <div className="relative rounded-2xl overflow-hidden border border-white/10 shadow-[0_0_100px_rgba(0,0,0,0.8)] bg-zinc-950">
-                <img
-                  src={chartsMockup}
-                  alt="Multi-chart trading interface"
-                  className="w-full h-auto"
-                />
-                {/* Glossy overlay */}
-                <div className="absolute inset-0 bg-gradient-to-tr from-white/5 to-transparent pointer-events-none" />
+          {/* Dashboard Screenshot Slideshow */}
+          <motion.div variants={fadeUp} className="relative mx-auto max-w-5xl">
+            <div className="relative p-[2px] rounded-2xl bg-gradient-to-br from-teal-500/40 via-teal-500/10 to-zinc-800 shadow-[0_0_60px_rgba(20,184,166,0.1)]">
+              <div className="relative rounded-[calc(1rem-1.5px)] overflow-hidden bg-zinc-950 aspect-video">
+                <AnimatePresence mode="crossfade">
+                  <motion.img
+                    key={dashIndex}
+                    src={dashScreenshots[dashIndex]}
+                    alt={`TradingSmart.ai dashboard view ${dashIndex + 1}`}
+                    className="absolute inset-0 w-full h-full object-cover"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 1.2, ease: "easeInOut" }}
+                  />
+                </AnimatePresence>
+                {/* Dot indicators */}
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 z-10">
+                  {dashScreenshots.map((_, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setDashIndex(i)}
+                      className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${i === dashIndex ? "bg-teal-400 w-4" : "bg-white/30 hover:bg-white/60"}`}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
+            <p className="text-center text-zinc-600 text-xs mt-4">TradingSmart.ai Dashboard</p>
           </motion.div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-12 mt-20 relative z-10 px-4">
-            <motion.div variants={fadeUp} className="group">
-              <div className="w-12 h-12 mb-6 flex items-center justify-center rounded-xl bg-teal-500/5 border border-teal-500/10 group-hover:border-teal-500/30 transition-all">
-                <LayoutGrid className="w-6 h-6 text-teal-500" />
-              </div>
-              <h3 className="text-white font-bold text-lg mb-3 flex items-center gap-2">
-                Up to 16 charts per screen
-              </h3>
-              <p className="text-zinc-400 text-sm leading-relaxed font-light">
-                Plus synchronized symbols, timeframes, and even drawings.
-              </p>
-            </motion.div>
-
-            <motion.div variants={fadeUp} className="group">
-              <div className="w-12 h-12 mb-6 flex items-center justify-center rounded-xl bg-teal-500/5 border border-teal-500/10 group-hover:border-teal-500/30 transition-all">
-                <Search className="w-6 h-6 text-teal-500" />
-              </div>
-              <h3 className="text-white font-bold text-lg mb-3 flex items-center gap-2">
-                Command search
-              </h3>
-              <p className="text-zinc-400 text-sm leading-relaxed font-light">
-                Complete any action in seconds with the global command search.
-              </p>
-            </motion.div>
-
-            <motion.div variants={fadeUp} className="group">
-              <div className="w-12 h-12 mb-6 flex items-center justify-center rounded-xl bg-teal-500/5 border border-teal-500/10 group-hover:border-teal-500/30 transition-all">
-                <Calculator className="w-6 h-6 text-teal-500" />
-              </div>
-              <h3 className="text-white font-bold text-lg mb-3 flex items-center gap-2">
-                Spreads
-              </h3>
-              <p className="text-zinc-400 text-sm leading-relaxed font-light">
-                Create your own custom formulas using math operations.
-              </p>
-            </motion.div>
-
-            <motion.div variants={fadeUp} className="group">
-              <div className="w-12 h-12 mb-6 flex items-center justify-center rounded-xl bg-teal-500/5 border border-teal-500/10 group-hover:border-teal-500/30 transition-all">
-                <Clock className="w-6 h-6 text-teal-500" />
-              </div>
-              <h3 className="text-white font-bold text-lg mb-3 flex items-center gap-2">
-                Custom intervals
-              </h3>
-              <p className="text-zinc-400 text-sm leading-relaxed font-light">
-                Any possible interval, including seconds and range bars.
-              </p>
-            </motion.div>
-          </div>
         </div>
       </motion.section>
 
@@ -581,6 +665,22 @@ const LandingPageNew = () => {
             </motion.div>
           </div>
 
+          {/* Outcome row */}
+          <motion.div variants={staggerContainer} className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
+            {[
+              { icon: Clock, outcome: "Save 5–10 hours of manual chart-watching every day" },
+              { icon: CheckCircle2, outcome: "Execute without emotion — entries and exits run exactly as planned" },
+              { icon: Wrench, outcome: "Modify your logic on demand — our team handles all changes" },
+            ].map((item, i) => (
+              <motion.div key={i} variants={fadeUp} className="flex items-start gap-4 p-6 rounded-2xl bg-teal-500/[0.03] border border-teal-500/10">
+                <div className="w-10 h-10 flex items-center justify-center rounded-xl bg-teal-500/10 border border-teal-500/20 shrink-0">
+                  <item.icon className="w-5 h-5 text-teal-400" />
+                </div>
+                <p className="text-zinc-300 text-sm font-light leading-relaxed">{item.outcome}</p>
+              </motion.div>
+            ))}
+          </motion.div>
+
           <motion.div variants={fadeUp} className="flex flex-col sm:flex-row gap-4 mt-16 justify-center items-center">
             <Link
               to="/ai-probability-engine"
@@ -595,9 +695,6 @@ const LandingPageNew = () => {
               AI Trading Analysis and Back Testing
             </Link>
           </motion.div>
-          <motion.p variants={fadeUp} className="text-zinc-500 text-xs mt-4 text-center">
-            No advisory. No strategy. Pure technology platform.
-          </motion.p>
         </div>
       </motion.section>
 
@@ -754,6 +851,62 @@ const LandingPageNew = () => {
         </div>
       </motion.section>
 
+      {/* TESTIMONIALS */}
+      <motion.section
+        initial="hidden"
+        whileInView="visible"
+        viewport={{ once: true, margin: "-80px" }}
+        variants={staggerContainer}
+        id="testimonials"
+        className="py-24 bg-zinc-950 relative"
+      >
+        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-teal-500/30 to-transparent" />
+        <div className="container mx-auto px-4 max-w-6xl">
+          <motion.h2 variants={fadeUp} className={`${sectionTitle} text-center`}>
+            What traders are saying
+          </motion.h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-16">
+            {[
+              {
+                initial: "R",
+                name: "Rahul D.",
+                city: "Pune",
+                color: "bg-teal-500",
+                quote: "Honestly havent come accross another service like this. Everyone either sells signals or teaches you to code yourself. These guys actually built my algo, connected it to my broker, and had it running. Nothing else like it.",
+              },
+              {
+                initial: "S",
+                name: "Sneha K.",
+                city: "Chennai",
+                color: "bg-amber-400",
+                quote: "The reason I paid was simple. They do everthing for you. Described my crossover stragety on a call and 3 days later it was live on Zerodha. Didnt touch a single line of code.",
+              },
+              {
+                initial: "V",
+                name: "Vikram P.",
+                city: "Ahmedabad",
+                color: "bg-blue-500",
+                quote: "Every platform I tried gave me indicators and paramters to tweak but my actual strategy logic couldnt fit into any of them. Was about to give up on automation completley. TradingSmart just got it.",
+              },
+            ].map((t, i) => (
+              <motion.div key={i} variants={fadeUp} className={`${card} flex flex-col gap-5`}>
+                <div className="flex items-center gap-4">
+                  <div className={`w-10 h-10 rounded-full ${t.color} flex items-center justify-center text-black font-black text-lg shrink-0`}>
+                    {t.initial}
+                  </div>
+                  <div>
+                    <p className="text-white font-bold text-sm">{t.name}</p>
+                    <p className="text-zinc-500 text-xs">{t.city}</p>
+                  </div>
+                </div>
+                <div className="text-amber-400 text-sm tracking-wide">{"★★★★★"}</div>
+                <p className="text-zinc-300 text-sm font-light leading-relaxed">"{t.quote}"</p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </motion.section>
+
       {/* PRICING */}
       <motion.section
         initial="hidden"
@@ -772,12 +925,75 @@ const LandingPageNew = () => {
             onClick={() => setIsEnquiryModalOpen(true)}
             className="w-full max-w-md mx-auto flex bg-teal-500 hover:bg-teal-400 text-black font-bold text-lg py-6 rounded-2xl shadow-[0_0_30px_rgba(20,184,166,0.2)] transition-all duration-300"
           >
-            Start Building Now
+            Automate My Strategy
           </Button>
-          <motion.p variants={fadeUp} className="text-zinc-500 text-xs mt-4 text-center max-w-md mx-auto">
-            No advisory. No strategy. Pure technology platform.
-          </motion.p>
         </motion.div>
+      </motion.section>
+
+      {/* FAQ */}
+      <motion.section
+        initial="hidden"
+        whileInView="visible"
+        viewport={{ once: true, margin: "-80px" }}
+        variants={staggerContainer}
+        id="faq"
+        className="py-24 bg-black relative"
+      >
+        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-teal-500/30 to-transparent" />
+        <div className="container mx-auto px-4 max-w-3xl">
+          <motion.h2 variants={fadeUp} className={`${sectionTitle} text-center`}>
+            Frequently Asked Questions
+          </motion.h2>
+          <motion.div variants={staggerContainer} className="mt-12 space-y-3">
+            {[
+              {
+                q: "Which brokers are supported?",
+                a: "Any broker that provides API access — Zerodha, Fyers, Dhan, Angel One, Upstox, and others globally. If your broker has an API, we can integrate it.",
+              },
+              {
+                q: "Do I need coding or technical experience?",
+                a: "None at all. You describe your strategy logic in plain language, and our team handles all the coding and broker integration from start to finish.",
+              },
+              {
+                q: "What if I don't have a strategy yet?",
+                a: "No problem. We connect you with a trading professional who helps you define and refine a strategy before we start building.",
+              },
+              {
+                q: "What if my strategy can't be automated?",
+                a: "If our team determines it cannot be coded and integrated, you receive a full refund — no questions asked.",
+              },
+              {
+                q: "How long does the whole process take?",
+                a: "Most strategies go live within 72 hours of your strategy brief being confirmed by our team.",
+              },
+              {
+                q: "Can I make changes after deployment?",
+                a: "Yes. Any modification request is handled by the team. Growth and Pro plans support multiple strategies running simultaneously.",
+              },
+            ].map((item, i) => (
+              <motion.div
+                key={i}
+                variants={fadeUp}
+                className="border border-zinc-800 rounded-2xl overflow-hidden"
+              >
+                <button
+                  className="w-full flex items-center justify-between gap-4 px-6 py-5 text-left hover:bg-white/[0.02] transition-colors"
+                  onClick={() => setOpenFaq(openFaq === i ? null : i)}
+                >
+                  <span className="text-white font-medium text-sm md:text-base">{item.q}</span>
+                  <ChevronDown
+                    className={`w-5 h-5 text-zinc-500 shrink-0 transition-transform duration-300 ${openFaq === i ? "rotate-180" : ""}`}
+                  />
+                </button>
+                {openFaq === i && (
+                  <div className="px-6 pb-5 border-t border-zinc-800/50">
+                    <p className="text-zinc-400 font-light text-sm leading-relaxed pt-4">{item.a}</p>
+                  </div>
+                )}
+              </motion.div>
+            ))}
+          </motion.div>
+        </div>
       </motion.section>
 
       {/* SECURITY & CONTROL */}
@@ -826,104 +1042,187 @@ const LandingPageNew = () => {
         </div>
       </motion.section>
 
-      {/* DISCLAIMER */}
+      {/* PLATFORM DISCLAIMER */}
       <motion.section
         initial="hidden"
         whileInView="visible"
         viewport={{ once: true, margin: "-80px" }}
         variants={staggerContainer}
-        id="disclaimer"
-        className="py-24 bg-zinc-950 relative"
+        className="py-16 bg-zinc-950 relative"
       >
-        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-teal-500/30 to-transparent" />
+        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-zinc-700/40 to-transparent" />
         <div className="container mx-auto px-4 max-w-4xl">
-          <motion.h2
-            variants={fadeUp}
-            className={`${sectionTitle} text-center`}
-          >
-            Platform Disclaimer
-          </motion.h2>
-
           <motion.div
             variants={fadeUp}
-            className="mt-12 bg-black border border-zinc-800/50 rounded-2xl p-8 md:p-10 font-jetbrains text-xs md:text-sm text-zinc-400 space-y-6 shadow-2xl relative overflow-hidden"
+            className="bg-black border border-zinc-800/60 rounded-2xl p-6 md:p-8 font-jetbrains text-xs text-zinc-500 space-y-4 relative overflow-hidden"
           >
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-zinc-800 via-teal-900 to-zinc-800" />
-            <div className="flex justify-center mb-6">
-              <Shield className="w-10 h-10 text-teal-500 opacity-80" />
+            <div className="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-zinc-900 via-zinc-700 to-zinc-900" />
+            <div className="flex items-center gap-3 mb-2">
+              <Shield className="w-4 h-4 text-zinc-600 shrink-0" />
+              <span className="text-zinc-400 font-bold tracking-widest text-[10px] uppercase">Platform Disclaimer</span>
             </div>
-            <div className="flex gap-4 items-start">
-              <span className="text-teal-500 font-bold shrink-0">{">"}</span>
-              <p className="leading-relaxed">This platform is a pure technology service provider offering software infrastructure and integration tools for users to deploy their own trading strategies.</p>
-            </div>
-            <div className="flex gap-4 items-start">
-              <span className="text-teal-500 font-bold shrink-0">{">"}</span>
-              <p className="leading-relaxed">We do not provide stock recommendations, trading strategies, investment advice, or portfolio management services.</p>
-            </div>
-            <div className="flex gap-4 items-start">
-              <span className="text-teal-500 font-bold shrink-0">{">"}</span>
-              <p className="leading-relaxed">All trading decisions, strategies, and executions are solely determined and controlled by the user.</p>
-            </div>
-            <div className="flex gap-4 items-start">
-              <span className="text-teal-500 font-bold shrink-0">{">"}</span>
-              <p className="leading-relaxed">We do not access, manage, or control user brokerage accounts, nor do we execute trades on behalf of users.</p>
-            </div>
-            <div className="flex gap-4 items-start">
-              <span className="text-teal-500 font-bold shrink-0">{">"}</span>
-              <p className="leading-relaxed">Users are fully responsible for their financial decisions and outcomes.</p>
-            </div>
-            <div className="flex gap-4 items-start">
-              <span className="text-teal-500 font-bold shrink-0">{">"}</span>
-              <p className="leading-relaxed">This platform does not guarantee any profits or returns and is not affiliated with any regulatory advisory services under the Securities and Exchange Board of India (SEBI).</p>
-            </div>
+            <p className="leading-relaxed">This platform is a pure technology service provider offering software infrastructure and integration tools for users to deploy their own trading strategies. We do not provide stock recommendations, trading strategies, investment advice, or portfolio management services.</p>
+            <p className="leading-relaxed">All trading decisions, strategies, and executions are solely determined and controlled by the user. We do not access, manage, or control user brokerage accounts, nor do we execute trades on behalf of users. Users are fully responsible for their financial decisions and outcomes.</p>
+            <p className="leading-relaxed">This platform does not guarantee any profits or returns and is not affiliated with any regulatory advisory services under the Securities and Exchange Board of India (SEBI).</p>
           </motion.div>
         </div>
       </motion.section>
 
-      {/* START NOW */}
+      {/* INLINE LEAD FORM */}
       <motion.section
         initial="hidden"
         whileInView="visible"
         viewport={{ once: true, margin: "-80px" }}
         variants={staggerContainer}
         id="start-now"
-        className="py-32 relative overflow-hidden bg-black border-t border-zinc-900"
+        className="py-24 bg-zinc-950 relative overflow-hidden"
       >
         <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-teal-500/30 to-transparent" />
-
         <div className="absolute inset-0 z-0 flex items-center justify-center overflow-hidden pointer-events-none">
-          <div className="text-[20rem] font-syne font-black text-teal-500/5 select-none leading-none -translate-y-8 absolute hidden md:block">72</div>
-          <div className="w-[800px] h-[800px] bg-teal-500/5 rounded-full blur-[200px]" />
+          <div className="w-[600px] h-[600px] bg-teal-500/5 rounded-full blur-[180px]" />
         </div>
 
-        <div className="container mx-auto px-4 relative z-10 text-center max-w-4xl">
-          <motion.h2 variants={fadeUp} className={`${sectionTitle} text-5xl md:text-7xl mb-12 drop-shadow-2xl`}>
-            Start Now
+        <div className="container mx-auto px-4 relative z-10 max-w-2xl">
+          <motion.h2 variants={fadeUp} className={`${sectionTitle} text-center`}>
+            Automate My Strategy — Start Here
           </motion.h2>
-          <motion.p variants={fadeUp} className={`${bodyMuted} text-2xl md:text-3xl mb-16 font-light max-w-2xl mx-auto`}>
-            Build your automated trading system in the next 72 hours.
+          <motion.p variants={fadeUp} className={`${bodyMuted} text-center text-lg mb-12`}>
+            Fill in your details and our team will reach out within 24 hours.
           </motion.p>
-          <motion.div
-            variants={fadeUp}
-            className="flex flex-col sm:flex-row gap-6 justify-center items-center"
-          >
-            <Button
-              onClick={() => setIsEnquiryModalOpen(true)}
-              className="bg-teal-500 hover:bg-teal-400 text-black font-bold text-xl px-12 py-8 rounded-2xl shadow-[0_0_40px_rgba(20,184,166,0.3)] transition-all duration-300 hover:-translate-y-1 w-full sm:w-auto"
+
+          {isInlineSubmitSuccess ? (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="flex flex-col items-center justify-center py-16 text-center gap-6"
             >
-              Get Started Now
-            </Button>
-            <Button
-              onClick={() => setIsEnquiryModalOpen(true)}
-              variant="outline"
-              className="bg-black/50 backdrop-blur-md border border-zinc-700 hover:border-teal-500/50 hover:bg-teal-500/10 text-white font-bold text-xl px-12 py-8 rounded-2xl transition-all duration-300 hover:-translate-y-1 w-full sm:w-auto"
+              <div className="w-20 h-20 rounded-full bg-teal-500/15 flex items-center justify-center">
+                <CheckCircle2 className="w-10 h-10 text-teal-400" />
+              </div>
+              <div>
+                <p className="text-2xl font-black text-white mb-2">Request Submitted!</p>
+                <p className="text-zinc-400 font-light">Our partnerships team will reach out to you shortly.</p>
+              </div>
+            </motion.div>
+          ) : (
+            <motion.form
+              variants={fadeUp}
+              className="space-y-5 bg-white/[0.02] backdrop-blur-xl border border-white/[0.06] rounded-3xl p-8 md:p-10"
+              onSubmit={inlineHandleSubmit(handleInlineFormSubmit)}
             >
-              Talk to Our Team
-            </Button>
-          </motion.div>
-          <motion.p variants={fadeUp} className="text-zinc-500 text-xs mt-6 text-center w-full">
-            No advisory. No strategy. Pure technology platform.
-          </motion.p>
+              <div className="grid md:grid-cols-2 gap-5">
+                <div className="space-y-2">
+                  <Label htmlFor="inline-name" className="text-zinc-300 font-medium text-sm">
+                    Full Name <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="inline-name"
+                    type="text"
+                    placeholder="John Doe"
+                    {...inlineRegister("name", { required: "Full name is required" })}
+                    className={`bg-black border-zinc-800 text-white placeholder:text-zinc-600 focus:border-teal-500 focus:ring-teal-500/20 transition-all ${inlineErrors.name ? "border-red-500" : ""}`}
+                  />
+                  {inlineErrors.name && <p className="text-red-500 text-xs">{inlineErrors.name.message}</p>}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="inline-email" className="text-zinc-300 font-medium text-sm">
+                    Email Address <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="inline-email"
+                    type="email"
+                    placeholder="john@example.com"
+                    {...inlineRegister("email", {
+                      required: "Email is required",
+                      pattern: { value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i, message: "Invalid email address" },
+                    })}
+                    className={`bg-black border-zinc-800 text-white placeholder:text-zinc-600 focus:border-teal-500 focus:ring-teal-500/20 transition-all ${inlineErrors.email ? "border-red-500" : ""}`}
+                  />
+                  {inlineErrors.email && <p className="text-red-500 text-xs">{inlineErrors.email.message}</p>}
+                </div>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-5">
+                <div className="space-y-2">
+                  <Label htmlFor="inline-phone" className="text-zinc-300 font-medium text-sm">
+                    Phone Number <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="inline-phone"
+                    type="tel"
+                    placeholder="+1 234 567 8900"
+                    {...inlineRegister("phone", {
+                      required: "Phone number is required",
+                      pattern: { value: /^\+?[0-9\s-]+$/, message: "Please enter a valid phone number" },
+                    })}
+                    className={`bg-black border-zinc-800 text-white placeholder:text-zinc-600 focus:border-teal-500 focus:ring-teal-500/20 transition-all ${inlineErrors.phone ? "border-red-500" : ""}`}
+                  />
+                  {inlineErrors.phone && <p className="text-red-500 text-xs">{inlineErrors.phone.message}</p>}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="inline-plan" className="text-zinc-300 font-medium text-sm">
+                    Interested Plan <span className="text-red-500">*</span>
+                  </Label>
+                  <Controller
+                    name="plan"
+                    control={inlineControl}
+                    rules={{ required: "Please select a plan" }}
+                    render={({ field }) => (
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <SelectTrigger
+                          className={`bg-black border-zinc-800 text-white focus:border-teal-500 focus:ring-teal-500/20 ${inlineErrors.plan ? "border-red-500" : ""}`}
+                        >
+                          <SelectValue placeholder="Select a plan" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-zinc-950 border-zinc-800 text-white">
+                          {PRICING_PLANS.map((plan) => (
+                            <SelectItem key={plan.id} value={plan.id} className="focus:bg-teal-500/20 focus:text-teal-400">
+                              {plan.name} - ${plan.price}/mo
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                  {inlineErrors.plan && <p className="text-red-500 text-xs">{inlineErrors.plan.message}</p>}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="inline-message" className="text-zinc-300 font-medium text-sm">
+                  Briefly describe your strategy{" "}
+                  <span className="text-red-500">*</span>
+                  <span className="ml-2 text-[10px] text-zinc-500 font-normal">(Max 20 words)</span>
+                </Label>
+                <Textarea
+                  id="inline-message"
+                  placeholder="e.g. RSI crossover on Nifty futures, buy signal when RSI crosses 30..."
+                  rows={3}
+                  {...inlineRegister("message", {
+                    required: "Please describe your strategy",
+                    validate: (value) => {
+                      const words = value.trim().split(/\s+/).filter((w) => w.length > 0);
+                      return words.length <= 20 || `Maximum 20 words allowed (current: ${words.length})`;
+                    },
+                  })}
+                  className={`bg-black border-zinc-800 text-white placeholder:text-zinc-600 focus:border-teal-500 focus:ring-teal-500/20 transition-all resize-none ${inlineErrors.message ? "border-red-500" : ""}`}
+                />
+                {inlineErrors.message && <p className="text-red-500 text-xs">{inlineErrors.message.message}</p>}
+              </div>
+
+              <Button
+                type="submit"
+                disabled={isInlineSubmitting}
+                className="w-full bg-teal-500 hover:bg-teal-400 text-black font-bold text-lg py-6 rounded-2xl shadow-[0_0_30px_rgba(20,184,166,0.2)] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isInlineSubmitting ? "Submitting..." : "Submit — Get My Strategy Automated"}
+              </Button>
+
+              <p className="text-zinc-600 text-xs text-center leading-relaxed pt-2">
+                TradingSmart.ai is a technology platform only — not a SEBI-registered adviser. We do not provide investment advice or execute trades. All decisions remain with the user.
+              </p>
+            </motion.form>
+          )}
         </div>
       </motion.section>
 

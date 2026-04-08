@@ -219,8 +219,8 @@ const App = () => (
           <AffiliateIpAttributionSync />
           <div className="min-h-screen bg-background text-foreground">
             <Routes>
-              <Route path="/" element={<MainLandingPage />} />
-              <Route path="/new" element={<LandingPageNew />} />
+              <Route path="/" element={<LandingPageNew />} />
+              <Route path="/classic" element={<MainLandingPage />} />
               <Route path="/rsb-fintech-founder" element={<LandingPage />} />
               <Route path="/dsn-fintech-founder" element={<LandingPage />} />
               <Route path="/white-label" element={<WhiteLabelPage />} />
