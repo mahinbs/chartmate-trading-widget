@@ -496,11 +496,26 @@ export function PaperTradeSetupDialog({
       if (!session?.user?.id) throw new Error("Not authenticated");
 
       const symUpperCheck = sym.toUpperCase();
-      let exchange = String(
-        (positionConfig?.exchange ?? symbolData?.exchange ?? "NSE"),
-      ).toUpperCase();
+      // Derive exchange: prefer position_config override, then symbolData from Yahoo search,
+      // then infer from symbol suffix. Default to "NSE" only for unambiguous Indian symbols.
+      const rawExchange = String(positionConfig?.exchange ?? symbolData?.exchange ?? "").toUpperCase();
+      let exchange: string;
       if (symUpperCheck.includes("-USD") || symUpperCheck.includes("-USDT")) {
         exchange = "CRYPTO";
+      } else if (symUpperCheck.endsWith(".NS") || rawExchange === "NSE") {
+        exchange = "NSE";
+      } else if (symUpperCheck.endsWith(".BO") || rawExchange === "BSE") {
+        exchange = "BSE";
+      } else if (rawExchange) {
+        // Keep whatever Yahoo returned (NMS, NYQ, LSE, etc.) — signalSymbolForScan
+        // will leave the symbol untouched for non-NSE/BSE exchanges.
+        exchange = rawExchange;
+      } else if (/^[A-Z]{6,}$/.test(symUpperCheck)) {
+        // Long all-alpha ticker with no clue → assume Indian
+        exchange = "NSE";
+      } else {
+        // Short ticker (AAPL, TSLA, BP.L already has suffix) → global/US
+        exchange = "GLOBAL";
       }
       let product = String(
         (positionConfig?.orderProduct ?? (selectedStrategy.is_intraday ? "MIS" : "CNC")),
@@ -709,7 +724,7 @@ export function PaperTradeSetupDialog({
                   value={symbolValue}
                   onValueChange={setSymbolValue}
                   onSelectSymbol={setSymbolData}
-                  placeholder="Search symbol (NSE, BSE, crypto, forex)"
+                  placeholder="Search symbol (NYSE, LSE, NSE, BSE, crypto, forex)"
                 />
               )}
             </div>

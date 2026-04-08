@@ -20,20 +20,17 @@ Deno.serve(async (req)=>{
       });
     }
     console.log(`Searching for symbols: "${q}"`);
-    // Search both US and Indian markets for comprehensive results
-    const searchPromises = [
-      fetchYahooSearch(q, 'US'),
-      fetchYahooSearch(q, 'IN')
-    ];
+    // Search all major regions: US (NYSE/NASDAQ), IN (NSE/BSE), GB (LSE/London), global fallback
+    const regions = ['US', 'IN', 'GB', 'global'];
+    const searchPromises = regions.map((r) => fetchYahooSearch(q, r));
     const results = await Promise.allSettled(searchPromises);
     let allSymbols = [];
-    // Merge results from both regions
     results.forEach((result, index)=>{
       if (result.status === 'fulfilled' && result.value) {
-        console.log(`Region ${index === 0 ? 'US' : 'IN'} returned ${result.value.length} results`);
+        console.log(`Region ${regions[index]} returned ${result.value.length} results`);
         allSymbols = allSymbols.concat(result.value);
       } else {
-        console.warn(`Region ${index === 0 ? 'US' : 'IN'} search failed:`, result.status === 'rejected' ? result.reason : 'No data');
+        console.warn(`Region ${regions[index]} search failed:`, result.status === 'rejected' ? result.reason : 'No data');
       }
     });
     // Remove duplicates based on symbol
@@ -49,7 +46,7 @@ Deno.serve(async (req)=>{
       return bScore - aScore;
     });
     console.log(`Returning ${uniqueSymbols.length} unique symbols`);
-    return new Response(JSON.stringify(uniqueSymbols.slice(0, 20)), {
+    return new Response(JSON.stringify(uniqueSymbols.slice(0, 30)), {
       headers: {
         ...corsHeaders,
         'Content-Type': 'application/json'
@@ -71,7 +68,11 @@ Deno.serve(async (req)=>{
 });
 async function fetchYahooSearch(query, region = 'US') {
   try {
-    const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&lang=en-${region}&region=${region}&quotesCount=15&newsCount=0&listsCount=0&enableFuzzyQuery=false&quotesQueryId=tss_match_phrase_query&multiQuoteQueryId=multi_quote_single_token_query&enableCb=true&enableNavLinks=true&enableEnhancedTrivialQuery=true`;
+    // 'global' = no region filter → Yahoo returns results from all exchanges worldwide
+    const regionParams = region === 'global'
+      ? ''
+      : `&lang=en-${region}&region=${region}`;
+    const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}${regionParams}&quotesCount=15&newsCount=0&listsCount=0&enableFuzzyQuery=false&quotesQueryId=tss_match_phrase_query&multiQuoteQueryId=multi_quote_single_token_query&enableCb=true&enableNavLinks=true&enableEnhancedTrivialQuery=true`;
     const response = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'

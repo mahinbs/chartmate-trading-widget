@@ -57,6 +57,7 @@ import TradingBacktestPage from "./pages/TradingBacktestPage";
 import WlCheckoutPage from "./pages/WlCheckoutPage";
 import AlgoOnboardingPage from "./pages/AlgoOnboardingPage";
 import StrategiesPage from "./pages/StrategiesPage";
+import OptionsStrategyPage from "./pages/OptionsStrategyPage";
 import NewsPage from "./pages/NewsPage";
 import NewsDetailPage from "./pages/NewsDetailPage";
 import TickChart from "./pages/TickChart";
@@ -120,6 +121,7 @@ function isLoggedInAppPath(pathname: string): boolean {
     "/ai-trading-analysis",
     "/backtest",
     "/strategies",
+    "/options-strategies",
     "/broker-callback",
     "/affiliate/dashboard",
     "/algo-setup",
@@ -253,6 +255,14 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <StrategiesPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/options-strategies"
+                element={
+                  <ProtectedRoute>
+                    <OptionsStrategyPage />
                   </ProtectedRoute>
                 }
               />

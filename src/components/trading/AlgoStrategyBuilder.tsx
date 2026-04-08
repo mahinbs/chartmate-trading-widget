@@ -86,14 +86,30 @@ type Direction     = "LONG" | "SHORT" | "BOTH";
 type ExpiryType    = "weekly" | "monthly";
 type StrikeType    = "ATM" | "ITM_1" | "ITM_2" | "OTM_1" | "OTM_2";
 
+const GLOBAL_STOCK_EXCHANGES = [
+  { id: "LSE", label: "LSE (London)" },
+  { id: "LON", label: "LSE / LON" },
+  { id: "NYSE", label: "NYSE" },
+  { id: "NASDAQ", label: "NASDAQ" },
+  { id: "AMEX", label: "NYSE American" },
+  { id: "ARCA", label: "NYSE Arca" },
+  { id: "NSE", label: "NSE (India)" },
+  { id: "BSE", label: "BSE (India)" },
+] as const;
+
 type BuilderForm = {
   // Step 1
   name: string;
   description: string;
   strategyType: StrategyType;
   instrumentType: InstrumentType;
+  /** Single-exchange deploy default; when globalMarketsMode, first allowed exchange is used until deploy */
   exchange: string;
   orderProduct: OrderProduct;
+  /** London / New York multi-exchange + session venues (one place with preset SMC) */
+  globalMarketsMode: boolean;
+  allowedExchanges: string[];
+  sessionVenues: ("london" | "new_york")[];
   direction: Direction;
   // Step 2
   symbol: string;
@@ -198,6 +214,9 @@ const DEFAULT_FORM: BuilderForm = {
   exchange: "NSE",
   orderProduct: "MIS",
   direction: "LONG",
+  globalMarketsMode: false,
+  allowedExchanges: ["LSE", "NYSE", "NASDAQ"],
+  sessionVenues: ["london", "new_york"],
   symbol: "",
   lotSize: 0,
   expiryType: "weekly",
@@ -244,8 +263,22 @@ function fromExisting(e?: BuilderStrategy | null): BuilderForm {
   const rc = e.risk_config ?? null;
   const cc = e.chart_config ?? null;
 
-  const mt = String(e.market_type ?? "equity");
-  const instrumentType: InstrumentType = (["equity", "futures", "options", "indices"].includes(mt) ? mt : "equity") as InstrumentType;
+  const mtRaw = String(e.market_type ?? "equity");
+  const isGlobalEquity = mtRaw === "global_equity";
+  const instrumentType: InstrumentType = (
+    mtRaw === "global_equity"
+      ? "equity"
+      : (["equity", "futures", "options", "indices"].includes(mtRaw) ? mtRaw : "equity")
+  ) as InstrumentType;
+  const presetId = (ec as { algoGuidePreset?: string })?.algoGuidePreset;
+  const rcEx = Array.isArray((rc as RiskConfig)?.allowedExchanges) ? (rc as RiskConfig).allowedExchanges as string[] : null;
+  const rcVenues = Array.isArray((rc as RiskConfig)?.sessionVenues)
+    ? ((rc as RiskConfig).sessionVenues as string[]).filter((v): v is "london" | "new_york" => v === "london" || v === "new_york")
+    : null;
+  const globalMarketsMode =
+    isGlobalEquity ||
+    presetId === "smc_mtf_confluence" ||
+    (rcEx != null && rcEx.length > 0);
 
   const sub = ec.strategySubtype;
   const strategyType: StrategyType =
@@ -275,8 +308,15 @@ function fromExisting(e?: BuilderStrategy | null): BuilderForm {
     description: e.description ?? "",
     strategyType,
     instrumentType,
-    exchange: (pc as PositionConfig)?.exchange ?? "NSE",
+    exchange: (() => {
+      const ex = (pc as PositionConfig)?.exchange ?? "NSE";
+      if (globalMarketsMode && rcEx?.length) return rcEx[0];
+      return ex;
+    })(),
     orderProduct: ((pc as PositionConfig)?.orderProduct as OrderProduct) ?? ((e.is_intraday ? "MIS" : "CNC") as OrderProduct),
+    globalMarketsMode,
+    allowedExchanges: rcEx?.length ? [...rcEx] : ["LSE", "NYSE", "NASDAQ"],
+    sessionVenues: rcVenues?.length ? rcVenues : ["london", "new_york"],
     direction: e.trading_mode as Direction ?? "LONG",
     symbol: (() => {
       if (!Array.isArray(e.symbols) || e.symbols.length === 0) return "";
@@ -601,7 +641,7 @@ export default function AlgoStrategyBuilder({ open, onOpenChange, existing, onSa
         take_profit_pct: form.autoExitEnabled && form.takeProfitPct > 0 ? form.takeProfitPct : null,
         symbols: [...new Set(form.symbol.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean))],
         paper_strategy_type: paperType,
-        market_type: form.instrumentType,
+        market_type: form.globalMarketsMode ? "global_equity" : form.instrumentType,
         entry_conditions: entryConditions,
         exit_conditions: exitPayload,
         position_config: {
@@ -613,7 +653,9 @@ export default function AlgoStrategyBuilder({ open, onOpenChange, existing, onSa
           scaling: [],
           expiryType: form.expiryType,
           strikeType: form.strikeType,
-          exchange: form.exchange,
+          exchange: form.globalMarketsMode
+            ? (form.allowedExchanges[0] ?? form.exchange ?? "NYSE")
+            : form.exchange,
           orderProduct: form.orderProduct,
         },
         risk_config: {
@@ -621,6 +663,14 @@ export default function AlgoStrategyBuilder({ open, onOpenChange, existing, onSa
           maxDailyLossPct: form.maxDailyLossPct,
           maxOpenPositions: form.maxOpenPositions,
           capitalAllocationPct: form.capitalAllocationPct,
+          ...(form.globalMarketsMode && form.allowedExchanges.length > 0
+            ? {
+                allowedExchanges: [...new Set(form.allowedExchanges.map((x) => x.trim().toUpperCase()).filter(Boolean))],
+                sessionVenues: form.sessionVenues.length
+                  ? form.sessionVenues
+                  : (["london", "new_york"] as const),
+              }
+            : {}),
         },
         chart_config: { interval: form.chartInterval, chartType: form.chartType },
         execution_days: form.executionDays,
@@ -777,6 +827,82 @@ export default function AlgoStrategyBuilder({ open, onOpenChange, existing, onSa
                     />
                   </Field>
                 </Row>
+
+                <Field label="London & New York — multi-exchange">
+                  <div className="flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-3">
+                    <Switch
+                      checked={form.globalMarketsMode}
+                      onCheckedChange={(v) => set("globalMarketsMode", Boolean(v))}
+                      className="mt-0.5"
+                    />
+                    <div className="space-y-1 min-w-0">
+                      <p className="text-sm font-medium text-zinc-200">Enable multiple stock exchanges + session filters</p>
+                      <p className="text-[11px] text-zinc-500 leading-relaxed">
+                        Turn this on for SMC and other strategies that trade across LSE / NYSE / NASDAQ etc., with London and New York cash session windows. One place — pick venues below; deploy still sets symbol per order.
+                      </p>
+                    </div>
+                  </div>
+                </Field>
+
+                {form.globalMarketsMode && (
+                  <>
+                    <SectionTitle>Stock exchanges</SectionTitle>
+                    <p className="text-xs text-zinc-500 -mt-2 mb-2 leading-relaxed">
+                      Select every exchange this strategy is allowed to use. At least one session (London or New York) should stay enabled below.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {GLOBAL_STOCK_EXCHANGES.map(({ id, label }) => (
+                        <label
+                          key={id}
+                          className="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900/60 px-3 py-2 text-xs text-zinc-300 cursor-pointer hover:border-zinc-600"
+                        >
+                          <Checkbox
+                            checked={form.allowedExchanges.includes(id)}
+                            onCheckedChange={(c) => {
+                              const on = c === true;
+                              set(
+                                "allowedExchanges",
+                                on
+                                  ? [...form.allowedExchanges, id]
+                                  : form.allowedExchanges.filter((x) => x !== id),
+                              );
+                            }}
+                          />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+                    <SectionTitle>Sessions (UTC)</SectionTitle>
+                    <div className="flex flex-wrap gap-6">
+                      <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+                        <Checkbox
+                          checked={form.sessionVenues.includes("london")}
+                          onCheckedChange={(c) => {
+                            const on = c === true;
+                            const next = on
+                              ? Array.from(new Set([...form.sessionVenues, "london"]))
+                              : form.sessionVenues.filter((v) => v !== "london");
+                            set("sessionVenues", next.length ? next : ["new_york"]);
+                          }}
+                        />
+                        London stock session
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+                        <Checkbox
+                          checked={form.sessionVenues.includes("new_york")}
+                          onCheckedChange={(c) => {
+                            const on = c === true;
+                            const next = on
+                              ? Array.from(new Set([...form.sessionVenues, "new_york"]))
+                              : form.sessionVenues.filter((v) => v !== "new_york");
+                            set("sessionVenues", next.length ? next : ["london"]);
+                          }}
+                        />
+                        New York stock session
+                      </label>
+                    </div>
+                  </>
+                )}
 
                 {(form.instrumentType === "futures" || form.instrumentType === "options") && (
                   <>

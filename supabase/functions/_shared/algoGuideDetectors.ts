@@ -1,6 +1,6 @@
 /**
  * Algo-guide style presets (ORB, Supertrend 7/3, VWAP bounce, RSI divergence,
- * Liquidity Sweep + Break of Structure).
+ * Liquidity Sweep + Break of Structure, SMC Multi-Timeframe Confluence).
  * Session windows use `MarketSessionProfile` (India / US / crypto / forex).
  */
 
@@ -11,7 +11,8 @@ export type AlgoGuidePresetId =
   | "supertrend_7_3"
   | "vwap_bounce"
   | "rsi_divergence"
-  | "liquidity_sweep_bos";
+  | "liquidity_sweep_bos"
+  | "smc_mtf_confluence";
 
 export function extractAlgoGuidePreset(entryConditions: unknown): AlgoGuidePresetId | null {
   if (!entryConditions || typeof entryConditions !== "object") return null;
@@ -21,7 +22,8 @@ export function extractAlgoGuidePreset(entryConditions: unknown): AlgoGuidePrese
     p === "supertrend_7_3" ||
     p === "vwap_bounce" ||
     p === "rsi_divergence" ||
-    p === "liquidity_sweep_bos"
+    p === "liquidity_sweep_bos" ||
+    p === "smc_mtf_confluence"
   ) {
     return p as AlgoGuidePresetId;
   }
@@ -744,6 +746,543 @@ export function detectLiquiditySweepBosHits(
   for (const hit of hits) {
     const prev = deduped.findLast((x) => x.side === hit.side);
     if (!prev || hit.i - prev.i > 10) deduped.push(hit);
+  }
+  return deduped;
+}
+
+// =============================================================================
+// PRESET: SMC Multi-Timeframe Confluence (Smart Money Concepts) — EXACT SPEC
+// =============================================================================
+//
+// Exact implementation matching the strategy document:
+//
+//   Step 1  → HTF bias from REAL 4H candles (Yahoo 1H bars → aggregated to 4H)
+//             Bullish = HH+HL structure. Bearish = LH+LL structure.
+//
+//   Step 2  → Key Zones from REAL 15M candles (Yahoo 15M direct):
+//             Demand zone  = base-candle + strong bullish impulse (15M)
+//             Supply zone  = base-candle + strong bearish impulse (15M)
+//             FVG (bullish) = candle[i-1].high < candle[i+1].low (gap unfilled)
+//             FVG (bearish) = candle[i-1].low  > candle[i+1].high (gap unfilled)
+//             Unfilled check: current 15M price has NOT re-entered the gap.
+//
+//   Step 3  → Liquidity Sweep (pre-condition) from REAL 1M candles (Yahoo 1M):
+//             Price wicks beyond swing high/low cluster (≤0.15%) then closes back.
+//             Sweep must occur BEFORE price reaches the HTF zone.
+//
+//   Step 4  → ChoCH from REAL 1M candles (ICT definition):
+//             After bearish leg to zone → price breaks above last bearish swing high (BUY)
+//             After bullish leg to zone → price breaks below last bullish swing low  (SELL)
+//             Confirmed by close, not just wick.
+//
+//   Step 5  → Mitigation entry from 1M candles:
+//             After ChoCH, price retraces back into demand/supply zone OR FVG.
+//             Entry = close of first 1M bar that re-enters the zone/FVG after ChoCH.
+//
+//   SL      → Below 15M demand zone low (BUY) / above 15M supply zone high (SELL).
+//             Pinned to the ACTUAL 15M zone extreme, not a %-guess.
+//
+//   TP      → Nearest swing high/low OR opposing liquidity level from 15M data.
+//
+//   BE rule → Stored in meta.breakevenLevel = entry ± (risk × 2).
+//             Execution engine uses this to move SL to entry when price reaches it.
+//
+//   Sessions→ London: 07:00–10:00 UTC  |  New York: 13:30–16:00 UTC  (exact open hours)
+//
+// Data sources (all via Yahoo Finance — free, no API key):
+//   htf1h   → Yahoo 1H bars (~730 days available) → aggregated every 4 bars = 4H
+//   slow15m → Yahoo 15M bars (60 days)
+//   fast1m  → Yahoo 1M bars (7 days)
+// =============================================================================
+
+export type SmcMtfMeta = {
+  htfBias: "bullish" | "bearish";
+  zoneHigh: number;
+  zoneLow: number;
+  zoneType: "demand" | "supply" | "fvg";
+  sweptLiquidityPrice: number;
+  sweepExtreme: number;
+  chochLevel: number;
+  mitigationEntryPrice: number;
+  /** SL pinned to real 15M zone extreme */
+  structureSl: number;
+  /** TP at nearest swing/liquidity from 15M data */
+  liquidityTp: number;
+  /** Trigger level: when price reaches this, move SL to entry (1:2 RR) */
+  breakevenLevel: number;
+  sessions: string[];
+};
+
+export type SmcFeeds = {
+  /** Real 1H candles for 4H bias (Yahoo 1H, aggregated every 4 bars internally) */
+  htf1h: { t: number[]; h: number[]; l: number[]; c: number[]; o: number[] };
+  /** Real 15M candles for zones + SL (Yahoo 15M) */
+  slow15m: { t: number[]; h: number[]; l: number[]; c: number[]; o: number[] };
+  /** Real 1M candles for ChoCH + mitigation entry (Yahoo 1M) */
+  fast1m: { t: number[]; h: number[]; l: number[]; c: number[]; o: number[] };
+};
+
+// ── Shared helpers ────────────────────────────────────────────────────────────
+
+/** Aggregate bars: combine every `n` consecutive bars into one wider candle */
+function smcAggregateBars(
+  t: number[], h: number[], l: number[], c: number[], o: number[], n: number,
+): { t: number[]; h: number[]; l: number[]; c: number[]; o: number[] } {
+  const out = { t: [] as number[], h: [] as number[], l: [] as number[], c: [] as number[], o: [] as number[] };
+  const len = c.length;
+  for (let i = 0; i + n <= len; i += n) {
+    out.t.push(t[i + n - 1]);
+    out.o.push(o[i]);
+    out.h.push(Math.max(...h.slice(i, i + n)));
+    out.l.push(Math.min(...l.slice(i, i + n)));
+    out.c.push(c[i + n - 1]);
+  }
+  return out;
+}
+
+/** Strict pivot swing highs/lows: bar i is a swing high if h[i] > all neighbours within window w */
+function smcSwingPoints(
+  h: number[], l: number[], w = 3,
+): { highs: number[]; lows: number[] } {
+  const highs: number[] = [];
+  const lows: number[] = [];
+  const n = h.length;
+  for (let i = w; i < n - w; i++) {
+    let isH = true, isL = true;
+    for (let j = i - w; j <= i + w; j++) {
+      if (j === i) continue;
+      if (h[j] >= h[i]) { isH = false; break; }
+    }
+    for (let j = i - w; j <= i + w; j++) {
+      if (j === i) continue;
+      if (l[j] <= l[i]) { isL = false; break; }
+    }
+    if (isH) highs.push(i);
+    if (isL) lows.push(i);
+  }
+  return { highs, lows };
+}
+
+/**
+ * HTF 4H Bias — exact ICT/SMC definition:
+ *   Bullish = sequence of Higher Highs AND Higher Lows (HH+HL)
+ *   Bearish = sequence of Lower Highs AND Lower Lows  (LH+LL)
+ *   We look at the last 3 confirmed swing points of each type.
+ */
+function smcHtfBias(
+  h4: number[], l4: number[], lookback = 20,
+): "bullish" | "bearish" | "neutral" {
+  const n = h4.length;
+  if (n < 8) return "neutral";
+  const start = Math.max(0, n - lookback);
+  const { highs, lows } = smcSwingPoints(h4.slice(start), l4.slice(start), 2);
+
+  if (highs.length >= 2 && lows.length >= 2) {
+    const hh = h4.slice(start);
+    const ll = l4.slice(start);
+    // Last two swing highs and lows
+    const sh1 = hh[highs[highs.length - 2]];
+    const sh2 = hh[highs[highs.length - 1]];
+    const sl1 = ll[lows[lows.length - 2]];
+    const sl2 = ll[lows[lows.length - 1]];
+    if (sh2 > sh1 && sl2 > sl1) return "bullish"; // HH + HL
+    if (sh2 < sh1 && sl2 < sl1) return "bearish"; // LH + LL
+  }
+
+  // Fallback: price is above/below midpoint of range
+  const slice = h4.slice(start).map((v, i) => (v + l4[start + i]) / 2);
+  const mid = Math.floor(slice.length / 2);
+  const avg1 = slice.slice(0, mid).reduce((a, b) => a + b, 0) / mid;
+  const avg2 = slice.slice(mid).reduce((a, b) => a + b, 0) / (slice.length - mid);
+  return avg2 > avg1 ? "bullish" : "bearish";
+}
+
+/** Zone type */
+type SmcZone = {
+  type: "demand" | "supply" | "fvg_bull" | "fvg_bear";
+  high: number;
+  low: number;
+  barIndex: number;
+};
+
+/**
+ * Find 15M zones (demand, supply, FVG) — exact SMC definitions:
+ *
+ * Demand zone:  base candle (body ≤ 40% of range) immediately followed by
+ *               strong bullish impulse (body ≥ 60% of range, close > open).
+ *               Zone = [base.low, base.high].
+ *
+ * Supply zone:  same but next candle is strong bearish impulse.
+ *               Zone = [base.low, base.high].
+ *
+ * Bullish FVG:  three-candle pattern where candle[i-1].high < candle[i+1].low.
+ *               Gap = [candle[i-1].high, candle[i+1].low].
+ *               Unfilled = current 15M price has NOT traded into the gap yet.
+ *
+ * Bearish FVG:  candle[i-1].low > candle[i+1].high.
+ *               Gap = [candle[i+1].high, candle[i-1].low].
+ *               Unfilled = price has NOT traded into gap yet.
+ */
+function smcFindZones15m(
+  h: number[], l: number[], c: number[], o: number[],
+  lookback = 60,
+): SmcZone[] {
+  const zones: SmcZone[] = [];
+  const n = c.length;
+  const start = Math.max(1, n - lookback);
+
+  for (let i = start; i < n - 1; i++) {
+    const bodySize = Math.abs(c[i] - o[i]);
+    const range = h[i] - l[i];
+
+    // ── Demand / Supply zone ──────────────────────────────────────────────────
+    if (range > 0 && bodySize / range <= 0.4) {
+      // Base candle detected
+      const nb = Math.abs(c[i + 1] - o[i + 1]);
+      const nr = h[i + 1] - l[i + 1];
+      if (nr > 0 && nb / nr >= 0.6) {
+        const bullishImpulse = c[i + 1] > o[i + 1];
+        zones.push({
+          type: bullishImpulse ? "demand" : "supply",
+          high: h[i],
+          low: l[i],
+          barIndex: i,
+        });
+      }
+    }
+
+    // ── FVG (3-candle gap) ────────────────────────────────────────────────────
+    if (i >= 1 && i + 1 < n) {
+      // Bullish FVG: gap between candle[i-1].high and candle[i+1].low
+      const bfgLow  = h[i - 1]; // bottom of the gap
+      const bfgHigh = l[i + 1]; // top of the gap
+      if (bfgHigh > bfgLow) {
+        // Unfilled: current price (last close) hasn't entered the gap from above
+        const currentC = c[n - 1];
+        const stillUnfilled = currentC > bfgLow; // price is still above gap bottom
+        if (stillUnfilled) {
+          zones.push({ type: "fvg_bull", high: bfgHigh, low: bfgLow, barIndex: i });
+        }
+      }
+      // Bearish FVG: gap between candle[i+1].high and candle[i-1].low
+      const bfgBearHigh = l[i - 1]; // top of the gap (a low)
+      const bfgBearLow  = h[i + 1]; // bottom of gap
+      if (bfgBearHigh > bfgBearLow) {
+        const currentC = c[n - 1];
+        const stillUnfilled = currentC < bfgBearHigh;
+        if (stillUnfilled) {
+          zones.push({ type: "fvg_bear", high: bfgBearHigh, low: bfgBearLow, barIndex: i });
+        }
+      }
+    }
+  }
+  return zones;
+}
+
+/**
+ * Liquidity Sweep on 1M bars — exact SMC definition:
+ *   Equal highs/lows = two or more swing highs/lows within 0.15% of each other (liquidity cluster).
+ *   Sweep = 1M candle wicks BEYOND the cluster level by ≥ 0.1%, then CLOSES back on the other side.
+ *   For BUY setup: sweep of lows (sell-side liquidity taken, bearish wick, bullish close).
+ *   For SELL setup: sweep of highs (buy-side liquidity taken, bullish wick, bearish close).
+ */
+function smcLiquiditySweep1m(
+  h1m: number[], l1m: number[], c1m: number[],
+  side: "BUY" | "SELL",
+  startBar: number, endBar: number,
+): { sweptPrice: number; sweepExtreme: number; sweepBar: number } | null {
+  if (endBar <= startBar + 2) return null;
+
+  // Build list of swing lows (BUY) or swing highs (SELL) in the search window
+  const { highs, lows } = smcSwingPoints(
+    h1m.slice(startBar, endBar),
+    l1m.slice(startBar, endBar),
+    2,
+  );
+
+  const pivotIdxs = side === "BUY" ? lows : highs;
+  const pivotPrices = pivotIdxs.map((i) =>
+    side === "BUY" ? l1m[startBar + i] : h1m[startBar + i],
+  );
+
+  // Find equal levels (clusters within 0.15%)
+  let clusterPrice: number | null = null;
+  outer: for (let a = 0; a < pivotPrices.length - 1; a++) {
+    for (let b = a + 1; b < pivotPrices.length; b++) {
+      const mid = (pivotPrices[a] + pivotPrices[b]) / 2;
+      if (mid > 0 && Math.abs(pivotPrices[a] - pivotPrices[b]) / mid < 0.0015) {
+        clusterPrice = mid;
+        break outer;
+      }
+    }
+  }
+  // Fallback: use the most recent swing point as a single level
+  if (clusterPrice === null && pivotPrices.length > 0) {
+    clusterPrice = pivotPrices[pivotPrices.length - 1];
+  }
+  if (clusterPrice === null) return null;
+
+  // Find the sweep candle in the window
+  for (let i = startBar; i < endBar; i++) {
+    if (side === "BUY") {
+      // Sweep of lows: wick breaks below cluster by ≥0.1%, close back ABOVE cluster
+      if (l1m[i] < clusterPrice * (1 - 0.001) && c1m[i] > clusterPrice) {
+        return { sweptPrice: clusterPrice, sweepExtreme: l1m[i], sweepBar: i };
+      }
+    } else {
+      // Sweep of highs: wick breaks above cluster by ≥0.1%, close back BELOW cluster
+      if (h1m[i] > clusterPrice * (1 + 0.001) && c1m[i] < clusterPrice) {
+        return { sweptPrice: clusterPrice, sweepExtreme: h1m[i], sweepBar: i };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * ICT ChoCH (Change of Character) on 1M bars — exact definition:
+ *
+ *   BUY ChoCH: In a bearish leg (sequence of Lower Lows), the last swing HIGH before
+ *              the most recent Low becomes the ChoCH level. When a 1M candle CLOSES
+ *              above that swing high → ChoCH confirmed. Structure changed from bearish to bullish.
+ *
+ *   SELL ChoCH: In a bullish leg (sequence of Higher Highs), the last swing LOW before
+ *               the most recent High becomes the ChoCH level. When a 1M candle CLOSES
+ *               below that swing low → ChoCH confirmed.
+ *
+ *   Key: it must be a CLOSE beyond the level, not just a wick.
+ */
+function smcChoch1m(
+  h1m: number[], l1m: number[], c1m: number[],
+  side: "BUY" | "SELL",
+  startBar: number, endBar: number,
+): { chochBar: number; chochLevel: number } | null {
+  if (endBar - startBar < 5) return null;
+  const hSlice = h1m.slice(startBar, endBar + 1);
+  const lSlice = l1m.slice(startBar, endBar + 1);
+
+  const { highs, lows } = smcSwingPoints(hSlice, lSlice, 2);
+
+  if (side === "BUY") {
+    // Need at least one confirmed swing high (the high of the bearish leg)
+    if (highs.length < 1) return null;
+    // The ChoCH level = the most recent swing HIGH within our search window
+    // (the last high that was made during the bearish move toward the zone)
+    const chochLevelLocal = highs[highs.length - 1];
+    const chochLevelAbs = startBar + chochLevelLocal;
+    const level = h1m[chochLevelAbs];
+    // Now find first 1M bar after that swing high where close > level
+    for (let i = chochLevelAbs + 1; i <= endBar && i < c1m.length; i++) {
+      if (c1m[i] > level) {
+        return { chochBar: i, chochLevel: level };
+      }
+    }
+  } else {
+    if (lows.length < 1) return null;
+    const chochLevelLocal = lows[lows.length - 1];
+    const chochLevelAbs = startBar + chochLevelLocal;
+    const level = l1m[chochLevelAbs];
+    for (let i = chochLevelAbs + 1; i <= endBar && i < c1m.length; i++) {
+      if (c1m[i] < level) {
+        return { chochBar: i, chochLevel: level };
+      }
+    }
+  }
+  return null;
+}
+
+/** London open = 08:00 UTC (BST/GMT); New York open = 13:30 UTC (EDT/EST) */
+function smcSession(tsSec: number): { inSession: boolean; sessions: string[] } {
+  const d = new Date(tsSec * 1000);
+  const minOfDay = d.getUTCHours() * 60 + d.getUTCMinutes();
+  const sessions: string[] = [];
+  // London Stock Exchange: 08:00–16:30 UTC (core active window for SMC 07:00–10:00)
+  if (minOfDay >= 7 * 60 && minOfDay < 10 * 60) sessions.push("london");
+  // New York Stock Exchange: 13:30–16:00 UTC (core NY cash session for SMC)
+  if (minOfDay >= 13 * 60 + 30 && minOfDay < 16 * 60) sessions.push("new_york");
+  return {
+    inSession: sessions.length > 0,
+    sessions,
+  };
+}
+
+/**
+ * Full SMC MTF Confluence detector — EXACT spec implementation.
+ *
+ * All 3 timeframes are REAL separate feeds from Yahoo Finance:
+ *   feeds.htf1h   — Yahoo 1H bars  → aggregated every 4 bars = real 4H candles
+ *   feeds.slow15m — Yahoo 15M bars → used directly for zones + SL
+ *   feeds.fast1m  — Yahoo 1M bars  → used directly for ChoCH + mitigation entry
+ *
+ * Trade flow:
+ *   1. Determine 4H bias (HH+HL = bullish, LH+LL = bearish)
+ *   2. Find 15M demand/supply zones and FVGs
+ *   3. On 1M: detect liquidity sweep before zone
+ *   4. On 1M: confirm ChoCH after sweep
+ *   5. On 1M: wait for mitigation (retrace into 15M zone/FVG)
+ *   6. Entry at close of mitigation candle
+ *   7. SL below 15M demand low (BUY) / above 15M supply high (SELL)
+ *   8. TP at nearest swing high/low or opposing liquidity from 15M
+ *   9. BE level stored in meta at 1:2 RR
+ *  10. Session gate: London (07:00–10:00 UTC) + New York (13:30–16:00 UTC) only
+ */
+export function detectSmcMtfConfluence(
+  feeds: SmcFeeds,
+): PresetHit[] {
+  const { htf1h, slow15m, fast1m } = feeds;
+
+  // ── Step 1: Real 4H bias (Yahoo 1H → aggregate every 4 bars = 4H) ────────
+  if (htf1h.c.length < 8) return [];
+  const htf4h = smcAggregateBars(htf1h.t, htf1h.h, htf1h.l, htf1h.c, htf1h.o, 4);
+  if (htf4h.c.length < 4) return [];
+  const htfBias = smcHtfBias(htf4h.h, htf4h.l, Math.min(htf4h.c.length, 20));
+  if (htfBias === "neutral") return [];
+
+  // ── Step 2: Real 15M zones (demand / supply / FVG) ───────────────────────
+  if (slow15m.c.length < 10) return [];
+  const allZones = smcFindZones15m(slow15m.h, slow15m.l, slow15m.c, slow15m.o, 60);
+  // Filter by bias: demand/fvg_bull for bullish, supply/fvg_bear for bearish
+  const zones = allZones.filter((z) =>
+    htfBias === "bullish"
+      ? z.type === "demand" || z.type === "fvg_bull"
+      : z.type === "supply" || z.type === "fvg_bear",
+  );
+  if (zones.length === 0) return [];
+
+  // ── Steps 3–9: Scan 1M bars for sweep → ChoCH → mitigation ──────────────
+  const n1m = fast1m.c.length;
+  if (n1m < 30) return [];
+
+  const hits: PresetHit[] = [];
+  const side: "BUY" | "SELL" = htfBias === "bullish" ? "BUY" : "SELL";
+  const n15m = slow15m.c.length;
+
+  for (let i = 20; i < n1m - 3; i++) {
+    // ── Session gate ──────────────────────────────────────────────────────
+    const { inSession, sessions } = smcSession(fast1m.t[i]);
+    if (!inSession) continue;
+
+    const currentPrice1m = fast1m.c[i];
+
+    // ── Find the corresponding 15M bar for this 1M timestamp ─────────────
+    // Match: find 15M bar whose timestamp is the closest <= fast1m.t[i]
+    let slowIdx = n15m - 1;
+    for (let si = 0; si < n15m; si++) {
+      if (slow15m.t[si] > fast1m.t[i]) { slowIdx = Math.max(0, si - 1); break; }
+    }
+
+    // ── Check if 1M price is near or inside a 15M zone ───────────────────
+    const zone = zones.find((z) => {
+      // "Near" = within 50% of zone range above/below the zone boundaries
+      const buf = Math.max((z.high - z.low) * 0.5, z.high * 0.002);
+      return side === "BUY"
+        ? currentPrice1m >= z.low - buf && currentPrice1m <= z.high + buf
+        : currentPrice1m <= z.high + buf && currentPrice1m >= z.low - buf;
+    });
+    if (!zone) continue;
+
+    // ── Step 3: Liquidity sweep on 1M — must precede zone touch ──────────
+    const sweepSearchStart = Math.max(0, i - 30);
+    const sweep = smcLiquiditySweep1m(
+      fast1m.h, fast1m.l, fast1m.c,
+      side,
+      sweepSearchStart, i,
+    );
+    if (!sweep) continue;
+    // Sweep must happen BEFORE price reaches the zone (sweep.sweepBar < zone touch)
+    if (sweep.sweepBar >= i) continue;
+
+    // ── Step 4: ChoCH on 1M after the sweep ──────────────────────────────
+    const chochEnd = Math.min(i + 5, n1m - 2);
+    const choch = smcChoch1m(
+      fast1m.h, fast1m.l, fast1m.c,
+      side,
+      sweep.sweepBar, chochEnd,
+    );
+    if (!choch) continue;
+
+    // ── Step 5: Mitigation — retrace into zone/FVG after ChoCH ───────────
+    let entryBar = -1;
+    for (let j = choch.chochBar + 1; j <= Math.min(choch.chochBar + 15, n1m - 2); j++) {
+      const touchesZone = side === "BUY"
+        ? fast1m.l[j] <= zone.high && fast1m.h[j] >= zone.low
+        : fast1m.h[j] >= zone.low  && fast1m.l[j] <= zone.high;
+      if (touchesZone) {
+        entryBar = j;
+        break;
+      }
+    }
+    if (entryBar < 0) continue;
+
+    // ── Entry price = close of the mitigation candle ──────────────────────
+    const entryPrice = fast1m.c[entryBar];
+
+    // ── Step 7: SL pinned to REAL 15M zone extreme ────────────────────────
+    // SL = below 15M demand zone LOW (BUY) or above 15M supply zone HIGH (SELL)
+    // Add 1 pip equivalent (0.01%) as buffer
+    const structureSl = side === "BUY"
+      ? zone.low  * (1 - 0.0001)
+      : zone.high * (1 + 0.0001);
+
+    // ── Step 8: TP at nearest opposing liquidity on 15M ──────────────────
+    const { highs: swH15, lows: swL15 } = smcSwingPoints(
+      slow15m.h.slice(0, slowIdx + 1),
+      slow15m.l.slice(0, slowIdx + 1),
+      3,
+    );
+    let liquidityTp: number;
+    if (side === "BUY") {
+      // TP = nearest swing HIGH above entry on 15M
+      const cands = swH15.map((si) => slow15m.h[si]).filter((p) => p > entryPrice);
+      liquidityTp = cands.length > 0
+        ? Math.min(...cands)   // nearest (lowest) swing high above entry
+        : entryPrice * 1.01;  // fallback 1%
+    } else {
+      // TP = nearest swing LOW below entry on 15M
+      const cands = swL15.map((si) => slow15m.l[si]).filter((p) => p < entryPrice);
+      liquidityTp = cands.length > 0
+        ? Math.max(...cands)  // nearest (highest) swing low below entry
+        : entryPrice * 0.99;
+    }
+
+    // ── Step 9: Breakeven at 1:2 RR ──────────────────────────────────────
+    const riskDist = Math.abs(entryPrice - structureSl);
+    const breakevenLevel = side === "BUY"
+      ? entryPrice + riskDist * 2
+      : entryPrice - riskDist * 2;
+
+    const meta: SmcMtfMeta = {
+      htfBias,
+      zoneHigh: zone.high,
+      zoneLow: zone.low,
+      zoneType: zone.type === "fvg_bull" ? "fvg"
+              : zone.type === "fvg_bear" ? "fvg"
+              : zone.type as "demand" | "supply",
+      sweptLiquidityPrice: sweep.sweptPrice,
+      sweepExtreme: sweep.sweepExtreme,
+      chochLevel: choch.chochLevel,
+      mitigationEntryPrice: entryPrice,
+      structureSl,
+      liquidityTp,
+      breakevenLevel,
+      sessions,
+    };
+
+    hits.push({
+      i: entryBar,
+      side,
+      meta: meta as unknown as PresetHit["meta"],
+    });
+
+    // Advance past this trade's zone to avoid duplicate signals in same zone
+    i = entryBar + 15;
+  }
+
+  // Deduplicate: keep latest hit per side per 20-bar window on 1M
+  const deduped: PresetHit[] = [];
+  for (const hit of hits) {
+    const prev = deduped.findLast((x) => x.side === hit.side);
+    if (!prev || hit.i - prev.i > 20) deduped.push(hit);
   }
   return deduped;
 }

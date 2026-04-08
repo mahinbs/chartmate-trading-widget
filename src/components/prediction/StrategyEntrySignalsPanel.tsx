@@ -2562,7 +2562,7 @@ export function StrategyEntrySignalsPanel({
           executionDays: Array.isArray(cs.execution_days)
             ? cs.execution_days
             : [],
-          marketType: cs.market_type ?? "stocks",
+          marketType: cs.market_type === "global_equity" ? "stocks" : (cs.market_type ?? "stocks"),
           startTime: cs.start_time ?? undefined,
           endTime: cs.end_time ?? undefined,
           squareoffTime: cs.squareoff_time ?? undefined,

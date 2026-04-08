@@ -91,6 +91,10 @@ export type RiskConfig = {
   maxDailyLossPct: number;
   maxOpenPositions: number;
   capitalAllocationPct: number;
+  /** Multi-exchange allowlist (e.g. LSE, NYSE, NASDAQ) for global / SMC strategies */
+  allowedExchanges?: string[];
+  /** Which session windows apply (London / New York UTC — matches engine gates) */
+  sessionVenues?: ("london" | "new_york")[];
 };
 
 export type ChartConfig = {
