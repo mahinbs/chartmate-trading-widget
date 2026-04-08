@@ -16,7 +16,7 @@ import { Button } from "../components/ui/button";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import heroVid from '../assets/landingpage/hero-vid.webm'
-import bgVid from '../assets/landingpage/bg.webm'
+import bgVid from '../assets/landingpage/bg.mp4'
 import chartsMockup from '../assets/landingpage/charts-mockup.png'
 
 gsap.registerPlugin(ScrollTrigger);
