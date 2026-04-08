@@ -13,7 +13,6 @@ import heroBg from "@/assets/premium_hero_bg.png";
 import { FaCheckCircle } from "react-icons/fa";
 import { Shield, Eye, Pause, Lock, LayoutGrid, Search, Calculator, Clock, HelpCircle } from "lucide-react";
 import { Button } from "../components/ui/button";
-import Hero3DCanvas from "../components/landingpage/mainlandingpage/Hero3DCanvas";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import heroVid from '../assets/landingpage/hero-vid.webm'
@@ -283,7 +282,6 @@ const LandingPageNew = () => {
           <source src={bgVid} type="video/webm" />
         </video>
 
-        <Hero3DCanvas />
         <div className="absolute inset-0 z-[1] pointer-events-none">
           <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black via-black/80 to-transparent z-10" />
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-teal-500/10 rounded-full blur-[120px] z-0" />
