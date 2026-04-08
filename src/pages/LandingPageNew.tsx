@@ -277,6 +277,8 @@ const LandingPageNew = () => {
           loop
           muted
           playsInline
+          disablePictureInPicture
+          onContextMenu={(e) => e.preventDefault()}
           className="absolute inset-0 w-full h-full object-cover z-0 opacity-60"
         >
           <source src={bgVid} type="video/webm" />
@@ -365,6 +367,8 @@ const LandingPageNew = () => {
                   loop
                   muted
                   playsInline
+                  disablePictureInPicture
+                  onContextMenu={(e) => e.preventDefault()}
                   className="w-full h-auto block"
                 >
                   <source src={heroVid} type="video/webm" />
