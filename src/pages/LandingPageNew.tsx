@@ -11,7 +11,7 @@ import { motion, Variants } from "framer-motion";
 import heroBg from "@/assets/premium_hero_bg.png";
 
 import { FaCheckCircle } from "react-icons/fa";
-import { Shield, Eye, Pause, Lock, LayoutGrid, Search, Calculator, Clock, HelpCircle } from "lucide-react";
+import { Shield, Eye, Pause, Lock, LayoutGrid, Search, Calculator, Clock, HelpCircle, UserPlus, Code2, Rocket, Link2, Lightbulb, Cpu, LineChart } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
@@ -304,13 +304,13 @@ const LandingPageNew = () => {
           </motion.div>
           <motion.h1
             variants={fadeUp}
-            className="text-3xl sm:text-4xl md:text-5xl lg:text-[9rem] font-black tracking-tight mb-8 leading-[1.1] text-white font-syne relative"
+            className="text-3xl sm:text-4xl md:text-5xl lg:text-[6rem] font-black tracking-tight mb-8 leading-[1.1] text-white font-syne relative"
           >
-            {"Supercharged".split(" ").map((word, i) => (
+            {["Stop manual trading."].map((word, i) => (
               <span key={`w1-${i}`} className="hero-word inline-block mr-[0.3em] opacity-0 translate-y-10">{word}</span>
             ))}
             <span key={'w2'} className="relative inline-block">
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary inline-block mr-[0.3em]">Supercharts</span>
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary inline-block mr-[0.3em]"> Automate your strategy in 72 hours.</span>
             </span>
           </motion.h1>
           {/* <motion.p
@@ -604,48 +604,78 @@ const LandingPageNew = () => {
         viewport={{ once: true, margin: "-80px" }}
         variants={staggerContainer}
         id="how-it-works"
-        className="py-24 bg-zinc-950 relative"
+        className="py-24 bg-zinc-950 relative overflow-hidden"
       >
         <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-teal-500/30 to-transparent" />
-        <div className="container mx-auto px-4 max-w-3xl">
-          <motion.h2
-            variants={fadeUp}
-            className={`${sectionTitle} text-center`}
-          >
-            How It Works
-          </motion.h2>
+        <div className="container mx-auto px-4 max-w-7xl relative z-10">
+          <div className="text-center mb-16 relative z-10">
+            <motion.h2 variants={fadeUp} className={`${sectionTitle}`}>
+              How It Works
+            </motion.h2>
+            <motion.p variants={fadeUp} className={`${bodyMuted} max-w-2xl mx-auto text-lg`}>
+              A seamless journey from strategy concept to fully automated execution.
+            </motion.p>
+          </div>
 
-          <div className="relative mt-16 pl-6 md:pl-0">
-            {/* Vertical Line */}
-            <div className="absolute left-[29px] md:left-1/2 top-0 bottom-0 w-px bg-zinc-800 md:-translate-x-1/2">
-              <div className="timeline-line absolute top-0 left-0 w-full h-full bg-teal-500 origin-top scale-y-0 shadow-[0_0_10px_rgba(20,184,166,0.5)]" />
-            </div>
-
-            <motion.div variants={staggerContainer} className="space-y-12">
+          <div className="flex flex-col gap-6 mt-20 relative z-10">
+            {/* Row 1: Steps 1-4 */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               {[
-                "Sign up on Trading Smart.ai",
-                "Connect your broker securely",
-                "Share your strategy idea",
-                "Our developers build your system",
-                "Strategy integrated within 72 hours",
-                "Backtest + analyze with AI",
-                "Go live with full control"
-              ].map((step, index) => (
-                <motion.div key={index} variants={fadeUp} className={`relative flex items-center md:justify-between ${index % 2 === 0 ? 'md:flex-row-reverse' : ''}`}>
-                  <div className="md:w-5/12 hidden md:block" />
-
-                  <div className="absolute left-[-29px] md:left-1/2 md:-translate-x-1/2 w-12 h-12 bg-black border border-white/[0.08] rounded-full flex items-center justify-center font-jetbrains text-teal-500 font-bold z-10 shadow-[0_0_20px_rgba(0,0,0,0.8)]">
-                    {index + 1}
-                  </div>
-
-                  <div className="w-full md:w-5/12 pl-12 md:pl-0">
-                    <div className="bg-white/[0.02] backdrop-blur-md border border-white/[0.05] p-6 rounded-2xl hover:border-teal-500/20 transition-colors">
-                      <p className="text-lg text-zinc-200 font-light">{step}</p>
+                { step: 1, text: "Sign up on TradingSmart.ai", icon: UserPlus },
+                { step: 2, text: "Connect your broker securely", icon: Link2 },
+                { step: 3, text: "Share your strategy idea", icon: Lightbulb },
+                { step: 4, text: "Our developers build your system", icon: Code2 },
+              ].map((item, idx) => (
+                <motion.div
+                  key={idx}
+                  variants={fadeUp}
+                  className={`${card} border-teal-500/5 hover:border-teal-500/20 group relative overflow-hidden py-8 px-6 flex flex-col items-start transition-all duration-500`}
+                >
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-teal-500/5 blur-2xl -mr-12 -mt-12 group-hover:opacity-100 transition-opacity opacity-0" />
+                  <div className="flex justify-between items-start w-full mb-6">
+                    <div className="w-12 h-12 flex items-center justify-center rounded-xl bg-teal-500/5 border border-teal-500/10 group-hover:scale-110 group-hover:bg-teal-500/10 transition-all">
+                      <item.icon className="w-6 h-6 text-teal-400" />
                     </div>
+                    <span className="text-4xl font-black text-white/5 font-syne group-hover:text-teal-500/10 transition-colors">{item.step}</span>
                   </div>
+                  <h3 className="text-lg font-bold text-white leading-tight">
+                    {item.text}
+                  </h3>
                 </motion.div>
               ))}
-            </motion.div>
+            </div>
+
+            {/* Row 2: Steps 5-7 */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {[
+                { step: 5, text: "Strategy integrated within 72 hours", icon: Cpu, highlight: true },
+                { step: 6, text: "Backtest + analyze with AI", icon: LineChart },
+                { step: 7, text: "Go live with full control", icon: Rocket },
+              ].map((item, idx) => (
+                <motion.div
+                  key={idx}
+                  variants={fadeUp}
+                  className={`${card} border-teal-500/5 hover:border-teal-500/20 group relative overflow-hidden py-10 px-8 flex flex-col items-start transition-all duration-500`}
+                >
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-teal-500/5 blur-3xl -mr-16 -mt-16 group-hover:opacity-100 transition-opacity opacity-0" />
+                  <div className="flex justify-between items-start w-full mb-8">
+                    <div className={`w-14 h-14 flex items-center justify-center rounded-2xl bg-teal-500/5 border border-teal-500/10 group-hover:scale-110 ${item.highlight ? 'bg-teal-500/10 border-teal-500/30' : ''} transition-all`}>
+                      <item.icon className="w-7 h-7 text-teal-400" />
+                    </div>
+                    <span className="text-6xl font-black text-white/5 font-syne group-hover:text-teal-500/10 transition-colors">{item.step}</span>
+                  </div>
+                  <h3 className={`text-xl font-bold text-white ${item.highlight ? 'text-teal-400' : ''}`}>
+                    {item.text}
+                  </h3>
+                  {item.step === 5 && (
+                    <div className="mt-4 flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse" />
+                      <span className="text-[10px] text-teal-500/80 font-bold tracking-widest uppercase">Fast Integration</span>
+                    </div>
+                  )}
+                </motion.div>
+              ))}
+            </div>
           </div>
         </div>
       </motion.section>
