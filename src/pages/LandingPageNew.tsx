@@ -402,7 +402,6 @@ const LandingPageNew = () => {
           <div className="text-center mb-16 relative z-10">
             <motion.h2 variants={fadeUp} className={`${sectionTitle} justify-center flex items-center gap-4 !mb-4`}>
               Charts that move markets
-              <HelpCircle className="w-8 h-8 text-zinc-600 cursor-help hover:text-teal-500 transition-colors" />
             </motion.h2>
             <motion.p variants={fadeUp} className={`${bodyMuted} max-w-3xl mx-auto text-lg md:text-xl`}>
               Whether you'd like to simply look up the latest stock price, or analyze price patterns with lengthy scripts — we got you covered.
