@@ -9,8 +9,9 @@ import { ChevronDown } from "lucide-react";
 
 const BASE_NAV_ITEMS = [
   { id: "affiliate-partner", label: "Affiliates", isRoute: true },
-  {id: "white-label", label: "White Label", isRoute: true },
+  { id: "white-label", label: "White Label", isRoute: true },
   { id: "pricing", label: "Software Pricing", isRoute: true },
+  { id: "contact-us", label: "Contact Us", isRoute: true },
 ];
 
 const FEATURE_ITEMS = [

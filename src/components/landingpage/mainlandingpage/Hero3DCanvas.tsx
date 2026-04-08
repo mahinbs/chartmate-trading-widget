@@ -18,10 +18,20 @@ const Hero3DCanvas: React.FC = () => {
       camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
       camera.position.z = 5;
 
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-      mountRef.current.appendChild(renderer.domElement);
+      try {
+        renderer = new THREE.WebGLRenderer({ 
+          antialias: true, 
+          alpha: true,
+          powerPreference: "high-performance",
+          failIfMajorPerformanceCaveat: false
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        mountRef.current.appendChild(renderer.domElement);
+      } catch (e) {
+        console.warn("WebGL could not be initialized in Hero3DCanvas:", e);
+        return;
+      }
 
       // 2. Particle Field (~1200 dots, rotating grid/mesh)
       const isMobile = window.innerWidth < 768;
@@ -148,7 +158,7 @@ const Hero3DCanvas: React.FC = () => {
     };
   }, []);
 
-  return <div ref={mountRef} className="absolute inset-0 z-0 pointer-events-none" />;
+  return <div ref={mountRef} className="absolute inset-0 z-10 pointer-events-none" />;
 };
 
 export default Hero3DCanvas;

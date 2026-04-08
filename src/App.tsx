@@ -67,6 +67,7 @@ import { useAffiliateRef } from "./hooks/useAffiliateRef";
 import { supabase } from "@/integrations/supabase/client";
 import { useLocation } from "react-router-dom";
 import { AlgoToolsDashboardLayout } from "./components/layout/AlgoToolsDashboardLayout";
+import LandingPageNew from "./pages/LandingPageNew";
 
 // OpenAlgo ping temporarily disabled in mock-order mode to avoid CORS noise
 
@@ -216,13 +217,14 @@ const App = () => (
           <AffiliateIpAttributionSync />
           <div className="min-h-screen bg-background text-foreground">
             <Routes>
+              <Route path="/" element={<MainLandingPage />} />
+              <Route path="/new" element={<LandingPageNew />} />
               <Route path="/rsb-fintech-founder" element={<LandingPage />} />
               <Route path="/dsn-fintech-founder" element={<LandingPage />} />
               <Route path="/white-label" element={<WhiteLabelPage />} />
               <Route path="/terms" element={<TermsOfService />} />
               <Route path="/risk-disclaimer" element={<RiskDisclaimer />} />
               <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-              <Route path="/" element={<MainLandingPage />} />
               <Route path="/ai-trading-analysis-and-back-testing" element={<AiTradingAnalysisPage />} />
               <Route path="/pricing" element={<PricingPage />} />
               <Route path="/ai-probability-engine" element={<AIPobabilityEnginePage />} />

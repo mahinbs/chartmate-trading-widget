@@ -21,10 +21,20 @@ const DepthChart3DCanvas = () => {
     camera.position.set(0, 8, 20);
     camera.lookAt(0, -2, -10);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: !IS_MOBILE });
-    renderer.setPixelRatio(PIXEL_RATIO);
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    mountRef.current.appendChild(renderer.domElement);
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ 
+        antialias: !IS_MOBILE,
+        powerPreference: "high-performance",
+        failIfMajorPerformanceCaveat: false 
+      });
+      renderer.setPixelRatio(PIXEL_RATIO);
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      mountRef.current.appendChild(renderer.domElement);
+    } catch (e) {
+      console.warn("WebGL could not be initialized in DepthChart3DCanvas:", e);
+      return;
+    }
 
     // Grid (XZ plane)
     const gridSize = 100;
@@ -155,7 +165,7 @@ const DepthChart3DCanvas = () => {
     };
   }, []);
 
-  return <div ref={mountRef} className="absolute inset-0 z-0 bg-[#000000] pointer-events-none" />;
+  return <div ref={mountRef} className="absolute inset-0 z-10 pointer-events-none" />;
 };
 
 export default DepthChart3DCanvas;

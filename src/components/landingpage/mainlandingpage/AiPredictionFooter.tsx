@@ -10,6 +10,7 @@ const BASE_NAV_ITEMS = [
   { id: "pricing", label: "Software Pricing", isRoute: true },
   { id: "white-label", label: "White Label", isRoute: true },
   { id: "terms", label: "Terms & Conditions", isRoute: true },
+  { id: "contact-us", label: "Contact Us", isRoute: true },
 ];
 
 const scrollToSection = (id: string) => {
@@ -35,7 +36,7 @@ const AiPredictionFooter: React.FC = () => {
     const loadFlags = async () => {
       try {
         const [{ count: blogCount }] = await Promise.all([
-          supabase.from('blogs').select('id', { head: true, count: 'exact' }),
+          (supabase as any).from('blogs').select('id', { head: true, count: 'exact' }),
           // supabase.from('public_dashboard_metrics').select('id', { head: true, count: 'exact' }),
         ]);
         setHasBlogs((blogCount ?? 0) > 0);

@@ -47,8 +47,8 @@ export function TradingSmartPricingMatrix() {
 
   return (
     <div className="container mx-auto px-4 max-w-6xl pb-8 relative">
-      <h2 className="font-bebas text-4xl md:text-5xl text-center text-white mb-6 md:mb-16">
-        PRICING
+      <h2 className="font-bebas text-4xl md:text-5xl lg:text-7xl text-center text-white mb-6 md:mb-16">
+        Pricing
       </h2>
       {/* Mobile scroll hint */}
       <p className="md:hidden text-center text-[11px] text-zinc-500 font-ibm-mono mb-4 animate-pulse">

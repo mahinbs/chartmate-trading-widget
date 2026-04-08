@@ -11,11 +11,14 @@ import { motion, Variants } from "framer-motion";
 import heroBg from "@/assets/premium_hero_bg.png";
 
 import { FaCheckCircle } from "react-icons/fa";
-import { Shield, Eye, Pause, Lock } from "lucide-react";
+import { Shield, Eye, Pause, Lock, LayoutGrid, Search, Calculator, Clock, HelpCircle } from "lucide-react";
 import { Button } from "../components/ui/button";
 import Hero3DCanvas from "../components/landingpage/mainlandingpage/Hero3DCanvas";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
+import heroVid from '../assets/landingpage/hero-vid.webm'
+import bgVid from '../assets/landingpage/bg.webm'
+import chartsMockup from '../assets/landingpage/charts-mockup.png'
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -58,7 +61,7 @@ const staggerContainer: Variants = {
   },
 };
 
-const MainLandingPage = () => {
+const LandingPageNew = () => {
   const { user, loading: authLoading } = useAuth();
   const { role, loading: roleLoading } = useUserRole();
   const { membership, loading: membershipLoading } = useMyTenantMembership(
@@ -124,7 +127,7 @@ const MainLandingPage = () => {
     let cursorY = 0;
     let animId: number;
     const isMobile = window.innerWidth < 768;
-    
+
     if (!isMobile) {
       const handleMouseMove = (e: MouseEvent) => {
         mouseX = e.clientX;
@@ -208,8 +211,8 @@ const MainLandingPage = () => {
             }),
           },
         ])
-        .then(() => {})
-        .catch(() => {});
+        .then(() => { })
+        .catch(() => { });
 
       const response = await fetch(
         "https://send-mail-redirect-boostmysites.vercel.app/send-email",
@@ -242,16 +245,16 @@ const MainLandingPage = () => {
   };
 
   const sectionTitle =
-    "text-3xl md:text-4xl font-black mb-8 text-white tracking-tight font-syne";
+    "text-3xl md:text-4xl lg:text-7xl !capitalize font-black mb-8 text-white tracking-tight font-syne";
   const bodyMuted = "text-zinc-400 font-light leading-relaxed font-dm-sans";
   const card =
     "bg-white/[0.03] backdrop-blur-xl border border-white/[0.06] border-t-teal-500/40 border-t p-8 md:p-10 rounded-3xl transition-all duration-300 hover:border-teal-500/30 hover:shadow-[0_0_40px_rgba(20,184,166,0.08)]";
 
   return (
     <div className="min-h-screen bg-black text-zinc-100 font-sans selection:bg-teal-500/30 selection:text-teal-100 overflow-x-hidden relative group">
-      <div 
-        ref={cursorRef} 
-        className="fixed top-0 left-0 w-5 h-5 bg-teal-500 rounded-full blur-[4px] pointer-events-none z-[9999] opacity-0 group-hover:opacity-60 transition-opacity duration-300 hidden md:block" 
+      <div
+        ref={cursorRef}
+        className="fixed top-0 left-0 w-5 h-5 bg-teal-500 rounded-full blur-[4px] pointer-events-none z-[9999] opacity-0 group-hover:opacity-60 transition-opacity duration-300 hidden md:block"
       />
       <Helmet>
         <title>
@@ -268,10 +271,20 @@ const MainLandingPage = () => {
       {/* Hero */}
       <section
         id="hero"
-        className="relative min-h-[100svh] flex items-center justify-center pt-28 pb-20 px-4 overflow-hidden bg-black"
+        className="relative min-h-[100svh] flex items-center justify-center pt-28 pb-20 px-4 overflow-hidden"
       >
+        <video
+          autoPlay
+          loop
+          muted
+          playsInline
+          className="absolute inset-0 w-full h-full object-cover z-0 opacity-60"
+        >
+          <source src={bgVid} type="video/webm" />
+        </video>
+
         <Hero3DCanvas />
-        <div className="absolute inset-0 z-0 pointer-events-none">
+        <div className="absolute inset-0 z-[1] pointer-events-none">
           <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black via-black/80 to-transparent z-10" />
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-teal-500/10 rounded-full blur-[120px] z-0" />
         </div>
@@ -280,33 +293,39 @@ const MainLandingPage = () => {
           initial="hidden"
           animate="visible"
           variants={staggerContainer}
-          className="container mx-auto z-20 text-center relative max-w-4xl"
+          className="container mx-auto z-20 text-center relative max-w-6xl pt-10 flex flex-col items-center"
         >
+          <motion.div
+            variants={fadeUp}
+            className="mb-8 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 backdrop-blur-md"
+          >
+            <span className="text-[10px] font-bold tracking-widest text-zinc-500 uppercase">What's New</span>
+            <div className="w-1 h-1 rounded-full bg-teal-500" />
+            <span className="text-xs text-zinc-300">Zagreb market now live</span>
+            <span className="text-zinc-500 text-xs ml-1">›</span>
+          </motion.div>
           <motion.h1
             variants={fadeUp}
-            className="text-3xl sm:text-4xl md:text-5xl lg:text-[3.5rem] font-black tracking-tight mb-8 leading-[1.1] text-white font-syne relative"
+            className="text-3xl sm:text-4xl md:text-5xl lg:text-[9rem] font-black tracking-tight mb-8 leading-[1.1] text-white font-syne relative"
           >
-            {"Launch Your Own Algo Trading System ".split(" ").map((word, i) => (
+            {"Supercharged".split(" ").map((word, i) => (
               <span key={`w1-${i}`} className="hero-word inline-block mr-[0.3em] opacity-0 translate-y-10">{word}</span>
             ))}
-            <span className="relative inline-block mt-2 sm:mt-0">
-              {"Without Coding".split(" ").map((word, i) => (
-                <span key={`w2-${i}`} className="hero-word inline-block mr-[0.3em] opacity-0 translate-y-10">{word}</span>
-              ))}
-              <span className="hero-underline absolute left-0 bottom-[-4px] h-[4px] bg-teal-500 w-[95%] origin-left scale-x-0" />
+            <span key={'w2'} className="relative inline-block">
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary inline-block mr-[0.3em]">Supercharts</span>
             </span>
           </motion.h1>
-          <motion.p
+          {/* <motion.p
             variants={fadeUp}
             className={`text-lg md:text-xl ${bodyMuted} max-w-3xl mx-auto mb-6`}
           >
             Build, backtest, and deploy trading strategies with AI — without
             writing a single line of code. Our developers build everything for
             you and integrate your strategy within 72 hours.
-          </motion.p>
+          </motion.p> */}
           <motion.p
             variants={fadeUp}
-            className={`text-sm md:text-base text-zinc-400 font-light max-w-2xl mx-auto mb-12 leading-relaxed`}
+            className={`text-sm md:text-base text-zinc-300 font-light max-w-2xl mx-auto mb-12 leading-relaxed`}
           >
             We are a technology platform that enables users to integrate and automate their own trading systems. We do not provide any trading strategies, investment advice, or recommendations.
           </motion.p>
@@ -329,9 +348,36 @@ const MainLandingPage = () => {
               Book Demo
             </Button>
           </motion.div>
-          <motion.p variants={fadeUp} className="text-zinc-500 text-xs mt-4">
+          <motion.p variants={fadeUp} className="text-zinc-300 text-xs mt-4">
             No advisory. No strategy. Pure technology platform.
           </motion.p>
+
+          <motion.div
+            variants={fadeUp}
+            className="mt-20 relative w-full max-w-5xl mx-auto"
+          >
+            {/* Extended glow effects behind video */}
+            <div className="absolute -top-32 -left-32 w-96 h-96 bg-primary/20 rounded-full blur-[120px] pointer-events-none opacity-50" />
+            <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-secondary/20 rounded-full blur-[120px] pointer-events-none opacity-50" />
+            
+            <div className="relative p-[2px] rounded-[2rem] bg-gradient-to-br from-primary via-primary/50 to-secondary shadow-[0_0_100px_rgba(20,184,166,0.15),0_0_50px_rgba(14,165,233,0.1)] transition-all duration-500 hover:shadow-[0_0_120px_rgba(20,184,166,0.2),0_0_70px_rgba(14,165,233,0.15)]">
+              <div className="relative rounded-[calc(2rem-1.5px)] overflow-hidden bg-zinc-950/40 backdrop-blur-md">
+                <video
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  className="w-full h-auto block"
+                >
+                  <source src={heroVid} type="video/webm" />
+                </video>
+                
+                {/* Mirroring reflections */}
+                <div className="absolute inset-0 bg-gradient-to-tr from-primary/5 via-transparent to-secondary/5 pointer-events-none" />
+                <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/30 to-transparent" />
+              </div>
+            </div>
+          </motion.div>
         </motion.div>
 
         <div className="absolute bottom-0 md:bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 opacity-60">
@@ -345,6 +391,99 @@ const MainLandingPage = () => {
           <span className="text-[10px] tracking-[0.2em] font-medium text-zinc-500 font-jetbrains">SCROLL</span>
         </div>
       </section>
+
+      {/* CHARTS THAT MOVE MARKETS */}
+      <motion.section
+        initial="hidden"
+        whileInView="visible"
+        viewport={{ once: true, margin: "-80px" }}
+        variants={staggerContainer}
+        className="py-24 bg-black relative overflow-hidden"
+      >
+        <div className="container mx-auto px-4 max-w-7xl relative z-10">
+          <div className="text-center mb-16 relative z-10">
+            <motion.h2 variants={fadeUp} className={`${sectionTitle} justify-center flex items-center gap-4 !mb-4`}>
+              Charts that move markets
+              <HelpCircle className="w-8 h-8 text-zinc-600 cursor-help hover:text-teal-500 transition-colors" />
+            </motion.h2>
+            <motion.p variants={fadeUp} className={`${bodyMuted} max-w-3xl mx-auto text-lg md:text-xl`}>
+              Whether you'd like to simply look up the latest stock price, or analyze price patterns with lengthy scripts — we got you covered.
+            </motion.p>
+          </div>
+
+          <motion.div
+            variants={fadeUp}
+            className="relative px-4 md:px-12 mb-20"
+          >
+            {/* Perspective Mockup Container */}
+            <div className="relative mx-auto max-w-5xl">
+              {/* Decorative backgrounds to simulate depth */}
+              <div className="absolute -left-10 top-1/2 -translate-y-1/2 w-full h-[80%] bg-zinc-900/50 rounded-2xl -rotate-2 scale-95 blur-sm border border-white/5 opacity-50 hidden md:block" />
+              <div className="absolute -right-10 top-1/2 -translate-y-1/2 w-full h-[80%] bg-zinc-900/50 rounded-2xl rotate-2 scale-95 blur-sm border border-white/5 opacity-50 hidden md:block" />
+
+              <div className="relative rounded-2xl overflow-hidden border border-white/10 shadow-[0_0_100px_rgba(0,0,0,0.8)] bg-zinc-950">
+                <img
+                  src={chartsMockup}
+                  alt="Multi-chart trading interface"
+                  className="w-full h-auto"
+                />
+                {/* Glossy overlay */}
+                <div className="absolute inset-0 bg-gradient-to-tr from-white/5 to-transparent pointer-events-none" />
+              </div>
+            </div>
+          </motion.div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-12 mt-20 relative z-10 px-4">
+            <motion.div variants={fadeUp} className="group">
+              <div className="w-12 h-12 mb-6 flex items-center justify-center rounded-xl bg-teal-500/5 border border-teal-500/10 group-hover:border-teal-500/30 transition-all">
+                <LayoutGrid className="w-6 h-6 text-teal-500" />
+              </div>
+              <h3 className="text-white font-bold text-lg mb-3 flex items-center gap-2">
+                Up to 16 charts per screen
+              </h3>
+              <p className="text-zinc-400 text-sm leading-relaxed font-light">
+                Plus synchronized symbols, timeframes, and even drawings.
+              </p>
+            </motion.div>
+
+            <motion.div variants={fadeUp} className="group">
+              <div className="w-12 h-12 mb-6 flex items-center justify-center rounded-xl bg-teal-500/5 border border-teal-500/10 group-hover:border-teal-500/30 transition-all">
+                <Search className="w-6 h-6 text-teal-500" />
+              </div>
+              <h3 className="text-white font-bold text-lg mb-3 flex items-center gap-2">
+                Command search
+              </h3>
+              <p className="text-zinc-400 text-sm leading-relaxed font-light">
+                Complete any action in seconds with the global command search.
+              </p>
+            </motion.div>
+
+            <motion.div variants={fadeUp} className="group">
+              <div className="w-12 h-12 mb-6 flex items-center justify-center rounded-xl bg-teal-500/5 border border-teal-500/10 group-hover:border-teal-500/30 transition-all">
+                <Calculator className="w-6 h-6 text-teal-500" />
+              </div>
+              <h3 className="text-white font-bold text-lg mb-3 flex items-center gap-2">
+                Spreads
+              </h3>
+              <p className="text-zinc-400 text-sm leading-relaxed font-light">
+                Create your own custom formulas using math operations.
+              </p>
+            </motion.div>
+
+            <motion.div variants={fadeUp} className="group">
+              <div className="w-12 h-12 mb-6 flex items-center justify-center rounded-xl bg-teal-500/5 border border-teal-500/10 group-hover:border-teal-500/30 transition-all">
+                <Clock className="w-6 h-6 text-teal-500" />
+              </div>
+              <h3 className="text-white font-bold text-lg mb-3 flex items-center gap-2">
+                Custom intervals
+              </h3>
+              <p className="text-zinc-400 text-sm leading-relaxed font-light">
+                Any possible interval, including seconds and range bars.
+              </p>
+            </motion.div>
+          </div>
+        </div>
+      </motion.section>
 
       {/* WHAT YOU GET */}
       <motion.section
@@ -361,13 +500,13 @@ const MainLandingPage = () => {
             variants={fadeUp}
             className={`${sectionTitle} text-center`}
           >
-            WHAT YOU GET
+            What You Get
           </motion.h2>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-16">
             <motion.div variants={fadeUp} className={`${card} md:col-span-2 flex flex-col justify-center`}>
               <h3 className="text-2xl md:text-3xl font-bold text-white mb-6 font-syne">
-                No-Code Algo Trading Integration<br/><span className="text-teal-500 text-xl font-normal">(Done For You)</span>
+                No-Code Algo Trading Integration<br /><span className="text-teal-500 text-xl font-normal">(Done For You)</span>
               </h3>
               <p className="text-zinc-300 mb-8 font-light text-lg">
                 Turn your idea into a fully automated trading system — built by
@@ -404,7 +543,7 @@ const MainLandingPage = () => {
 
             <motion.div variants={fadeUp} className={`${card} md:col-span-1 flex flex-col justify-center`}>
               <h3 className="text-xl md:text-2xl font-bold text-white mb-6 font-syne focus:outline-none">
-                AI Backtesting +<br/>Strategy Intelligence
+                AI Backtesting +<br />Strategy Intelligence
               </h3>
               <p className="text-zinc-400 mb-8 font-light text-sm">
                 Test, analyze, and refine before going live.
@@ -442,13 +581,13 @@ const MainLandingPage = () => {
           </div>
 
           <motion.div variants={fadeUp} className="flex flex-col sm:flex-row gap-4 mt-16 justify-center items-center">
-            <Link 
+            <Link
               to="/ai-probability-engine"
               className="px-8 py-4 bg-teal-500 text-black font-bold rounded-full hover:bg-teal-400 transition-all shadow-[0_0_20px_rgba(20,184,166,0.3)] hover:scale-105 active:scale-95 text-center min-w-[260px] font-syne"
             >
               AI Robot Trade
             </Link>
-            <Link 
+            <Link
               to="/ai-trading-analysis-and-back-testing"
               className="px-8 py-4 bg-transparent border border-teal-500/50 text-teal-400 font-bold rounded-full hover:bg-teal-500/10 transition-all hover:scale-105 active:scale-95 text-center min-w-[260px] font-syne"
             >
@@ -476,13 +615,13 @@ const MainLandingPage = () => {
             variants={fadeUp}
             className={`${sectionTitle} text-center`}
           >
-            HOW IT WORKS
+            How It Works
           </motion.h2>
-          
+
           <div className="relative mt-16 pl-6 md:pl-0">
             {/* Vertical Line */}
             <div className="absolute left-[29px] md:left-1/2 top-0 bottom-0 w-px bg-zinc-800 md:-translate-x-1/2">
-               <div className="timeline-line absolute top-0 left-0 w-full h-full bg-teal-500 origin-top scale-y-0 shadow-[0_0_10px_rgba(20,184,166,0.5)]" />
+              <div className="timeline-line absolute top-0 left-0 w-full h-full bg-teal-500 origin-top scale-y-0 shadow-[0_0_10px_rgba(20,184,166,0.5)]" />
             </div>
 
             <motion.div variants={staggerContainer} className="space-y-12">
@@ -496,17 +635,17 @@ const MainLandingPage = () => {
                 "Go live with full control"
               ].map((step, index) => (
                 <motion.div key={index} variants={fadeUp} className={`relative flex items-center md:justify-between ${index % 2 === 0 ? 'md:flex-row-reverse' : ''}`}>
-                   <div className="md:w-5/12 hidden md:block" />
-                   
-                   <div className="absolute left-[-29px] md:left-1/2 md:-translate-x-1/2 w-12 h-12 bg-black border border-white/[0.08] rounded-full flex items-center justify-center font-jetbrains text-teal-500 font-bold z-10 shadow-[0_0_20px_rgba(0,0,0,0.8)]">
-                     {index + 1}
-                   </div>
+                  <div className="md:w-5/12 hidden md:block" />
 
-                   <div className="w-full md:w-5/12 pl-12 md:pl-0">
-                     <div className="bg-white/[0.02] backdrop-blur-md border border-white/[0.05] p-6 rounded-2xl hover:border-teal-500/20 transition-colors">
-                       <p className="text-lg text-zinc-200 font-light">{step}</p>
-                     </div>
-                   </div>
+                  <div className="absolute left-[-29px] md:left-1/2 md:-translate-x-1/2 w-12 h-12 bg-black border border-white/[0.08] rounded-full flex items-center justify-center font-jetbrains text-teal-500 font-bold z-10 shadow-[0_0_20px_rgba(0,0,0,0.8)]">
+                    {index + 1}
+                  </div>
+
+                  <div className="w-full md:w-5/12 pl-12 md:pl-0">
+                    <div className="bg-white/[0.02] backdrop-blur-md border border-white/[0.05] p-6 rounded-2xl hover:border-teal-500/20 transition-colors">
+                      <p className="text-lg text-zinc-200 font-light">{step}</p>
+                    </div>
+                  </div>
                 </motion.div>
               ))}
             </motion.div>
@@ -527,12 +666,12 @@ const MainLandingPage = () => {
         <div className="container mx-auto px-4 max-w-6xl">
           <div className="flex flex-col md:flex-row gap-0 rounded-3xl overflow-hidden border border-white/[0.06] shadow-2xl relative">
             <div className="absolute inset-0 pointer-events-none">
-               <div className="absolute top-0 left-0 w-1/2 h-1/2 bg-teal-500/5 blur-[100px]" />
-               <div className="absolute bottom-0 right-0 w-1/2 h-1/2 bg-teal-500/5 blur-[100px]" />
+              <div className="absolute top-0 left-0 w-1/2 h-1/2 bg-teal-500/5 blur-[100px]" />
+              <div className="absolute bottom-0 right-0 w-1/2 h-1/2 bg-teal-500/5 blur-[100px]" />
             </div>
 
             <motion.div variants={fadeUp} className="flex-1 bg-white/[0.02] backdrop-blur-xl p-10 md:p-14 md:border-r border-white/[0.06] z-10 relative">
-              <h2 className={`${sectionTitle} text-left text-2xl md:text-3xl mb-10`}>WHY THIS IS DIFFERENT</h2>
+              <h2 className={`${sectionTitle} text-left text-2xl md:text-3xl mb-10`}>Why This Is Different</h2>
               <ul className="space-y-6 text-zinc-300 font-light list-none">
                 {[
                   "100% no coding required",
@@ -542,10 +681,10 @@ const MainLandingPage = () => {
                   "Works with your custom logic",
                   "Full control over your trading"
                 ].map((text, i) => (
-                  <motion.li 
-                    key={i} 
-                    initial={{ opacity: 0, x: -30 }} 
-                    whileInView={{ opacity: 1, x: 0 }} 
+                  <motion.li
+                    key={i}
+                    initial={{ opacity: 0, x: -30 }}
+                    whileInView={{ opacity: 1, x: 0 }}
                     transition={{ delay: i * 0.1, duration: 0.5 }}
                     viewport={{ once: true }}
                     className="flex gap-4 items-center"
@@ -558,7 +697,7 @@ const MainLandingPage = () => {
             </motion.div>
 
             <motion.div variants={fadeUp} className="flex-1 bg-white/[0.05] backdrop-blur-xl p-10 md:p-14 z-10 relative">
-              <h2 className={`${sectionTitle} text-left text-2xl md:text-3xl mb-10`}>WHO IS THIS FOR</h2>
+              <h2 className={`${sectionTitle} text-left text-2xl md:text-3xl mb-10`}>Who This Is For</h2>
               <ul className="space-y-6 text-zinc-300 font-light list-none">
                 {[
                   "Traders with ideas but no coding skills",
@@ -566,10 +705,10 @@ const MainLandingPage = () => {
                   "Advanced traders scaling multiple strategies",
                   "Anyone tired of manual execution"
                 ].map((text, i) => (
-                  <motion.li 
-                    key={i} 
-                    initial={{ opacity: 0, x: 30 }} 
-                    whileInView={{ opacity: 1, x: 0 }} 
+                  <motion.li
+                    key={i}
+                    initial={{ opacity: 0, x: 30 }}
+                    whileInView={{ opacity: 1, x: 0 }}
                     transition={{ delay: i * 0.1, duration: 0.5 }}
                     viewport={{ once: true }}
                     className="flex gap-4 items-center"
@@ -625,7 +764,7 @@ const MainLandingPage = () => {
             variants={fadeUp}
             className={`${sectionTitle} text-center`}
           >
-            SECURITY & CONTROL
+            Security & Control
           </motion.h2>
 
           <motion.div
@@ -671,7 +810,7 @@ const MainLandingPage = () => {
             variants={fadeUp}
             className={`${sectionTitle} text-center`}
           >
-            PLATFORM DISCLAIMER
+            Platform Disclaimer
           </motion.h2>
 
           <motion.div
@@ -683,28 +822,28 @@ const MainLandingPage = () => {
               <Shield className="w-10 h-10 text-teal-500 opacity-80" />
             </div>
             <div className="flex gap-4 items-start">
-               <span className="text-teal-500 font-bold shrink-0">{">"}</span>
-               <p className="leading-relaxed">This platform is a pure technology service provider offering software infrastructure and integration tools for users to deploy their own trading strategies.</p>
+              <span className="text-teal-500 font-bold shrink-0">{">"}</span>
+              <p className="leading-relaxed">This platform is a pure technology service provider offering software infrastructure and integration tools for users to deploy their own trading strategies.</p>
             </div>
             <div className="flex gap-4 items-start">
-               <span className="text-teal-500 font-bold shrink-0">{">"}</span>
-               <p className="leading-relaxed">We do not provide stock recommendations, trading strategies, investment advice, or portfolio management services.</p>
+              <span className="text-teal-500 font-bold shrink-0">{">"}</span>
+              <p className="leading-relaxed">We do not provide stock recommendations, trading strategies, investment advice, or portfolio management services.</p>
             </div>
             <div className="flex gap-4 items-start">
-               <span className="text-teal-500 font-bold shrink-0">{">"}</span>
-               <p className="leading-relaxed">All trading decisions, strategies, and executions are solely determined and controlled by the user.</p>
+              <span className="text-teal-500 font-bold shrink-0">{">"}</span>
+              <p className="leading-relaxed">All trading decisions, strategies, and executions are solely determined and controlled by the user.</p>
             </div>
             <div className="flex gap-4 items-start">
-               <span className="text-teal-500 font-bold shrink-0">{">"}</span>
-               <p className="leading-relaxed">We do not access, manage, or control user brokerage accounts, nor do we execute trades on behalf of users.</p>
+              <span className="text-teal-500 font-bold shrink-0">{">"}</span>
+              <p className="leading-relaxed">We do not access, manage, or control user brokerage accounts, nor do we execute trades on behalf of users.</p>
             </div>
             <div className="flex gap-4 items-start">
-               <span className="text-teal-500 font-bold shrink-0">{">"}</span>
-               <p className="leading-relaxed">Users are fully responsible for their financial decisions and outcomes.</p>
+              <span className="text-teal-500 font-bold shrink-0">{">"}</span>
+              <p className="leading-relaxed">Users are fully responsible for their financial decisions and outcomes.</p>
             </div>
             <div className="flex gap-4 items-start">
-               <span className="text-teal-500 font-bold shrink-0">{">"}</span>
-               <p className="leading-relaxed">This platform does not guarantee any profits or returns and is not affiliated with any regulatory advisory services under the Securities and Exchange Board of India (SEBI).</p>
+              <span className="text-teal-500 font-bold shrink-0">{">"}</span>
+              <p className="leading-relaxed">This platform does not guarantee any profits or returns and is not affiliated with any regulatory advisory services under the Securities and Exchange Board of India (SEBI).</p>
             </div>
           </motion.div>
         </div>
@@ -720,7 +859,7 @@ const MainLandingPage = () => {
         className="py-32 relative overflow-hidden bg-black border-t border-zinc-900"
       >
         <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-teal-500/30 to-transparent" />
-        
+
         <div className="absolute inset-0 z-0 flex items-center justify-center overflow-hidden pointer-events-none">
           <div className="text-[20rem] font-syne font-black text-teal-500/5 select-none leading-none -translate-y-8 absolute hidden md:block">72</div>
           <div className="w-[800px] h-[800px] bg-teal-500/5 rounded-full blur-[200px]" />
@@ -728,7 +867,7 @@ const MainLandingPage = () => {
 
         <div className="container mx-auto px-4 relative z-10 text-center max-w-4xl">
           <motion.h2 variants={fadeUp} className={`${sectionTitle} text-5xl md:text-7xl mb-12 drop-shadow-2xl`}>
-            START NOW
+            Start Now
           </motion.h2>
           <motion.p variants={fadeUp} className={`${bodyMuted} text-2xl md:text-3xl mb-16 font-light max-w-2xl mx-auto`}>
             Build your automated trading system in the next 72 hours.
@@ -1017,4 +1156,4 @@ const MainLandingPage = () => {
   );
 };
 
-export default MainLandingPage;
+export default LandingPageNew;
