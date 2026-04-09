@@ -2021,7 +2021,15 @@ export default function BacktestingSection() {
       toast.error(e instanceof Error ? e.message : "Backtest failed");
     }
     finally { setLoading(false); }
-  }, [symbol, exchange, strategy, action, slPct, tpPct, days, mode, selectedCustom, stratLabel, startTime, endTime, squareoff, loadHistory, displayCurrency, initialCapital, orbDurationMins, orbMinRangePct, orbMaxRangePct, orbMomentumBars, orbDirection, orbExpiry, orbExpiryGuard, orbSlPct, orbTpPct, orbTrailingEnabled, orbTrailAfterPct, orbTrailPct, orbTimeExit, orbMaxReentry]);
+  }, [
+    symbol, exchange, strategy, action, slPct, tpPct, days, mode, selectedCustom, stratLabel,
+    startTime, endTime, squareoff, loadHistory, displayCurrency, initialCapital,
+    orbDurationMins, orbMinRangePct, orbMaxRangePct, orbMomentumBars, orbDirection, orbExpiry,
+    orbExpiryGuard, orbSlPct, orbTpPct, orbTrailingEnabled, orbTrailAfterPct, orbTrailPct,
+    orbTimeExit, orbMaxReentry,
+    // Options ORB — must be listed or run handler sees stale "" and wrongly toasts "Select an expiry date"
+    selectedOptionsStratId, orbLots, orbExpiryIso, orbOptionSymbol,
+  ]);
 
   const runAiFilteredComparison = useCallback(async () => {
     if (!result) {
