@@ -1,50 +1,36 @@
-import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { getClientIp } from "shared/affiliate-ip-resolution.ts";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type"
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
-function getClientIp(req) {
-  const xff = req.headers.get("x-forwarded-for");
-  if (xff) {
-    const first = xff.split(",")[0]?.trim();
-    if (first) return first;
-  }
-  const xri = req.headers.get("x-real-ip");
-  if (xri) return xri;
-  const cf = req.headers.get("cf-connecting-ip");
-  if (cf) return cf;
-  return "unknown";
-}
-serve(async (req)=>{
+
+serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, {
-      headers: corsHeaders
-    });
+    return new Response(null, { headers: corsHeaders });
   }
   if (req.method !== "POST" && req.method !== "GET") {
-    return new Response(JSON.stringify({
-      error: "Method not allowed"
-    }), {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "application/json"
-      }
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
+
   try {
-<<<<<<< HEAD
-    let ref = null;
-=======
     let ref: string | null = null;
-    let utms: any = {};
+    let utms: Record<string, string | null> = {
+      source: null,
+      medium: null,
+      campaign: null,
+      term: null,
+      content: null,
+    };
     let referrer: string | null = null;
 
->>>>>>> origin/affiliate-dashboard-changes
     if (req.method === "POST") {
-      const body = await req.json().catch(()=>({}));
+      const body = await req.json().catch(() => ({}));
       ref = body?.ref ?? null;
       utms = {
         source: body?.utm_source ?? null,
@@ -64,47 +50,108 @@ serve(async (req)=>{
         term: url.searchParams.get("utm_term"),
         content: url.searchParams.get("utm_content"),
       };
-      referrer = req.headers.get("referer"); // Standard header is 'referer' (misspelled in spec)
+      referrer = req.headers.get("referer");
     }
+
     if (!ref || typeof ref !== "string" || !ref.trim()) {
-      return new Response(JSON.stringify({
-        error: "Missing ref"
-      }), {
+      return new Response(JSON.stringify({ error: "Missing ref" }), {
         status: 400,
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "application/json"
-        }
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
     const code = ref.trim();
     const visitorIp = getClientIp(req);
     const userAgent = req.headers.get("user-agent") ?? null;
-<<<<<<< HEAD
-    const supabase = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "", {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
-      }
-    });
-    const { data: affiliate, error: affiliateError } = await supabase.from("affiliates").select("id").eq("code", code).eq("is_active", true).maybeSingle();
-=======
-    
-    // Cloudflare Geo headers
-    const city = req.headers.get("cf-ipcity") ?? null;
-    const region = req.headers.get("cf-region") ?? null;
-    const country = req.headers.get("cf-ipcountry") ?? null;
 
-    // Basic device/browser detection
-    const getDeviceType = (ua: string | null) => {
+    // Supabase Edge Functions often provide location data in headers
+    let city = req.headers.get("x-vercel-ip-city") || req.headers.get("cf-ipcity") || null;
+    let region = req.headers.get("x-vercel-ip-country-region") || req.headers.get("cf-region") || null;
+    let countryCode = req.headers.get("x-vercel-ip-country") || req.headers.get("cf-ipcountry") || null;
+    let countryName = null;
+
+    console.log(`Visit received. IP: ${visitorIp}, Initial Geo: ${city}, ${region}, ${countryCode}`);
+
+    // Normalize localhost for lookup
+    const lookupIp = (visitorIp === "127.0.0.1" || visitorIp === "::1" || visitorIp === "unknown") ? "8.8.8.8" : visitorIp;
+
+    if (!city || !region || !countryCode) {
+      console.log(`Performing fallback geolocation lookup for IP: ${lookupIp}`);
+      try {
+        const geoController = new AbortController();
+        const geoTimeout = setTimeout(() => geoController.abort(), 4000);
+
+        let geoData = null;
+
+        // Try Primary: ipapi.co
+        try {
+          const res = await fetch(`https://ipapi.co/${lookupIp}/json/`, { signal: geoController.signal });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.country_code) {
+              geoData = data;
+              console.log("ipapi.co resolved location:", data.city, data.country_code);
+            }
+          } else {
+            console.log("ipapi.co returned status:", res.status);
+          }
+        } catch (e) {
+          console.log("Primary geo lookup (ipapi.co) failed/timed out:", e.message);
+        }
+
+        // Try Fallback: ip-api.com (if primary failed)
+        if (!geoData) {
+          try {
+            const res = await fetch(`http://ip-api.com/json/${lookupIp}`, { signal: geoController.signal });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.status === "success") {
+                geoData = {
+                  city: data.city,
+                  region: data.regionName,
+                  country_code: data.countryCode,
+                  country_name: data.country
+                };
+                console.log("ip-api.com resolved location:", data.city, data.countryCode);
+              }
+            }
+          } catch (e) {
+            console.log("Fallback geo lookup (ip-api.com) failed/timed out:", e.message);
+          }
+        }
+
+        clearTimeout(geoTimeout);
+
+        if (geoData) {
+          city = city || geoData.city || "Unknown";
+          region = region || geoData.region || "Unknown";
+          countryCode = countryCode || geoData.country_code || "Unknown";
+          countryName = geoData.country_name || "Unknown";
+        } else {
+          console.log("All geolocation services failed to resolve data for IP:", lookupIp);
+          city = city || "Unknown";
+          region = region || "Unknown";
+          countryCode = countryCode || "Unknown";
+        }
+      } catch (geoError) {
+        console.log("Geolocation logic threw fatal error:", geoError.message);
+        city = city || "Unknown";
+        region = region || "Unknown";
+        countryCode = countryCode || "Unknown";
+      }
+    }
+
+    const getDeviceType = (ua: string | null): string => {
       if (!ua) return "unknown";
       const ual = ua.toLowerCase();
-      if (ual.includes("mobile") || ual.includes("android") || ual.includes("iphone") || ual.includes("ipad")) return "mobile";
+      if (ual.includes("mobile") || ual.includes("android") || ual.includes("iphone") || ual.includes("ipad")) {
+        return "mobile";
+      }
       if (ual.includes("tablet") || ual.includes("ipad")) return "tablet";
       return "desktop";
     };
 
-    const getBrowser = (ua: string | null) => {
+    const getBrowser = (ua: string | null): string => {
       if (!ua) return "unknown";
       const ual = ua.toLowerCase();
       if (ual.includes("edg/")) return "Edge";
@@ -121,7 +168,7 @@ serve(async (req)=>{
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
-      { auth: { autoRefreshToken: false, persistSession: false } }
+      { auth: { autoRefreshToken: false, persistSession: false } },
     );
 
     const { data: affiliate, error: affiliateError } = await supabase
@@ -131,84 +178,59 @@ serve(async (req)=>{
       .eq("is_active", true)
       .maybeSingle();
 
->>>>>>> origin/affiliate-dashboard-changes
     if (affiliateError || !affiliate) {
-      return new Response(JSON.stringify({
-        error: "Invalid or inactive affiliate code"
-      }), {
+      return new Response(JSON.stringify({ error: "Invalid or inactive affiliate code" }), {
         status: 400,
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "application/json"
-        }
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
     const { error: insertError } = await supabase.from("affiliate_visitors").insert({
       affiliate_id: affiliate.id,
       visitor_ip: visitorIp,
-<<<<<<< HEAD
-      user_agent: userAgent
-    });
-    if (insertError && insertError.code !== "23505") {
-      throw insertError;
-    }
-    return new Response(JSON.stringify({
-      ok: true
-    }), {
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "application/json"
-      }
-=======
       user_agent: userAgent,
       device_type: deviceType,
       browser: browser,
       city: city,
       region: region,
-      country: country,
+      country: countryCode, // Backward compatibility column
+      country_code: countryCode,
+      country_name: countryName,
       utm_source: utms.source,
       utm_medium: utms.medium,
       utm_campaign: utms.campaign,
       utm_term: utms.term,
       utm_content: utms.content,
-      referrer: referrer
+      referrer: referrer,
     });
 
     if (insertError) {
       if (insertError.code === "23505") {
-        // Already visited - no new notification needed
-        return new Response(JSON.stringify({ ok: true, status: 'already_recorded' }), {
+        return new Response(JSON.stringify({ ok: true, status: "already_recorded" }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       throw insertError;
     }
 
-    // Notify the affiliate about the new unique click
     if (affiliate.user_id) {
-      const location = [city, country].filter(Boolean).join(", ") || "an unknown location";
+      const location = [city, countryCode].filter(Boolean).join(", ") || "an unknown location";
       await supabase.from("affiliate_notifications").insert({
         user_id: affiliate.user_id,
         type: "system",
         title: "New Click!",
-        message: `Someone just visited your referral link from ${location}.`
+        message: `Someone just visited your referral link from ${location}.`,
       });
     }
 
     return new Response(JSON.stringify({ ok: true }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
->>>>>>> origin/affiliate-dashboard-changes
     });
   } catch (e) {
     console.error("record-affiliate-visit error:", e);
-    return new Response(JSON.stringify({
-      error: "Internal server error"
-    }), {
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "application/json"
-      }
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });

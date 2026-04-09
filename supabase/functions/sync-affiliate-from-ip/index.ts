@@ -2,7 +2,7 @@
  * sync-affiliate-from-ip — call once after login (same IP as record-affiliate-visit).
  * If user has no affiliate on user_signup_profiles, attach latest affiliate for this IP.
  */ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { applyAffiliateToUserProfileIfEmpty, getClientIp, resolveAffiliateIdFromVisitorIp } from "../_shared/affiliate-ip-resolution.ts";
+import { applyAffiliateToUserProfileIfEmpty, getClientIp, resolveAffiliateIdFromVisitorIp } from "shared/affiliate-ip-resolution.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey, x-client-info"

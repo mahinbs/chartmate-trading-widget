@@ -51,10 +51,23 @@ serve(async (req)=>{
     const adminUser = await getAuthenticatedUser(req, supabaseClient);
     await assertAdmin(adminUser.id, supabaseClient);
     const body = await req.json().catch(()=>({}));
-    const { code, name, email, commission_percent } = body;
+    const { 
+      code, 
+      name, 
+      email, 
+      phone,
+      commission_percent, 
+      commission_type, 
+      fixed_amount, 
+      tier_config, 
+      recurring_config 
+    } = body;
+
     const codeTrim = typeof code === "string" ? code.trim().toLowerCase().replace(/\s+/g, "") : "";
     const nameTrim = typeof name === "string" ? name.trim() : "";
     const emailTrim = typeof email === "string" ? email.trim() : "";
+    const phoneTrim = typeof phone === "string" ? phone.trim() : "";
+
     if (!codeTrim || !nameTrim || !emailTrim) {
       return new Response(JSON.stringify({
         error: "code, name and email are required"
@@ -66,8 +79,15 @@ serve(async (req)=>{
         }
       });
     }
+
     const commission = Number(commission_percent);
-    const commissionPct = Number.isFinite(commission) && commission >= 0 && commission <= 100 ? commission : 10;
+    const isPercentType = commission_type === "percentage" || commission_type === "recurring";
+    const commissionPct = isPercentType 
+      ? (Number.isFinite(commission) && commission >= 0 && commission <= 100 ? commission : 10)
+      : 0;
+    const fixedAmt = Number(fixed_amount) || 0;
+    const type = commission_type || "percentage";
+
     const { data: existing } = await supabaseClient.from("affiliates").select("id").eq("code", codeTrim).maybeSingle();
     if (existing) {
       return new Response(JSON.stringify({
@@ -80,6 +100,7 @@ serve(async (req)=>{
         }
       });
     }
+
     const tempPassword = randomTempPassword(12);
     const { data: newUser, error: createError } = await supabaseClient.auth.admin.createUser({
       email: emailTrim,
@@ -90,6 +111,7 @@ serve(async (req)=>{
         full_name: nameTrim
       }
     });
+
     if (createError) {
       return new Response(JSON.stringify({
         error: createError.message
@@ -101,6 +123,7 @@ serve(async (req)=>{
         }
       });
     }
+
     const userId = newUser.user?.id;
     if (!userId) {
       return new Response(JSON.stringify({
@@ -113,20 +136,28 @@ serve(async (req)=>{
         }
       });
     }
+
     const { error: roleError } = await supabaseClient.from("user_roles").insert({
       user_id: userId,
       role: "affiliate"
     });
+
     if (roleError) {
       await supabaseClient.auth.admin.deleteUser(userId);
       throw new Error(`Failed to set affiliate role: ${roleError.message}`);
     }
+
     const { data: affiliateRow, error: affError } = await supabaseClient.from("affiliates").insert({
       user_id: userId,
       code: codeTrim,
       name: nameTrim,
       email: emailTrim,
+      phone: phoneTrim,
       commission_percent: commissionPct,
+      commission_type: type,
+      fixed_amount: fixedAmt,
+      tier_config: tier_config || [],
+      recurring_config: recurring_config || {},
       is_active: true,
       created_by: adminUser.id
     }).select("id").single();

@@ -20,12 +20,12 @@ export function getClientIp(req: Request): string {
 export async function resolveAffiliateIdFromVisitorIp(
   supabase: SupabaseClient,
   clientIp: string,
-): Promise<string | null> {
+): Promise<{ affiliateId: string; region?: string; city?: string; country_code?: string; country_name?: string } | null> {
   if (!clientIp || clientIp === "unknown") return null;
 
   const { data: rows, error } = await supabase
     .from("affiliate_visitors")
-    .select("affiliate_id")
+    .select("affiliate_id, region, city, country_code, country_name")
     .eq("visitor_ip", clientIp)
     .order("visited_at", { ascending: false })
     .limit(8);
@@ -33,7 +33,7 @@ export async function resolveAffiliateIdFromVisitorIp(
   if (error || !rows?.length) return null;
 
   for (const row of rows) {
-    const aid = (row as { affiliate_id?: string }).affiliate_id;
+    const aid = (row as any).affiliate_id;
     if (!aid) continue;
     const { data: aff } = await supabase
       .from("affiliates")
@@ -41,7 +41,16 @@ export async function resolveAffiliateIdFromVisitorIp(
       .eq("id", aid)
       .eq("is_active", true)
       .maybeSingle();
-    if (aff?.id) return aff.id as string;
+    
+    if (aff?.id) {
+      return {
+        affiliateId: aff.id as string,
+        region: (row as any).region,
+        city: (row as any).city,
+        country_code: (row as any).country_code,
+        country_name: (row as any).country_name,
+      };
+    }
   }
   return null;
 }
@@ -52,6 +61,7 @@ export async function applyAffiliateToUserProfileIfEmpty(
   userId: string,
   userEmail: string | null | undefined,
   affiliateId: string,
+  geo?: { region?: string; city?: string; country_code?: string; country_name?: string }
 ): Promise<void> {
   const { data: prof } = await supabase
     .from("user_signup_profiles")
@@ -75,6 +85,9 @@ export async function applyAffiliateToUserProfileIfEmpty(
     const patch: Record<string, unknown> = {
       affiliate_id: affiliateId,
       updated_at: now,
+      region: geo?.region,
+      city: geo?.city,
+      country_code: geo?.country_code
     };
     if (code && !(prof as { referral_code_at_signup?: string | null }).referral_code_at_signup) {
       patch.referral_code_at_signup = code;
@@ -87,11 +100,17 @@ export async function applyAffiliateToUserProfileIfEmpty(
       full_name: "",
       affiliate_id: affiliateId,
       referral_code_at_signup: code ?? null,
+      region: geo?.region || null,
+      city: geo?.city || null,
+      country_code: geo?.country_code || null
     });
     if (insErr?.code === "23505") {
       const patch: Record<string, unknown> = {
         affiliate_id: affiliateId,
         updated_at: now,
+        region: geo?.region,
+        city: geo?.city,
+        country_code: geo?.country_code
       };
       if (code) patch.referral_code_at_signup = code;
       await supabase.from("user_signup_profiles").update(patch).eq("user_id", userId).is("affiliate_id", null);
