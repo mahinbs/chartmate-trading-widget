@@ -10,7 +10,7 @@
  *  - Historical "what-if": what would have happened if you ran this
  *    same strategy 1w / 1m / 3m / 6m / 1y ago
  */
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
@@ -127,6 +127,17 @@ function formatMoneyAmount(amount: number, currency: "INR" | "USD"): string {
   return currency === "INR" ? `${sign}₹${formatted}` : `${sign}$${formatted}`;
 }
 
+/** holdingDays from options ORB is a fraction of a day (intraday). */
+function formatFractionalHoldAsHM(fracDays: number | null | undefined): string {
+  if (fracDays == null || !Number.isFinite(fracDays)) return "—";
+  const totalMins = Math.round(fracDays * 24 * 60);
+  if (totalMins < 1) return "<1m";
+  if (totalMins < 60) return `${totalMins}m`;
+  const hrs = Math.floor(totalMins / 60);
+  const mins = totalMins % 60;
+  return mins > 0 ? `${hrs}h ${mins}m` : `${hrs}h`;
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type SymbolResult = {
@@ -166,7 +177,7 @@ type BacktestResult = {
   isOptionsBacktest?: boolean;
   optionsConfig?: Record<string, unknown>;
   totalTrades: number; wins: number; losses: number; winRate: number;
-  totalReturn: number; avgReturn: number; maxDrawdown: number;
+  totalReturn: number; totalAbsPnl?: number; avgReturn: number; maxDrawdown: number;
   profitFactor: number; sharpeRatio: number;
   bestTrade: number; worstTrade: number; avgHoldingDays: number;
   avgWin: number; avgLoss: number; expectancy: number;
@@ -563,12 +574,38 @@ function TradeDetailPopup({
 }) {
   const [tab, setTab] = useState<"chart" | "whatif">("chart");
 
-  const prices = trade.candles.map(c => c.close);
+  const isOptions = Boolean((trade as any).direction);
+
+  const chartCandles = useMemo((): Candle[] => {
+    if (trade.candles.length > 0) return trade.candles;
+    if (!isOptions) return [];
+    const ep = trade.entryPrice;
+    const xp = trade.exitPrice;
+    if (ep == null || xp == null) return [];
+    const ehh = String((trade as any).entry_hhmm ?? "").trim();
+    const xhh = String((trade as any).exit_hhmm ?? "").trim();
+    const d0 = ehh ? `${trade.entryDate} ${ehh}` : trade.entryDate;
+    const d1 = xhh ? `${trade.exitDate} ${xhh}` : trade.exitDate;
+    const hi = Math.max(ep, xp);
+    const lo = Math.min(ep, xp);
+    return [
+      { date: d0, open: ep, high: hi, low: lo, close: ep, sma20: null, rsi14: null, isEntry: true, isExit: false },
+      { date: d1, open: ep, high: hi, low: lo, close: xp, sma20: null, rsi14: null, isEntry: false, isExit: true },
+    ];
+  }, [trade, isOptions]);
+
+  const prices = chartCandles.map(c => c.close);
   const minP = prices.length ? Math.min(...prices) * 0.995 : 0;
   const maxP = prices.length ? Math.max(...prices) * 1.005 : 1;
   const profitable = trade.returnPct > 0;
-  const pnlFromPct = (trade.returnPct / 100) * initialCapital;
+  const pnlFromPct = (trade as any).absPnl != null
+    ? (trade as any).absPnl
+    : (trade.returnPct / 100) * initialCapital;
   const pnlLabel = formatMoneyAmount(pnlFromPct, displayCurrency);
+
+  const holdingDisplay = !isOptions
+    ? `${trade.holdingDays ?? "—"}d`
+    : formatFractionalHoldAsHM(trade.holdingDays ?? 0);
 
   // Find similar trades (same exit reason, within ±50% return relative)
   const similarTrades = allTrades.filter(
@@ -631,9 +668,18 @@ function TradeDetailPopup({
             <div className="space-y-6">
               {/* Key details grid */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <StatCard label="Entry" value={trade.entryPrice ?? "—"} sub={trade.entryDate} />
-                <StatCard label="Exit" value={trade.exitPrice ?? "—"} sub={trade.exitDate} color={profitable ? "green" : "red"} />
-                <StatCard label="Holding" value={`${trade.holdingDays ?? "—"}d`} sub="Duration" />
+                <StatCard
+                  label="Entry"
+                  value={trade.entryPrice ?? "—"}
+                  sub={isOptions ? `${trade.entryDate} ${(trade as any).entry_hhmm ?? ""}` : trade.entryDate}
+                />
+                <StatCard
+                  label="Exit"
+                  value={trade.exitPrice != null ? trade.exitPrice : (isOptions ? (trade as any).exit_hhmm ?? "—" : "—")}
+                  sub={isOptions ? `${trade.exitDate} ${(trade as any).exit_hhmm ?? ""}` : trade.exitDate}
+                  color={profitable ? "green" : "red"}
+                />
+                <StatCard label="Holding" value={holdingDisplay} sub="Duration" />
                 <StatCard label="Return" value={`${trade.returnPct >= 0 ? "+" : ""}${trade.returnPct}%`} sub={pnlLabel} color={profitable ? "green" : "red"} />
               </div>
 
@@ -661,9 +707,14 @@ function TradeDetailPopup({
                 </div>
               )}
 
-              {/* Advanced charts */}
-              {trade.candles.length > 0 ? (
+              {/* Advanced charts (options: synthetic entry→exit premium path if no daily candles) */}
+              {chartCandles.length > 0 ? (
                 <div className="space-y-4">
+                  {isOptions && trade.candles.length === 0 && (
+                    <p className="text-[10px] text-zinc-500">
+                      Premium proxy (entry → exit) — intraday underlying path drives % return; chart shows estimated option premium levels.
+                    </p>
+                  )}
                   <div className="rounded-xl border border-zinc-800 bg-black/40 p-4 shadow-inner">
                     <div className="flex items-center justify-between mb-4">
                       <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">Price Evolution & Indicators</p>
@@ -686,7 +737,7 @@ function TradeDetailPopup({
                       <div className="flex min-h-0 gap-1">
                         <div className="h-[280px] min-w-0 flex-1">
                           <ResponsiveContainer width="100%" height="100%">
-                            <ComposedChart data={trade.candles} margin={{ top: 12, right: 4, bottom: 22, left: 8 }}>
+                            <ComposedChart data={chartCandles} margin={{ top: 12, right: 4, bottom: 22, left: 8 }}>
                               <defs>
                                 <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
                                   <stop offset="5%" stopColor="#3f3f46" stopOpacity={0.2} />
@@ -738,14 +789,14 @@ function TradeDetailPopup({
                                 opacity={0.7}
                               />
                               <ReferenceLine
-                                x={trade.entryDate}
+                                x={chartCandles[0]?.date ?? trade.entryDate}
                                 stroke="#10b981"
                                 strokeWidth={2}
                                 strokeDasharray="5 5"
                                 label={{ value: "Entry", fill: "#10b981", fontSize: 10, position: "top", fontWeight: "bold" }}
                               />
                               <ReferenceLine
-                                x={trade.exitDate}
+                                x={chartCandles[chartCandles.length - 1]?.date ?? trade.exitDate}
                                 stroke="#ef4444"
                                 strokeWidth={2}
                                 strokeDasharray="5 5"
@@ -768,7 +819,7 @@ function TradeDetailPopup({
                   </div>
 
                   {/* RSI component */}
-                  {trade.candles.some(c => c.rsi14 !== null) && (
+                  {chartCandles.some(c => c.rsi14 !== null) && (
                     <div className="rounded-xl border border-zinc-800 bg-black/20 p-4">
                       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">RSI (14)</p>
@@ -791,7 +842,7 @@ function TradeDetailPopup({
                         <div className="flex min-h-0 gap-1">
                           <div className="h-[132px] min-w-0 flex-1">
                             <ResponsiveContainer width="100%" height="100%">
-                              <LineChart data={trade.candles} margin={{ top: 6, right: 2, bottom: 20, left: 6 }}>
+                              <LineChart data={chartCandles} margin={{ top: 6, right: 2, bottom: 20, left: 6 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
                                 <XAxis
                                   dataKey="date"
@@ -922,7 +973,9 @@ function TradeDetailPopup({
                           </div>
                           <div className="space-y-1 text-right">
                             <p className="text-[9px] text-zinc-500 uppercase">Avg Hold</p>
-                            <p className="font-mono text-xs text-zinc-300 font-semibold">{s.avgHoldingDays}d</p>
+                            <p className="font-mono text-xs text-zinc-300 font-semibold">
+                              {isOptions ? formatFractionalHoldAsHM(s.avgHoldingDays) : `${s.avgHoldingDays}d`}
+                            </p>
                           </div>
                         </div>
 
@@ -3012,7 +3065,10 @@ export default function BacktestingSection() {
 
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                     <StatCard label="Sharpe Ratio" value={activeMetrics?.sharpeRatio ?? 0} color={Number(activeMetrics?.sharpeRatio ?? 0) >= 1 ? "green" : "default"} />
-                    <StatCard label="Avg Hold Time" value={`${Number(activeMetrics?.avgHoldingDays ?? 0)}d`} />
+                    <StatCard label="Avg Hold Time" value={result?.isOptionsBacktest
+                      ? formatFractionalHoldAsHM(Number(activeMetrics?.avgHoldingDays ?? 0))
+                      : `${Number(activeMetrics?.avgHoldingDays ?? 0)}d`}
+                    />
                     <StatCard label="Best Trade" value={`+${Number(activeMetrics?.bestTrade ?? 0)}%`} color="green" />
                     <StatCard label="Worst Trade" value={`${Number(activeMetrics?.worstTrade ?? 0)}%`} color="red" />
                   </div>
@@ -3127,8 +3183,10 @@ export default function BacktestingSection() {
                                           <td className="px-4 py-3.5 text-right">
                                             {isOptions ? (
                                               <span className="font-mono text-zinc-500 text-[10px] group-hover:text-zinc-300">
-                                                ORB {(t as any).orb_high?.toLocaleString() ?? "—"} / {(t as any).orb_low?.toLocaleString() ?? "—"}
-                                                {(t as any).range_pct != null && <span className="text-zinc-700 ml-1">({(t as any).range_pct}%)</span>}
+                                                ₹{t.entryPrice?.toLocaleString() ?? "—"} <span className="text-zinc-800 mx-1">→</span> ₹{t.exitPrice?.toLocaleString() ?? "—"}
+                                                <span className="text-zinc-700 ml-1.5">
+                                                  ({formatFractionalHoldAsHM(Number(t.holdingDays ?? 0))})
+                                                </span>
                                               </span>
                                             ) : (
                                               <span className="font-mono text-zinc-500 group-hover:text-zinc-300">
@@ -3486,7 +3544,11 @@ export default function BacktestingSection() {
             </div>
             <div className="rounded border border-zinc-200 p-2">
               <p className="text-[8px] font-bold uppercase text-zinc-500">Avg hold time</p>
-              <p className="font-mono text-sm font-bold">{result.avgHoldingDays}d</p>
+              <p className="font-mono text-sm font-bold">
+                {result.isOptionsBacktest
+                  ? formatFractionalHoldAsHM(result.avgHoldingDays)
+                  : `${result.avgHoldingDays}d`}
+              </p>
             </div>
             <div className="rounded border border-zinc-200 p-2">
               <p className="text-[8px] font-bold uppercase text-zinc-500">Best trade</p>
@@ -3521,7 +3583,11 @@ export default function BacktestingSection() {
                     <td className="px-2 py-1.5 font-mono text-zinc-800">
                       {t.entryDate} → {t.exitDate}
                     </td>
-                    <td className="px-2 py-1.5 text-right font-mono text-zinc-600">{t.holdingDays ?? "—"}d</td>
+                    <td className="px-2 py-1.5 text-right font-mono text-zinc-600">
+                      {(t as { direction?: string }).direction
+                        ? formatFractionalHoldAsHM(t.holdingDays ?? 0)
+                        : `${t.holdingDays ?? "—"}d`}
+                    </td>
                     <td className="px-2 py-1.5 text-right font-mono text-zinc-600">
                       {t.entryPrice?.toLocaleString() ?? "—"} → {t.exitPrice?.toLocaleString() ?? "—"}
                     </td>
