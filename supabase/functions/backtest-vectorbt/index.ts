@@ -9,7 +9,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type"
 };
 // Used to confirm the deployed function version in browser Network → Response.
-const BUILD_ID = "backtest-vectorbt:custom-snapshot:2026-03-26-01";
+const BUILD_ID = "backtest-vectorbt:options-orb:2026-04-09-01";
 Deno.serve(async (req)=>{
   if (req.method === "OPTIONS") {
     return new Response(null, {
@@ -54,36 +54,57 @@ Deno.serve(async (req)=>{
         headers
       });
     }
-    // NOTE:
-    // Broker-history path is temporarily disabled to avoid upstream broker SDK
-    // runtime issues (e.g. `datetime.UTC` errors) until OpenAlgo is redeployed.
-    // VectorBT will still backtest using Historify → Yahoo via OpenAlgo.
-    const openalgoApiKey = null;
+    // For options_orb strategy we need the user's OpenAlgo API key (for 5-min broker data).
+    // For all other strategies we leave it null (Historify → Yahoo fallback).
+    const isOptionsOrb = (body.strategy ?? "") === "options_orb";
+    let openalgoApiKey: string | null = null;
+    if (isOptionsOrb) {
+      const { data: integRow } = await supabase
+        .from("user_trading_integration")
+        .select("openalgo_api_key")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      openalgoApiKey = (integRow as { openalgo_api_key?: string } | null)?.openalgo_api_key ?? null;
+      if (!openalgoApiKey) {
+        return new Response(JSON.stringify({
+          error: "Broker not connected. Connect your broker in Broker Sync to run options backtests (5-min intraday data required)."
+        }), { status: 200, headers });
+      }
+    }
+
+    const requestBody: Record<string, unknown> = {
+      symbol,
+      exchange: body.exchange ?? "NSE",
+      strategy: body.strategy ?? "trend_following",
+      action: body.action ?? "BUY",
+      days: body.days ?? 365,
+      stop_loss_pct: body.stop_loss_pct ?? 2,
+      take_profit_pct: body.take_profit_pct ?? 4,
+      max_hold_days: body.max_hold_days ?? 10,
+      data_source: body.data_source ?? "auto",
+      openalgo_api_key: openalgoApiKey,
+      // Custom strategy — builder fields
+      entry_conditions: body.entry_conditions ?? null,
+      exit_conditions: body.exit_conditions ?? null,
+      custom_strategy_name: body.custom_strategy_name ?? null,
+      custom_strategy_id: body.custom_strategy_id ?? null,
+      custom_strategy_snapshot: body.custom_strategy_snapshot && typeof body.custom_strategy_snapshot === "object"
+        ? body.custom_strategy_snapshot : null,
+      execution_days: Array.isArray(body.execution_days) ? body.execution_days : null,
+    };
+
+    // Options ORB — pass the full config block through
+    if (isOptionsOrb && body.options_config && typeof body.options_config === "object") {
+      requestBody.options_config = body.options_config;
+    }
+
     const res = await fetch(`${OPENALGO_URL}/api/v1/platform/vectorbt-backtest`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Platform-Key": OPENALGO_APP_KEY
+        "X-Platform-Key": OPENALGO_APP_KEY,
       },
-      body: JSON.stringify({
-        symbol,
-        exchange: body.exchange ?? "NSE",
-        strategy: body.strategy ?? "trend_following",
-        action: body.action ?? "BUY",
-        days: body.days ?? 365,
-        stop_loss_pct: body.stop_loss_pct ?? 2,
-        take_profit_pct: body.take_profit_pct ?? 4,
-        max_hold_days: body.max_hold_days ?? 10,
-        data_source: body.data_source ?? "auto",
-        openalgo_api_key: openalgoApiKey,
-        // Custom strategy — builder fields (OpenAlgo may use any subset)
-        entry_conditions: body.entry_conditions ?? null,
-        exit_conditions: body.exit_conditions ?? null,
-        custom_strategy_name: body.custom_strategy_name ?? null,
-        custom_strategy_id: body.custom_strategy_id ?? null,
-        custom_strategy_snapshot: body.custom_strategy_snapshot && typeof body.custom_strategy_snapshot === "object" ? body.custom_strategy_snapshot : null,
-        execution_days: Array.isArray(body.execution_days) ? body.execution_days : null
-      })
+      body: JSON.stringify(requestBody),
     });
     const rawText = await res.text().catch(()=>"");
     const data = rawText ? JSON.parse(rawText) : {};

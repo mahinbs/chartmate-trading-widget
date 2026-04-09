@@ -36,6 +36,7 @@ import {
   TrendingDown,
   TrendingUp,
   Zap,
+  PlayCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
@@ -116,7 +117,8 @@ function directionIcon(dir: string) {
 export function OptionsStrategiesWorkspace({ embedded = false }: { embedded?: boolean }) {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { planId, hasAlgoAccess } = useSubscription();
+  const { subscription, hasAlgoAccess } = useSubscription();
+  const planId = (subscription as any)?.plan_id ?? null;
 
   const [strategies, setStrategies] = useState<OptionsStrategy[]>([]);
   const [loading, setLoading] = useState(true);
@@ -234,6 +236,7 @@ export function OptionsStrategiesWorkspace({ embedded = false }: { embedded?: bo
     setActivateTarget(null);
     fetchStrategies();
   };
+
 
   if (!hasAlgoAccess) {
     const gate = (
@@ -486,6 +489,15 @@ export function OptionsStrategiesWorkspace({ embedded = false }: { embedded?: bo
                           onClick={() => { setEditStrategy(s); setShowBuilder(true); }}
                         >
                           Edit
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-xs h-7 px-2 border-violet-500/40 text-violet-400 hover:bg-violet-500/10"
+                          onClick={() => navigate("/backtest")}
+                          title="Backtest in the Backtesting panel (Options ORB mode)"
+                        >
+                          <PlayCircle className="h-3 w-3 mr-1" />Backtest
                         </Button>
 
                         {s.is_active ? (

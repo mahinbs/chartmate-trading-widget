@@ -33,6 +33,15 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  fetchExpiryDates,
+  fetchOptionChain,
+  instrumentTypeForUnderlying,
+  pickExpiryForStrategyType,
+  tradableRowsFromChain,
+  type NormalizedExpiryItem,
+  type TradableOptionRow,
+} from "@/lib/optionsApi";
 import { STRATEGIES } from "@/components/trading/StrategySelectionDialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -154,6 +163,8 @@ type BacktestResult = {
   engine: string; action: string; backtestPeriod: string;
   symbol: string; exchange: string; strategy: string;
   usedCustomConditions?: boolean;
+  isOptionsBacktest?: boolean;
+  optionsConfig?: Record<string, unknown>;
   totalTrades: number; wins: number; losses: number; winRate: number;
   totalReturn: number; avgReturn: number; maxDrawdown: number;
   profitFactor: number; sharpeRatio: number;
@@ -1403,12 +1414,38 @@ function DailyPortfolioReturnsChart({ data }: { data: Array<{ date: string; retu
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function BacktestingSection() {
-  const [mode, setMode] = useState<"strategy" | "simple">("strategy");
+  const [mode, setMode] = useState<"strategy" | "simple" | "options">("strategy");
   const [symbol, setSymbol] = useState("");
   const [exchange, setExchange] = useState("NSE");
   const [strategy, setStrategy] = useState("trend_following");
   const [customStrategies, setCustomStrategies] = useState<FullCustomStrategy[]>([]);
   const [selectedCustomId, setSelectedCustomId] = useState<string>("");
+  // Options ORB strategy state
+  const [optionsStrategies, setOptionsStrategies] = useState<Record<string, unknown>[]>([]);
+  const [selectedOptionsStratId, setSelectedOptionsStratId] = useState<string>("");
+  const [orbDurationMins, setOrbDurationMins] = useState("15");
+  const [orbMinRangePct, setOrbMinRangePct] = useState("0.2");
+  const [orbMaxRangePct, setOrbMaxRangePct] = useState("1.0");
+  const [orbMomentumBars, setOrbMomentumBars] = useState("3");
+  const [orbSlPct, setOrbSlPct] = useState("30");
+  const [orbTpPct, setOrbTpPct] = useState("50");
+  const [orbTrailingEnabled, setOrbTrailingEnabled] = useState(true);
+  const [orbTrailAfterPct, setOrbTrailAfterPct] = useState("30");
+  const [orbTrailPct, setOrbTrailPct] = useState("15");
+  const [orbTimeExit, setOrbTimeExit] = useState("15:15");
+  const [orbMaxReentry, setOrbMaxReentry] = useState("1");
+  const [orbExpiry, setOrbExpiry] = useState<"weekly" | "monthly">("weekly");
+  const [orbDirection, setOrbDirection] = useState("neutral");
+  const [orbExpiryGuard, setOrbExpiryGuard] = useState(true);
+  const [orbLots, setOrbLots] = useState("1");
+  // Options symbol picker (expiry + contract for backtest)
+  const [orbExpiries, setOrbExpiries] = useState<NormalizedExpiryItem[]>([]);
+  const [orbExpiryIso, setOrbExpiryIso] = useState<string>("");
+  const [orbOptionRows, setOrbOptionRows] = useState<TradableOptionRow[]>([]);
+  const [orbOptionSymbol, setOrbOptionSymbol] = useState<string>("");
+  const [orbLoadingExpiries, setOrbLoadingExpiries] = useState(false);
+  const [orbLoadingChain, setOrbLoadingChain] = useState(false);
+  const [orbPickerError, setOrbPickerError] = useState<string | null>(null);
   const [action, setAction] = useState<"BUY" | "SELL">("BUY");
   const [slPct, setSlPct] = useState("2");
   const [tpPct, setTpPct] = useState("4");
@@ -1486,7 +1523,132 @@ export default function BacktestingSection() {
     }
   }, []);
 
+  const loadOptionsStrategies = useCallback(async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data } = await supabase
+        .from("options_strategies" as any)
+        .select("id,name,underlying,exchange,trade_direction,expiry_type,entry_conditions,orb_config,exit_rules,risk_config")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+      if (!Array.isArray(data)) return;
+      // Flatten the JSON sub-columns into a flat shape for easy use in the picker
+      const flat = data.map((s: any) => {
+        const orb = s.orb_config ?? {};
+        const er = s.exit_rules ?? {};
+        const ec = s.entry_conditions ?? {};
+        const rc = s.risk_config ?? {};
+        return {
+          id: s.id,
+          name: s.name,
+          underlying: s.underlying,
+          exchange: s.exchange,
+          direction: s.trade_direction ?? "neutral",
+          expiry_type: s.expiry_type ?? "weekly",
+          // exit rules
+          stop_loss_pct: er.sl_pct ?? 30,
+          take_profit_pct: er.tp_pct ?? 50,
+          trailing_stop: er.trailing_enabled ?? true,
+          trailing_trigger_pct: er.trail_after_pct ?? 30,
+          trailing_stop_pct: er.trail_pct ?? 15,
+          time_exit_hhmm: er.time_exit_hhmm ?? "15:15",
+          max_reentry_count: er.max_reentry_count ?? 1,
+          // orb config
+          orb_duration_minutes: orb.orb_duration_mins ?? 15,
+          min_range_pct: orb.min_range_pct ?? 0.2,
+          max_range_pct: orb.max_range_pct ?? 1.0,
+          momentum_bars: orb.momentum_bars ?? 3,
+          // entry conditions
+          expiry_day_guard: ec.expiry_day_guard ?? true,
+          // risk config
+          lot_size: rc.lot_size ?? 1,
+        };
+      });
+      setOptionsStrategies(flat as Record<string, unknown>[]);
+    } catch {
+      // non-fatal
+    }
+  }, []);
+
   useEffect(() => { loadCustomStrategies(); }, [loadCustomStrategies]);
+  useEffect(() => { void loadOptionsStrategies(); }, [loadOptionsStrategies]);
+
+  // ── Load expiries when an options strategy is selected ─────────────────
+  useEffect(() => {
+    if (mode !== "options" || !selectedOptionsStratId || !symbol) {
+      setOrbExpiries([]);
+      setOrbExpiryIso("");
+      setOrbOptionRows([]);
+      setOrbOptionSymbol("");
+      setOrbPickerError(null);
+      return;
+    }
+    const selStrat = optionsStrategies.find(s => (s as any).id === selectedOptionsStratId);
+    if (!selStrat) return;
+    const underlying = String((selStrat as any).underlying ?? symbol);
+    // Exchange for F&O chain fetching (need NFO/BFO, not NSE/BSE)
+    const rawExchange = String((selStrat as any).exchange ?? "NFO");
+    let cancelled = false;
+    (async () => {
+      setOrbLoadingExpiries(true);
+      setOrbPickerError(null);
+      setOrbOptionRows([]);
+      setOrbOptionSymbol("");
+      try {
+        const data = await fetchExpiryDates({
+          symbol: underlying,
+          exchange: rawExchange,
+          instrument: instrumentTypeForUnderlying(underlying),
+        });
+        if (cancelled) return;
+        setOrbExpiries(data.expiries);
+        const pick = pickExpiryForStrategyType(data.expiries, String((selStrat as any).expiry_type ?? "weekly") as "weekly" | "monthly");
+        setOrbExpiryIso(pick?.date ?? data.expiries[0]?.date ?? "");
+      } catch (e) {
+        if (!cancelled) setOrbPickerError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setOrbLoadingExpiries(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, selectedOptionsStratId, symbol]);
+
+  // ── Load option chain when expiry is chosen ────────────────────────────
+  useEffect(() => {
+    if (mode !== "options" || !selectedOptionsStratId || !orbExpiryIso || !symbol) {
+      setOrbOptionRows([]);
+      setOrbOptionSymbol("");
+      return;
+    }
+    const selStrat = optionsStrategies.find(s => (s as any).id === selectedOptionsStratId);
+    if (!selStrat) return;
+    const underlying = String((selStrat as any).underlying ?? symbol);
+    const rawExchange = String((selStrat as any).exchange ?? "NFO");
+    let cancelled = false;
+    (async () => {
+      setOrbLoadingChain(true);
+      setOrbPickerError(null);
+      try {
+        const chain = await fetchOptionChain({
+          underlying,
+          exchange: rawExchange,
+          expiry_date: orbExpiryIso,
+        });
+        if (cancelled) return;
+        const list = tradableRowsFromChain(chain);
+        setOrbOptionRows(list);
+        setOrbOptionSymbol(prev => (prev && list.some(r => r.symbol === prev) ? prev : (list[0]?.symbol ?? "")));
+      } catch (e) {
+        if (!cancelled) setOrbPickerError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setOrbLoadingChain(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, selectedOptionsStratId, orbExpiryIso]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1692,8 +1854,18 @@ export default function BacktestingSection() {
     });
   }, []);
 
+  const selectedOptionsStrat = optionsStrategies.find(s => (s as any).id === selectedOptionsStratId) ?? null;
+
   const runVectorBt = useCallback(async () => {
-    const sym = symbol.trim().toUpperCase();
+    // For options mode, validate strategy is selected (symbol comes from strategy)
+    if (mode === "options") {
+      if (!selectedOptionsStratId) { toast.error("Select an options strategy first"); return; }
+      if (!symbol) { toast.error("No underlying symbol — re-select your strategy"); return; }
+      if (!(parseInt(orbLots, 10) >= 1)) { toast.error("Enter a valid lot size (≥ 1)"); return; }
+      if (!orbExpiryIso) { toast.error("Select an expiry date"); return; }
+      if (!orbOptionSymbol) { toast.error("Select an options symbol (CE/PE)"); return; }
+    }
+    const sym = (mode === "options" ? symbol : symbol.trim()).toUpperCase();
     if (!sym) { toast.error("Enter a symbol"); return; }
     setLoading(true);
     setAiFilterResult(null);
@@ -1704,48 +1876,80 @@ export default function BacktestingSection() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
 
-      // For custom strategies, pass entry/exit when builder has real rules (visual, raw, or time/hybrid).
-      const customEntryConditions = selectedCustom?.entry_conditions ?? null;
-      const customExitConditions = selectedCustom?.exit_conditions ?? null;
-      const hasCustomConds = entryConditionsConfigured(customEntryConditions);
-      const runSl = parseFloat(slPct) || 2;
-      const runTp = parseFloat(tpPct) || 4;
-      const customSnapshot = selectedCustom
-        ? mergeSnapshotWithBacktestRun(selectedCustom, sym, exchange, runSl, runTp)
-        : null;
-      const derivedMaxHold =
-        mode === "strategy" && selectedCustom
-          ? deriveMaxHoldDaysForStrategy(selectedCustom)
+      let backtestBody: Record<string, unknown>;
+
+      if (mode === "options") {
+        // ── Options ORB backtest ────────────────────────────────────────────
+        backtestBody = {
+          symbol: sym,
+          exchange: exchange || "NSE",
+          strategy: "options_orb",
+          days: Math.min(365, Math.max(10, parseInt(days, 10) || 90)),
+          options_config: {
+            orb_duration_mins: parseInt(orbDurationMins, 10) || 15,
+            min_range_pct: parseFloat(orbMinRangePct) || 0.2,
+            max_range_pct: parseFloat(orbMaxRangePct) || 1.0,
+            momentum_bars: parseInt(orbMomentumBars, 10) || 3,
+            trade_direction: orbDirection,
+            expiry_type: orbExpiry,
+            expiry_day_guard: orbExpiryGuard,
+            sl_pct: parseFloat(orbSlPct) || 30,
+            tp_pct: parseFloat(orbTpPct) || 50,
+            trailing_enabled: orbTrailingEnabled,
+            trail_after_pct: parseFloat(orbTrailAfterPct) || 30,
+            trail_pct: parseFloat(orbTrailPct) || 15,
+            time_exit_hhmm: orbTimeExit || "15:15",
+            max_reentry_count: parseInt(orbMaxReentry, 10) || 1,
+            lot_size: parseInt(orbLots, 10) || 1,
+            options_symbol: orbOptionSymbol,
+            expiry_date: orbExpiryIso,
+          },
+        };
+      } else {
+        // ── Standard equity/algo backtest ───────────────────────────────────
+        const customEntryConditions = selectedCustom?.entry_conditions ?? null;
+        const customExitConditions = selectedCustom?.exit_conditions ?? null;
+        const hasCustomConds = entryConditionsConfigured(customEntryConditions);
+        const runSl = parseFloat(slPct) || 2;
+        const runTp = parseFloat(tpPct) || 4;
+        const customSnapshot = selectedCustom
+          ? mergeSnapshotWithBacktestRun(selectedCustom, sym, exchange, runSl, runTp)
           : null;
-
-      const engineStrategy =
-        mode !== "strategy"
-          ? "trend_following"
-          : selectedCustom
-            ? resolveEngineStrategyIdForCustom(selectedCustom.paper_strategy_type)
-            : strategy;
-
-      const backtestBody: Record<string, unknown> = {
-        symbol: sym,
-        exchange: exchange,
-        strategy: engineStrategy,
-        action: selectedCustom?.trading_mode === "SHORT" ? "SELL" : action,
-        days: Math.min(730, Math.max(30, parseInt(days, 10) || 365)),
-        stop_loss_pct: runSl,
-        take_profit_pct: runTp,
-        entry_conditions: hasCustomConds ? customEntryConditions : null,
-        exit_conditions: hasCustomConds ? customExitConditions : null,
-        custom_strategy_name: selectedCustom?.name ?? null,
-        custom_strategy_id: selectedCustom?.id ?? null,
-        custom_strategy_snapshot: customSnapshot,
-        execution_days:
+        const derivedMaxHold =
           mode === "strategy" && selectedCustom
-          && Array.isArray(selectedCustom.execution_days)
-          && selectedCustom.execution_days.length > 0
-            ? selectedCustom.execution_days
-            : null,
-      };
-      if (derivedMaxHold != null) backtestBody.max_hold_days = derivedMaxHold;
+            ? deriveMaxHoldDaysForStrategy(selectedCustom)
+            : null;
+
+        const engineStrategy =
+          mode !== "strategy"
+            ? "trend_following"
+            : selectedCustom
+              ? resolveEngineStrategyIdForCustom(selectedCustom.paper_strategy_type)
+              : strategy;
+
+        backtestBody = {
+          symbol: sym,
+          exchange: exchange,
+          strategy: engineStrategy,
+          action: selectedCustom?.trading_mode === "SHORT" ? "SELL" : action,
+          days: Math.min(730, Math.max(30, parseInt(days, 10) || 365)),
+          stop_loss_pct: runSl,
+          take_profit_pct: runTp,
+          entry_conditions: hasCustomConds ? customEntryConditions : null,
+          exit_conditions: hasCustomConds ? customExitConditions : null,
+          custom_strategy_name: selectedCustom?.name ?? null,
+          custom_strategy_id: selectedCustom?.id ?? null,
+          custom_strategy_snapshot: customSnapshot,
+          execution_days:
+            mode === "strategy" && selectedCustom
+            && Array.isArray(selectedCustom.execution_days)
+            && selectedCustom.execution_days.length > 0
+              ? selectedCustom.execution_days
+              : null,
+        };
+        if (derivedMaxHold != null) backtestBody.max_hold_days = derivedMaxHold;
+      }
+      // (body assembled above; fallthrough to invoke)
 
       const res = await supabase.functions.invoke("backtest-vectorbt", {
         body: backtestBody,
@@ -1756,10 +1960,13 @@ export default function BacktestingSection() {
       setLastBacktestClientMs(Math.round(performance.now() - runStarted));
       if (res.error || (d as any)?.error) { toast.error(String((d as any)?.error ?? "Backtest failed")); return; }
       setResult(d);
+      const runLabel = mode === "options"
+        ? `ORB Options · ${sym}`
+        : mode === "strategy" ? stratLabel : `Simple ${action}`;
       setResultViewContext({
-        mode,
-        stratLabel,
-        action: selectedCustom?.trading_mode === "SHORT" ? "SELL" : action,
+        mode: mode === "options" ? "strategy" : mode,
+        stratLabel: runLabel,
+        action: mode === "options" ? "BUY" : (selectedCustom?.trading_mode === "SHORT" ? "SELL" : action),
         reportNotional: Math.max(1000, parseFloat(initialCapital) || 100000),
         displayCurrency,
         historyId: null,
@@ -1773,20 +1980,21 @@ export default function BacktestingSection() {
         if (user) {
           await supabase.from("backtest_runs" as any).insert({
             user_id: user.id, symbol: sym, exchange,
-            action: selectedCustom?.trading_mode === "SHORT" ? "SELL" : action,
-            mode,
-            strategy_label: mode === "strategy" ? stratLabel : `Simple ${action}`,
+            action: mode === "options" ? "BUY" : (selectedCustom?.trading_mode === "SHORT" ? "SELL" : action),
+            mode: mode === "options" ? "strategy" : mode,
+            strategy_label: runLabel,
             params: {
-              stop_loss_pct: runSl,
-              take_profit_pct: runTp,
-              days: Math.min(730, Math.max(30, parseInt(days, 10) || 365)),
+              ...(mode !== "options" ? {
+                stop_loss_pct: parseFloat(slPct) || 2,
+                take_profit_pct: parseFloat(tpPct) || 4,
+              } : { options_config: backtestBody.options_config }),
+              days: parseInt(days, 10) || 365,
               session_start: startTime, session_end: endTime, squareoff_time: squareoff,
               used_custom_conditions: d.usedCustomConditions ?? false,
               display_currency: displayCurrency,
               initial_capital: Math.max(1000, parseFloat(initialCapital) || 100000),
-              engine_strategy: engineStrategy,
-              custom_strategy_id: selectedCustom?.id ?? null,
-              custom_strategy_snapshot: customSnapshot,
+              engine_strategy: mode === "options" ? "options_orb" : (backtestBody.strategy ?? strategy),
+              custom_strategy_id: mode !== "options" ? (selectedCustom?.id ?? null) : null,
             },
             summary: {
               totalTrades: d.totalTrades, winRate: d.winRate,
@@ -1806,14 +2014,14 @@ export default function BacktestingSection() {
         }
       } catch { /* non-fatal */ }
 
-      const modeNote = d.usedCustomConditions ? " · custom conditions applied" : "";
+      const modeNote = mode === "options" ? " · options ORB" : (d.usedCustomConditions ? " · custom conditions applied" : "");
       toast.success(`Backtest ready · ${d.totalTrades} trades · WR ${d.winRate}%${modeNote}`);
-    } catch {
+    } catch (e) {
       setLastBacktestClientMs(Math.round(performance.now() - runStarted));
-      toast.error("Backtest failed");
+      toast.error(e instanceof Error ? e.message : "Backtest failed");
     }
     finally { setLoading(false); }
-  }, [symbol, exchange, strategy, action, slPct, tpPct, days, mode, selectedCustom, stratLabel, startTime, endTime, squareoff, loadHistory, displayCurrency, initialCapital]);
+  }, [symbol, exchange, strategy, action, slPct, tpPct, days, mode, selectedCustom, stratLabel, startTime, endTime, squareoff, loadHistory, displayCurrency, initialCapital, orbDurationMins, orbMinRangePct, orbMaxRangePct, orbMomentumBars, orbDirection, orbExpiry, orbExpiryGuard, orbSlPct, orbTpPct, orbTrailingEnabled, orbTrailAfterPct, orbTrailPct, orbTimeExit, orbMaxReentry]);
 
   const runAiFilteredComparison = useCallback(async () => {
     if (!result) {
@@ -1985,11 +2193,25 @@ export default function BacktestingSection() {
 
         {/* Mode */}
         <div className="flex flex-wrap gap-2">
-          {(["strategy", "simple"] as const).map(m => (
+          {([
+            ["strategy", "Strategy"],
+            ["simple", "Simple BUY / SELL"],
+            ["options", "Options ORB"],
+          ] as [typeof mode, string][]).map(([m, label]) => (
             <Button key={m} size="sm" variant={mode === m ? "default" : "outline"}
-              className={mode === m ? "bg-teal-600" : "border-zinc-600"}
-              onClick={() => setMode(m)}>
-              {m === "strategy" ? "Strategy" : "Simple BUY / SELL"}
+              className={mode === m
+                ? (m === "options" ? "bg-violet-600 hover:bg-violet-500" : "bg-teal-600")
+                : "border-zinc-600"}
+              onClick={() => {
+                setMode(m);
+                // When switching to options mode, default exchange to NSE (underlying market)
+                // and default days to 90 (reasonable for 5-min intraday data)
+                if (m === "options") {
+                  if (!exchange || exchange === "NFO") setExchange("NSE");
+                  if (!days || parseInt(days, 10) > 180) setDays("90");
+                }
+              }}>
+              {label}
             </Button>
           ))}
         </div>
@@ -2113,7 +2335,267 @@ export default function BacktestingSection() {
           </div>
         ) : null}
 
-        {/* Symbol + Exchange */}
+        {/* Options ORB — strategy-first picker */}
+        {mode === "options" && (() => {
+          const selStrat = optionsStrategies.find(x => (x as any).id === selectedOptionsStratId) ?? null;
+          return (
+          <div className="space-y-3">
+            {/* Strategy picker — the primary input */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-zinc-400">Options strategy to backtest</Label>
+              {optionsStrategies.length === 0 ? (
+                <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-3 text-xs text-zinc-500">
+                  No options strategies yet — create one in <strong className="text-zinc-400">Algo &amp; Options → Options strategies</strong> first.
+                </div>
+              ) : (
+                <Select value={selectedOptionsStratId} onValueChange={id => {
+                  setSelectedOptionsStratId(id);
+                  const s = optionsStrategies.find(x => (x as any).id === id);
+                  if (!s) return;
+                  // Auto-fill everything from the saved strategy
+                  if (s.underlying) setSymbol(String(s.underlying));
+                  if (s.exchange) {
+                    const ex = String(s.exchange).toUpperCase();
+                    setExchange(ex === "NFO" ? "NSE" : ex === "BFO" ? "BSE" : ex);
+                  }
+                  setOrbSlPct(String(s.stop_loss_pct ?? 30));
+                  setOrbTpPct(String(s.take_profit_pct ?? 50));
+                  setOrbTrailingEnabled(Boolean(s.trailing_stop ?? true));
+                  setOrbTrailAfterPct(String(s.trailing_trigger_pct ?? 30));
+                  setOrbTrailPct(String(s.trailing_stop_pct ?? 15));
+                  setOrbDurationMins(String(s.orb_duration_minutes ?? 15));
+                  setOrbTimeExit(String(s.time_exit_hhmm ?? "15:15"));
+                  setOrbMaxReentry(String(s.max_reentry_count ?? 1));
+                  setOrbDirection(String(s.direction ?? "neutral").toLowerCase());
+                  setOrbExpiry((s.expiry_type === "monthly" ? "monthly" : "weekly") as "weekly" | "monthly");
+                  setOrbExpiryGuard(Boolean(s.expiry_day_guard ?? true));
+                  setOrbMinRangePct(String(s.min_range_pct ?? 0.2));
+                  setOrbMaxRangePct(String(s.max_range_pct ?? 1.0));
+                  setOrbMomentumBars(String(s.momentum_bars ?? 3));
+                  setOrbLots(String((s as any).lot_size ?? 1));
+                }}>
+                  <SelectTrigger className="bg-zinc-800 border-zinc-700 text-sm h-10">
+                    <SelectValue placeholder="Pick a strategy…" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-zinc-900 border-zinc-700">
+                    {optionsStrategies.map(s => (
+                      <SelectItem key={String((s as any).id)} value={String((s as any).id)} className="text-sm">
+                        <span className="font-medium">{String((s as any).name)}</span>
+                        <span className="text-zinc-500 ml-2 text-xs">
+                          {String((s as any).underlying ?? "")} · SL {String((s as any).stop_loss_pct ?? "—")}% · TP {String((s as any).take_profit_pct ?? "—")}%
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+
+            {/* Summary + lot size — shown after a strategy is selected */}
+            {selStrat && (
+              <div className="rounded-lg border border-violet-800/30 bg-violet-950/20 px-3 py-2.5 space-y-2.5">
+                <p className="text-[10px] font-semibold text-violet-300 uppercase tracking-wider">Strategy loaded — ready to run</p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-[11px]">
+                  <div><span className="text-zinc-600">Underlying</span> <span className="text-zinc-200 font-mono ml-1">{symbol || String((selStrat as any).underlying)}</span></div>
+                  <div><span className="text-zinc-600">Direction</span> <span className="text-zinc-200 ml-1 capitalize">{String((selStrat as any).direction ?? orbDirection)}</span></div>
+                  <div><span className="text-zinc-600">SL %</span> <span className="text-zinc-200 ml-1">{orbSlPct}%</span></div>
+                  <div><span className="text-zinc-600">TP %</span> <span className="text-zinc-200 ml-1">{orbTpPct}%</span></div>
+                  <div><span className="text-zinc-600">ORB</span> <span className="text-zinc-200 ml-1">{orbDurationMins}min</span></div>
+                  <div><span className="text-zinc-600">Exit</span> <span className="text-zinc-200 ml-1">{orbTimeExit} IST</span></div>
+                  <div><span className="text-zinc-600">Expiry guard</span> <span className="text-zinc-200 ml-1">{orbExpiryGuard ? "On" : "Off"}</span></div>
+                  <div><span className="text-zinc-600">Trailing</span> <span className="text-zinc-200 ml-1">{orbTrailingEnabled ? `On (>${orbTrailAfterPct}%)` : "Off"}</span></div>
+                </div>
+                {/* Lot size — required so PnL is in real rupees */}
+                <div className="border-t border-violet-800/20 pt-2 flex items-center gap-3">
+                  <Label className="text-xs text-zinc-300 shrink-0 font-medium">Number of lots <span className="text-violet-400">*</span></Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={orbLots}
+                    onChange={e => setOrbLots(e.target.value)}
+                    className="bg-zinc-800 border-zinc-700 h-8 text-sm w-20 font-mono"
+                    placeholder="1"
+                  />
+                  <span className="text-[11px] text-zinc-500">lot(s) per trade — affects PnL in ₹</span>
+                </div>
+
+                {/* Expiry picker */}
+                <div className="border-t border-violet-800/20 pt-2 space-y-2">
+                  <p className="text-[10px] font-semibold text-violet-300 uppercase tracking-wider">Pick options contract to backtest</p>
+                  {orbPickerError && (
+                    <div className="rounded bg-red-950/50 border border-red-800/40 px-2.5 py-1.5 text-[11px] text-red-400">{orbPickerError}</div>
+                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {/* Expiry */}
+                    <div className="space-y-1">
+                      <Label className="text-[10px] text-zinc-500">Expiry <span className="text-violet-400">*</span></Label>
+                      {orbLoadingExpiries ? (
+                        <div className="flex items-center gap-2 h-9 px-2 rounded bg-zinc-800 border border-zinc-700 text-xs text-zinc-500">
+                          <Loader2 className="h-3 w-3 animate-spin" /> Loading expiries…
+                        </div>
+                      ) : (
+                        <Select value={orbExpiryIso} onValueChange={v => { setOrbExpiryIso(v); setOrbOptionSymbol(""); }}>
+                          <SelectTrigger className="bg-zinc-800 border-zinc-700 h-9 text-xs">
+                            <SelectValue placeholder="Select expiry…" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-zinc-900 border-zinc-700">
+                            {orbExpiries.map(e => (
+                              <SelectItem key={e.date} value={e.date} className="text-xs">
+                                {e.display} <span className="text-zinc-500 ml-1">({e.days_to_expiry}d)</span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+
+                    {/* Option symbol */}
+                    <div className="space-y-1">
+                      <Label className="text-[10px] text-zinc-500">Option symbol (CE/PE) <span className="text-violet-400">*</span></Label>
+                      {orbLoadingChain ? (
+                        <div className="flex items-center gap-2 h-9 px-2 rounded bg-zinc-800 border border-zinc-700 text-xs text-zinc-500">
+                          <Loader2 className="h-3 w-3 animate-spin" /> Loading chain…
+                        </div>
+                      ) : (
+                        <Select value={orbOptionSymbol} onValueChange={setOrbOptionSymbol} disabled={!orbExpiryIso || orbOptionRows.length === 0}>
+                          <SelectTrigger className="bg-zinc-800 border-zinc-700 h-9 text-xs">
+                            <SelectValue placeholder={orbExpiryIso ? "Select symbol…" : "Pick expiry first"} />
+                          </SelectTrigger>
+                          <SelectContent className="bg-zinc-900 border-zinc-700 max-h-64">
+                            {orbOptionRows.map(r => (
+                              <SelectItem key={r.symbol} value={r.symbol} className="text-xs font-mono">
+                                {r.symbol}
+                                {r.strike ? <span className="text-zinc-500 ml-2">{r.strike} {r.side}</span> : null}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+                  </div>
+                  {orbOptionSymbol && (
+                    <p className="text-[11px] text-emerald-400">Backtest will simulate ORB signals on <span className="font-mono font-semibold">{orbOptionSymbol}</span></p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Lookback days — compact */}
+            <div className="flex items-center gap-3">
+              <Label className="text-[10px] text-zinc-500 shrink-0">Lookback</Label>
+              <div className="flex gap-1.5">
+                {[30, 60, 90, 180, 365].map(d => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => setDays(String(d))}
+                    className={`px-2.5 py-1 rounded text-[11px] font-medium border transition-colors ${
+                      parseInt(days, 10) === d
+                        ? "border-violet-500 bg-violet-500/20 text-violet-300"
+                        : "border-zinc-700 text-zinc-500 hover:border-violet-500/40"
+                    }`}
+                  >
+                    {d}d
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Advanced tweaks — collapsed by default */}
+            <details className="rounded border border-zinc-800 bg-zinc-950/40 text-[11px]">
+              <summary className="cursor-pointer px-3 py-2 text-zinc-500 hover:text-zinc-300 select-none flex items-center gap-1.5">
+                <span>Advanced config overrides</span>
+                <span className="text-zinc-700 text-[10px]">(optional — strategy values used by default)</span>
+              </summary>
+              <div className="px-3 pb-3 pt-2 space-y-2.5 border-t border-zinc-800/60">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-zinc-500">ORB window (mins)</Label>
+                    <Input value={orbDurationMins} onChange={e => setOrbDurationMins(e.target.value)} className="bg-zinc-800 border-zinc-700 h-7 text-xs" placeholder="15" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-zinc-500">Options SL %</Label>
+                    <Input value={orbSlPct} onChange={e => setOrbSlPct(e.target.value)} className="bg-zinc-800 border-zinc-700 h-7 text-xs" placeholder="30" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-zinc-500">Options TP %</Label>
+                    <Input value={orbTpPct} onChange={e => setOrbTpPct(e.target.value)} className="bg-zinc-800 border-zinc-700 h-7 text-xs" placeholder="50" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-zinc-500">Min range %</Label>
+                    <Input value={orbMinRangePct} onChange={e => setOrbMinRangePct(e.target.value)} className="bg-zinc-800 border-zinc-700 h-7 text-xs" placeholder="0.2" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-zinc-500">Max range %</Label>
+                    <Input value={orbMaxRangePct} onChange={e => setOrbMaxRangePct(e.target.value)} className="bg-zinc-800 border-zinc-700 h-7 text-xs" placeholder="1.0" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-zinc-500">Momentum bars</Label>
+                    <Input value={orbMomentumBars} onChange={e => setOrbMomentumBars(e.target.value)} className="bg-zinc-800 border-zinc-700 h-7 text-xs" placeholder="3" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-zinc-500">Trail after % gain</Label>
+                    <Input value={orbTrailAfterPct} onChange={e => setOrbTrailAfterPct(e.target.value)} disabled={!orbTrailingEnabled} className="bg-zinc-800 border-zinc-700 h-7 text-xs disabled:opacity-40" placeholder="30" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-zinc-500">Trail by %</Label>
+                    <Input value={orbTrailPct} onChange={e => setOrbTrailPct(e.target.value)} disabled={!orbTrailingEnabled} className="bg-zinc-800 border-zinc-700 h-7 text-xs disabled:opacity-40" placeholder="15" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-zinc-500">Time exit (IST)</Label>
+                    <Input value={orbTimeExit} onChange={e => setOrbTimeExit(e.target.value)} className="bg-zinc-800 border-zinc-700 h-7 text-xs" placeholder="15:15" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-zinc-500">Max re-entries</Label>
+                    <Input value={orbMaxReentry} onChange={e => setOrbMaxReentry(e.target.value)} className="bg-zinc-800 border-zinc-700 h-7 text-xs" placeholder="1" />
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-3 items-center pt-1">
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-zinc-500">Direction</Label>
+                    <Select value={orbDirection} onValueChange={setOrbDirection}>
+                      <SelectTrigger className="bg-zinc-800 border-zinc-700 text-xs h-7 w-32"><SelectValue /></SelectTrigger>
+                      <SelectContent className="bg-zinc-900 border-zinc-700">
+                        <SelectItem value="neutral">Neutral (CE+PE)</SelectItem>
+                        <SelectItem value="bullish">Bullish (CE only)</SelectItem>
+                        <SelectItem value="bearish">Bearish (PE only)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-zinc-500">Expiry type</Label>
+                    <Select value={orbExpiry} onValueChange={v => setOrbExpiry(v as "weekly" | "monthly")}>
+                      <SelectTrigger className="bg-zinc-800 border-zinc-700 text-xs h-7 w-24"><SelectValue /></SelectTrigger>
+                      <SelectContent className="bg-zinc-900 border-zinc-700">
+                        <SelectItem value="weekly">Weekly</SelectItem>
+                        <SelectItem value="monthly">Monthly</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center gap-2 pt-4">
+                    <button type="button" onClick={() => setOrbTrailingEnabled(v => !v)}
+                      className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${orbTrailingEnabled ? "bg-violet-500" : "bg-zinc-700"}`}>
+                      <span className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform ${orbTrailingEnabled ? "translate-x-3.5" : "translate-x-0.5"}`} />
+                    </button>
+                    <Label className="text-[10px] text-zinc-400 cursor-pointer" onClick={() => setOrbTrailingEnabled(v => !v)}>Trailing SL</Label>
+                  </div>
+                  <div className="flex items-center gap-2 pt-4">
+                    <button type="button" onClick={() => setOrbExpiryGuard(v => !v)}
+                      className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${orbExpiryGuard ? "bg-violet-500" : "bg-zinc-700"}`}>
+                      <span className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform ${orbExpiryGuard ? "translate-x-3.5" : "translate-x-0.5"}`} />
+                    </button>
+                    <Label className="text-[10px] text-zinc-400 cursor-pointer" onClick={() => setOrbExpiryGuard(v => !v)}>Skip expiry day</Label>
+                  </div>
+                </div>
+              </div>
+            </details>
+          </div>
+          );
+        })()}
+
+        {/* Symbol + Exchange — hidden for options mode (symbol comes from the strategy) */}
+        {mode !== "options" && (
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
             <Label className="text-xs text-zinc-400">
@@ -2136,6 +2618,7 @@ export default function BacktestingSection() {
             </Select>
           </div>
         </div>
+        )}
 
         {mode === "simple" ? (
           <div className="flex gap-2">
@@ -2144,7 +2627,8 @@ export default function BacktestingSection() {
           </div>
         ) : null}
 
-        {/* Parameters */}
+        {/* Parameters — hidden for options mode (days + config are in the options section above) */}
+        {mode !== "options" && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <div className="space-y-1">
             <Label className="text-[10px] text-zinc-500">
@@ -2185,8 +2669,10 @@ export default function BacktestingSection() {
             )}
           </div>
         </div>
+        )}
 
-        {/* Session */}
+        {/* Session — hide for options mode */}
+        {mode !== "options" && (
         <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3 space-y-2">
           <p className="text-[10px] font-medium text-zinc-400">Session & exit time (for AI timing review)</p>
           <div className="grid grid-cols-3 gap-2">
@@ -2198,13 +2684,25 @@ export default function BacktestingSection() {
             ))}
           </div>
         </div>
+        )}
 
         {/* Actions */}
         <div className="flex flex-wrap gap-2">
-          <Button onClick={runVectorBt} disabled={loading} className="bg-teal-600 hover:bg-teal-500">
+          <Button
+            onClick={runVectorBt}
+            disabled={loading || (mode === "options" && (!selectedOptionsStratId || !(parseInt(orbLots, 10) >= 1) || !orbExpiryIso || !orbOptionSymbol))}
+            className={mode === "options" ? "bg-violet-600 hover:bg-violet-500 disabled:opacity-40" : "bg-teal-600 hover:bg-teal-500"}
+          >
             {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <BarChart3 className="h-4 w-4 mr-2" />}
-            Run Backtesting
+            {mode === "options"
+              ? (!selectedOptionsStratId ? "Select a strategy first"
+                  : !(parseInt(orbLots, 10) >= 1) ? "Enter lot size"
+                  : !orbExpiryIso ? "Select expiry"
+                  : !orbOptionSymbol ? "Select option symbol"
+                  : "Run Options Backtest")
+              : "Run Backtesting"}
           </Button>
+          {mode !== "options" && (
           <Button
             variant="outline"
             onClick={runAiFilteredComparison}
@@ -2214,10 +2712,13 @@ export default function BacktestingSection() {
             {aiFilterLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Zap className="h-4 w-4 mr-2" />}
             Run AI-Filtered Comparison
           </Button>
+          )}
+          {mode !== "options" && (
           <Button variant="outline" onClick={runTimingReview} disabled={!result || aiLoading} className="border-purple-600/50 text-purple-300">
             {aiLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Brain className="h-4 w-4 mr-2" />}
             AI Review SL/TP & Timing
           </Button>
+          )}
           {result && !resultPopupOpen && (
             <Button variant="ghost" onClick={() => setResultPopupOpen(true)} className="text-teal-400 hover:text-teal-300 hover:bg-teal-400/10">
               <Eye className="h-4 w-4 mr-2" /> View Last Result
@@ -2591,28 +3092,49 @@ export default function BacktestingSection() {
                                       </tr>
                                     </thead>
                                     <tbody className="divide-y divide-zinc-900/50">
-                                      {pagedTrades.map(t => (
+                                      {pagedTrades.map(t => {
+                                        const isOptions = result.isOptionsBacktest || (t as any).direction;
+                                        return (
                                         <tr key={t.tradeNo}
-                                          className="cursor-pointer hover:bg-teal-500/[0.03] transition-colors group"
-                                          onClick={() => openTradeFromLive(t, result)}>
+                                          className={`${isOptions ? "" : "cursor-pointer"} hover:bg-teal-500/[0.03] transition-colors group`}
+                                          onClick={() => { if (!isOptions) openTradeFromLive(t, result); }}>
                                           <td className="px-4 py-3.5 text-zinc-600 font-mono font-bold group-hover:text-zinc-400">#{t.tradeNo}</td>
                                           <td className="px-4 py-3.5">
                                             <div className="font-mono text-zinc-400 group-hover:text-zinc-200">
-                                              {t.entryDate} <span className="text-zinc-800 mx-1">→</span> {t.exitDate}
+                                              {t.entryDate}
+                                              {isOptions && (t as any).entry_hhmm && (
+                                                <span className="text-zinc-600 text-[10px] ml-1">{(t as any).entry_hhmm}–{(t as any).exit_hhmm}</span>
+                                              )}
                                             </div>
                                           </td>
-                                          <td className="px-4 py-3.5 text-right text-zinc-500 font-mono group-hover:text-zinc-300">{t.holdingDays ?? "—"}d</td>
+                                          {isOptions ? (
+                                            <td className="px-4 py-3.5 text-center">
+                                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${(t as any).direction === "CE" ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400"}`}>
+                                                {(t as any).direction ?? "—"}
+                                              </span>
+                                            </td>
+                                          ) : (
+                                            <td className="px-4 py-3.5 text-right text-zinc-500 font-mono group-hover:text-zinc-300">{t.holdingDays ?? "—"}d</td>
+                                          )}
                                           <td className="px-4 py-3.5 text-right">
-                                            <span className="font-mono text-zinc-500 group-hover:text-zinc-300">
-                                              {t.entryPrice?.toLocaleString() ?? "—"} <span className="text-zinc-800 mx-1">→</span> {t.exitPrice?.toLocaleString() ?? "—"}
-                                            </span>
+                                            {isOptions ? (
+                                              <span className="font-mono text-zinc-500 text-[10px] group-hover:text-zinc-300">
+                                                ORB {(t as any).orb_high?.toLocaleString() ?? "—"} / {(t as any).orb_low?.toLocaleString() ?? "—"}
+                                                {(t as any).range_pct != null && <span className="text-zinc-700 ml-1">({(t as any).range_pct}%)</span>}
+                                              </span>
+                                            ) : (
+                                              <span className="font-mono text-zinc-500 group-hover:text-zinc-300">
+                                                {t.entryPrice?.toLocaleString() ?? "—"} <span className="text-zinc-800 mx-1">→</span> {t.exitPrice?.toLocaleString() ?? "—"}
+                                              </span>
+                                            )}
                                           </td>
                                           <td className={`px-4 py-3.5 text-right font-mono font-bold ${t.profitable ? "text-emerald-400" : "text-red-400"}`}>
                                             {t.returnPct >= 0 ? "+" : ""}{t.returnPct}%
                                           </td>
                                           <td className="px-4 py-3.5 text-center"><ExitReasonBadge reason={t.exitReason} /></td>
                                         </tr>
-                                      ))}
+                                        );
+                                      })}
                                     </tbody>
                                   </table>
                                 </div>
