@@ -32,6 +32,8 @@ interface StartTradeRequest {
   expectedRoiWorst?: number;
   predictionId?: string;
   isPaperTrade?: boolean;
+  /** Quote / signal price at decision time; used with entryPrice (fill) for slippage in UI */
+  referenceEntryPrice?: number;
   /** Strategy type used for paper trade (e.g. trend_following, orb, vwap_bounce) */
   paperStrategyType?: string | null;
   /** Optional 7-module scoring snapshot at trade-open time */
@@ -225,6 +227,13 @@ serve(async (req) => {
       : Math.max(1, Math.round(parsedShares));
 
     // Create active trade record
+    const refPx =
+      requestBody.referenceEntryPrice != null &&
+      Number.isFinite(Number(requestBody.referenceEntryPrice)) &&
+      Number(requestBody.referenceEntryPrice) > 0
+        ? Number(requestBody.referenceEntryPrice)
+        : Number(requestBody.entryPrice);
+
     const tradeData = {
       user_id: user.id,
       symbol: requestBody.symbol,
@@ -232,6 +241,7 @@ serve(async (req) => {
       status: 'active',
       
       entry_price: requestBody.entryPrice,
+      reference_entry_price: refPx,
       entry_time: now.toISOString(),
       shares: normalizedShares,
       investment_amount: requestBody.investmentAmount,
@@ -295,7 +305,7 @@ serve(async (req) => {
         user_id: user.id,
         type: 'mid_trade_update',
         title: `Trade Started: ${requestBody.action} ${requestBody.symbol}`,
-        message: `Your ${requestBody.action} trade for ${requestBody.symbol} has started. Entry: ₹${requestBody.entryPrice.toFixed(2)}, Target: ₹${takeProfitPrice.toFixed(2)}, Stop: ₹${stopLossPrice.toFixed(2)}${requestBody.brokerOrderId ? ` | Order ID: ${requestBody.brokerOrderId}` : ''}`,
+        message: `Your ${requestBody.action} trade for ${requestBody.symbol} has started. Entry (fill): ₹${requestBody.entryPrice.toFixed(2)}, reference quote: ₹${refPx.toFixed(2)}, Target: ₹${takeProfitPrice.toFixed(2)}, Stop: ₹${stopLossPrice.toFixed(2)}${Math.abs(refPx - requestBody.entryPrice) > 1e-6 ? ` — check trade card for slippage vs reference.` : ''}${requestBody.brokerOrderId ? ` | Order ID: ${requestBody.brokerOrderId}` : ''}`,
         status: 'pending',
         channel: 'in_app'
       });

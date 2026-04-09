@@ -2783,6 +2783,7 @@ export function StrategyEntrySignalsPanel({
               : row.verdict === "confirm"
                 ? "LOW"
                 : "MEDIUM",
+          referenceEntryPrice: entryPrice,
           entryPrice,
           shares: 1,
           investmentAmount: entryPrice,

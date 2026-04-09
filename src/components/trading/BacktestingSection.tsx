@@ -1403,9 +1403,7 @@ function DailyPortfolioReturnsChart({ data }: { data: Array<{ date: string; retu
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function BacktestingSection() {
-  const [mode, setMode] = useState<"strategy" | "simple" | "options">("strategy");
-  const [optionsStrategies, setOptionsStrategies] = useState<Array<{ id: string; name: string; underlying: string; exchange: string; exit_rules: Record<string, unknown>; orb_config: Record<string, unknown> }>>([]);
-  const [selectedOptionsId, setSelectedOptionsId] = useState<string>("");
+  const [mode, setMode] = useState<"strategy" | "simple">("strategy");
   const [symbol, setSymbol] = useState("");
   const [exchange, setExchange] = useState("NSE");
   const [strategy, setStrategy] = useState("trend_following");
@@ -1489,22 +1487,6 @@ export default function BacktestingSection() {
   }, []);
 
   useEffect(() => { loadCustomStrategies(); }, [loadCustomStrategies]);
-
-  const loadOptionsStrategies = useCallback(async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const { data } = await supabase
-        .from("options_strategies" as any)
-        .select("id, name, underlying, exchange, exit_rules, orb_config")
-        .eq("user_id", user.id)
-        .eq("is_active", true)
-        .order("created_at", { ascending: false });
-      setOptionsStrategies((Array.isArray(data) ? data : []) as unknown as typeof optionsStrategies);
-    } catch { /* non-fatal */ }
-  }, []);
-
-  useEffect(() => { loadOptionsStrategies(); }, [loadOptionsStrategies]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1743,22 +1725,14 @@ export default function BacktestingSection() {
             ? resolveEngineStrategyIdForCustom(selectedCustom.paper_strategy_type)
             : strategy;
 
-      const selectedOptStrat = mode === "options"
-        ? optionsStrategies.find(s => s.id === selectedOptionsId)
-        : null;
-
       const backtestBody: Record<string, unknown> = {
-        symbol: mode === "options" && selectedOptStrat ? selectedOptStrat.underlying : sym,
-        exchange: mode === "options" && selectedOptStrat ? selectedOptStrat.exchange : exchange,
+        symbol: sym,
+        exchange: exchange,
         strategy: engineStrategy,
         action: selectedCustom?.trading_mode === "SHORT" ? "SELL" : action,
         days: Math.min(730, Math.max(30, parseInt(days, 10) || 365)),
-        stop_loss_pct: mode === "options" && selectedOptStrat
-          ? (selectedOptStrat.exit_rules as any)?.sl_pct ?? 30
-          : runSl,
-        take_profit_pct: mode === "options" && selectedOptStrat
-          ? (selectedOptStrat.exit_rules as any)?.tp_pct ?? 50
-          : runTp,
+        stop_loss_pct: runSl,
+        take_profit_pct: runTp,
         entry_conditions: hasCustomConds ? customEntryConditions : null,
         exit_conditions: hasCustomConds ? customExitConditions : null,
         custom_strategy_name: selectedCustom?.name ?? null,
@@ -1770,14 +1744,6 @@ export default function BacktestingSection() {
           && selectedCustom.execution_days.length > 0
             ? selectedCustom.execution_days
             : null,
-        // Options-specific fields
-        ...(mode === "options" && selectedOptStrat ? {
-          instrument_type: "options",
-          orb_duration_mins: (selectedOptStrat.orb_config as any)?.orb_duration_mins ?? 15,
-          momentum_bars: (selectedOptStrat.orb_config as any)?.momentum_bars ?? 3,
-          options_strategy_id: selectedOptStrat.id,
-          options_strategy_name: selectedOptStrat.name,
-        } : {}),
       };
       if (derivedMaxHold != null) backtestBody.max_hold_days = derivedMaxHold;
 
@@ -1791,7 +1757,7 @@ export default function BacktestingSection() {
       if (res.error || (d as any)?.error) { toast.error(String((d as any)?.error ?? "Backtest failed")); return; }
       setResult(d);
       setResultViewContext({
-        mode: mode === "options" ? "strategy" : mode,
+        mode,
         stratLabel,
         action: selectedCustom?.trading_mode === "SHORT" ? "SELL" : action,
         reportNotional: Math.max(1000, parseFloat(initialCapital) || 100000),
@@ -2019,49 +1985,14 @@ export default function BacktestingSection() {
 
         {/* Mode */}
         <div className="flex flex-wrap gap-2">
-          {(["strategy", "simple", "options"] as const).map(m => (
+          {(["strategy", "simple"] as const).map(m => (
             <Button key={m} size="sm" variant={mode === m ? "default" : "outline"}
-              className={mode === m ? (m === "options" ? "bg-emerald-700" : "bg-teal-600") : "border-zinc-600"}
+              className={mode === m ? "bg-teal-600" : "border-zinc-600"}
               onClick={() => setMode(m)}>
-              {m === "strategy" ? "Strategy" : m === "simple" ? "Simple BUY / SELL" : "Options Strategy"}
+              {m === "strategy" ? "Strategy" : "Simple BUY / SELL"}
             </Button>
           ))}
         </div>
-
-        {/* Options Strategy selector */}
-        {mode === "options" && (
-          <div className="space-y-1">
-            <Label className="text-xs text-zinc-400">Options Strategy</Label>
-            {optionsStrategies.length === 0 ? (
-              <p className="text-xs text-zinc-500 italic">
-                No options strategies found. Create one in Options Trading section first.
-              </p>
-            ) : (
-              <Select value={selectedOptionsId} onValueChange={setSelectedOptionsId}>
-                <SelectTrigger className="bg-zinc-800 border-zinc-700 text-sm"><SelectValue placeholder="Select options strategy" /></SelectTrigger>
-                <SelectContent className="bg-zinc-900 border-zinc-700">
-                  {optionsStrategies.map(s => (
-                    <SelectItem key={s.id} value={s.id} className="text-xs">
-                      {s.name} · {s.underlying} {s.exchange}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            {selectedOptionsId && (() => {
-              const os = optionsStrategies.find(s => s.id === selectedOptionsId);
-              if (!os) return null;
-              return (
-                <div className="text-[10px] text-zinc-500 flex gap-3 mt-1">
-                  <span>SL: {(os.exit_rules as any)?.sl_pct ?? 30}% on premium</span>
-                  <span>TP: {(os.exit_rules as any)?.tp_pct ?? 50}% on premium</span>
-                  <span>ORB: {(os.orb_config as any)?.orb_duration_mins ?? 15}min</span>
-                  <span className="text-emerald-500/80">Underlying: {os.underlying}</span>
-                </div>
-              );
-            })()}
-          </div>
-        )}
 
         {/* Strategy first (Strategy mode) — then symbol; Simple mode uses symbol then direction */}
         {mode === "strategy" ? (

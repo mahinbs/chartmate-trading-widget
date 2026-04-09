@@ -7,6 +7,8 @@ export interface ActiveTrade {
   status: string;
   
   entryPrice: number;
+  /** Quote at open decision; slippage vs entryPrice (fill). Same as entry when not differentiated. */
+  referenceEntryPrice?: number;
   entryTime: string;
   shares: number;
   investmentAmount: number;
@@ -80,6 +82,8 @@ class TradeTrackingService {
     confidence: number;
     riskGrade: string;
     entryPrice: number;
+    /** Optional: LTP / signal price before fill — for slippage vs entryPrice */
+    referenceEntryPrice?: number;
     shares: number;
     investmentAmount: number;
     leverage?: number;
@@ -97,6 +101,7 @@ class TradeTrackingService {
     expectedRoiWorst?: number;
     predictionId?: string;
     isPaperTrade?: boolean;
+    referenceEntryPrice?: number;
     /** Optional 7-module score snapshot to persist on active_trades */
     scoreVector?: Record<string, unknown> | null;
   }) {
@@ -619,6 +624,10 @@ class TradeTrackingService {
       status: data.status,
       
       entryPrice: parseFloat(data.entry_price),
+      referenceEntryPrice:
+        data.reference_entry_price != null && data.reference_entry_price !== ""
+          ? parseFloat(data.reference_entry_price)
+          : parseFloat(data.entry_price),
       entryTime: data.entry_time,
       shares: data.shares,
       investmentAmount: parseFloat(data.investment_amount),

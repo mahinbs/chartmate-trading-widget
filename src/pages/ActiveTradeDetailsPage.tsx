@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { computeEntrySlippage, formatSlippageLine } from "@/lib/tradeSlippage";
 
 export default function ActiveTradeDetailsPage() {
     const { id } = useParams();
@@ -365,6 +366,27 @@ export default function ActiveTradeDetailsPage() {
                                     <span>{assetCurrency}</span>
                                 </div>
                             </div>
+                            {(() => {
+                                const refPx = trade.referenceEntryPrice ?? trade.entryPrice;
+                                const slip = computeEntrySlippage(trade.action, trade.referenceEntryPrice, trade.entryPrice);
+                                const slipMoney = (n: number) => `${currencySymbol}${formatPrice(convertAmount(n))}`;
+                                return (
+                                    <div className="mt-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 space-y-1">
+                                        <p className="text-[10px] text-slate-500 uppercase tracking-wider">Execution vs reference</p>
+                                        <p className="text-xs text-slate-300">
+                                            Reference quote: {slipMoney(refPx)} · Fill: {slipMoney(trade.entryPrice)}
+                                        </p>
+                                        <p className={`text-xs font-medium ${slip.isZero ? "text-slate-400" : slip.isAdverse ? "text-amber-400" : "text-teal-400"}`}>
+                                            {formatSlippageLine(trade.action, trade.referenceEntryPrice, trade.entryPrice, slipMoney)}
+                                        </p>
+                                        {trade.shares > 0 && !slip.isZero && (
+                                            <p className="text-[11px] text-slate-500">
+                                                On {trade.shares} share{trade.shares === 1 ? "" : "s"}: ~{slipMoney(slip.slipPerShare * trade.shares)} vs reference notional
+                                            </p>
+                                        )}
+                                    </div>
+                                );
+                            })()}
                         </div>
 
                         {/* Chart */}

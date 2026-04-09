@@ -9,6 +9,8 @@ export interface UserTradingIntegration {
   api_key_encrypted: string;
   /** OpenAlgo API key — permanent key generated inside OpenAlgo after Zerodha login. */
   openalgo_api_key: string | null;
+  /** Some flows store OpenAlgo username instead of api key. */
+  openalgo_username?: string | null;
   /** Broker name as understood by OpenAlgo (e.g. 'zerodha', 'upstox', 'dhan') */
   broker: string | null;
   broker_id: string | null;
@@ -45,6 +47,37 @@ export async function getTradingIntegration(): Promise<{
   } catch (e: any) {
     return { data: null, error: e?.message || "Failed to load integration" };
   }
+}
+
+/**
+ * True when integration is active, OpenAlgo credentials exist, and the broker day token
+ * has not expired (when token_expires_at is set).
+ */
+export function isBrokerSessionLive(row: UserTradingIntegration | null): boolean {
+  if (!row?.is_active) return false;
+  const hasOpenalgo =
+    !!String(row.openalgo_api_key ?? "").trim() ||
+    !!String(row.openalgo_username ?? "").trim();
+  if (!hasOpenalgo) return false;
+  const exp = row.token_expires_at ? new Date(row.token_expires_at) : null;
+  if (exp && exp.getTime() <= Date.now()) return false;
+  return true;
+}
+
+/** Fired after Broker Sync saves a token or refreshes integration — header + options modals listen. */
+export const BROKER_SESSION_UPDATED_EVENT = "chartmate-broker-session-updated";
+
+/** Scrolls to Broker Sync and starts OAuth or opens token paste (same as Connect on the dashboard). */
+export const OPEN_BROKER_SYNC_EVENT = "chartmate-open-broker-sync";
+
+export function dispatchBrokerSessionUpdated(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(BROKER_SESSION_UPDATED_EVENT));
+}
+
+export function dispatchOpenBrokerSync(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(OPEN_BROKER_SYNC_EVENT));
 }
 
 /**
@@ -108,6 +141,26 @@ export async function setTradingIntegration(params: {
     return { data: data as UserTradingIntegration, error: null };
   } catch (e: any) {
     return { data: null, error: e?.message || "Failed to save integration" };
+  }
+}
+
+/**
+ * Patch only the openalgo_api_key on an existing integration.
+ * Used for one-time setup after provisioning (the broker token is already saved).
+ */
+export async function updateOpenalgoApiKey(
+  apiKey: string,
+): Promise<{ error: string | null }> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { error: "Not signed in" };
+    const { error } = await supabase
+      .from(TABLE as any)
+      .update({ openalgo_api_key: apiKey.trim(), updated_at: new Date().toISOString() })
+      .eq("user_id", user.id);
+    return { error: error?.message ?? null };
+  } catch (e: any) {
+    return { error: e?.message || "Failed to save API key" };
   }
 }
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { dispatchBrokerSessionUpdated } from "@/services/openalgoIntegrationService";
 
 /**
  * Handles the return from Zerodha (or any broker) OAuth via OpenAlgo platform callback.
@@ -63,6 +64,7 @@ export default function BrokerCallbackPage() {
 
         setStatus("done");
         setMessage("Broker connected! Taking you to your trading dashboard…");
+        dispatchBrokerSessionUpdated();
         setTimeout(() => navigate("/trading-dashboard", { replace: true }), 1200);
       } catch (e: any) {
         setStatus("error");

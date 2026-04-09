@@ -15,7 +15,6 @@ import {
   Newspaper,
   ShieldCheck,
   Target,
-  TrendingUp,
   User,
 } from "lucide-react";
 import logo from "@/assets/logo.png";
@@ -98,14 +97,14 @@ function useDashboardNavLinks(): DashboardNavLink[] {
       if (canUseAlgoTools) {
         next.push({
           to: "/trading-dashboard",
-          label: "Algo Trade",
+          label: "Algo & Options",
           icon: Bot,
           iconColor: "text-primary opacity-80",
         });
       } else {
         next.push({
           to: "/algo-setup",
-          label: "Algo Trade",
+          label: "Algo & Options",
           icon: Bot,
           iconColor: "text-primary opacity-80",
         });
@@ -113,7 +112,7 @@ function useDashboardNavLinks(): DashboardNavLink[] {
     } else {
       next.push({
         to: "/pricing?feature=algo",
-        label: "Algo Trade",
+        label: "Algo & Options",
         icon: Bot,
         iconColor: "text-primary opacity-80",
         locked: true,
@@ -132,23 +131,6 @@ function useDashboardNavLinks(): DashboardNavLink[] {
       icon: LineChart,
       iconColor: "text-primary opacity-80",
     });
-
-    if (hasAlgoAccess) {
-      next.push({
-        to: "/options-strategies",
-        label: "Options Trading",
-        icon: TrendingUp,
-        iconColor: "text-emerald-500 opacity-90",
-      });
-    } else {
-      next.push({
-        to: "/pricing?feature=options",
-        label: "Options Trading",
-        icon: TrendingUp,
-        iconColor: "text-emerald-500 opacity-90",
-        locked: true,
-      });
-    }
 
     next.push({
       to: "/subscription",

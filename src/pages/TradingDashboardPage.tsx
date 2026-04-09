@@ -42,6 +42,7 @@ import { StrategyEntrySignalsPanel } from "@/components/prediction/StrategyEntry
 import AlgoStrategyBuilder from "@/components/trading/AlgoStrategyBuilder";
 import { TradingDashboardAccessGate } from "@/components/trading/TradingDashboardAccessGate";
 import { TradingDashboardShell } from "@/components/trading/TradingDashboardShell";
+import { OptionsStrategiesWorkspace } from "@/pages/OptionsStrategyPage";
 import { useSubscription } from "@/hooks/useSubscription";
 import {
   getAlgoStrategyLimits,
@@ -929,11 +930,19 @@ function LiveDashboard({ broker }: { broker: string }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [portfolioKey] = useState(0);
-  const [activeTab, setActiveTab] = useState<"portfolio" | "statement">("portfolio");
+  const [activeTab, setActiveTab] = useState<"portfolio" | "options">("portfolio");
 
   useEffect(() => {
     const qp = new URLSearchParams(location.search);
     const tab = qp.get("tab");
+    if (tab === "options") {
+      setActiveTab("options");
+      return;
+    }
+    if (tab === "portfolio") {
+      setActiveTab("portfolio");
+      return;
+    }
     if (tab === "ai-trading-analysis") {
       qp.delete("tab");
       const rest = qp.toString();
@@ -952,10 +961,12 @@ function LiveDashboard({ broker }: { broker: string }) {
       navigate(`/ai-trading-analysis${rest ? `?${rest}` : ""}`, { replace: true });
       return;
     }
-    if (tab === "portfolio" || tab === "statement") {
-      setActiveTab(tab);
-    }
   }, [location.search, navigate]);
+
+  const setTab = (v: "portfolio" | "options") => {
+    setActiveTab(v);
+    navigate(`/trading-dashboard?tab=${v}`, { replace: true });
+  };
 
   return (
     <TradingDashboardShell broker={broker}>
@@ -963,27 +974,31 @@ function LiveDashboard({ broker }: { broker: string }) {
         <div className="min-w-0">
           <Tabs
             value={activeTab}
-            onValueChange={(v) => setActiveTab(v as "portfolio" | "statement")}
+            onValueChange={(v) => setTab(v as "portfolio" | "options")}
             className="w-full"
           >
-            {/* <TabsList className="grid w-full grid-cols-2 bg-zinc-900 border border-zinc-800 h-auto gap-1 p-1 mb-3">
+            <p className="text-[11px] text-zinc-500 mb-2">
+              Same algo hub for cash and F&amp;O — option symbols and premiums are streamed from the live market via
+              OpenAlgo when connected; paper-only strategies use saved rules without live broker fills.
+            </p>
+            <TabsList className="grid w-full grid-cols-2 bg-zinc-900 border border-zinc-800 h-auto gap-1 p-1 mb-3">
               <TabsTrigger value="portfolio" className="data-[state=active]:bg-teal-500/20 data-[state=active]:text-teal-300 text-xs sm:text-sm">
                 <BookOpen className="h-3.5 w-3.5 mr-1.5 shrink-0" />
-                Portfolio
+                Live &amp; portfolio
               </TabsTrigger>
-              <TabsTrigger value="statement" className="data-[state=active]:bg-teal-500/20 data-[state=active]:text-teal-300 text-xs sm:text-sm">
-                <ScrollText className="h-3.5 w-3.5 mr-1.5 shrink-0" />
-                Statement
+              <TabsTrigger value="options" className="data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-300 text-xs sm:text-sm">
+                <Zap className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+                Options strategies
               </TabsTrigger>
-            </TabsList> */}
+            </TabsList>
 
             <TabsContent value="portfolio" className="pt-0">
               <BrokerPortfolioCard key={portfolioKey} broker={broker} />
             </TabsContent>
 
-            {/* <TabsContent value="statement" className="pt-0">
-              <StatementSection />
-            </TabsContent> */}
+            <TabsContent value="options" className="pt-0 min-h-[50vh]">
+              <OptionsStrategiesWorkspace embedded />
+            </TabsContent>
           </Tabs>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -29,6 +29,7 @@ import {
   ChevronUp,
   FlaskConical,
   Loader2,
+  Pause,
   Plus,
   RefreshCw,
   Trash2,
@@ -44,9 +45,20 @@ import {
   optionsStrategyCapMessage,
 } from "@/lib/optionsStrategyLimits";
 import { OptionsStrategyBuilderDialog } from "@/components/options/OptionsStrategyBuilderDialog";
+import { OptionsStrategyActivateDialog } from "@/components/options/OptionsStrategyActivateDialog";
 import { OptionsPaperDashboard } from "@/components/options/OptionsPaperDashboard";
 import { OptionChainViewer } from "@/components/options/OptionChainViewer";
-import { isOptionsApiConfigured } from "@/lib/optionsApi";
+import {
+  fetchExpiryDates,
+  instrumentTypeForUnderlying,
+  isOptionsApiConfigured,
+  type NormalizedExpiryItem,
+} from "@/lib/optionsApi";
+import {
+  getTradingIntegration,
+  isBrokerSessionLive,
+  BROKER_SESSION_UPDATED_EVENT,
+} from "@/services/openalgoIntegrationService";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -100,7 +112,8 @@ function directionIcon(dir: string) {
 
 // ── Component ─────────────────────────────────────────────────────────────
 
-export default function OptionsStrategyPage() {
+/** Core options UI — only used inside Algo & Options → Options strategies tab (not a separate nav route). */
+export function OptionsStrategiesWorkspace({ embedded = false }: { embedded?: boolean }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { planId, hasAlgoAccess } = useSubscription();
@@ -112,6 +125,13 @@ export default function OptionsStrategyPage() {
   const [deleteTarget, setDeleteTarget] = useState<OptionsStrategy | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [chainViewStrategy, setChainViewStrategy] = useState<OptionsStrategy | null>(null);
+  const [activateTarget, setActivateTarget] = useState<OptionsStrategy | null>(null);
+  const [activateMode, setActivateMode] = useState<"paper" | "live">("paper");
+
+  // Pre-fetched expiry data keyed by underlying symbol — populated as soon as broker is connected
+  const [prefetchedExpiries, setPrefetchedExpiries] = useState<Record<string, NormalizedExpiryItem[]>>({});
+  const [brokerConnected, setBrokerConnected] = useState(false);
+  const prefetchedRef = useRef<Set<string>>(new Set());
 
   const limits = getOptionsStrategyLimits(planId);
   const atCap = isAtOptionsStrategyCap(strategies.length, limits);
@@ -136,6 +156,45 @@ export default function OptionsStrategyPage() {
     fetchStrategies();
   }, [fetchStrategies]);
 
+  // ── Broker connection status ────────────────────────────────────────────────
+  const checkBroker = useCallback(async () => {
+    const { data } = await getTradingIntegration();
+    setBrokerConnected(isBrokerSessionLive(data));
+  }, []);
+
+  useEffect(() => { void checkBroker(); }, [checkBroker]);
+
+  useEffect(() => {
+    const onUpd = () => void checkBroker();
+    window.addEventListener(BROKER_SESSION_UPDATED_EVENT, onUpd);
+    return () => window.removeEventListener(BROKER_SESSION_UPDATED_EVENT, onUpd);
+  }, [checkBroker]);
+
+  // ── Pre-fetch expiries for all strategy underlyings ───────────────────────
+  useEffect(() => {
+    if (!brokerConnected || !strategies.length) return;
+    const uniqueKeys = [
+      ...new Set(
+        strategies.map((s) => {
+          const inst = instrumentTypeForUnderlying(s.underlying);
+          return `${s.underlying}|${s.exchange}|${inst}`;
+        })
+      ),
+    ];
+    for (const key of uniqueKeys) {
+      if (prefetchedRef.current.has(key)) continue;
+      prefetchedRef.current.add(key);
+      const [symbol, exchange, instrument] = key.split("|");
+      fetchExpiryDates({ symbol, exchange, instrument })
+        .then((data) => {
+          setPrefetchedExpiries((prev) => ({ ...prev, [symbol]: data.expiries }));
+        })
+        .catch(() => {
+          prefetchedRef.current.delete(key); // allow retry on next render
+        });
+    }
+  }, [brokerConnected, strategies]);
+
   const handleDelete = async () => {
     if (!deleteTarget) return;
     const { error } = await (supabase as any)
@@ -151,51 +210,64 @@ export default function OptionsStrategyPage() {
     setDeleteTarget(null);
   };
 
-  const handleToggleActive = async (strategy: OptionsStrategy) => {
+  const handlePause = async (strategy: OptionsStrategy) => {
     const { error } = await (supabase as any)
       .from("options_strategies")
-      .update({ is_active: !strategy.is_active })
+      .update({ is_active: false })
       .eq("id", strategy.id);
     if (error) {
-      toast.error("Failed to update strategy status.");
+      toast.error("Failed to pause strategy.");
     } else {
       setStrategies((prev) =>
-        prev.map((s) => s.id === strategy.id ? { ...s, is_active: !s.is_active } : s),
+        prev.map((s) => (s.id === strategy.id ? { ...s, is_active: false } : s)),
       );
+      toast.success(`"${strategy.name}" paused.`);
     }
   };
 
+  const openActivate = (strategy: OptionsStrategy, mode: "paper" | "live") => {
+    setActivateMode(mode);
+    setActivateTarget(strategy);
+  };
+
+  const finalizeActivation = () => {
+    setActivateTarget(null);
+    fetchStrategies();
+  };
+
   if (!hasAlgoAccess) {
+    const gate = (
+      <Card className="max-w-md w-full text-center mx-auto">
+        <CardHeader>
+          <CardTitle className="flex items-center justify-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-yellow-500" />
+            Algo Subscription Required
+          </CardTitle>
+          <CardDescription>
+            Options strategies require an active Algo plan. Connect a broker for live execution; paper-only
+            strategies work without a live session.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button onClick={() => navigate("/pricing?feature=options")}>
+            Upgrade Plan
+          </Button>
+        </CardContent>
+      </Card>
+    );
+    if (embedded) {
+      return <div className="p-4">{gate}</div>;
+    }
     return (
       <div className="flex h-screen bg-background">
         <DashboardSidebar />
-        <main className="flex-1 overflow-auto p-6 flex items-center justify-center">
-          <Card className="max-w-md w-full text-center">
-            <CardHeader>
-              <CardTitle className="flex items-center justify-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-yellow-500" />
-                Algo Subscription Required
-              </CardTitle>
-              <CardDescription>
-                Options trading strategies require an active Algo plan.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button onClick={() => navigate("/pricing?feature=options")}>
-                Upgrade Plan
-              </Button>
-            </CardContent>
-          </Card>
-        </main>
+        <main className="flex-1 overflow-auto p-6 flex items-center justify-center">{gate}</main>
       </div>
     );
   }
 
-  return (
-    <div className="flex h-screen bg-background">
-      <DashboardSidebar />
-
-      <main className="flex-1 overflow-auto">
+  const workspaceInner = (
+    <>
         {!isOptionsApiConfigured() && (
           <div className="mx-6 mt-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
             <strong className="font-semibold">End-to-end options API:</strong> set{" "}
@@ -214,7 +286,8 @@ export default function OptionsStrategyPage() {
                 Options Strategies
               </h1>
               <p className="text-sm text-muted-foreground mt-0.5">
-                ORB breakout, momentum entries, premium-based SL/TP — paper &amp; live trading
+                Paper strategies always work. Live F&amp;O needs broker + OpenAlgo (same hub as equities — use{" "}
+                <span className="text-zinc-300">Algo &amp; Options</span>).
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -393,7 +466,7 @@ export default function OptionsStrategyPage() {
                       )}
 
                       {/* Action row */}
-                      <div className="flex items-center gap-2 mt-3">
+                      <div className="flex items-center gap-1.5 mt-3 flex-wrap">
                         <Button
                           variant="ghost"
                           size="sm"
@@ -401,30 +474,51 @@ export default function OptionsStrategyPage() {
                           onClick={() => setExpandedId(expandedId === s.id ? null : s.id)}
                         >
                           {expandedId === s.id ? (
-                            <><ChevronUp className="h-3.5 w-3.5 mr-1" /> Less</>
+                            <><ChevronUp className="h-3.5 w-3.5 mr-1" />Less</>
                           ) : (
-                            <><ChevronDown className="h-3.5 w-3.5 mr-1" /> Details</>
+                            <><ChevronDown className="h-3.5 w-3.5 mr-1" />Details</>
                           )}
                         </Button>
                         <Button
                           variant="outline"
                           size="sm"
                           className="text-xs h-7 px-2"
-                          onClick={() => {
-                            setEditStrategy(s);
-                            setShowBuilder(true);
-                          }}
+                          onClick={() => { setEditStrategy(s); setShowBuilder(true); }}
                         >
                           Edit
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-xs h-7 px-2"
-                          onClick={() => handleToggleActive(s)}
-                        >
-                          {s.is_active ? "Pause" : "Activate"}
-                        </Button>
+
+                        {s.is_active ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-xs h-7 px-2 border-amber-500/40 text-amber-400 hover:bg-amber-500/10"
+                            onClick={() => handlePause(s)}
+                          >
+                            <Pause className="h-3 w-3 mr-1" />Pause
+                          </Button>
+                        ) : (
+                          <>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-xs h-7 px-2 border-blue-500/40 text-blue-400 hover:bg-blue-500/10"
+                              onClick={() => openActivate(s, "paper")}
+                              title="Run as paper (simulated) trade today"
+                            >
+                              <FlaskConical className="h-3 w-3 mr-1" />Paper Trade
+                            </Button>
+                            <Button
+                              size="sm"
+                              className="text-xs h-7 px-2 bg-primary/90 hover:bg-primary"
+                              onClick={() => openActivate(s, "live")}
+                              title="Activate for real live orders today"
+                            >
+                              <Zap className="h-3 w-3 mr-1" />Activate Live
+                            </Button>
+                          </>
+                        )}
+
                         <Button
                           variant="ghost"
                           size="sm"
@@ -441,7 +535,19 @@ export default function OptionsStrategyPage() {
             )}
           </div>
         </div>
-      </main>
+    </>
+  );
+
+  return (
+    <>
+      {embedded ? (
+        <div className="w-full overflow-auto pb-2">{workspaceInner}</div>
+      ) : (
+        <div className="flex h-screen bg-background">
+          <DashboardSidebar />
+          <main className="flex-1 overflow-auto">{workspaceInner}</main>
+        </div>
+      )}
 
       {/* Strategy Builder Dialog */}
       {showBuilder && (
@@ -459,6 +565,15 @@ export default function OptionsStrategyPage() {
           }}
         />
       )}
+
+      <OptionsStrategyActivateDialog
+        open={!!activateTarget}
+        onOpenChange={(o) => { if (!o) setActivateTarget(null); }}
+        strategy={activateTarget}
+        onActivated={finalizeActivation}
+        mode={activateMode}
+        prefetchedExpiries={activateTarget ? (prefetchedExpiries[activateTarget.underlying] ?? []) : []}
+      />
 
       {/* Live Option Chain Viewer */}
       {chainViewStrategy && (
@@ -489,6 +604,7 @@ export default function OptionsStrategyPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </>
   );
 }
+

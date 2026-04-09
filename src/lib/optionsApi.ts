@@ -1,14 +1,11 @@
 /**
  * ChartMate Options API client (E2E path).
  *
- * End-to-end flow when `VITE_OPTIONS_API_URL` is set:
- *   Browser → FastAPI (JWT) → OpenAlgo → your connected broker
+ * When `VITE_OPTIONS_API_URL` is set: Browser → FastAPI (JWT) → OpenAlgo.
+ * Chain + expiry also fall back to Supabase Edge (`fetch-expiry-dates`, `fetch-option-chain`)
+ * when FastAPI is not configured, so the options UI can still load live lists.
  *
- * Chain, expiry, orders, positions, and strategy signals go through this base URL.
- * Strategy CRUD (`options_strategies`) stays on Supabase (same account as always).
- *
- * No fallback is used for options execution paths.
- * If `VITE_OPTIONS_API_URL` is missing, calls throw explicitly.
+ * Orders / positions / WS still require FastAPI where noted.
  */
 import { supabase } from "@/integrations/supabase/client";
 
@@ -29,6 +26,33 @@ async function getToken(): Promise<string | null> {
   return data?.session?.access_token ?? null;
 }
 
+/** Safely convert any value to a human-readable string for error messages. */
+function toErrString(v: unknown, fallback = "Unknown error"): string {
+  if (!v) return fallback;
+  if (typeof v === "string") return v.trim() || fallback;
+  if (Array.isArray(v)) {
+    // FastAPI Pydantic validation errors: [{loc, msg, type}]
+    return v.map((d) => (typeof d === "object" && d !== null && "msg" in d ? String((d as { msg: unknown }).msg) : JSON.stringify(d))).join("; ");
+  }
+  if (typeof v === "object") {
+    // OpenAlgo nested error objects: {message: "Validation error", errors: {field: ["msg"]}}
+    const o = v as Record<string, unknown>;
+    const base = typeof o.message === "string" ? o.message
+      : typeof o.description === "string" ? o.description
+      : typeof o.detail === "string" ? o.detail
+      : null;
+    // Append field-level errors if present
+    if (o.errors && typeof o.errors === "object") {
+      const fieldMsgs = Object.entries(o.errors as Record<string, unknown>)
+        .map(([k, msgs]) => `${k}: ${Array.isArray(msgs) ? msgs.join(", ") : msgs}`)
+        .join("; ");
+      return base ? `${base} — ${fieldMsgs}` : fieldMsgs;
+    }
+    return base ?? JSON.stringify(v).slice(0, 200);
+  }
+  return String(v);
+}
+
 /** Low-level fetch wrapper for the FastAPI service. */
 async function apiFetch<T = unknown>(
   path: string,
@@ -46,8 +70,11 @@ async function apiFetch<T = unknown>(
     },
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail ?? `HTTP ${res.status}`);
+    const body = await res.json().catch(() => null) as Record<string, unknown> | null;
+    const msg = body
+      ? toErrString(body.detail ?? body.message ?? body.error ?? body, `HTTP ${res.status}`)
+      : `HTTP ${res.status} ${res.statusText}`;
+    throw new Error(msg);
   }
   return res.json() as Promise<T>;
 }
@@ -158,16 +185,74 @@ export function normalizeOptionChainPayload(
   };
 }
 
-function daysBetween(a: Date, b: Date): number {
-  return Math.ceil((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
+/** IST calendar date as YYYY-MM-DD (for session keys and comparisons). */
+export function getIstDateKey(d: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(d);
 }
 
-function toISODate(d: Date): string {
-  return d.toISOString().slice(0, 10);
+function calendarDaysBetweenIST(fromYmd: string, toYmd: string): number {
+  const a = new Date(`${fromYmd}T12:00:00+05:30`);
+  const b = new Date(`${toYmd}T12:00:00+05:30`);
+  return Math.round((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function toISTDateKey(d: Date): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(d);
 }
 
 function formatDisplay(d: Date): string {
-  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  return d.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Kolkata",
+  });
+}
+
+/** OpenAlgo option chain expects expiry like 09APR26 (DDMMMYY). */
+export function isoDateToOpenAlgoExpiry(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
+  if (!m) return iso.trim();
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const day = Number(m[3]);
+  const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+  return `${String(day).padStart(2, "0")}${months[mo - 1]}${String(y).slice(-2)}`;
+}
+
+function brokerExpiryParam(expiry_date: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(expiry_date.trim())) return isoDateToOpenAlgoExpiry(expiry_date.trim());
+  return expiry_date.trim();
+}
+
+// Known NSE/BSE index underlyings — used to auto-pick OPTIDX vs OPTSTK
+const OPTION_INDEX_UNDERLYINGS = new Set([
+  "NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX",
+  "NIFTYIT", "NIFTYPSE", "NIFTYAUTO", "NIFTYMETAL", "NIFTYPHARMA",
+  "NIFTYBANK", "NIFTY100", "NIFTYMICROCAP250",
+]);
+
+/**
+ * Auto-detect instrument type from underlying symbol.
+ * Index underlyings → OPTIDX; everything else → OPTSTK.
+ */
+export function instrumentTypeForUnderlying(underlying: string): "OPTIDX" | "OPTSTK" {
+  return OPTION_INDEX_UNDERLYINGS.has((underlying ?? "").trim().toUpperCase())
+    ? "OPTIDX"
+    : "OPTSTK";
+}
+
+/** Approximate F&O lot sizes (units per lot) for quantity = lots × units. */
+export const UNDERLYING_OPTIONS_LOT_UNITS: Record<string, number> = {
+  NIFTY: 75,
+  BANKNIFTY: 30,
+  FINNIFTY: 65,
+  MIDCPNIFTY: 120,
+  SENSEX: 20,
+};
+
+export function lotUnitsForUnderlying(underlying: string): number {
+  return UNDERLYING_OPTIONS_LOT_UNITS[underlying.trim().toUpperCase()] ?? 75;
 }
 
 export interface NormalizedExpiryItem {
@@ -189,28 +274,29 @@ export function normalizeExpiryPayload(
     : Array.isArray(data)
       ? (data as string[])
       : [];
-  const now = new Date();
+  const todayKey = getIstDateKey();
   const parsed = rawDates
     .map((ds) => {
       let d: Date | null = null;
-      if (/^\d{4}-\d{2}-\d{2}$/.test(ds)) d = new Date(`${ds}T00:00:00+05:30`);
-      else if (/^\d{2}-[A-Za-z]+-\d{4}$/.test(ds)) d = new Date(ds.replace(/-/g, " ") + " 00:00:00 GMT+0530");
+      if (/^\d{4}-\d{2}-\d{2}$/.test(ds)) d = new Date(`${ds}T12:00:00+05:30`);
+      else if (/^\d{2}-[A-Za-z]+-\d{4}$/.test(ds)) d = new Date(ds.replace(/-/g, " ") + " 12:00:00 GMT+0530");
       else d = new Date(ds);
       if (isNaN(d.getTime())) return null;
       return d;
     })
-    .filter((d): d is Date => d !== null && d > now)
+    .filter((d): d is Date => d !== null && toISTDateKey(d) >= todayKey)
     .sort((a, b) => a.getTime() - b.getTime());
 
   const expiries: NormalizedExpiryItem[] = parsed.map((d, idx) => {
-    const dayN = daysBetween(now, d);
+    const expKey = toISTDateKey(d);
+    const dayN = calendarDaysBetweenIST(todayKey, expKey);
     let tag: NormalizedExpiryItem["tag"];
     if (idx === 0) tag = "weekly";
     else if (idx === 1) tag = dayN <= 14 ? "next_weekly" : "monthly";
     else if (dayN <= 35) tag = "monthly";
     else tag = "far";
     return {
-      date: toISODate(d),
+      date: expKey,
       display: formatDisplay(d),
       tag,
       days_to_expiry: dayN,
@@ -218,6 +304,40 @@ export function normalizeExpiryPayload(
   });
 
   return { symbol, exchange, expiries };
+}
+
+/** Map saved expiry_type to a concrete row from normalized broker expiries. */
+export function pickExpiryForStrategyType(
+  items: NormalizedExpiryItem[],
+  expiry_type: string
+): NormalizedExpiryItem | null {
+  if (!items.length) return null;
+  if (expiry_type === "weekly") return items.find((i) => i.tag === "weekly") ?? items[0];
+  if (expiry_type === "next_weekly")
+    return items.find((i) => i.tag === "next_weekly") ?? items[1] ?? items[0];
+  if (expiry_type === "monthly")
+    return items.find((i) => i.tag === "monthly") ?? items[Math.min(2, items.length - 1)] ?? items[0];
+  return items[0];
+}
+
+export type TradableOptionRow = {
+  strike: number;
+  side: "CE" | "PE";
+  symbol: string;
+  label: string;
+};
+
+export function tradableRowsFromChain(chain: {
+  strikes: { strike: number; ce: { symbol: string } | null; pe: { symbol: string } | null }[];
+}): TradableOptionRow[] {
+  const rows: TradableOptionRow[] = [];
+  for (const s of chain.strikes) {
+    const ce = s.ce?.symbol?.trim();
+    const pe = s.pe?.symbol?.trim();
+    if (ce) rows.push({ strike: s.strike, side: "CE", symbol: ce, label: `${s.strike} CE` });
+    if (pe) rows.push({ strike: s.strike, side: "PE", symbol: pe, label: `${s.strike} PE` });
+  }
+  return rows.sort((a, b) => a.strike - b.strike || a.side.localeCompare(b.side));
 }
 
 // ── Option Chain ──────────────────────────────────────────────────────────────
@@ -228,18 +348,43 @@ export async function fetchOptionChain(params: {
   expiry_date: string;
   strike_count?: number;
 }) {
-  const ex = params.exchange ?? "NSE_INDEX";
+  const ex = params.exchange ?? "NFO";
   const sym = params.underlying;
-  const raw = await apiFetch<unknown>("/api/options/chain", {
-    method: "POST",
-    body: JSON.stringify({
-      underlying: sym,
+  const expiryBroker = brokerExpiryParam(params.expiry_date);
+
+  if (API_BASE) {
+    const raw = await apiFetch<Record<string, unknown>>("/api/options/chain", {
+      method: "POST",
+      body: JSON.stringify({
+        underlying: sym,
+        exchange: ex,
+        expiry_date: expiryBroker,
+        strike_count: params.strike_count,
+      }),
+    });
+    // OpenAlgo may return {status:"error", message:"..."} with HTTP 200
+    if (raw?.status === "error" || raw?.status === "failed") {
+      const hint = toErrString(
+        raw.message ?? raw.error_msg ?? raw.error,
+        "OpenAlgo option chain error — check your broker session"
+      );
+      throw new Error(hint);
+    }
+    return normalizeOptionChainPayload(raw, sym, ex, params.expiry_date);
+  }
+
+  const { data, error } = await supabase.functions.invoke<Record<string, unknown>>("fetch-option-chain", {
+    body: {
+      symbol: sym,
       exchange: ex,
       expiry_date: params.expiry_date,
-      strike_count: params.strike_count,
-    }),
+    },
   });
-  return normalizeOptionChainPayload(raw, sym, ex, params.expiry_date);
+  if (error) throw new Error(error.message ?? "fetch-option-chain failed");
+  if (data && typeof data === "object" && "error" in data && data.error) {
+    throw new Error(String((data as { error: unknown }).error));
+  }
+  return normalizeOptionChainPayload(data ?? {}, sym, ex, params.expiry_date);
 }
 
 export async function fetchExpiryDates(params: {
@@ -249,15 +394,72 @@ export async function fetchExpiryDates(params: {
 }) {
   const ex = params.exchange ?? "NFO";
   const sym = params.symbol;
-  const raw = await apiFetch<unknown>("/api/options/expiry", {
-    method: "POST",
-    body: JSON.stringify({
-      symbol: sym,
-      exchange: ex,
-      instrument: params.instrument ?? "OPTIDX",
-    }),
+  // Auto-detect instrument type from underlying if not provided
+  const instrument = params.instrument ?? instrumentTypeForUnderlying(sym);
+
+  if (API_BASE) {
+    const raw = await apiFetch<Record<string, unknown>>("/api/options/expiry", {
+      method: "POST",
+      body: JSON.stringify({
+        symbol: sym,
+        exchange: ex,
+        instrument,
+      }),
+    });
+    // OpenAlgo may return {status:"error", message:"..."} with HTTP 200
+    if (raw?.status === "error" || raw?.status === "failed") {
+      const hint = toErrString(
+        raw.message ?? raw.error_msg ?? raw.error,
+        "OpenAlgo returned an error — check your broker session and OpenAlgo API key"
+      );
+      throw new Error(hint);
+    }
+    const result = normalizeExpiryPayload(raw, sym, ex);
+    // If OpenAlgo returned no dates, surface it as an explicit error
+    if (result.expiries.length === 0) {
+      throw new Error(
+        "No expiry dates returned from broker. Market may be closed or your OpenAlgo API key / broker session needs refreshing."
+      );
+    }
+    return result;
+  }
+
+  const { data, error } = await supabase.functions.invoke<Record<string, unknown>>("fetch-expiry-dates", {
+    body: { symbol: sym, exchange: ex, instrumenttype: instrument },
   });
-  return normalizeExpiryPayload(raw, sym, ex);
+  if (error) throw new Error(error.message ?? "fetch-expiry-dates failed");
+  if (data && typeof data === "object" && "error" in data && data.error) {
+    throw new Error(String((data as { error: unknown }).error));
+  }
+  if (data && Array.isArray((data as { expiries?: unknown }).expiries)) {
+    const exp = (data as { expiries: NormalizedExpiryItem[]; symbol?: string; exchange?: string }).expiries;
+    return { symbol: (data as { symbol?: string }).symbol ?? sym, exchange: (data as { exchange?: string }).exchange ?? ex, expiries: exp };
+  }
+  return normalizeExpiryPayload(data ?? {}, sym, ex);
+}
+
+/**
+ * Fetch the live LTP (Last Traded Price) for a single options symbol.
+ * Returns null when the market is closed or the symbol is invalid.
+ */
+export async function fetchLtp(
+  symbol: string,
+  exchange: string
+): Promise<number | null> {
+  if (!API_BASE) return null;
+  try {
+    const raw = await apiFetch<Record<string, unknown>>("/api/options/quotes", {
+      method: "POST",
+      body: JSON.stringify({ symbol, exchange }),
+    });
+    if (raw?.status === "error" || raw?.status === "failed") return null;
+    // OpenAlgo quotes: {status:"success", data:{ltp:123.45,...}}
+    const data = (raw?.data ?? raw) as Record<string, unknown>;
+    const ltp = Number(data?.ltp ?? data?.last_price ?? data?.close ?? 0);
+    return ltp > 0 ? ltp : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchVix(): Promise<number> {
@@ -353,6 +555,7 @@ export interface OptionsPositionRow {
   expiry_date: string | null;
   strike_offset: string | null;
   entry_premium: number | null;
+  reference_entry_price: number | null;
   peak_premium: number | null;
   current_price: number | null;
   shares: number;
@@ -363,6 +566,10 @@ export interface OptionsPositionRow {
 
 function mapApiPositionToRow(p: Record<string, unknown>): OptionsPositionRow {
   const entry = Number(p.entry_price ?? 0);
+  const ref =
+    p.reference_entry_price != null && p.reference_entry_price !== ""
+      ? Number(p.reference_entry_price)
+      : entry;
   const current = Number(p.current_ltp ?? entry);
   return {
     id: String(p.trade_id ?? ""),
@@ -376,6 +583,7 @@ function mapApiPositionToRow(p: Record<string, unknown>): OptionsPositionRow {
     expiry_date: p.expiry_date != null ? String(p.expiry_date) : null,
     strike_offset: p.strike_offset != null ? String(p.strike_offset) : null,
     entry_premium: entry,
+    reference_entry_price: Number.isFinite(ref) && ref > 0 ? ref : entry,
     peak_premium: p.peak_premium != null ? Number(p.peak_premium) : entry,
     current_price: current,
     shares: Math.max(1, Number(p.shares ?? 1)),
