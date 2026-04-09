@@ -7,6 +7,51 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+function normalizeSource(referrer: string | null, userAgent: string | null, utmSource: string | null): string {
+  if (utmSource?.trim()) return utmSource.trim();
+  const ua = (userAgent || "").toLowerCase();
+  const ref = (referrer || "").toLowerCase();
+  if (ua.includes("whatsapp")) return "whatsapp";
+  if (ua.includes("instagram")) return "instagram";
+  if (ua.includes("telegram")) return "telegram";
+  if (ua.includes("facebook") || ref.includes("facebook.com") || ref.includes("fb.com")) return "facebook";
+  if (ref.includes("google.")) return "google";
+  if (ref.includes("bing.")) return "bing";
+  if (ref.includes("t.co") || ref.includes("twitter.com") || ref.includes("x.com")) return "x";
+  if (!ref) return "direct";
+  try {
+    const host = new URL(referrer || "").hostname;
+    return host || "direct";
+  } catch {
+    return ref || "direct";
+  }
+}
+
+function getDeviceType(ua: string | null): string {
+  if (!ua) return "unknown";
+  const ual = ua.toLowerCase();
+  if (ual.includes("ipad") || ual.includes("tablet")) return "tablet";
+  if (ual.includes("mobile") || ual.includes("android") || ual.includes("iphone")) return "mobile";
+  if (ual.includes("smart-tv") || ual.includes("tv")) return "tv";
+  if (ual.includes("bot") || ual.includes("spider") || ual.includes("crawler")) return "bot";
+  return "desktop";
+}
+
+function getBrowser(ua: string | null): string {
+  if (!ua) return "unknown";
+  const ual = ua.toLowerCase();
+  if (ual.includes("whatsapp")) return "WhatsApp In-App";
+  if (ual.includes("instagram")) return "Instagram In-App";
+  if (ual.includes("telegram")) return "Telegram In-App";
+  if (ual.includes("edg/")) return "Edge";
+  if (ual.includes("opr/") || ual.includes("opera")) return "Opera";
+  if (ual.includes("firefox/")) return "Firefox";
+  if (ual.includes("chrome/") && !ual.includes("edg/") && !ual.includes("opr/")) return "Chrome";
+  if (ual.includes("safari/") && !ual.includes("chrome/")) return "Safari";
+  if (ual.includes("brave/")) return "Brave";
+  return "Other";
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -68,7 +113,7 @@ serve(async (req) => {
     let city = req.headers.get("x-vercel-ip-city") || req.headers.get("cf-ipcity") || null;
     let region = req.headers.get("x-vercel-ip-country-region") || req.headers.get("cf-region") || null;
     let countryCode = req.headers.get("x-vercel-ip-country") || req.headers.get("cf-ipcountry") || null;
-    let countryName = null;
+    let countryName: string | null = null;
 
     console.log(`Visit received. IP: ${visitorIp}, Initial Geo: ${city}, ${region}, ${countryCode}`);
 
@@ -81,16 +126,19 @@ serve(async (req) => {
         const geoController = new AbortController();
         const geoTimeout = setTimeout(() => geoController.abort(), 4000);
 
-        let geoData = null;
+        let geoData: Record<string, string> | null = null;
 
         // Try Primary: ipapi.co
         try {
           const res = await fetch(`https://ipapi.co/${lookupIp}/json/`, { signal: geoController.signal });
           if (res.ok) {
-            const data = await res.json();
-            if (data.country_code) {
+            const data: any = await res.json();
+            // ipapi returns HTTP 200 with { error: true } for rate limits / bad IP
+            if (!data?.error && data?.country_code) {
               geoData = data;
               console.log("ipapi.co resolved location:", data.city, data.country_code);
+            } else {
+              console.log("ipapi.co unusable response:", data?.reason || data?.error);
             }
           } else {
             console.log("ipapi.co returned status:", res.status);
@@ -104,7 +152,7 @@ serve(async (req) => {
           try {
             const res = await fetch(`http://ip-api.com/json/${lookupIp}`, { signal: geoController.signal });
             if (res.ok) {
-              const data = await res.json();
+              const data: any = await res.json();
               if (data.status === "success") {
                 geoData = {
                   city: data.city,
@@ -124,7 +172,7 @@ serve(async (req) => {
 
         if (geoData) {
           city = city || geoData.city || "Unknown";
-          region = region || geoData.region || "Unknown";
+          region = region || geoData.region || geoData.region_code || "Unknown";
           countryCode = countryCode || geoData.country_code || "Unknown";
           countryName = geoData.country_name || "Unknown";
         } else {
@@ -141,29 +189,9 @@ serve(async (req) => {
       }
     }
 
-    const getDeviceType = (ua: string | null): string => {
-      if (!ua) return "unknown";
-      const ual = ua.toLowerCase();
-      if (ual.includes("mobile") || ual.includes("android") || ual.includes("iphone") || ual.includes("ipad")) {
-        return "mobile";
-      }
-      if (ual.includes("tablet") || ual.includes("ipad")) return "tablet";
-      return "desktop";
-    };
-
-    const getBrowser = (ua: string | null): string => {
-      if (!ua) return "unknown";
-      const ual = ua.toLowerCase();
-      if (ual.includes("edg/")) return "Edge";
-      if (ual.includes("chrome/")) return "Chrome";
-      if (ual.includes("firefox/")) return "Firefox";
-      if (ual.includes("safari/") && !ual.includes("chrome/")) return "Safari";
-      if (ual.includes("opera/") || ual.includes("opr/")) return "Opera";
-      return "Other";
-    };
-
     const deviceType = getDeviceType(userAgent);
     const browser = getBrowser(userAgent);
+    const source = normalizeSource(referrer, userAgent, utms.source);
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
@@ -185,7 +213,8 @@ serve(async (req) => {
       });
     }
 
-    const { error: insertError } = await supabase.from("affiliate_visitors").insert({
+    const visitedAt = new Date().toISOString();
+    const visitorRow = {
       affiliate_id: affiliate.id,
       visitor_ip: visitorIp,
       user_agent: userAgent,
@@ -196,22 +225,47 @@ serve(async (req) => {
       country: countryCode, // Backward compatibility column
       country_code: countryCode,
       country_name: countryName,
-      utm_source: utms.source,
+      utm_source: source,
       utm_medium: utms.medium,
       utm_campaign: utms.campaign,
       utm_term: utms.term,
       utm_content: utms.content,
       referrer: referrer,
-    });
+      visited_at: visitedAt,
+    };
 
-    if (insertError) {
-      if (insertError.code === "23505") {
-        return new Response(JSON.stringify({ ok: true, status: "already_recorded" }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      throw insertError;
+    const { data: existing } = await supabase
+      .from("affiliate_visitors")
+      .select("id")
+      .eq("affiliate_id", affiliate.id)
+      .eq("visitor_ip", visitorIp)
+      .maybeSingle();
+
+    if (existing?.id) {
+      const { error: updateError } = await supabase
+        .from("affiliate_visitors")
+        .update(visitorRow)
+        .eq("id", existing.id);
+      if (updateError) throw updateError;
+      return new Response(JSON.stringify({ ok: true, status: "updated" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
+
+    const { error: insertError } = await supabase.from("affiliate_visitors").insert(visitorRow);
+
+    if (insertError?.code === "23505") {
+      const { error: upAfterRace } = await supabase
+        .from("affiliate_visitors")
+        .update(visitorRow)
+        .eq("affiliate_id", affiliate.id)
+        .eq("visitor_ip", visitorIp);
+      if (upAfterRace) throw upAfterRace;
+      return new Response(JSON.stringify({ ok: true, status: "updated" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (insertError) throw insertError;
 
     if (affiliate.user_id) {
       const location = [city, countryCode].filter(Boolean).join(", ") || "an unknown location";

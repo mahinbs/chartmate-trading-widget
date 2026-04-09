@@ -120,6 +120,39 @@ interface PaymentRow {
   plan_id?: string | null;
 }
 
+function toTitle(input?: string | null): string {
+  if (!input) return "Unknown";
+  return input
+    .replace(/[_-]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .map((w) => (w ? `${w[0].toUpperCase()}${w.slice(1).toLowerCase()}` : w))
+    .join(" ");
+}
+
+function countryCodeToFlag(countryCode?: string | null): string {
+  const cc = (countryCode || "").trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(cc)) return "";
+  return String.fromCodePoint(...[...cc].map((c) => 127397 + c.charCodeAt(0)));
+}
+
+function getSourceLabel(row: VisitorRow): string {
+  const raw = (row.utm_source || "").trim().toLowerCase();
+  const ref = (row.referrer || "").trim().toLowerCase();
+  const ua = (row.browser || "").trim().toLowerCase();
+  if (raw) return toTitle(raw);
+  if (ua.includes("whatsapp")) return "WhatsApp";
+  if (ua.includes("telegram")) return "Telegram";
+  if (ua.includes("instagram")) return "Instagram";
+  if (!ref) return "Direct";
+  try {
+    const host = new URL(row.referrer || "").hostname.replace(/^www\./, "");
+    return host ? toTitle(host) : "Direct";
+  } catch {
+    return "Direct";
+  }
+}
+
 export default function AffiliateDashboard() {
   const { user, signOut, loading: loadingAuth } = useAuth();
   const navigate = useNavigate();
@@ -451,7 +484,7 @@ export default function AffiliateDashboard() {
                       {(() => {
                         const counts: Record<string, number> = {};
                         stats.visitor_rows.forEach(v => {
-                          const src = v.utm_source || 'Direct / Organic';
+                          const src = getSourceLabel(v);
                           counts[src] = (counts[src] || 0) + 1;
                         });
                         const data = Object.entries(counts)
@@ -459,7 +492,7 @@ export default function AffiliateDashboard() {
                           .sort((a,b) => b.value - a.value)
                           .slice(0, 5);
                         
-                        if (data.length === 0 || (data.length === 1 && data[0].name === 'Direct / Organic' && data[0].value === 0)) {
+                        if (data.length === 0) {
                            return <div className="h-full flex items-center justify-center text-zinc-500 text-xs italic">No UTM data recorded yet</div>;
                         }
 
@@ -606,8 +639,13 @@ export default function AffiliateDashboard() {
                                 <TableRow key={`${v.visitor_ip}-${idx}`} className="border-white/5 hover:bg-white/5">
                                   <TableCell className="font-mono text-sm text-zinc-400">{v.visitor_ip}</TableCell>
                                   <TableCell className="text-zinc-400 text-sm whitespace-nowrap">{v.region || "—"}</TableCell>
-                                  <TableCell className="text-zinc-400 text-sm whitespace-nowrap">{v.country || "—"}</TableCell>
-                                  <TableCell className="text-zinc-500 text-xs uppercase">{v.utm_source || "—"}</TableCell>
+                                  <TableCell className="text-zinc-400 text-sm whitespace-nowrap">
+                                    <span className="inline-flex items-center gap-2">
+                                      <span>{countryCodeToFlag(v.country_code)}</span>
+                                      <span>{v.country_code || v.country_name || v.country || "—"}</span>
+                                    </span>
+                                  </TableCell>
+                                  <TableCell className="text-zinc-500 text-xs">{getSourceLabel(v)}</TableCell>
                                   <TableCell className="text-zinc-500 text-xs">{v.utm_campaign || "—"}</TableCell>
                                   <TableCell className="text-zinc-500 text-xs">
                                     {new Date(v.visited_at).toLocaleString()}
@@ -1181,7 +1219,7 @@ export default function AffiliateDashboard() {
                     </CardContent>
                   </Card>
 
-                <div className="grid lg:grid-cols-2 gap-6">
+                <div className="grid lg:grid-cols-3 gap-6">
                   <Card className="glass-panel border-white/10">
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -1232,11 +1270,14 @@ export default function AffiliateDashboard() {
                     </CardHeader>
                     <CardContent className="h-[250px] pt-4">
                       <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={[
-                          { name: 'Desktop', value: stats.visitor_rows.filter(v => v.device_type === 'desktop').length },
-                          { name: 'Mobile', value: stats.visitor_rows.filter(v => v.device_type === 'mobile').length },
-                          { name: 'Tablet', value: stats.visitor_rows.filter(v => v.device_type === 'tablet').length }
-                        ]}>
+                        <BarChart data={(() => {
+                          const counts: Record<string, number> = {};
+                          stats.visitor_rows.forEach((v) => {
+                            const key = toTitle(v.device_type || "unknown");
+                            counts[key] = (counts[key] || 0) + 1;
+                          });
+                          return Object.entries(counts).map(([name, value]) => ({ name, value }));
+                        })()}>
                           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
                           <XAxis dataKey="name" stroke="#52525b" fontSize={10} axisLine={false} tickLine={false} />
                           <YAxis stroke="#52525b" fontSize={10} axisLine={false} tickLine={false} />
@@ -1245,6 +1286,126 @@ export default function AffiliateDashboard() {
                             itemStyle={{ color: '#a78bfa', fontSize: '12px' }}
                           />
                           <Bar dataKey="value" fill="#8b5cf6" radius={[4, 4, 0, 0]} barSize={40} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="glass-panel border-white/10">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-medium flex items-center gap-2">
+                        <Globe className="h-4 w-4 text-cyan-400" />
+                        Browser Breakdown
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="h-[250px] pt-4">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={(() => {
+                          const counts: Record<string, number> = {};
+                          stats.visitor_rows.forEach((v) => {
+                            const key = toTitle(v.browser || "unknown");
+                            counts[key] = (counts[key] || 0) + 1;
+                          });
+                          return Object.entries(counts)
+                            .map(([name, value]) => ({ name, value }))
+                            .sort((a, b) => b.value - a.value)
+                            .slice(0, 8);
+                        })()}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
+                          <XAxis dataKey="name" stroke="#52525b" fontSize={10} axisLine={false} tickLine={false} />
+                          <YAxis stroke="#52525b" fontSize={10} axisLine={false} tickLine={false} />
+                          <RechartsTooltip
+                            contentStyle={{ backgroundColor: "rgba(0,0,0,0.8)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px" }}
+                            itemStyle={{ color: "#22d3ee", fontSize: "12px" }}
+                          />
+                          <Bar dataKey="value" fill="#22d3ee" radius={[4, 4, 0, 0]} barSize={40} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <div className="grid lg:grid-cols-3 gap-6">
+                  <Card className="glass-panel border-white/10">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-medium flex items-center gap-2">
+                        <MapPin className="h-4 w-4 text-amber-400" />
+                        Country Wise
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="h-[260px] pt-4">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={(() => {
+                          const counts: Record<string, number> = {};
+                          stats.visitor_rows.forEach((v) => {
+                            const key = `${countryCodeToFlag(v.country_code)} ${v.country_code || v.country_name || "Unknown"}`.trim();
+                            counts[key] = (counts[key] || 0) + 1;
+                          });
+                          return Object.entries(counts).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 8);
+                        })()} layout="vertical" margin={{ left: 20, right: 10 }}>
+                          <CartesianGrid strokeDasharray="3 3" horizontal vertical={false} stroke="rgba(255,255,255,0.05)" />
+                          <XAxis type="number" hide />
+                          <YAxis dataKey="name" type="category" stroke="#a1a1aa" fontSize={10} axisLine={false} tickLine={false} width={120} />
+                          <Bar dataKey="value" fill="#f59e0b" radius={[0, 4, 4, 0]} barSize={20} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="glass-panel border-white/10">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-medium flex items-center gap-2">
+                        <TrendingUp className="h-4 w-4 text-orange-400" />
+                        Source Wise
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="h-[260px] pt-4">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={(() => {
+                          const counts: Record<string, number> = {};
+                          stats.visitor_rows.forEach((v) => {
+                            const key = getSourceLabel(v);
+                            counts[key] = (counts[key] || 0) + 1;
+                          });
+                          return Object.entries(counts).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 8);
+                        })()} layout="vertical" margin={{ left: 20, right: 10 }}>
+                          <CartesianGrid strokeDasharray="3 3" horizontal vertical={false} stroke="rgba(255,255,255,0.05)" />
+                          <XAxis type="number" hide />
+                          <YAxis dataKey="name" type="category" stroke="#a1a1aa" fontSize={10} axisLine={false} tickLine={false} width={120} />
+                          <Bar dataKey="value" fill="#f97316" radius={[0, 4, 4, 0]} barSize={20} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="glass-panel border-white/10">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-medium flex items-center gap-2">
+                        <Link2 className="h-4 w-4 text-blue-400" />
+                        Link Wise (Referrer)
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="h-[260px] pt-4">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={(() => {
+                          const counts: Record<string, number> = {};
+                          stats.visitor_rows.forEach((v) => {
+                            let key = "Direct";
+                            if (v.referrer) {
+                              try {
+                                key = new URL(v.referrer).hostname.replace(/^www\./, "");
+                              } catch {
+                                key = v.referrer;
+                              }
+                            }
+                            counts[key] = (counts[key] || 0) + 1;
+                          });
+                          return Object.entries(counts).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 8);
+                        })()} layout="vertical" margin={{ left: 20, right: 10 }}>
+                          <CartesianGrid strokeDasharray="3 3" horizontal vertical={false} stroke="rgba(255,255,255,0.05)" />
+                          <XAxis type="number" hide />
+                          <YAxis dataKey="name" type="category" stroke="#a1a1aa" fontSize={10} axisLine={false} tickLine={false} width={120} />
+                          <Bar dataKey="value" fill="#60a5fa" radius={[0, 4, 4, 0]} barSize={20} />
                         </BarChart>
                       </ResponsiveContainer>
                     </CardContent>
@@ -1276,8 +1437,8 @@ export default function AffiliateDashboard() {
                                 <TableCell className="font-mono text-[11px] text-zinc-300">{row.visitor_ip}</TableCell>
                                 <TableCell>
                                   <div className="flex flex-col">
-                                    <span className="text-xs text-white capitalize">{row.device_type || '—'}</span>
-                                    <span className="text-[10px] text-zinc-500">{row.browser || '—'}</span>
+                                    <span className="text-xs text-white">{toTitle(row.device_type || 'unknown')}</span>
+                                    <span className="text-[10px] text-zinc-500">{toTitle(row.browser || 'unknown')}</span>
                                   </div>
                                 </TableCell>
                                 <TableCell>
@@ -1287,7 +1448,7 @@ export default function AffiliateDashboard() {
                                     </span>
                                     {row.country_code && (
                                       <Badge variant="secondary" className="bg-white/5 text-[9px] px-1 h-4 uppercase">
-                                        {row.country_code}
+                                        {countryCodeToFlag(row.country_code)} {row.country_code}
                                       </Badge>
                                     )}
                                   </div>

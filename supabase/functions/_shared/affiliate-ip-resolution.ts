@@ -1,15 +1,26 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+/**
+ * Best-effort client IP for Supabase Edge (browser → functions) or chain invoke.
+ * Prefer the leftmost X-Forwarded-For hop; also check headers some proxies set.
+ */
 export function getClientIp(req: Request): string {
   const xff = req.headers.get("x-forwarded-for");
   if (xff) {
     const first = xff.split(",")[0]?.trim();
     if (first) return first;
   }
+  for (const h of ["cf-connecting-ip", "true-client-ip", "fly-client-ip"]) {
+    const v = req.headers.get(h);
+    if (v?.trim()) return v.trim();
+  }
   const xri = req.headers.get("x-real-ip");
-  if (xri) return xri.trim();
-  const cf = req.headers.get("cf-connecting-ip");
-  if (cf) return cf.trim();
+  if (xri?.trim()) return xri.trim();
+  const fwd = req.headers.get("forwarded");
+  if (fwd) {
+    const m = fwd.match(/for=\s*"?([^";,\s]+)/i);
+    if (m?.[1]) return m[1].replace(/^::ffff:/i, "").trim();
+  }
   return "unknown";
 }
 
