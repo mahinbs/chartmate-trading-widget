@@ -158,6 +158,7 @@ Deno.serve(async (req) => {
           action: action.toUpperCase(),
           status: "active",
           entry_price: premiumLtp,
+          reference_entry_price: premiumLtp,
           shares: Number(quantity),
           investment_amount: premiumLtp * Number(quantity),
           margin_type: "options",
@@ -202,6 +203,45 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Reference premium from chain (pre-order quote) for slippage vs fill
+    let referencePremium = 0;
+    try {
+      const chainRes = await fetch(`${OPENALGO_URL}/api/v1/optionchain`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          apikey: openalgoApiKey.trim(),
+          symbol: underlying.toUpperCase(),
+          exchange: exchange.toUpperCase(),
+          expiry: expiry_date,
+        }),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (chainRes.ok) {
+        const chainData = await chainRes.json();
+        const raw = chainData?.data ?? chainData;
+        const atmStrike = Number(raw?.atm_strike ?? raw?.atmstrike ?? 0);
+        const calls: unknown[] = Array.isArray(raw?.calls) ? raw.calls : [];
+        const puts: unknown[] = Array.isArray(raw?.puts) ? raw.puts : [];
+        const legs = option_type === "CE" ? calls : puts;
+        const sorted = legs.map((l) => l as Record<string, unknown>).sort((a, b) => {
+          const sA = Number(a.strike ?? a.strikePrice ?? 0);
+          const sB = Number(b.strike ?? b.strikePrice ?? 0);
+          return sA - sB;
+        });
+        const atmIdx = sorted.findIndex(
+          (l) => Number(l.strike ?? l.strikePrice ?? 0) >= atmStrike,
+        );
+        const targetIdx = atmIdx + strikeOffsetNum;
+        const targetLeg = sorted[Math.max(0, Math.min(targetIdx, sorted.length - 1))];
+        if (targetLeg) {
+          referencePremium = Number(targetLeg.ltp ?? targetLeg.lastPrice ?? 0);
+        }
+      }
+    } catch {
+      /* non-fatal */
+    }
+
     // Call OpenAlgo /optionsorder
     const optionsOrderPayload = {
       apikey: openalgoApiKey.trim(),
@@ -238,6 +278,8 @@ Deno.serve(async (req) => {
     const resolvedSymbol: string = String(orderData?.symbol ?? orderData?.data?.symbol ?? `${underlying}${option_type}`);
     const strikePrice: number = Number(orderData?.strikeprice ?? orderData?.data?.strikeprice ?? 0);
     const fillPrice: number = Number(orderData?.price ?? orderData?.data?.price ?? orderData?.average_price ?? 0);
+    const refPx =
+      referencePremium > 0 ? referencePremium : (fillPrice > 0 ? fillPrice : 0);
 
     // Insert into active_trades
     const { data: tradeRow, error: insertErr } = await (supabase as any)
@@ -248,6 +290,7 @@ Deno.serve(async (req) => {
         action: action.toUpperCase(),
         status: "active",
         entry_price: fillPrice,
+        reference_entry_price: refPx > 0 ? refPx : fillPrice,
         shares: Number(quantity),
         investment_amount: fillPrice * Number(quantity),
         margin_type: "options",

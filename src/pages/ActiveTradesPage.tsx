@@ -48,6 +48,7 @@ import { cn } from "@/lib/utils";
 import { SymbolSearch, SymbolData } from "@/components/SymbolSearch";
 import { StrategySelectionDialog, STRATEGIES } from "@/components/trading/StrategySelectionDialog";
 import { getStrategyParams } from "@/constants/strategyParams";
+import { formatSlippageLine } from "@/lib/tradeSlippage";
 import { PendingPaperTradeCard, PendingPaperTradeRow } from "@/components/trading/PendingPaperTradeCard";
 import {
   Dialog,
@@ -503,6 +504,7 @@ export default function ActiveTradesPage() {
           action,
           confidence: 75,
           riskGrade: "MEDIUM",
+          referenceEntryPrice: entryPrice,
           entryPrice,
           shares,
           investmentAmount,
@@ -1421,6 +1423,21 @@ export default function ActiveTradesPage() {
                                 ).toFixed(2)}
                               </span>
                             </div>
+                            <p className="text-[10px] text-zinc-500 leading-snug">
+                              Ref: {currencySymbol}
+                              {convertAmount(
+                                trade.referenceEntryPrice ?? trade.entryPrice,
+                                trade.symbol,
+                              ).toFixed(2)}{" "}
+                              ·{" "}
+                              {formatSlippageLine(
+                                trade.action,
+                                trade.referenceEntryPrice,
+                                trade.entryPrice,
+                                (n) =>
+                                  `${currencySymbol}${convertAmount(n, trade.symbol).toFixed(2)}`,
+                              )}
+                            </p>
                             {/* SL / TP badges */}
                             <div className="flex items-center gap-1.5 flex-wrap">
                               {trade.stopLossPrice && (
@@ -1460,13 +1477,22 @@ export default function ActiveTradesPage() {
                           </div>
 
                           {/* Entry Price Column — desktop only */}
-                          <div className="hidden sm:block text-right w-24 sm:w-32">
+                          <div className="hidden sm:flex flex-col items-end justify-center w-24 sm:w-36 text-right gap-0.5">
                             <span className="text-xs sm:text-sm font-medium text-muted-foreground tabular-nums">
                               {currencySymbol}
                               {convertAmount(
                                 trade.entryPrice,
                                 trade.symbol,
                               ).toFixed(2)}
+                            </span>
+                            <span className="text-[9px] text-zinc-500 leading-tight max-w-[7rem] text-right">
+                              {formatSlippageLine(
+                                trade.action,
+                                trade.referenceEntryPrice,
+                                trade.entryPrice,
+                                (n) =>
+                                  `${currencySymbol}${convertAmount(n, trade.symbol).toFixed(2)}`,
+                              )}
                             </span>
                           </div>
 
@@ -1560,6 +1586,21 @@ export default function ActiveTradesPage() {
                             {trade.exitPrice != null
                               ? `${currencySymbol}${convertAmount(trade.exitPrice, trade.symbol).toFixed(2)}`
                               : "N/A"}
+                          </p>
+                          <p className="text-[11px] text-zinc-500">
+                            Ref @ open: {currencySymbol}
+                            {convertAmount(
+                              trade.referenceEntryPrice ?? trade.entryPrice,
+                              trade.symbol,
+                            ).toFixed(2)}{" "}
+                            —{" "}
+                            {formatSlippageLine(
+                              trade.action,
+                              trade.referenceEntryPrice,
+                              trade.entryPrice,
+                              (n) =>
+                                `${currencySymbol}${convertAmount(n, trade.symbol).toFixed(2)}`,
+                            )}
                           </p>
                         </div>
                       </div>

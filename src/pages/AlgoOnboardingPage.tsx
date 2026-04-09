@@ -99,7 +99,7 @@ const STRATEGIES = [
   { value: "swing", label: "Swing Trading" },
   { value: "intraday", label: "Intraday" },
   { value: "positional", label: "Positional" },
-  { value: "options", label: "Options Trading" },
+  { value: "options", label: "Options / F&O (Algo)" },
   { value: "custom", label: "Custom / Describe my own" },
 ];
 

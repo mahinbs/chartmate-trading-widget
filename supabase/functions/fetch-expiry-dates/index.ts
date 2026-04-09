@@ -122,24 +122,23 @@ Deno.serve(async (req) => {
       ? expiryData
       : [];
 
-    const now = new Date();
+    const todayKey = toISODate(new Date());
 
-    // Parse and sort dates
+    // Parse and sort dates (include today’s expiry — compare IST calendar days, not d > now)
     const parsed = rawDates
       .map((ds) => {
-        // Try multiple date formats from OpenAlgo
         let d: Date | null = null;
         if (/^\d{4}-\d{2}-\d{2}$/.test(ds)) {
-          d = new Date(ds + "T00:00:00+05:30");
+          d = new Date(ds + "T12:00:00+05:30");
         } else if (/^\d{2}-[A-Za-z]+-\d{4}$/.test(ds)) {
-          d = new Date(ds.replace(/-/g, " ") + " 00:00:00 GMT+0530");
+          d = new Date(ds.replace(/-/g, " ") + " 12:00:00 GMT+0530");
         } else {
           d = new Date(ds);
         }
         if (isNaN(d?.getTime() ?? NaN)) return null;
         return d;
       })
-      .filter((d): d is Date => d !== null && d > now)
+      .filter((d): d is Date => d !== null && toISODate(d) >= todayKey)
       .sort((a, b) => a.getTime() - b.getTime());
 
     // Tag expiries
@@ -150,8 +149,9 @@ Deno.serve(async (req) => {
       days_to_expiry: number;
     };
 
+    const fromIst = new Date(todayKey + "T12:00:00+05:30");
     const expiries: ExpiryItem[] = parsed.map((d, idx) => {
-      const days = daysBetween(now, d);
+      const days = daysBetween(fromIst, d);
       let tag: ExpiryItem["tag"];
       if (idx === 0) tag = "weekly";
       else if (idx === 1) {

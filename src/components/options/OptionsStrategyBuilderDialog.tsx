@@ -7,7 +7,7 @@
  * Step 4: Exit Rules (SL%, TP%, trailing, time exit, re-entries)
  * Step 5: Risk Config (max premium, max daily loss, lot size, paper-only toggle)
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -40,7 +40,9 @@ import {
   Loader2,
   Info,
 } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import type { OptionsStrategy } from "@/pages/OptionsStrategyPage";
+import { instrumentTypeForUnderlying } from "@/lib/optionsApi";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -55,6 +57,8 @@ interface WizardState {
   strike_selection: string;
   option_type: string;
   trade_direction: string;
+  explicit_expiry_iso: string;
+  explicit_options_symbol: string;
   // Step 2
   strategy_style: string;
   // Step 3
@@ -92,6 +96,8 @@ const DEFAULT_STATE: WizardState = {
   strike_selection: "ATM",
   option_type: "auto",
   trade_direction: "bullish",
+  explicit_expiry_iso: "",
+  explicit_options_symbol: "",
   strategy_style: "buying",
   orb_breakout: true,
   orb_duration_mins: 15,
@@ -164,9 +170,10 @@ function stateToDb(state: WizardState, userId: string) {
       max_premium_per_lot: state.max_premium_per_lot,
       max_daily_loss_inr: state.max_daily_loss_inr,
       lot_size: state.lot_size,
+      explicit_expiry_iso: state.explicit_expiry_iso || null,
+      explicit_options_symbol: state.explicit_options_symbol || null,
     },
     is_paper_only: state.is_paper_only,
-    is_active: true,
   };
 }
 
@@ -186,6 +193,8 @@ function dbToState(s: OptionsStrategy): WizardState {
     strike_selection: s.strike_selection,
     option_type: s.option_type,
     trade_direction: s.trade_direction,
+    explicit_expiry_iso: (rc.explicit_expiry_iso as string) ?? "",
+    explicit_options_symbol: (rc.explicit_options_symbol as string) ?? "",
     strategy_style: s.strategy_style,
     orb_breakout: (ec.orb_breakout as boolean) ?? true,
     orb_duration_mins: (orb.orb_duration_mins as number) ?? 15,
@@ -253,7 +262,14 @@ function SliderField({
 
 // ── Steps ─────────────────────────────────────────────────────────────────
 
-function Step1({ state, set }: { state: WizardState; set: (k: keyof WizardState, v: unknown) => void }) {
+
+function Step1({
+  state,
+  set,
+}: {
+  state: WizardState;
+  set: (k: keyof WizardState, v: unknown) => void;
+}) {
   const UNDERLYINGS = ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"];
   return (
     <div className="space-y-5">
@@ -276,7 +292,15 @@ function Step1({ state, set }: { state: WizardState; set: (k: keyof WizardState,
 
       <div className="grid grid-cols-2 gap-4">
         <FieldRow label="Underlying">
-          <Select value={state.underlying} onValueChange={(v) => set("underlying", v)}>
+          <Select
+            value={state.underlying}
+            onValueChange={(v) => {
+              set("underlying", v);
+              set("instrument_type", instrumentTypeForUnderlying(v));
+              set("explicit_expiry_iso", "");
+              set("explicit_options_symbol", "");
+            }}
+          >
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               {UNDERLYINGS.map((u) => (
@@ -289,7 +313,14 @@ function Step1({ state, set }: { state: WizardState; set: (k: keyof WizardState,
         </FieldRow>
 
         <FieldRow label="Exchange">
-          <Select value={state.exchange} onValueChange={(v) => set("exchange", v)}>
+          <Select
+            value={state.exchange}
+            onValueChange={(v) => {
+              set("exchange", v);
+              set("explicit_expiry_iso", "");
+              set("explicit_options_symbol", "");
+            }}
+          >
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="NFO">NFO (NSE F&amp;O)</SelectItem>
@@ -351,6 +382,8 @@ function Step1({ state, set }: { state: WizardState; set: (k: keyof WizardState,
         <span>
           <strong>Auto</strong> option type lets the strategy pick CE or PE based on the ORB breakout direction.
           Use it with <strong>Neutral</strong> direction for the most flexible execution.
+          The <strong>expiry date, option symbol and lot size</strong> are selected when you tap{" "}
+          <strong>Paper Trade</strong> or <strong>Activate Live</strong> — broker data loads fresh each session.
         </span>
       </div>
     </div>
@@ -737,6 +770,14 @@ interface Props {
   onSaved: () => void;
 }
 
+function stateToDbPayload(state: WizardState, userId: string, editStrategy: OptionsStrategy | null | undefined) {
+  const base = stateToDb(state, userId);
+  return {
+    ...base,
+    is_active: editStrategy ? editStrategy.is_active : false,
+  };
+}
+
 export function OptionsStrategyBuilderDialog({ open, onOpenChange, editStrategy, onSaved }: Props) {
   const { user } = useAuth();
   const [step, setStep] = useState(0);
@@ -750,8 +791,9 @@ export function OptionsStrategyBuilderDialog({ open, onOpenChange, editStrategy,
     }
   }, [open, editStrategy]);
 
-  const set = (key: keyof WizardState, value: unknown) =>
+  const set = useCallback((key: keyof WizardState, value: unknown) => {
     setState((prev) => ({ ...prev, [key]: value }));
+  }, []);
 
   const canNext = () => {
     if (step === 0) return state.name.trim().length >= 2;
@@ -762,7 +804,7 @@ export function OptionsStrategyBuilderDialog({ open, onOpenChange, editStrategy,
     if (!user?.id) return;
     setSaving(true);
     try {
-      const payload = stateToDb(state, user.id);
+      const payload = stateToDbPayload(state, user.id, editStrategy);
       let error;
       if (editStrategy) {
         ({ error } = await (supabase as any)

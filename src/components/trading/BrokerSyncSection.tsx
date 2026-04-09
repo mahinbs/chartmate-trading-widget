@@ -14,11 +14,15 @@
  * From the user's POV this is "Connect to ChartMate" — they never see OpenAlgo.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import {
   getTradingIntegration,
+  updateOpenalgoApiKey,
   UserTradingIntegration,
+  OPEN_BROKER_SYNC_EVENT,
+  BROKER_SESSION_UPDATED_EVENT,
+  dispatchBrokerSessionUpdated,
 } from "@/services/openalgoIntegrationService";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -324,10 +328,13 @@ export default function BrokerSyncSection({ broker: brokerProp, compact = false 
   const [integration, setIntegration]     = useState<UserTradingIntegration | null>(null);
   const [loading, setLoading]             = useState(true);
   const [saving, setSaving]               = useState(false);
-  const [oauthLoading, setOauthLoading]   = useState(false);
-  const [manualToken, setManualToken]     = useState("");
-  const [showPaste, setShowPaste]         = useState(false);
+  const [oauthLoading, setOauthLoading]     = useState(false);
+  const [manualToken, setManualToken]       = useState("");
+  const [showPaste, setShowPaste]           = useState(false);
   const [selectedBroker, setSelectedBroker] = useState<string>(brokerProp ?? "");
+  const [openalgoKey, setOpenalgoKey]       = useState("");
+  const [savingKey, setSavingKey]           = useState(false);
+  const [showKeyInput, setShowKeyInput]     = useState(false);
 
   // resolve broker: prop > integration > user pick > first in list
   const brokerKey  = (brokerProp ?? selectedBroker ?? integration?.broker ?? "").toLowerCase();
@@ -345,24 +352,67 @@ export default function BrokerSyncSection({ broker: brokerProp, compact = false 
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    const onSessionUpdated = () => {
+      void load();
+    };
+    window.addEventListener(BROKER_SESSION_UPDATED_EVENT, onSessionUpdated);
+    return () => window.removeEventListener(BROKER_SESSION_UPDATED_EVENT, onSessionUpdated);
+  }, [load]);
+
   // ── Zerodha OAuth ─────────────────────────────────────────────────────────
-  const handleZerodhaOAuth = async () => {
+  const handleZerodhaOAuth = useCallback(async () => {
     setOauthLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        toast.error("Sign in required to connect your broker.");
+        return;
+      }
       const res = await supabase.functions.invoke("get-zerodha-login-url", {
         body: { return_url: `${window.location.origin}/broker-callback` },
-        headers: { Authorization: `Bearer ${session?.access_token}` },
+        headers: { Authorization: `Bearer ${session.access_token}` },
       });
       const d = res.data as { url?: string; error?: string } | null;
-      if (res.error || d?.error) { toast.error(d?.error ?? res.error?.message ?? "Could not get login URL"); return; }
-      if (d?.url) window.location.href = d.url;
-    } catch (e: any) {
-      toast.error("Error: " + (e.message ?? "unknown"));
+      if (res.error || d?.error) {
+        toast.error(d?.error ?? res.error?.message ?? "Could not get login URL");
+        return;
+      }
+      if (d?.url) {
+        window.location.href = d.url;
+        return;
+      }
+      toast.error("No login URL returned. Check get-zerodha-login-url edge function.");
+    } catch (e: unknown) {
+      toast.error("Error: " + ((e as Error).message ?? "unknown"));
     } finally {
       setOauthLoading(false);
     }
-  };
+  }, []);
+
+  const brokerKeyRef = useRef(brokerKey);
+  brokerKeyRef.current = brokerKey;
+  const zerodhaOAuthRef = useRef(handleZerodhaOAuth);
+  zerodhaOAuthRef.current = handleZerodhaOAuth;
+
+  useEffect(() => {
+    const onOpenSync = () => {
+      document.getElementById("broker-sync-connect")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      const key = brokerKeyRef.current;
+      if (!key) {
+        toast.error("Choose your broker in the Broker Sync bar first.");
+        return;
+      }
+      const info = BROKER_MAP[key] ?? DEFAULT_BROKER;
+      if (info.oauthSupported) {
+        void zerodhaOAuthRef.current();
+      } else {
+        setShowPaste(true);
+      }
+    };
+    window.addEventListener(OPEN_BROKER_SYNC_EVENT, onOpenSync);
+    return () => window.removeEventListener(OPEN_BROKER_SYNC_EVENT, onOpenSync);
+  }, []);
 
   // ── Manual token paste ────────────────────────────────────────────────────
   const handleSaveToken = async () => {
@@ -386,10 +436,30 @@ export default function BrokerSyncSection({ broker: brokerProp, compact = false 
       setManualToken("");
       setShowPaste(false);
       await load();
+      dispatchBrokerSessionUpdated();
     } catch (e: any) {
       toast.error("Error: " + (e.message ?? "unknown"));
     } finally {
       setSaving(false);
+    }
+  };
+
+  // ── OpenAlgo API key one-time setup ───────────────────────────────────────
+  const handleSaveOpenalgoKey = async () => {
+    if (!openalgoKey.trim()) { toast.error("Paste your OpenAlgo API key"); return; }
+    setSavingKey(true);
+    try {
+      const { error } = await updateOpenalgoApiKey(openalgoKey.trim());
+      if (error) { toast.error("Failed to save: " + error); return; }
+      toast.success("OpenAlgo API key saved! Options data will now load automatically.");
+      setOpenalgoKey("");
+      setShowKeyInput(false);
+      await load();
+      dispatchBrokerSessionUpdated();
+    } catch (e: any) {
+      toast.error("Error: " + (e.message ?? "unknown"));
+    } finally {
+      setSavingKey(false);
     }
   };
 
@@ -433,106 +503,166 @@ export default function BrokerSyncSection({ broker: brokerProp, compact = false 
   }
 
   // ── Full card ─────────────────────────────────────────────────────────────
+  const missingApiKey = fresh && !integration?.openalgo_api_key?.trim();
+
   return (
     <div
       id="broker-sync-connect"
-      className={`flex flex-col md:flex-row items-center justify-between gap-4 p-3 rounded-xl border bg-zinc-950/50 backdrop-blur-sm ${fresh ? "border-teal-500/20" : expired ? "border-amber-500/20" : "border-zinc-800"}`}
+      className={`flex flex-col gap-2 p-3 rounded-xl border bg-zinc-950/50 backdrop-blur-sm ${fresh ? (missingApiKey ? "border-amber-500/30" : "border-teal-500/20") : expired ? "border-amber-500/20" : "border-zinc-800"}`}
     >
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2">
-          {fresh ? (
-            <div className="h-8 w-8 rounded-full bg-teal-500/10 flex items-center justify-center border border-teal-500/20">
-              <Link2 className="h-4 w-4 text-teal-400" />
+      {/* ── Main status row ──────────────────────────────────────────────── */}
+      <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            {fresh ? (
+              <div className={`h-8 w-8 rounded-full flex items-center justify-center border ${missingApiKey ? "bg-amber-500/10 border-amber-500/20" : "bg-teal-500/10 border-teal-500/20"}`}>
+                {missingApiKey ? <Link2Off className="h-4 w-4 text-amber-400" /> : <Link2 className="h-4 w-4 text-teal-400" />}
+              </div>
+            ) : expired ? (
+              <div className="h-8 w-8 rounded-full bg-amber-500/10 flex items-center justify-center border border-amber-500/20">
+                <Link2Off className="h-4 w-4 text-amber-400" />
+              </div>
+            ) : (
+              <div className="h-8 w-8 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
+                <Link2Off className="h-4 w-4 text-zinc-400" />
+              </div>
+            )}
+            <div>
+              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                Broker Sync
+                {fresh && !missingApiKey ? (
+                  <Badge className="bg-teal-500/10 text-teal-400 border-teal-500/30 text-[9px] px-1.5 py-0">Connected</Badge>
+                ) : fresh && missingApiKey ? (
+                  <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/30 text-[9px] px-1.5 py-0">Setup Required</Badge>
+                ) : expired ? (
+                  <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/30 text-[9px] px-1.5 py-0">Expired</Badge>
+                ) : (
+                  <Badge className="bg-zinc-800 text-zinc-400 border-zinc-700 text-[9px] px-1.5 py-0">Not Connected</Badge>
+                )}
+              </h3>
+              <p className="text-[11px] text-zinc-500">
+                {fresh && integration?.token_expires_at ? (
+                  <>Valid until {new Date(integration.token_expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</>
+                ) : (
+                  <>Session resets daily at midnight IST</>
+                )}
+              </p>
             </div>
-          ) : expired ? (
-            <div className="h-8 w-8 rounded-full bg-amber-500/10 flex items-center justify-center border border-amber-500/20">
-              <Link2Off className="h-4 w-4 text-amber-400" />
-            </div>
-          ) : (
-            <div className="h-8 w-8 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-700">
-              <Link2Off className="h-4 w-4 text-zinc-400" />
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
+          {!brokerProp && (!fresh || !integration) && (
+            <Select value={selectedBroker} onValueChange={setSelectedBroker}>
+              <SelectTrigger className="bg-zinc-900 border-zinc-700 text-white h-9 w-[180px] text-xs">
+                <SelectValue placeholder="Choose broker…" />
+              </SelectTrigger>
+              <SelectContent className="bg-zinc-900 border-zinc-700 max-h-72">
+                {ALL_BROKERS.map((b) => (
+                  <SelectItem key={b.value} value={b.value} className="text-zinc-200 text-xs">
+                    <span className={b.color}>{b.label}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
+          {(fresh && integration) && (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900 rounded-md border border-zinc-800">
+              <span className={`text-xs font-semibold ${brokerInfo.color}`}>{brokerInfo.label}</span>
             </div>
           )}
-          <div>
-            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-              Broker Sync
-              {fresh ? (
-                <Badge className="bg-teal-500/10 text-teal-400 border-teal-500/30 text-[9px] px-1.5 py-0">Connected</Badge>
-              ) : expired ? (
-                <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/30 text-[9px] px-1.5 py-0">Expired</Badge>
-              ) : (
-                <Badge className="bg-zinc-800 text-zinc-400 border-zinc-700 text-[9px] px-1.5 py-0">Not Connected</Badge>
-              )}
-            </h3>
-            <p className="text-[11px] text-zinc-500">
-              {fresh && integration?.token_expires_at ? (
-                <>Valid until {new Date(integration.token_expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</>
-              ) : (
-                <>Session resets daily at midnight IST</>
-              )}
-            </p>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            {brokerInfo.oauthSupported ? (
+              <Button type="button" onClick={handleZerodhaOAuth} disabled={oauthLoading} size="sm" className="h-9 px-4 bg-orange-500 hover:bg-orange-400 text-white font-bold w-full sm:w-auto">
+                {oauthLoading ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Zap className="h-3.5 w-3.5 mr-1.5" />}
+                {fresh ? "Re-sync" : "Connect"}
+              </Button>
+            ) : (
+              <>
+                {!showPaste ? (
+                  <Button type="button" onClick={() => setShowPaste(true)} variant="outline" size="sm" disabled={!brokerKey} className="h-9 border-zinc-700 hover:bg-zinc-800 font-bold w-full sm:w-auto">
+                    <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                    {fresh ? "Re-sync" : "Connect"}
+                  </Button>
+                ) : (
+                  <div className="flex items-center gap-2 w-full sm:w-auto bg-zinc-900 p-1 rounded-lg border border-zinc-700">
+                    <Input value={manualToken} onChange={(e) => setManualToken(e.target.value)} placeholder="Paste your access token here…"
+                        className="bg-zinc-950 border-0 text-xs text-white placeholder:text-zinc-600 focus-visible:ring-0 h-7 w-[180px]"
+                        autoFocus
+                      />
+                    <Button type="button" onClick={handleSaveToken} disabled={saving} size="sm" className="h-7 px-3 bg-teal-500 hover:bg-teal-400 text-black text-xs font-bold">
+                      {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
+                    </Button>
+                    <Button type="button" onClick={() => { setShowPaste(false); setManualToken(""); }} variant="ghost" size="sm" className="h-7 px-2 text-zinc-400 hover:text-white">
+                      Cancel
+                    </Button>
+                  </div>
+                )}
+                {brokerKey && !showPaste && (
+                  <a href={brokerInfo.portal} target="_blank" rel="noopener noreferrer" className="hidden sm:flex items-center justify-center gap-1.5 h-9 px-3 rounded-md bg-zinc-900 border border-zinc-800 text-[11px] text-zinc-400 hover:text-teal-400 hover:border-teal-500/30 transition-colors">
+                    <ExternalLink className="h-3 w-3" /> Get Token
+                  </a>
+                )}
+              </>
+            )}
           </div>
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
-        {!brokerProp && (!fresh || !integration) && (
-          <Select value={selectedBroker} onValueChange={setSelectedBroker}>
-            <SelectTrigger className="bg-zinc-900 border-zinc-700 text-white h-9 w-[180px] text-xs">
-              <SelectValue placeholder="Choose broker…" />
-            </SelectTrigger>
-            <SelectContent className="bg-zinc-900 border-zinc-700 max-h-72">
-              {ALL_BROKERS.map((b) => (
-                <SelectItem key={b.value} value={b.value} className="text-zinc-200 text-xs">
-                  <span className={b.color}>{b.label}</span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-
-        {(fresh && integration) && (
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900 rounded-md border border-zinc-800">
-            <span className={`text-xs font-semibold ${brokerInfo.color}`}>{brokerInfo.label}</span>
-          </div>
-        )}
-
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          {brokerInfo.oauthSupported ? (
-            <Button onClick={handleZerodhaOAuth} disabled={oauthLoading} size="sm" className="h-9 px-4 bg-orange-500 hover:bg-orange-400 text-white font-bold w-full sm:w-auto">
-              {oauthLoading ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Zap className="h-3.5 w-3.5 mr-1.5" />}
-              {fresh ? "Re-sync" : "Connect"}
-            </Button>
-          ) : (
-            <>
-              {!showPaste ? (
-                <Button onClick={() => setShowPaste(true)} variant="outline" size="sm" disabled={!brokerKey} className="h-9 border-zinc-700 hover:bg-zinc-800 font-bold w-full sm:w-auto">
-                  <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-                  {fresh ? "Re-sync" : "Connect"}
+      {/* ── OpenAlgo API key one-time setup ──────────────────────────────── */}
+      {missingApiKey && (
+        <div className="border-t border-amber-500/20 pt-2 mt-0.5">
+          <Alert className="border-amber-500/40 bg-amber-500/10 py-2.5 px-3">
+            <AlertTriangle className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+            <AlertDescription className="text-xs text-amber-200 space-y-2">
+              <p>
+                <span className="font-semibold">One-time setup needed:</span> Paste your <span className="font-mono font-semibold">OpenAlgo API key</span> so ChartMate can auto-load option chains.
+                Find it in your OpenAlgo dashboard under <span className="font-semibold">Profile → API Key</span>.
+              </p>
+              {!showKeyInput ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-7 px-3 bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold"
+                  onClick={() => setShowKeyInput(true)}
+                >
+                  Enter OpenAlgo API Key
                 </Button>
               ) : (
-                <div className="flex items-center gap-2 w-full sm:w-auto bg-zinc-900 p-1 rounded-lg border border-zinc-700">
-                  <Input value={manualToken} onChange={(e) => setManualToken(e.target.value)} placeholder="Paste your access token here…"
-                      className="bg-zinc-950 border-0 text-xs text-white placeholder:text-zinc-600 focus-visible:ring-0 h-7 w-[180px]"
-                      autoFocus
-                    />
-                  <Button onClick={handleSaveToken} disabled={saving} size="sm" className="h-7 px-3 bg-teal-500 hover:bg-teal-400 text-black text-xs font-bold">
-                    {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Input
+                    value={openalgoKey}
+                    onChange={(e) => setOpenalgoKey(e.target.value)}
+                    placeholder="Paste OpenAlgo API key…"
+                    className="bg-zinc-950 border-amber-500/30 text-xs text-white placeholder:text-zinc-600 h-7 w-[220px] focus-visible:ring-amber-500/40"
+                    autoFocus
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={savingKey}
+                    className="h-7 px-3 bg-teal-500 hover:bg-teal-400 text-black text-xs font-bold"
+                    onClick={handleSaveOpenalgoKey}
+                  >
+                    {savingKey ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
                   </Button>
-                  <Button onClick={() => { setShowPaste(false); setManualToken(""); }} variant="ghost" size="sm" className="h-7 px-2 text-zinc-400 hover:text-white">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-zinc-400 hover:text-white text-xs"
+                    onClick={() => { setShowKeyInput(false); setOpenalgoKey(""); }}
+                  >
                     Cancel
                   </Button>
                 </div>
               )}
-              {brokerKey && !showPaste && (
-                <a href={brokerInfo.portal} target="_blank" rel="noopener noreferrer" className="hidden sm:flex items-center justify-center gap-1.5 h-9 px-3 rounded-md bg-zinc-900 border border-zinc-800 text-[11px] text-zinc-400 hover:text-teal-400 hover:border-teal-500/30 transition-colors">
-                  <ExternalLink className="h-3 w-3" /> Get Token
-                </a>
-              )}
-            </>
-          )}
+            </AlertDescription>
+          </Alert>
         </div>
-      </div>
+      )}
     </div>
   );
 }

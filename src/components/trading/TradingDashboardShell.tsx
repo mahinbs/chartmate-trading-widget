@@ -1,7 +1,13 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, Link2Off } from "lucide-react";
 import BrokerSyncSection from "@/components/trading/BrokerSyncSection";
+import {
+  getTradingIntegration,
+  isBrokerSessionLive,
+  BROKER_SESSION_UPDATED_EVENT,
+  dispatchOpenBrokerSync,
+} from "@/services/openalgoIntegrationService";
 import { EntryPointNotificationsHeaderButton } from "@/components/EntryPointNotificationsBell";
 import { ScheduledDigestClientTrigger } from "@/components/ScheduledDigestClientTrigger";
 import { DashboardShellLayout } from "../layout/DashboardShellLayout";
@@ -144,6 +150,26 @@ export interface TradingDashboardShellProps {
 export function TradingDashboardShell({ broker, children, pageTitle, hideHeader }: TradingDashboardShellProps) {
   const market = useMarketStatus();
   const brokerLabel = broker.charAt(0).toUpperCase() + broker.slice(1);
+  const [sessionLive, setSessionLive] = useState<boolean | null>(null);
+
+  const refreshBrokerHeader = useCallback(async () => {
+    const { data } = await getTradingIntegration();
+    setSessionLive(isBrokerSessionLive(data));
+  }, []);
+
+  useEffect(() => {
+    if (hideHeader) return;
+    void refreshBrokerHeader();
+    const onUpd = () => {
+      void refreshBrokerHeader();
+    };
+    window.addEventListener(BROKER_SESSION_UPDATED_EVENT, onUpd);
+    const t = window.setInterval(() => void refreshBrokerHeader(), 120_000);
+    return () => {
+      window.removeEventListener(BROKER_SESSION_UPDATED_EVENT, onUpd);
+      window.clearInterval(t);
+    };
+  }, [hideHeader, refreshBrokerHeader]);
 
   return (
     <DashboardShellLayout>
@@ -163,6 +189,11 @@ export function TradingDashboardShell({ broker, children, pageTitle, hideHeader 
                   ) : null}
                 </h1>
                 <p className="text-[11px] text-zinc-500">Powered by {brokerLabel} via OpenAlgo</p>
+                <p className="text-[10px] text-zinc-600 mt-0.5 max-w-xl leading-snug">
+                  Equities and options (F&amp;O) use live market data through OpenAlgo when your broker session
+                  is active — connect if sync shows expired. Open the{" "}
+                  <span className="text-zinc-400">Options strategies</span> tab below for F&amp;O.
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
@@ -174,10 +205,26 @@ export function TradingDashboardShell({ broker, children, pageTitle, hideHeader 
                 />
                 {market.label}
               </span>
-              <span className="flex items-center gap-1.5 text-xs text-teal-400 bg-teal-500/10 border border-teal-500/20 px-3 py-1.5 rounded-full">
-                <span className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse" />
-                {brokerLabel} Connected
-              </span>
+              {sessionLive === null ? (
+                <span className="flex items-center gap-1.5 text-xs text-zinc-400 bg-zinc-800/80 border border-zinc-700 px-3 py-1.5 rounded-full">
+                  <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                  Broker…
+                </span>
+              ) : sessionLive ? (
+                <span className="flex items-center gap-1.5 text-xs text-teal-400 bg-teal-500/10 border border-teal-500/20 px-3 py-1.5 rounded-full">
+                  <span className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse" />
+                  {brokerLabel} · Session active
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => dispatchOpenBrokerSync()}
+                  className="flex items-center gap-1.5 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/30 px-3 py-1.5 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer"
+                >
+                  <Link2Off className="h-3 w-3 shrink-0" />
+                  Reconnect broker
+                </button>
+              )}
               <EntryPointNotificationsHeaderButton />
             </div>
           </div>

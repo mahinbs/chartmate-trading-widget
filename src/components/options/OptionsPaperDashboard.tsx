@@ -37,6 +37,7 @@ import {
   Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatSlippageLine } from "@/lib/tradeSlippage";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -52,6 +53,7 @@ interface OptionsPosition {
   expiry_date: string | null;
   strike_offset: string | null;
   entry_premium: number | null;
+  reference_entry_price: number | null;
   peak_premium: number | null;
   current_price: number | null;
   shares: number;
@@ -125,7 +127,7 @@ export function OptionsPaperDashboard({ onRefreshStrategies }: Props) {
         .select(`
           id, symbol, action, status, is_paper_trade, options_strategy_id,
           underlying, option_type, expiry_date, strike_offset,
-          entry_premium, peak_premium, current_price, shares, entry_time, options_symbol,
+          entry_premium, reference_entry_price, peak_premium, current_price, shares, entry_time, options_symbol,
           options_strategies:options_strategy_id(name)
         `)
         .eq("user_id", user.id)
@@ -135,6 +137,10 @@ export function OptionsPaperDashboard({ onRefreshStrategies }: Props) {
       if (!error) {
         const mapped = (data ?? []).map((t: Record<string, unknown>) => ({
           ...t,
+          reference_entry_price:
+            t.reference_entry_price != null && t.reference_entry_price !== ""
+              ? Number(t.reference_entry_price)
+              : (t.entry_premium != null ? Number(t.entry_premium) : null),
           strategy_name: (t.options_strategies as { name?: string } | null)?.name ?? "—",
         }));
         setPositions(mapped);
@@ -158,7 +164,14 @@ export function OptionsPaperDashboard({ onRefreshStrategies }: Props) {
         user.id,
         token,
         (incoming) => {
-          type WsRow = { trade_id?: string; id?: string; ltp?: number; peak?: number; entry?: number };
+          type WsRow = {
+            trade_id?: string;
+            id?: string;
+            ltp?: number;
+            peak?: number;
+            entry?: number;
+            reference_entry_price?: number;
+          };
           const rows = incoming as WsRow[];
           const map = new Map(
             rows.map((p) => [String(p.trade_id ?? p.id ?? ""), p])
@@ -171,6 +184,8 @@ export function OptionsPaperDashboard({ onRefreshStrategies }: Props) {
                 ...p,
                 current_price: u.ltp ?? p.current_price,
                 peak_premium: u.peak ?? p.peak_premium,
+                reference_entry_price:
+                  u.reference_entry_price ?? p.reference_entry_price,
               };
             })
           );
@@ -280,6 +295,16 @@ export function OptionsPaperDashboard({ onRefreshStrategies }: Props) {
                     <X className="h-4 w-4" />
                   </Button>
                 </div>
+
+                <p className="text-[10px] text-muted-foreground leading-snug">
+                  Ref ₹{fmt(pos.reference_entry_price ?? entryPrem)} ·{" "}
+                  {formatSlippageLine(
+                    (pos.action === "SELL" ? "SELL" : "BUY") as "BUY" | "SELL",
+                    pos.reference_entry_price ?? entryPrem,
+                    entryPrem,
+                    (n) => `₹${fmt(n)}`,
+                  )}
+                </p>
 
                 {/* Metrics grid */}
                 <div className="grid grid-cols-5 gap-2 text-center">

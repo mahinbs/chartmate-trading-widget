@@ -656,6 +656,7 @@ const PredictPage = () => {
             result.confidence ||
             0,
           riskGrade: result.geminiForecast?.risk_grade || "MEDIUM",
+        referenceEntryPrice: result.currentPrice,
         entryPrice,
         shares: shares || 1,
         investmentAmount: parseFloat(investment),
