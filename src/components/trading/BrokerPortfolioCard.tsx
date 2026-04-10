@@ -2545,12 +2545,12 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                       <div className="text-zinc-500">Symbol</div>
                       <div className="text-zinc-100 font-semibold">{chartSymbol || "—"}</div>
                     </div>
-                    <div className="rounded border border-zinc-800 bg-zinc-900/50 px-2 py-1.5">
-                      <div className="text-zinc-500">Last Checked</div>
-                      <div className="text-zinc-100 font-semibold">
+                    <div className={`rounded border px-2 py-1.5 ${dep?.last_checked_at ? "border-zinc-800 bg-zinc-900/50" : "border-amber-700/40 bg-amber-950/20"}`}>
+                      <div className="text-zinc-500">Server Tick</div>
+                      <div className={`font-semibold text-xs ${dep?.last_checked_at ? "text-zinc-100" : "text-amber-400"}`}>
                         {dep?.last_checked_at
                           ? new Date(dep.last_checked_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
-                          : "Awaiting tick"}
+                          : "Not ticking ⚠️"}
                       </div>
                     </div>
                   </div>
@@ -2577,9 +2577,29 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                 </div>
 
                 <div className="p-4 overflow-y-auto space-y-3 min-h-0 h-full">
+
+                  {/* Backend monitor status banner */}
+                  {dep?.status === "pending" && !dep?.last_checked_at && (
+                    <div className="rounded border border-orange-700/50 bg-orange-950/20 px-3 py-2.5 space-y-1">
+                      <div className="text-[11px] text-orange-300 font-semibold uppercase tracking-wide flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-orange-400 animate-pulse inline-block" />
+                        Backend monitor not ticking
+                      </div>
+                      <p className="text-xs text-orange-200/80 leading-snug">
+                        The server-side strategy engine hasn't evaluated this deployment yet — it won't auto-place orders until the backend ticks. The live scan below runs from your browser every 30 s and shows conditions, but <strong>cannot place orders</strong>.
+                      </p>
+                      <p className="text-[10px] text-orange-300/60 mt-1">
+                        To fix: ensure chartmate-monitor is running, or deploy a dedicated strategy eval microservice.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Live scan (frontend) — condition status */}
                   <div className="rounded border border-zinc-800 bg-zinc-900/60 px-3 py-2">
                     <div className="flex items-center justify-between gap-2 mb-1">
-                      <div className="text-[11px] text-zinc-500 uppercase tracking-wide">Condition status</div>
+                      <div className="text-[11px] text-zinc-500 uppercase tracking-wide">
+                        Live Scan (browser · auto every 30 s)
+                      </div>
                       {dep?.status === "pending" && (
                         <button
                           type="button"
@@ -2588,12 +2608,14 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                           className="inline-flex items-center gap-1 text-[11px] text-teal-400 hover:text-teal-300 disabled:opacity-40"
                         >
                           <RefreshCw className={`h-3 w-3 ${scan?.loading ? "animate-spin" : ""}`} />
-                          Refresh scan
+                          Scan now
                         </button>
                       )}
                     </div>
                     <div className="text-sm text-zinc-200 break-words">
-                      {displayHeadline || "Waiting for next live tick and condition evaluation."}
+                      {scan?.loading
+                        ? "Scanning live data…"
+                        : displayHeadline || "Waiting for scan result."}
                     </div>
                   </div>
 
@@ -2601,35 +2623,35 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                     <>
                       <div className="rounded border border-emerald-900/40 bg-emerald-950/10 px-3 py-2">
                         <div className="text-[11px] text-emerald-300 uppercase tracking-wide mb-1">
-                          Matching now ({matchingNow.length})
+                          Passing now ({matchingNow.length})
                         </div>
                         {matchingNow.length > 0 ? (
                           <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
                             {matchingNow.map((c, idx) => (
                               <div key={`m-${idx}-${c.label}`} className="text-xs text-emerald-200 break-words">
-                                PASS - {c.label}
+                                ✓ {c.label}
                               </div>
                             ))}
                           </div>
                         ) : (
-                          <div className="text-xs text-zinc-400">No condition is PASS on the latest evaluated bar.</div>
+                          <div className="text-xs text-zinc-400">No conditions PASS on the latest bar.</div>
                         )}
                       </div>
 
                       <div className="rounded border border-red-900/40 bg-red-950/10 px-3 py-2">
                         <div className="text-[11px] text-red-300 uppercase tracking-wide mb-1">
-                          Not matching now ({notMatchingNow.length})
+                          Failing now ({notMatchingNow.length})
                         </div>
                         {notMatchingNow.length > 0 ? (
                           <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
                             {notMatchingNow.map((c, idx) => (
                               <div key={`f-${idx}-${c.label}`} className="text-xs text-red-200 break-words">
-                                FAIL - {c.label}
+                                ✗ {c.label}
                               </div>
                             ))}
                           </div>
                         ) : (
-                          <div className="text-xs text-zinc-400">No condition is failing on the latest evaluated bar.</div>
+                          <div className="text-xs text-zinc-400">No conditions FAIL on the latest bar.</div>
                         )}
                       </div>
                     </>
@@ -2639,10 +2661,10 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                       Evaluating conditions against the latest bars…
                     </div>
                   ) : (
-                    <div className="rounded border border-amber-900/40 bg-amber-950/10 px-3 py-2 text-xs text-amber-300">
+                    <div className="rounded border border-zinc-700/40 bg-zinc-900/50 px-3 py-2 text-xs text-zinc-400">
                       {dep?.status === "pending"
-                        ? "No per-rule PASS/FAIL lines were returned for this scan (engine may use a shape without line-level audit). Configured rules are shown below when available."
-                        : "Live rule-audit lines are not in the last server snapshot. Open this view while pending to run a full scan, or use Refresh scan."}
+                        ? "This strategy uses a built-in rule pack — the scan runs but per-rule PASS/FAIL audit is not available for this shape. Configured rules shown below."
+                        : "Run a scan while the strategy is pending to see condition results."}
                     </div>
                   )}
 

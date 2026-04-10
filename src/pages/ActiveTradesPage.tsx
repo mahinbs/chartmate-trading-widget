@@ -1313,7 +1313,7 @@ export default function ActiveTradesPage() {
           {/* Active Trades */}
           <TabsContent value="active" className="space-y-4 mt-4">
             {/* Options paper positions — separate section */}
-            <OptionsPaperDashboard />
+            <OptionsPaperDashboard showWhenEmpty />
 
             {activeTrades.length === 0 ? (
               <Alert className="border-white/10 bg-white/5">
@@ -2086,25 +2086,9 @@ export default function ActiveTradesPage() {
             })()}
           </TabsContent>
 
-          {/* Performance Tab - Failure Transparency & Stats */}
+          {/* Performance Tab - Paper trade stats only */}
           <TabsContent value="performance" className="space-y-6 mt-6">
-            {/* Options positions (paper + live) — separate section */}
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-sm font-semibold text-zinc-300">
-                <LineChartIcon className="h-4 w-4 text-orange-400" />
-                Options Positions (Live &amp; Paper)
-              </div>
-              <OptionsPaperDashboard />
-            </div>
-
-            {/* Normal & strategy paper trade performance */}
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-sm font-semibold text-zinc-300">
-                <BarChart3 className="h-4 w-4 text-teal-400" />
-                Normal &amp; Strategy Trade Performance
-              </div>
-              <PerformanceDashboard />
-            </div>
+            <PerformanceDashboard />
           </TabsContent>
         </Tabs>
 

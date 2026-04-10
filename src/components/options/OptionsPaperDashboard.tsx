@@ -101,9 +101,11 @@ function isMarketHours(): boolean {
 
 interface Props {
   onRefreshStrategies?: () => void;
+  /** When true, renders a placeholder card even when no positions exist. */
+  showWhenEmpty?: boolean;
 }
 
-export function OptionsPaperDashboard({ onRefreshStrategies }: Props) {
+export function OptionsPaperDashboard({ onRefreshStrategies, showWhenEmpty }: Props) {
   const { user } = useAuth();
   const [positions, setPositions] = useState<OptionsPosition[]>([]);
   const [totalPnl, setTotalPnl] = useState(0);
@@ -233,7 +235,26 @@ export function OptionsPaperDashboard({ onRefreshStrategies }: Props) {
     );
   }
 
-  if (positions.length === 0) return null;
+  if (positions.length === 0) {
+    if (!showWhenEmpty) return null;
+    return (
+      <Card className="border-primary/10">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Activity className="h-4 w-4 text-primary" />
+            Open Options Positions
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="py-6 text-center space-y-1">
+          <FlaskConical className="h-6 w-6 text-zinc-700 mx-auto" />
+          <p className="text-sm text-zinc-500 font-medium">No open options positions yet</p>
+          <p className="text-xs text-zinc-600 max-w-xs mx-auto">
+            Options paper trades from your strategies appear here once the ORB signal fires and a position is opened.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <>
