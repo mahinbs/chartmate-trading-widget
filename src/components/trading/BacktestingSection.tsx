@@ -42,6 +42,7 @@ import {
   type NormalizedExpiryItem,
   type TradableOptionRow,
 } from "@/lib/optionsApi";
+import { friendlyBrokerMarketDataError } from "@/lib/brokerMarketDataErrors";
 import { STRATEGIES } from "@/components/trading/StrategySelectionDialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -1659,7 +1660,10 @@ export default function BacktestingSection() {
         const pick = pickExpiryForStrategyType(data.expiries, String((selStrat as any).expiry_type ?? "weekly") as "weekly" | "monthly");
         setOrbExpiryIso(pick?.date ?? data.expiries[0]?.date ?? "");
       } catch (e) {
-        if (!cancelled) setOrbPickerError(e instanceof Error ? e.message : String(e));
+        if (!cancelled) {
+          const raw = e instanceof Error ? e.message : String(e);
+          setOrbPickerError(friendlyBrokerMarketDataError(raw));
+        }
       } finally {
         if (!cancelled) setOrbLoadingExpiries(false);
       }
@@ -1694,7 +1698,10 @@ export default function BacktestingSection() {
         setOrbOptionRows(list);
         setOrbOptionSymbol(prev => (prev && list.some(r => r.symbol === prev) ? prev : (list[0]?.symbol ?? "")));
       } catch (e) {
-        if (!cancelled) setOrbPickerError(e instanceof Error ? e.message : String(e));
+        if (!cancelled) {
+          const raw = e instanceof Error ? e.message : String(e);
+          setOrbPickerError(friendlyBrokerMarketDataError(raw));
+        }
       } finally {
         if (!cancelled) setOrbLoadingChain(false);
       }
@@ -2011,7 +2018,11 @@ export default function BacktestingSection() {
 
       const d = normalizeBacktestResult(res.data as BacktestResult & { error?: string });
       setLastBacktestClientMs(Math.round(performance.now() - runStarted));
-      if (res.error || (d as any)?.error) { toast.error(String((d as any)?.error ?? "Backtest failed")); return; }
+      if (res.error || (d as any)?.error) {
+        const raw = String((d as any)?.error ?? res.error?.message ?? "Backtest failed");
+        toast.error(friendlyBrokerMarketDataError(raw));
+        return;
+      }
       setResult(d);
       const runLabel = mode === "options"
         ? `ORB Options · ${sym}`
@@ -2071,7 +2082,8 @@ export default function BacktestingSection() {
       toast.success(`Backtest ready · ${d.totalTrades} trades · WR ${d.winRate}%${modeNote}`);
     } catch (e) {
       setLastBacktestClientMs(Math.round(performance.now() - runStarted));
-      toast.error(e instanceof Error ? e.message : "Backtest failed");
+      const raw = e instanceof Error ? e.message : "Backtest failed";
+      toast.error(friendlyBrokerMarketDataError(raw));
     }
     finally { setLoading(false); }
   }, [
