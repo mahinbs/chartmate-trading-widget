@@ -1554,10 +1554,16 @@ export default function BacktestingSection() {
   const backtestPdfRef = useRef<HTMLDivElement>(null);
 
   const selectedCustom = customStrategies.find(s => s.id === selectedCustomId) ?? null;
+  const selectedOptionsStrat =
+    mode === "options"
+      ? optionsStrategies.find(s => (s as any).id === selectedOptionsStratId) ?? null
+      : null;
   const stratLabel =
-    selectedCustom?.name
-    ?? STRATEGIES.find(s => s.value === strategy)?.label
-    ?? strategy;
+    mode === "options"
+      ? String((selectedOptionsStrat as any)?.name ?? "Options ORB")
+      : (selectedCustom?.name
+        ?? STRATEGIES.find(s => s.value === strategy)?.label
+        ?? strategy);
 
   // Load full custom strategy details including entry/exit conditions
   const loadCustomStrategies = useCallback(async () => {
@@ -1914,8 +1920,6 @@ export default function BacktestingSection() {
     });
   }, []);
 
-  const selectedOptionsStrat = optionsStrategies.find(s => (s as any).id === selectedOptionsStratId) ?? null;
-
   const runVectorBt = useCallback(async () => {
     // For options mode, validate strategy is selected (symbol comes from strategy)
     if (mode === "options") {
@@ -2110,10 +2114,11 @@ export default function BacktestingSection() {
         body: {
           symbol: sym,
           exchange,
-          strategy: result.strategy,
+          strategy: result.strategy || (mode === "options" ? "options_orb" : "trend_following"),
           trades: result.trades,
           days: Math.min(730, Math.max(30, parseInt(days, 10) || 365)),
           filterThreshold: 50,
+          backtest_mode: mode === "options" ? "options_orb" : "equity",
         },
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
@@ -2143,7 +2148,7 @@ export default function BacktestingSection() {
     } finally {
       setAiFilterLoading(false);
     }
-  }, [result, symbol, exchange, days, resultViewContext?.historyId]);
+  }, [result, symbol, exchange, days, mode, resultViewContext?.historyId]);
 
   const runTimingReview = useCallback(async () => {
     if (!result) { toast.error("Run backtest first"); return; }
@@ -2156,8 +2161,12 @@ export default function BacktestingSection() {
           symbol: sym, exchange, action, quantity: 1,
           product: mode === "strategy" && !selectedCustom && STRATEGIES.find(s => s.value === strategy)?.product === "MIS" ? "MIS" : "CNC",
           timing_review: {
-            mode: mode === "strategy" ? (selectedCustom ? "custom_strategy" : "preset_strategy") : "simple_trade",
-            strategy_label: mode === "strategy" ? stratLabel : undefined,
+            mode: mode === "options"
+              ? "options_orb_backtest"
+              : mode === "strategy"
+                ? (selectedCustom ? "custom_strategy" : "preset_strategy")
+                : "simple_trade",
+            strategy_label: mode === "strategy" || mode === "options" ? stratLabel : undefined,
             stop_loss_pct: parseFloat(slPct) || 2,
             take_profit_pct: parseFloat(tpPct) || 4,
             session_start: startTime, session_end: endTime, squareoff_time: squareoff,
@@ -2775,7 +2784,6 @@ export default function BacktestingSection() {
                   : "Run Options Backtest")
               : "Run Backtesting"}
           </Button>
-          {mode !== "options" && (
           <Button
             variant="outline"
             onClick={runAiFilteredComparison}
@@ -2783,15 +2791,12 @@ export default function BacktestingSection() {
             className="border-emerald-600/50 text-emerald-300"
           >
             {aiFilterLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Zap className="h-4 w-4 mr-2" />}
-            Run AI-Filtered Comparison
+            {mode === "options" ? "AI-Filtered Options (Gemini)" : "Run AI-Filtered Comparison"}
           </Button>
-          )}
-          {mode !== "options" && (
           <Button variant="outline" onClick={runTimingReview} disabled={!result || aiLoading} className="border-purple-600/50 text-purple-300">
             {aiLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Brain className="h-4 w-4 mr-2" />}
             AI Review SL/TP & Timing
           </Button>
-          )}
           {result && !resultPopupOpen && (
             <Button variant="ghost" onClick={() => setResultPopupOpen(true)} className="text-teal-400 hover:text-teal-300 hover:bg-teal-400/10">
               <Eye className="h-4 w-4 mr-2" /> View Last Result
@@ -2885,6 +2890,12 @@ export default function BacktestingSection() {
                   {/* AI Filter comparison strip or run button */}
                   {aiFilterResult ? (
                     <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 space-y-2">
+                      {result?.strategy === "options_orb" && (
+                        <p className="text-[10px] text-violet-300/90 border-b border-violet-500/20 pb-2 mb-2">
+                          Options ORB: Gemini ranks each entry using the <span className="font-semibold">underlying</span> daily bar context (Yahoo),
+                          same pipeline as equity AI filter. For live accuracy, use a connected broker via OpenAlgo.
+                        </p>
+                      )}
                       {/* Summary row — Raw side uses actual result metrics (portfolio compound), AI side uses simple-sum */}
                       {(() => {
                         const rawTotal = result?.totalReturn ?? 0;

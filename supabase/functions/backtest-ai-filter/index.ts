@@ -425,11 +425,16 @@ function applyAdaptiveFilter(
 }
 
 const GEMINI_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
+/** Prefer newest Pro-class models first (same stack as main strategy backtest AI). */
 const GEMINI_MODELS = [
+  "gemini-2.5-pro-preview-06-05",
+  "gemini-2.5-pro-preview-05-06",
+  "gemini-2.5-flash-preview-05-20",
   "gemini-2.0-flash",
+  "gemini-1.5-pro-latest",
   "gemini-1.5-flash",
   "gemini-1.5-flash-latest",
-  "gemini-1.5-pro-latest",
+  "gemini-3.1-pro-preview",
 ];
 
 /**
@@ -442,6 +447,7 @@ async function runGeminiFilter(
   exchange: string,
   strategy: string,
   tradesWithFactors: Array<ScoredTrade & { _factors: EntryFactors }>,
+  backtestMode: string,
 ): Promise<Map<number, { keep: boolean; score: number; reason: string; signals: SignalDetail[] }>> {
   const result = new Map<number, { keep: boolean; score: number; reason: string; signals: SignalDetail[] }>();
 
@@ -460,10 +466,15 @@ async function runGeminiFilter(
     return parts.join(" | ");
   }).join("\n");
 
+  const ctxLine = backtestMode === "options_orb"
+    ? "Backtest type: OPTIONS ORB on an index/F&O underlying. Each row is an option premium trade; use the underlying daily indicator context at entry to judge whether the breakout day was a high-quality setup for buying premium (volatility/trend alignment). Still do NOT use trade outcome or returnPct."
+    : "Backtest type: equity / directional strategy on the symbol below.";
+
   const prompt = `You are a quantitative trading analyst. Your job is to review each trade entry and decide whether it should be KEPT or REMOVED from a filtered backtest.
 
 Symbol: ${symbol} (${exchange})
 Strategy: ${strategy}
+${ctxLine}
 Total trades: ${tradesWithFactors.length}
 
 Rules:
@@ -553,6 +564,7 @@ Deno.serve(async (req) => {
     const symbol = String(body.symbol ?? "").trim().toUpperCase();
     const exchange = String(body.exchange ?? "NSE").trim().toUpperCase();
     const strategy = String(body.strategy ?? "trend_following");
+    const backtestMode = String(body.backtest_mode ?? "equity");
     const filterThreshold = Math.max(1, Math.min(100, Number(body.filterThreshold ?? 50)));
     const trades = Array.isArray(body.trades) ? (body.trades as TradeRow[]) : [];
     if (!symbol || trades.length === 0) {
@@ -601,9 +613,14 @@ Deno.serve(async (req) => {
     });
 
     // Run Gemini AI analysis
-    const geminiDecisions = await runGeminiFilter(symbol, exchange, strategy, tradesWithFactors);
+    const geminiDecisions = await runGeminiFilter(symbol, exchange, strategy, tradesWithFactors, backtestMode);
     const usedGemini = geminiDecisions.size > 0;
     let filterNote = usedGemini ? "" : "AI model unavailable — using indicator-based scoring as fallback.";
+    if (backtestMode === "options_orb") {
+      filterNote = usedGemini
+        ? "Gemini scored option entries using underlying (index) daily context (Yahoo). Best live alignment: broker + OpenAlgo."
+        : `${filterNote} Underlying daily (Yahoo) used for scoring.`;
+    }
 
     // Apply Gemini decisions if we got them, else fall back to indicator scoring
     let scoredBase: (ScoredTrade & { _factors: EntryFactors })[];
