@@ -43,12 +43,71 @@ export type BuilderStrategySubtype = "indicator_based" | "time_based" | "hybrid"
 
 /** Engine + scanners use this to run PDF-aligned logic instead of visual-builder rows. */
 export type AlgoGuidePresetId =
+  | "ema_crossover"
   | "orb"
   | "vwap_bounce"
   | "supertrend_7_3"
   | "rsi_divergence"
   | "liquidity_sweep_bos"
   | "smc_mtf_confluence";
+
+/**
+ * Overrides for all 7 Strategy Guide + SMC presets. Live engine reads camelCase keys; omitted = PDF default.
+ */
+export type AlgoGuideParams = {
+  // ORB
+  orbOpenStartMin?: number;
+  orbOpenEndMin?: number;
+  orbMinRangePct?: number;
+  orbMaxRangePct?: number;
+  orbTpRangeMult?: number;
+  // VWAP
+  vwapMaxTestsPerDay?: number;
+  vwapLastEntryBeforeMin?: number;
+  vwapVolLookback?: number;
+  vwapSlPctFromVwap?: number;
+  // EMA 20/50 trend
+  emaFastPeriod?: number;
+  emaSlowPeriod?: number;
+  emaTrendPeriod?: number;
+  emaRsiPeriod?: number;
+  emaRsiLongMin?: number;
+  emaRsiLongMax?: number;
+  emaRsiShortMin?: number;
+  emaRsiShortMax?: number;
+  emaVolMult?: number;
+  emaVolLookback?: number;
+  emaTradeStartMin?: number;
+  emaTradeEndMin?: number;
+  emaTpRiskReward?: number;
+  // Supertrend
+  stPeriod?: number;
+  stMult?: number;
+  stSessionStartMin?: number;
+  stSessionEndMin?: number;
+  stAtrFilterPct?: number;
+  stTpAtrMult?: number;
+  // RSI divergence
+  rsiDivPeriod?: number;
+  rsiDivPivotWidth?: number;
+  rsiDivMinSpan?: number;
+  rsiDivMaxSpan?: number;
+  rsiDivConfirmBars?: number;
+  rsiDivTp2Mult?: number;
+  // Liquidity sweep + BOS
+  lqLookback?: number;
+  lqSwingWidth?: number;
+  lqEqualZonePct?: number;
+  lqAtrPeriod?: number;
+  // SMC MTF (UTC minutes for sessions; disable gate for NSE-only testing)
+  smcDisableSessionGate?: boolean;
+  smcLondonStartUtcMin?: number;
+  smcLondonEndUtcMin?: number;
+  smcNyStartUtcMin?: number;
+  smcNyEndUtcMin?: number;
+  smcDemandBodyAtrRatio?: number;
+  smcSwingWidth1m?: number;
+};
 
 export type EntryConditions = {
   mode: "visual" | "raw";
@@ -63,6 +122,8 @@ export type EntryConditions = {
   algoGuidePreset?: AlgoGuidePresetId;
   /** EMA guide row: optional scanner hint (persisted if present) */
   algoGuideBlockFirstSessionMinutes?: boolean;
+  /** Per-preset tuning for ORB / VWAP / … (live strategy engine) */
+  algoGuideParams?: AlgoGuideParams;
 };
 
 export type ExitConditions = {

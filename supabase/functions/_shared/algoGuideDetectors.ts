@@ -7,6 +7,7 @@
 import type { MarketSessionProfile } from "./marketSession.ts";
 
 export type AlgoGuidePresetId =
+  | "ema_crossover"
   | "orb"
   | "supertrend_7_3"
   | "vwap_bounce"
@@ -18,6 +19,7 @@ export function extractAlgoGuidePreset(entryConditions: unknown): AlgoGuidePrese
   if (!entryConditions || typeof entryConditions !== "object") return null;
   const p = (entryConditions as { algoGuidePreset?: string }).algoGuidePreset;
   if (
+    p === "ema_crossover" ||
     p === "orb" ||
     p === "supertrend_7_3" ||
     p === "vwap_bounce" ||

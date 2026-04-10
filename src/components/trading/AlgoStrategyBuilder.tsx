@@ -35,6 +35,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import type {
   AlgoCondition,
+  AlgoGuideParams,
   AlgoGuidePresetId,
   ChartConfig,
   ConditionGroup,
@@ -191,11 +192,34 @@ function makeGroup(): ConditionGroup {
   return { id: crypto.randomUUID(), logic: "AND", conditions: [makeCond()] };
 }
 
+/** IST minute-of-day ↔ `<input type="time" />` (engine uses minutes from midnight IST). */
+function istMinutesToTimeInput(totalMin: number): string {
+  const h = Math.floor(totalMin / 60) % 24;
+  const mi = totalMin % 60;
+  return `${String(h).padStart(2, "0")}:${String(mi).padStart(2, "0")}`;
+}
+
+function timeInputToIstMinutes(s: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s.trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const mi = Number(m[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(mi) || mi > 59 || h > 23) return null;
+  return h * 60 + mi;
+}
+
 /** Shown on Entry step when `entry_conditions.algoGuidePreset` is set (ORB, VWAP, etc.). */
 const ALGO_GUIDE_PRESET_ENTRY_COPY: Record<
   AlgoGuidePresetId,
   { title: string; bullets: string[] }
 > = {
+  ema_crossover: {
+    title: "EMA trend crossover (Strategy Guide #1)",
+    bullets: [
+      "Fast EMA crosses slow EMA with RSI band, volume vs average, and price vs higher timeframe EMA — all tunable below.",
+      "Use a 15m chart on the Timing step for guide fidelity. Live engine runs this preset (not generic visual rows).",
+    ],
+  },
   orb: {
     title: "Opening Range Breakout (ORB)",
     bullets: [
@@ -227,31 +251,45 @@ const ALGO_GUIDE_PRESET_ENTRY_COPY: Record<
     ],
   },
   liquidity_sweep_bos: {
-    title: "Liquidity sweep + break of structure",
+    title: "Liquidity sweep + break of structure (BOS)",
     bullets: [
-      "Detects liquidity sweep and BOS-style structure on your chart interval per the guide.",
-      "Entry uses the dedicated preset path on fetched OHLCV.",
+      "Marks liquidity from equal highs/lows and swing points; waits for a sweep (price beyond those levels) then a BOS in the trade direction.",
+      "Entry on BOS confirmation; SL beyond the sweep; TP toward the next opposing liquidity zone — aligned with smart-money style flow.",
+      "Tune lookback, swing width, equal-zone tolerance, and ATR period below; live + paper use the same engine path.",
     ],
   },
   smc_mtf_confluence: {
-    title: "SMC multi-timeframe confluence",
+    title: "SMC multi-timeframe confluence (SMC Strategy.pdf)",
     bullets: [
-      "Combines higher-timeframe structure with lower-timeframe execution (4H / 15m / 1m stack in the engine).",
-      "Entry is SMC preset logic, not the rows below.",
+      "4H→15M→1M stack: HTF bias, 15m zones/FVG, 1m liquidity sweep + ChoCH + mitigation, with London/NY session gate (optional off for NSE testing).",
     ],
   },
 };
 
-function AlgoGuidePresetEntryCallout({
+function AlgoGuidePresetEntryPanel({
   presetId,
+  entryConditions,
+  onUpdate,
   onSwitchToCustom,
 }: {
   presetId: AlgoGuidePresetId;
+  entryConditions: EntryConditions;
+  onUpdate: (next: EntryConditions) => void;
   onSwitchToCustom: () => void;
 }) {
+  const [replaceAck, setReplaceAck] = useState(false);
+  const p: AlgoGuideParams = entryConditions.algoGuideParams ?? {};
   const copy = ALGO_GUIDE_PRESET_ENTRY_COPY[presetId];
+
+  const patchParams = (partial: Partial<AlgoGuideParams>) => {
+    onUpdate({
+      ...entryConditions,
+      algoGuideParams: { ...p, ...partial },
+    });
+  };
+
   return (
-    <div className="space-y-3 rounded-xl border border-teal-500/30 bg-teal-500/5 p-4">
+    <div className="space-y-4 rounded-xl border border-teal-500/30 bg-teal-500/5 p-4">
       <p className="text-xs font-bold uppercase tracking-widest text-teal-400/90">Algo Guide preset</p>
       <p className="text-sm font-semibold text-zinc-100">{copy.title}</p>
       <ul className="list-disc space-y-2 pl-4 text-xs text-zinc-300 leading-relaxed">
@@ -259,20 +297,300 @@ function AlgoGuidePresetEntryCallout({
           <li key={i}>{b}</li>
         ))}
       </ul>
-      <p className="text-[11px] text-zinc-500 leading-relaxed">
-        The visual condition builder is hidden for this strategy because entry is defined by this preset in the database (
-        <code className="text-zinc-400">algoGuidePreset</code>
-        ). Session times and chart interval on the Timing step still apply.
-      </p>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="h-8 border-zinc-600 text-xs text-zinc-400"
-        onClick={onSwitchToCustom}
+
+      {presetId === "orb" && (
+        <>
+          <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest border-t border-teal-500/20 pt-3">
+            Edit ORB parameters
+          </p>
+          <p className="text-[11px] text-zinc-500">
+            Times are <strong className="text-zinc-400">IST</strong>, minute-of-day. Use 5m chart on the Timing step. Live engine reads{" "}
+            <code className="text-zinc-400">algoGuideParams</code>.
+          </p>
+          <Row>
+            <Field label="Range start" hint="First bar included (e.g. 09:15)">
+              <Input
+                type="time"
+                className="h-10 bg-zinc-900 border-zinc-700 text-sm max-w-[140px]"
+                value={istMinutesToTimeInput(p.orbOpenStartMin ?? 555)}
+                onChange={(e) => {
+                  const mm = timeInputToIstMinutes(e.target.value);
+                  if (mm != null) patchParams({ orbOpenStartMin: mm });
+                }}
+              />
+            </Field>
+            <Field label="Range end" hint="Exclusive — breakouts after this time">
+              <Input
+                type="time"
+                className="h-10 bg-zinc-900 border-zinc-700 text-sm max-w-[140px]"
+                value={istMinutesToTimeInput(p.orbOpenEndMin ?? 570)}
+                onChange={(e) => {
+                  const mm = timeInputToIstMinutes(e.target.value);
+                  if (mm != null) patchParams({ orbOpenEndMin: mm });
+                }}
+              />
+            </Field>
+            <Field label="Min range %" hint="% of mid price (width filter)">
+              <Input
+                type="number"
+                step={0.05}
+                min={0.05}
+                max={2}
+                className="h-10 bg-zinc-900 border-zinc-700 text-sm"
+                value={100 * (p.orbMinRangePct ?? 0.002)}
+                onChange={(e) => {
+                  const v = parseFloat(e.target.value);
+                  if (!Number.isFinite(v)) return;
+                  patchParams({ orbMinRangePct: v / 100 });
+                }}
+              />
+            </Field>
+          </Row>
+          <Row>
+            <Field label="Max range %" hint="% of mid price">
+              <Input
+                type="number"
+                step={0.05}
+                min={0.1}
+                max={5}
+                className="h-10 bg-zinc-900 border-zinc-700 text-sm"
+                value={100 * (p.orbMaxRangePct ?? 0.01)}
+                onChange={(e) => {
+                  const v = parseFloat(e.target.value);
+                  if (!Number.isFinite(v)) return;
+                  patchParams({ orbMaxRangePct: v / 100 });
+                }}
+              />
+            </Field>
+            <Field label="TP × range" hint="Take-profit distance in range heights">
+              <Input
+                type="number"
+                step={0.1}
+                min={0.5}
+                max={4}
+                className="h-10 bg-zinc-900 border-zinc-700 text-sm"
+                value={p.orbTpRangeMult ?? 1.5}
+                onChange={(e) => {
+                  const v = parseFloat(e.target.value);
+                  if (!Number.isFinite(v)) return;
+                  patchParams({ orbTpRangeMult: v });
+                }}
+              />
+            </Field>
+          </Row>
+        </>
+      )}
+
+      {presetId === "vwap_bounce" && (
+        <>
+          <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest border-t border-teal-500/20 pt-3">
+            Edit VWAP bounce parameters
+          </p>
+          <p className="text-[11px] text-zinc-500">
+            Live engine reads <code className="text-zinc-400">algoGuideParams</code>. Rejection/touch heuristics stay guide-style; you tune tests, time cut-off, volume lookback, and SL distance.
+          </p>
+          <Row>
+            <Field label="Max VWAP tests / day" hint="After this many crosses, no entry">
+              <Input
+                type="number"
+                step={1}
+                min={1}
+                max={5}
+                className="h-10 bg-zinc-900 border-zinc-700 text-sm"
+                value={p.vwapMaxTestsPerDay ?? 2}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10);
+                  if (!Number.isFinite(v)) return;
+                  patchParams({ vwapMaxTestsPerDay: v });
+                }}
+              />
+            </Field>
+            <Field label="No entry after (IST)" hint="Last bar minute allowed">
+              <Input
+                type="time"
+                className="h-10 bg-zinc-900 border-zinc-700 text-sm max-w-[140px]"
+                value={istMinutesToTimeInput(p.vwapLastEntryBeforeMin ?? 870)}
+                onChange={(e) => {
+                  const mm = timeInputToIstMinutes(e.target.value);
+                  if (mm != null) patchParams({ vwapLastEntryBeforeMin: mm });
+                }}
+              />
+            </Field>
+            <Field label="Volume lookback" hint="Bars for average volume on touch bar">
+              <Input
+                type="number"
+                step={1}
+                min={2}
+                max={60}
+                className="h-10 bg-zinc-900 border-zinc-700 text-sm"
+                value={p.vwapVolLookback ?? 10}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10);
+                  if (!Number.isFinite(v)) return;
+                  patchParams({ vwapVolLookback: v });
+                }}
+              />
+            </Field>
+          </Row>
+          <Row>
+            <Field label="SL distance from VWAP" hint="Percent (0.5 = half percent)">
+              <Input
+                type="number"
+                step={0.05}
+                min={0.1}
+                max={2}
+                className="h-10 bg-zinc-900 border-zinc-700 text-sm"
+                value={100 * (p.vwapSlPctFromVwap ?? 0.005)}
+                onChange={(e) => {
+                  const v = parseFloat(e.target.value);
+                  if (!Number.isFinite(v)) return;
+                  patchParams({ vwapSlPctFromVwap: v / 100 });
+                }}
+              />
+            </Field>
+          </Row>
+        </>
+      )}
+
+      {presetId === "ema_crossover" && (
+        <>
+          <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest border-t border-teal-500/20 pt-3">
+            Edit EMA crossover parameters
+          </p>
+          <Row>
+            <Field label="Fast EMA period" hint="Default 20"><Input type="number" min={2} max={100} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={p.emaFastPeriod ?? 20} onChange={(e) => { const v = parseInt(e.target.value, 10); if (Number.isFinite(v)) patchParams({ emaFastPeriod: v }); }} /></Field>
+            <Field label="Slow EMA period" hint="Default 50"><Input type="number" min={2} max={200} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={p.emaSlowPeriod ?? 50} onChange={(e) => { const v = parseInt(e.target.value, 10); if (Number.isFinite(v)) patchParams({ emaSlowPeriod: v }); }} /></Field>
+            <Field label="Trend EMA period" hint="200 EMA filter"><Input type="number" min={20} max={300} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={p.emaTrendPeriod ?? 200} onChange={(e) => { const v = parseInt(e.target.value, 10); if (Number.isFinite(v)) patchParams({ emaTrendPeriod: v }); }} /></Field>
+          </Row>
+          <Row>
+            <Field label="RSI period"><Input type="number" min={2} max={30} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={p.emaRsiPeriod ?? 14} onChange={(e) => { const v = parseInt(e.target.value, 10); if (Number.isFinite(v)) patchParams({ emaRsiPeriod: v }); }} /></Field>
+            <Field label="Long RSI min"><Input type="number" step={1} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={p.emaRsiLongMin ?? 50} onChange={(e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) patchParams({ emaRsiLongMin: v }); }} /></Field>
+            <Field label="Long RSI max"><Input type="number" step={1} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={p.emaRsiLongMax ?? 75} onChange={(e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) patchParams({ emaRsiLongMax: v }); }} /></Field>
+          </Row>
+          <Row>
+            <Field label="Short RSI min"><Input type="number" step={1} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={p.emaRsiShortMin ?? 25} onChange={(e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) patchParams({ emaRsiShortMin: v }); }} /></Field>
+            <Field label="Short RSI max"><Input type="number" step={1} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={p.emaRsiShortMax ?? 50} onChange={(e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) patchParams({ emaRsiShortMax: v }); }} /></Field>
+            <Field label="Volume multiple" hint="vs avg"><Input type="number" step={0.1} min={0.5} max={5} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={p.emaVolMult ?? 1.5} onChange={(e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) patchParams({ emaVolMult: v }); }} /></Field>
+          </Row>
+          <Row>
+            <Field label="Volume lookback"><Input type="number" min={2} max={100} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={p.emaVolLookback ?? 20} onChange={(e) => { const v = parseInt(e.target.value, 10); if (Number.isFinite(v)) patchParams({ emaVolLookback: v }); }} /></Field>
+            <Field label="Trade window start (IST)"><Input type="time" className="h-10 bg-zinc-900 border-zinc-700 text-sm max-w-[140px]" value={istMinutesToTimeInput(p.emaTradeStartMin ?? 570)} onChange={(e) => { const mm = timeInputToIstMinutes(e.target.value); if (mm != null) patchParams({ emaTradeStartMin: mm }); }} /></Field>
+            <Field label="Trade window end (IST)"><Input type="time" className="h-10 bg-zinc-900 border-zinc-700 text-sm max-w-[140px]" value={istMinutesToTimeInput(p.emaTradeEndMin ?? 840)} onChange={(e) => { const mm = timeInputToIstMinutes(e.target.value); if (mm != null) patchParams({ emaTradeEndMin: mm }); }} /></Field>
+          </Row>
+          <Row>
+            <Field label="TP risk:reward" hint="× SL distance"><Input type="number" step={0.1} min={0.5} max={6} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={p.emaTpRiskReward ?? 2.5} onChange={(e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) patchParams({ emaTpRiskReward: v }); }} /></Field>
+          </Row>
+        </>
+      )}
+
+      {presetId === "supertrend_7_3" && (
+        <>
+          <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest border-t border-teal-500/20 pt-3">Edit Supertrend parameters</p>
+          <Row>
+            <Field label="ATR period"><Input type="number" min={2} max={30} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={p.stPeriod ?? 7} onChange={(e) => { const v = parseInt(e.target.value, 10); if (Number.isFinite(v)) patchParams({ stPeriod: v }); }} /></Field>
+            <Field label="ATR multiplier"><Input type="number" step={0.1} min={0.5} max={10} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={p.stMult ?? 3} onChange={(e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) patchParams({ stMult: v }); }} /></Field>
+            <Field label="Session start (IST)"><Input type="time" className="h-10 bg-zinc-900 border-zinc-700 text-sm max-w-[140px]" value={istMinutesToTimeInput(p.stSessionStartMin ?? 570)} onChange={(e) => { const mm = timeInputToIstMinutes(e.target.value); if (mm != null) patchParams({ stSessionStartMin: mm }); }} /></Field>
+          </Row>
+          <Row>
+            <Field label="Session end (IST)"><Input type="time" className="h-10 bg-zinc-900 border-zinc-700 text-sm max-w-[140px]" value={istMinutesToTimeInput(p.stSessionEndMin ?? 750)} onChange={(e) => { const mm = timeInputToIstMinutes(e.target.value); if (mm != null) patchParams({ stSessionEndMin: mm }); }} /></Field>
+            <Field label="Min ATR filter" hint="% of price (skip chop)"><Input type="number" step={0.01} min={0} max={1} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={100 * (p.stAtrFilterPct ?? 0.001)} onChange={(e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) patchParams({ stAtrFilterPct: v / 100 }); }} /></Field>
+            <Field label="TP (× ATR)"><Input type="number" step={0.1} min={0.5} max={8} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={p.stTpAtrMult ?? 3} onChange={(e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) patchParams({ stTpAtrMult: v }); }} /></Field>
+          </Row>
+        </>
+      )}
+
+      {presetId === "rsi_divergence" && (
+        <>
+          <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest border-t border-teal-500/20 pt-3">Edit RSI divergence parameters</p>
+          <Row>
+            <Field label="RSI period"><Input type="number" min={2} max={30} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={p.rsiDivPeriod ?? 14} onChange={(e) => { const v = parseInt(e.target.value, 10); if (Number.isFinite(v)) patchParams({ rsiDivPeriod: v }); }} /></Field>
+            <Field label="Pivot width"><Input type="number" min={2} max={12} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={p.rsiDivPivotWidth ?? 5} onChange={(e) => { const v = parseInt(e.target.value, 10); if (Number.isFinite(v)) patchParams({ rsiDivPivotWidth: v }); }} /></Field>
+            <Field label="Min pivot span (bars)"><Input type="number" min={2} max={40} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={p.rsiDivMinSpan ?? 5} onChange={(e) => { const v = parseInt(e.target.value, 10); if (Number.isFinite(v)) patchParams({ rsiDivMinSpan: v }); }} /></Field>
+          </Row>
+          <Row>
+            <Field label="Max pivot span"><Input type="number" min={10} max={120} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={p.rsiDivMaxSpan ?? 60} onChange={(e) => { const v = parseInt(e.target.value, 10); if (Number.isFinite(v)) patchParams({ rsiDivMaxSpan: v }); }} /></Field>
+            <Field label="Confirm within (bars)"><Input type="number" min={2} max={20} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={p.rsiDivConfirmBars ?? 6} onChange={(e) => { const v = parseInt(e.target.value, 10); if (Number.isFinite(v)) patchParams({ rsiDivConfirmBars: v }); }} /></Field>
+            <Field label="TP2 × risk"><Input type="number" step={0.1} min={1} max={8} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={p.rsiDivTp2Mult ?? 3} onChange={(e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) patchParams({ rsiDivTp2Mult: v }); }} /></Field>
+          </Row>
+        </>
+      )}
+
+      {presetId === "liquidity_sweep_bos" && (
+        <>
+          <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest border-t border-teal-500/20 pt-3">Edit liquidity sweep + BOS parameters</p>
+          <Row>
+            <Field label="Lookback bars"><Input type="number" min={30} max={300} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={p.lqLookback ?? 80} onChange={(e) => { const v = parseInt(e.target.value, 10); if (Number.isFinite(v)) patchParams({ lqLookback: v }); }} /></Field>
+            <Field label="Swing width"><Input type="number" min={2} max={12} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={p.lqSwingWidth ?? 4} onChange={(e) => { const v = parseInt(e.target.value, 10); if (Number.isFinite(v)) patchParams({ lqSwingWidth: v }); }} /></Field>
+            <Field label="Equal zone tol." hint="% of mid"><Input type="number" step={0.01} min={0.05} max={0.5} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={100 * (p.lqEqualZonePct ?? 0.0015)} onChange={(e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) patchParams({ lqEqualZonePct: v / 100 }); }} /></Field>
+          </Row>
+          <Row>
+            <Field label="ATR period (SL)"><Input type="number" min={2} max={21} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={p.lqAtrPeriod ?? 7} onChange={(e) => { const v = parseInt(e.target.value, 10); if (Number.isFinite(v)) patchParams({ lqAtrPeriod: v }); }} /></Field>
+          </Row>
+        </>
+      )}
+
+      {presetId === "smc_mtf_confluence" && (
+        <>
+          <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest border-t border-teal-500/20 pt-3">Edit SMC MTF parameters</p>
+          <label className="flex items-center gap-3 cursor-pointer rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2">
+            <Switch checked={Boolean(p.smcDisableSessionGate)} onCheckedChange={(v) => patchParams({ smcDisableSessionGate: Boolean(v) })} />
+            <div>
+              <p className="text-sm text-zinc-300 font-medium">Disable London/NY session gate</p>
+              <p className="text-[11px] text-zinc-500">Use for NSE symbols or paper when you need signals outside UTC windows.</p>
+            </div>
+          </label>
+          <p className="text-[11px] text-zinc-500">Session times are <strong className="text-zinc-400">UTC minutes</strong> from midnight (420 = 07:00).</p>
+          <Row>
+            <Field label="London start UTC"><Input type="number" min={0} max={1439} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={p.smcLondonStartUtcMin ?? 420} onChange={(e) => { const v = parseInt(e.target.value, 10); if (Number.isFinite(v)) patchParams({ smcLondonStartUtcMin: v }); }} /></Field>
+            <Field label="London end UTC"><Input type="number" min={0} max={1439} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={p.smcLondonEndUtcMin ?? 600} onChange={(e) => { const v = parseInt(e.target.value, 10); if (Number.isFinite(v)) patchParams({ smcLondonEndUtcMin: v }); }} /></Field>
+            <Field label="NY start UTC"><Input type="number" min={0} max={1439} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={p.smcNyStartUtcMin ?? 810} onChange={(e) => { const v = parseInt(e.target.value, 10); if (Number.isFinite(v)) patchParams({ smcNyStartUtcMin: v }); }} /></Field>
+          </Row>
+          <Row>
+            <Field label="NY end UTC"><Input type="number" min={0} max={1439} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={p.smcNyEndUtcMin ?? 960} onChange={(e) => { const v = parseInt(e.target.value, 10); if (Number.isFinite(v)) patchParams({ smcNyEndUtcMin: v }); }} /></Field>
+            <Field label="15m zone body min" hint="× ATR (impulse)"><Input type="number" step={1} min={10} max={100} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={100 * (p.smcDemandBodyAtrRatio ?? 0.4)} onChange={(e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) patchParams({ smcDemandBodyAtrRatio: v / 100 }); }} /></Field>
+            <Field label="1m swing width"><Input type="number" min={2} max={8} className="h-10 bg-zinc-900 border-zinc-700 text-sm" value={p.smcSwingWidth1m ?? 3} onChange={(e) => { const v = parseInt(e.target.value, 10); if (Number.isFinite(v)) patchParams({ smcSwingWidth1m: v }); }} /></Field>
+          </Row>
+        </>
+      )}
+
+      <details
+        className="rounded-lg border border-zinc-800 bg-zinc-950/60"
+        onToggle={(e) => {
+          if (!(e.currentTarget as HTMLDetailsElement).open) setReplaceAck(false);
+        }}
       >
-        Switch to custom visual conditions
-      </Button>
+        <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-zinc-500">
+          Advanced — replace with generic indicator builder
+        </summary>
+        <div className="space-y-3 border-t border-zinc-800 px-3 py-3">
+          <p className="text-[11px] text-zinc-500 leading-relaxed">
+            Only if you want <strong className="text-zinc-400">EMA / RSI / MACD</strong> rows instead of this guide preset. That removes ORB/VWAP/Supertrend logic from the live engine for this strategy.
+          </p>
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <Checkbox
+              checked={replaceAck}
+              onCheckedChange={(v) => setReplaceAck(Boolean(v))}
+              className="mt-0.5 border-zinc-600"
+            />
+            <span className="text-xs text-zinc-400 leading-snug">
+              I understand this replaces the Algo Guide preset with the visual condition builder.
+            </span>
+          </label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={!replaceAck}
+            className="h-8 border-red-500/40 text-xs text-red-300/90 disabled:opacity-40"
+            onClick={() => {
+              onSwitchToCustom();
+              setReplaceAck(false);
+            }}
+          >
+            Replace with custom builder
+          </Button>
+        </div>
+      </details>
     </div>
   );
 }
@@ -439,6 +757,10 @@ function fromExisting(e?: BuilderStrategy | null): BuilderForm {
       if (algoGuidePreset) base.algoGuidePreset = algoGuidePreset;
       if ((ec as EntryConditions).algoGuideBlockFirstSessionMinutes === true) {
         base.algoGuideBlockFirstSessionMinutes = true;
+      }
+      const rawAgp = (ec as EntryConditions).algoGuideParams;
+      if (rawAgp && typeof rawAgp === "object" && !Array.isArray(rawAgp)) {
+        base.algoGuideParams = { ...(rawAgp as AlgoGuideParams) };
       }
       return base;
     })(),
@@ -1129,20 +1451,16 @@ export default function AlgoStrategyBuilder({ open, onOpenChange, existing, onSa
                 {(form.strategyType === "indicator_based" || form.strategyType === "hybrid") && (
                   <>
                     {form.entryConditions.algoGuidePreset ? (
-                      <AlgoGuidePresetEntryCallout
+                      <AlgoGuidePresetEntryPanel
                         presetId={form.entryConditions.algoGuidePreset}
+                        entryConditions={form.entryConditions}
+                        onUpdate={(next) => set("entryConditions", next)}
                         onSwitchToCustom={() => {
-                          if (
-                            !window.confirm(
-                              "Remove the Algo Guide preset? Entry will use only the visual condition builder. The live engine will use those indicator rows instead of ORB / VWAP / Supertrend / etc. preset logic.",
-                            )
-                          ) {
-                            return;
-                          }
                           set("entryConditions", {
                             ...form.entryConditions,
                             algoGuidePreset: undefined,
                             algoGuideBlockFirstSessionMinutes: undefined,
+                            algoGuideParams: undefined,
                             groups: form.entryConditions.groups.length ? form.entryConditions.groups : [makeGroup()],
                           });
                         }}
