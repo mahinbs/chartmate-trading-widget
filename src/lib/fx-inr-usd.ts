@@ -1,12 +1,11 @@
 /**
  * Spot USD per 1 INR (multiply an INR amount by this to get USD).
- * Uses Frankfurter (ECB rates) — same source as the Active Trades page.
- * Server-side Finnhub is used elsewhere for quotes; the publishable app has no browser Finnhub key.
+ * Uses open.er-api.com — free tier, no key required, proper CORS headers.
  */
 export async function fetchUsdPerInr(): Promise<number | null> {
   try {
     const res = await fetch(
-      "https://api.frankfurter.app/latest?from=INR&to=USD",
+      "https://open.er-api.com/v6/latest/INR",
     );
     if (!res.ok) return null;
     const json = (await res.json()) as { rates?: { USD?: number } };

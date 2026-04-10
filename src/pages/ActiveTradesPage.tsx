@@ -152,6 +152,7 @@ export default function ActiveTradesPage() {
   const [usdPerInr, setUsdPerInr] = useState<number | null>(null);
   const [fxLoading, setFxLoading] = useState(false);
   const [fxError, setFxError] = useState<string | null>(null);
+  const [fxFailed, setFxFailed] = useState(false);
   const [brokerOrders, setBrokerOrders] = useState<BrokerOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersSyncing, setOrdersSyncing] = useState(false);
@@ -393,9 +394,7 @@ export default function ActiveTradesPage() {
     try {
       setFxLoading(true);
       setFxError(null);
-      const res = await fetch(
-        "https://api.frankfurter.app/latest?from=INR&to=USD",
-      );
+      const res = await fetch("https://open.er-api.com/v6/latest/INR");
       if (!res.ok) throw new Error("Failed to load FX rate");
       const json = await res.json();
       const rate = json?.rates?.USD;
@@ -407,6 +406,7 @@ export default function ActiveTradesPage() {
     } catch (e: any) {
       console.error("FX load error", e);
       setFxError(e?.message || "Failed to load USD/INR rate");
+      setFxFailed(true); // stop retrying — don't spam the API
     } finally {
       setFxLoading(false);
     }
@@ -537,16 +537,14 @@ export default function ActiveTradesPage() {
           return;
         }
 
-        const newTradeId = (response.data as { trade?: { id?: string } } | null)?.trade?.id;
         toast({
           title: "Paper trade started",
-          description: `${action} ${symbol} (${shares}) is now tracked.`,
+          description: `${action} ${symbol} (${shares}) is now tracked. Tap it in the Active list to view live P&L.`,
         });
         setShowPaperStrategyDialog(false);
+        // Switch to active tab and refresh — user can click the row to open the detail view
+        onTabChange("active");
         loadTrades();
-        if (newTradeId) {
-          navigate(`/trade/${newTradeId}`);
-        }
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : "Could not complete paper trade.";
         toast({
@@ -739,10 +737,10 @@ export default function ActiveTradesPage() {
       setDisplayCurrency("INR");
     }
 
-    if (usdPerInr == null && !fxLoading && hasUsdAssets) {
+    if (usdPerInr == null && !fxLoading && !fxFailed && hasUsdAssets) {
       loadFxRate();
     }
-  }, [usdPerInr, fxLoading, activeTrades, completedTrades]);
+  }, [usdPerInr, fxLoading, fxFailed, activeTrades, completedTrades]);
 
   // Binance WebSocket for crypto symbols (BTC-USD, etc.) so prices match TradingView's Binance feed
   useEffect(() => {

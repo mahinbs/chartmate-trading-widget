@@ -63,7 +63,7 @@ export default function ActiveTradeDetailsPage() {
         if (!trade || !isUsdDenominatedSymbol(trade.symbol) || usdPerInr !== null) return;
         const loadFx = async () => {
             try {
-                const res = await fetch("https://api.frankfurter.app/latest?from=INR&to=USD");
+                const res = await fetch("https://open.er-api.com/v6/latest/INR");
                 const json = await res.json();
                 if (json?.rates?.USD) setUsdPerInr(json.rates.USD);
             } catch (e) { console.error("FX load error", e); }
