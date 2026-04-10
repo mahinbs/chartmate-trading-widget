@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +8,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ActionSignal } from "@/components/prediction/ActionSignal";
 import { PerformanceDashboard } from "@/components/performance/PerformanceDashboard";
+import { OptionsPaperDashboard } from "@/components/options/OptionsPaperDashboard";
+import YahooChartPanel from "@/components/YahooChartPanel";
 import {
   tradeTrackingService,
   ActiveTrade,
@@ -37,6 +40,8 @@ import {
   Ban,
   Clock,
   AlertTriangle,
+  X,
+  LineChart as LineChartIcon,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { toast as sonnerToast } from "sonner";
@@ -169,6 +174,10 @@ export default function ActiveTradesPage() {
   const [closingPaper, setClosingPaper] = useState(false);
   // Delete paper trade
   const [deletingTradeId, setDeletingTradeId] = useState<string | null>(null);
+  // Full-screen trade detail dialog
+  const [selectedTradeDetail, setSelectedTradeDetail] = useState<ActiveTrade | null>(null);
+  const [tradeDetailChartReady, setTradeDetailChartReady] = useState(false);
+  const [tradeDetailLivePrice, setTradeDetailLivePrice] = useState<number | null>(null);
   // Strategy history tab
   const [strategyHistory, setStrategyHistory] = useState<StrategyHistoryRow[]>([]);
   const [strategyHistoryLoading, setStrategyHistoryLoading] = useState(false);
@@ -939,6 +948,17 @@ export default function ActiveTradesPage() {
     checkAndAutoExit,
   ]);
 
+  // Delay chart mount for trade detail dialog until dialog animation completes
+  useEffect(() => {
+    if (!selectedTradeDetail) {
+      setTradeDetailChartReady(false);
+      setTradeDetailLivePrice(null);
+      return;
+    }
+    const t = setTimeout(() => setTradeDetailChartReady(true), 250);
+    return () => clearTimeout(t);
+  }, [selectedTradeDetail?.id]);
+
   const convertAmount = (value: number, symbol?: string) => {
     const assetCurrency = symbol
       ? isUsdDenominatedSymbol(symbol)
@@ -1292,6 +1312,9 @@ export default function ActiveTradesPage() {
 
           {/* Active Trades */}
           <TabsContent value="active" className="space-y-4 mt-4">
+            {/* Options paper positions — separate section */}
+            <OptionsPaperDashboard />
+
             {activeTrades.length === 0 ? (
               <Alert className="border-white/10 bg-white/5">
                 <Bell className="h-4 w-4 text-primary" />
@@ -1354,7 +1377,7 @@ export default function ActiveTradesPage() {
                         <div
                           key={trade.id}
                           className="flex flex-col sm:grid sm:grid-cols-[1fr_auto_auto_auto] gap-x-3 sm:items-center px-3 sm:px-4 py-3 sm:py-4 hover:bg-white/5 cursor-pointer transition-colors"
-                          onClick={() => navigate(`/trade/${trade.id}`)}
+                          onClick={() => setSelectedTradeDetail(trade)}
                         >
                           {/* Mobile layout: full width info */}
                           <div className="flex flex-col gap-1 min-w-0">
@@ -2065,7 +2088,23 @@ export default function ActiveTradesPage() {
 
           {/* Performance Tab - Failure Transparency & Stats */}
           <TabsContent value="performance" className="space-y-6 mt-6">
-            <PerformanceDashboard />
+            {/* Options positions (paper + live) — separate section */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm font-semibold text-zinc-300">
+                <LineChartIcon className="h-4 w-4 text-orange-400" />
+                Options Positions (Live &amp; Paper)
+              </div>
+              <OptionsPaperDashboard />
+            </div>
+
+            {/* Normal & strategy paper trade performance */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm font-semibold text-zinc-300">
+                <BarChart3 className="h-4 w-4 text-teal-400" />
+                Normal &amp; Strategy Trade Performance
+              </div>
+              <PerformanceDashboard />
+            </div>
           </TabsContent>
         </Tabs>
 
@@ -2127,6 +2166,152 @@ export default function ActiveTradesPage() {
           isPaperTrade={true}
           onConfirm={handleCreatePaperTrade}
         />
+
+        {/* ── Full-screen Trade Detail Dialog ─────────────────────────── */}
+        <Dialog
+          open={selectedTradeDetail != null}
+          onOpenChange={(o) => { if (!o) setSelectedTradeDetail(null); }}
+        >
+          <DialogContent
+            hideCloseButton
+            className="!fixed !inset-0 !translate-x-0 !translate-y-0 !left-0 !top-0 !max-w-none !max-h-none !w-screen !h-screen !rounded-none bg-zinc-950 border-0 text-white p-0 !overflow-hidden flex flex-col"
+          >
+            {selectedTradeDetail && (() => {
+              const t = selectedTradeDetail;
+              const livePrice = tradeDetailLivePrice ?? t.currentPrice ?? t.entryPrice;
+              const pnl = tradeDetailLivePrice != null
+                ? (tradeDetailLivePrice - t.entryPrice) * t.shares * (t.action === "SELL" ? -1 : 1)
+                : (t.currentPnl ?? 0);
+              const pnlPct = t.investmentAmount > 0 ? (pnl / t.investmentAmount) * 100 : 0;
+              const isPos = pnl >= 0;
+              const isPaper = Boolean(t.brokerOrderId?.startsWith("PAPER"));
+              const yahooSym = t.symbol.toUpperCase();
+              return (
+                <>
+                  {/* Header */}
+                  <div className="flex-none flex items-center justify-between px-4 py-3 border-b border-zinc-800">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-base font-bold text-white">{t.symbol}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ${t.action === "BUY" ? "bg-teal-500/15 text-teal-400" : "bg-red-500/15 text-red-400"}`}>
+                            {t.action}
+                          </span>
+                          {isPaper && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase bg-violet-500/15 text-violet-400">Paper</span>
+                          )}
+                        </div>
+                        <div className="text-xs text-zinc-400">
+                          {t.strategyType ? `${t.strategyType} · ` : ""}{t.shares} units · entered {new Date(t.entryTime).toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" })}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <div className={`text-lg font-bold tabular-nums ${isPos ? "text-teal-400" : "text-red-400"}`}>
+                          {isPos ? "+" : ""}₹{Math.abs(pnl).toFixed(2)}
+                        </div>
+                        <div className={`text-xs tabular-nums ${isPos ? "text-teal-300" : "text-red-300"}`}>
+                          {isPos ? "+" : ""}{pnlPct.toFixed(2)}%
+                        </div>
+                      </div>
+                      <DialogPrimitive.Close className="rounded-sm opacity-70 hover:opacity-100 text-zinc-400 hover:text-white transition-opacity ml-2">
+                        <X className="h-5 w-5" />
+                      </DialogPrimitive.Close>
+                    </div>
+                  </div>
+
+                  {/* Body */}
+                  <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-zinc-800 overflow-hidden">
+                    {/* Chart (left 2/3) */}
+                    <div className="lg:col-span-2 h-[50vh] lg:h-auto">
+                      {tradeDetailChartReady ? (
+                        <YahooChartPanel
+                          symbol={yahooSym}
+                          displayName={t.symbol}
+                          onLivePrice={(p) => setTradeDetailLivePrice(p)}
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-zinc-900/60">
+                          <Loader2 className="h-6 w-6 animate-spin text-zinc-600" />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Details panel (right 1/3) */}
+                    <div className="p-4 overflow-y-auto space-y-3 min-h-0">
+                      {/* Key stats */}
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        {[
+                          { label: "Entry", val: `₹${t.entryPrice.toFixed(2)}` },
+                          { label: "Current", val: `₹${livePrice.toFixed(2)}` },
+                          { label: "Invested", val: `₹${t.investmentAmount.toFixed(2)}` },
+                          { label: "Qty", val: String(t.shares) },
+                          t.stopLossPrice ? { label: "Stop Loss", val: `₹${t.stopLossPrice.toFixed(2)}` } : null,
+                          t.takeProfitPrice ? { label: "Take Profit", val: `₹${t.takeProfitPrice.toFixed(2)}` } : null,
+                        ].filter(Boolean).map((row) => (
+                          <div key={row!.label} className="rounded border border-zinc-800 bg-zinc-900/50 px-2 py-1.5">
+                            <div className="text-zinc-500">{row!.label}</div>
+                            <div className="text-zinc-100 font-semibold">{row!.val}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* SL/TP progress bars */}
+                      {(t.stopLossPrice || t.takeProfitPrice) && (
+                        <div className="rounded border border-zinc-800 bg-zinc-900/50 px-3 py-2 space-y-2 text-xs">
+                          {t.stopLossPrice && (
+                            <div className="flex items-center justify-between gap-2">
+                              <ShieldAlert className="h-3 w-3 text-red-400 shrink-0" />
+                              <span className="text-zinc-400">SL</span>
+                              <span className="text-red-300 font-mono">₹{t.stopLossPrice.toFixed(2)}</span>
+                            </div>
+                          )}
+                          {t.takeProfitPrice && (
+                            <div className="flex items-center justify-between gap-2">
+                              <Target className="h-3 w-3 text-emerald-400 shrink-0" />
+                              <span className="text-zinc-400">TP</span>
+                              <span className="text-emerald-300 font-mono">₹{t.takeProfitPrice.toFixed(2)}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Close action for paper trades */}
+                      {isPaper && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="w-full border-orange-500/40 text-orange-400 hover:bg-orange-500/10 hover:text-orange-300"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedTradeDetail(null);
+                            handleOpenClosePaperTrade(t);
+                          }}
+                        >
+                          <LogOut className="h-4 w-4 mr-2" />
+                          Close Position
+                        </Button>
+                      )}
+
+                      {/* View full details link */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedTradeDetail(null);
+                          navigate(`/trade/${t.id}`);
+                        }}
+                        className="w-full text-xs text-zinc-500 hover:text-zinc-300 underline underline-offset-2 py-1"
+                      >
+                        Open full detail page →
+                      </button>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </DialogContent>
+        </Dialog>
 
         {/* Manual close active paper trade dialog */}
         <Dialog

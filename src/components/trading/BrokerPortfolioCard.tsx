@@ -826,6 +826,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
   const [paperTradeStrategyId, setPaperTradeStrategyId] = useState<string | null>(null);
   const [liveDiagStrategy, setLiveDiagStrategy] = useState<Strategy | null>(null);
   const [liveDiagLastPrice, setLiveDiagLastPrice] = useState<number | null>(null);
+  const [liveDiagChartReady, setLiveDiagChartReady] = useState(false);
   const [liveDiagScan, setLiveDiagScan] = useState<{
     loading: boolean;
     error: string | null;
@@ -834,6 +835,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
     allMet: boolean;
   } | null>(null);
   const liveDiagStrategyRef = useRef<Strategy | null>(null);
+  const liveDiagScanIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const deployMapRef = useRef<typeof deployStateByStrategy>({});
   liveDiagStrategyRef.current = liveDiagStrategy;
   deployMapRef.current = deployStateByStrategy;
@@ -1141,11 +1143,30 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
   }, []);
 
   useEffect(() => {
+    if (liveDiagScanIntervalRef.current) {
+      clearInterval(liveDiagScanIntervalRef.current);
+      liveDiagScanIntervalRef.current = null;
+    }
     if (!liveDiagStrategy) {
       setLiveDiagScan(null);
+      setLiveDiagChartReady(false);
       return;
     }
+    // Delay chart mount so the dialog animation completes before chart initialises
+    const chartTimer = setTimeout(() => setLiveDiagChartReady(true), 250);
+    // Run scan immediately then auto-refresh every 30 s while dialog is open
     void runLiveDiagConditionScan();
+    liveDiagScanIntervalRef.current = setInterval(() => {
+      void runLiveDiagConditionScan();
+    }, 30_000);
+    return () => {
+      clearTimeout(chartTimer);
+      if (liveDiagScanIntervalRef.current) {
+        clearInterval(liveDiagScanIntervalRef.current);
+        liveDiagScanIntervalRef.current = null;
+      }
+      setLiveDiagChartReady(false);
+    };
   }, [liveDiagStrategy?.id, runLiveDiagConditionScan]);
 
   const scheduleLiveStrategiesRefresh = useCallback(() => {
@@ -2458,9 +2479,14 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
           setLiveDiagStrategy(null);
           setLiveDiagLastPrice(null);
           setLiveDiagScan(null);
+          setLiveDiagChartReady(false);
+          if (liveDiagScanIntervalRef.current) {
+            clearInterval(liveDiagScanIntervalRef.current);
+            liveDiagScanIntervalRef.current = null;
+          }
         }
       }}>
-        <DialogContent className="!fixed !inset-0 !translate-x-0 !translate-y-0 !left-0 !top-0 !max-w-none !max-h-none !w-screen !h-screen !rounded-none bg-zinc-950 border-0 text-white p-0 !overflow-hidden flex flex-col">
+        <DialogContent hideCloseButton className="!fixed !inset-0 !translate-x-0 !translate-y-0 !left-0 !top-0 !max-w-none !max-h-none !w-screen !h-screen !rounded-none bg-zinc-950 border-0 text-white p-0 !overflow-hidden flex flex-col">
           {/* header row */}
           <div className="flex-none flex items-center justify-between px-4 py-3 border-b border-zinc-800">
             <div>
@@ -2531,11 +2557,17 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
 
                   {yahooChartSymbol ? (
                     <div className="h-[52vh] min-h-[360px]">
-                      <YahooChartPanel
-                        symbol={yahooChartSymbol}
-                        displayName={chartSymbol}
-                        onLivePrice={(p) => setLiveDiagLastPrice(p)}
-                      />
+                      {liveDiagChartReady ? (
+                        <YahooChartPanel
+                          symbol={yahooChartSymbol}
+                          displayName={chartSymbol}
+                          onLivePrice={(p) => setLiveDiagLastPrice(p)}
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-zinc-900/60 rounded border border-zinc-800">
+                          <Loader2 className="h-6 w-6 animate-spin text-zinc-600" />
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="rounded border border-zinc-800 bg-zinc-900/60 px-3 py-8 text-center text-zinc-400 text-sm">
