@@ -106,13 +106,13 @@ const Pricing = () => {
                                                 "Fully designed landing page",
                                                 "Client login dashboard",
                                                 "Admin panel to manage users",
-                                                "Annual license system ($99/year model)",
-                                                "Multi-factor trade analysis engine",
+                                                "Revenue model built around monthly subscriptions",
+                                                "AI-powered strategy validation and analysis",
                                                 "Risk–reward calculator",
                                                 "Strategy builder panel",
                                                 "Trade performance tracking",
                                                 "Basic backtesting module",
-                                                "Optional strategy automation"
+                                                "Done-for-you live strategy deployment by our engineering desk"
                                             ].map((item, i) => (
                                                 <li key={i} className="flex items-start gap-3">
                                                     <Check className={`w-4 h-4 flex-shrink-0 mt-0.5 ${plan.isRecommended ? 'text-cyan-500' : 'text-gray-400'}`} />
@@ -127,8 +127,12 @@ const Pricing = () => {
                                         <h4 className={`${plan.isRecommended ? 'text-primary' : 'text-gray-400'} font-bold text-xs uppercase tracking-wider mb-3`}>Revenue Model</h4>
                                         <ul className="space-y-2">
                                             <li className="flex justify-between text-sm">
-                                                <span className="text-gray-400">License Sales</span>
-                                                <span className="text-white font-medium">$99/year+</span>
+                                                <span className="text-gray-400">Client Billing</span>
+                                                <span className="text-white font-medium">Monthly subscriptions</span>
+                                            </li>
+                                            <li className="flex justify-between text-sm">
+                                                <span className="text-gray-400">Plans You Sell</span>
+                                                <span className="text-white font-medium">Starter / Growth / Pro</span>
                                             </li>
                                             <li className="flex justify-between text-sm">
                                                 <span className="text-gray-400">Your Share</span>

@@ -45,7 +45,7 @@ const Footer = () => {
                                 </span>
                             </Link>
                             <p className="text-gray-400 leading-relaxed mb-8 max-w-sm">
-                                The world's first turnkey, probability-based trading platform. Fully brandable. Deploy on your own domain.
+                                A turnkey AI algo trading platform built for white-label partners. Fully brandable and deployable on your own domain.
                             </p>
                             <div className="flex space-x-4">
                                 <a href="#" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-gray-400 hover:bg-cyan-500 hover:text-black transition-all duration-300">

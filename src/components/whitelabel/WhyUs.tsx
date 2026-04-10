@@ -5,16 +5,16 @@ import { ScrollReveal } from '../ui/ScrollReveal';
 const reasons = [
     {
         icon: <Target className="w-12 h-12 text-primary mb-6" />,
-        title: "Unbeatable 94% Accuracy",
-        description: "Traders buy results. Giving your clients a 94% accuracy edge makes your platform an easy sell in a crowded market.",
+        title: "AI Trading Analysis That Traders Understand",
+        description: "Your users get signal scoring, structured validation factors, and plain English reasoning on every setup so confidence comes from transparency, not hype.",
         bg: "bg-cyan-500/10",
         border: "border-cyan-500/30",
         shadow: "shadow-[0_0_30px_rgba(34,211,238,0.2)]"
     },
     {
         icon: <Zap className="w-12 h-12 text-yellow-400 mb-6" />,
-        title: "Institutional Speed for Retail",
-        description: "Traders hate lag. Your platform delivers signals in under one second—the same edge as hedge fund bots.",
+        title: "Execution-Ready Platform, 24/7",
+        description: "Give your traders always-on monitoring, clean workflows, and broker-connected execution tools inside a single branded experience.",
         bg: "bg-yellow-500/10",
         border: "border-yellow-500/30",
         shadow: "shadow-[0_0_30px_rgba(234,179,8,0.2)]"
@@ -22,7 +22,7 @@ const reasons = [
     {
         icon: <Bot className="w-12 h-12 text-purple-400 mb-6" />,
         title: "Expert-Led Automation",
-        description: "Your clients don't need to code. Our team builds and deploys custom algorithmic strategies tailored to their specific goals. From high-frequency scalping to long-term swing trading, we provide the automation while you provide the platform.",
+        description: "Your clients tell us their strategy. Our engineers code it, add an AI validation layer, and deploy it live on their broker in 72 hours - under your brand.",
         bg: "bg-secondary/10",
         border: "border-secondary/30",
         shadow: "shadow-[0_0_30px_rgba(168,85,247,0.2)]"
@@ -30,7 +30,7 @@ const reasons = [
     {
         icon: <History className="w-12 h-12 text-green-400 mb-6" />,
         title: "Proof Before Profit",
-        description: "Your users can backtest any strategy against 5+ years of historical data in seconds. They'll see the math work before they risk a single dollar—building deep trust in your brand.",
+        description: "Your users can backtest any strategy against historical data with per-trade breakdowns - entry, exit, indicator values, and AI-generated plain English reasoning. They see the math work before risking a dollar.",
         bg: "bg-green-500/10",
         border: "border-green-500/30",
         shadow: "shadow-[0_0_30px_rgba(34,197,94,0.2)]"

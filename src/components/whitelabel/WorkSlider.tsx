@@ -24,7 +24,7 @@ const WorkSlider = () => {
                             height="100%"
                             allow="autoplay"
                             className="w-full h-full"
-                            title="AI Probability Market Analysis Software"
+                            title="AI Trading Analysis Platform Demo"
                         ></iframe>
                     </div>
                 </ScrollReveal>

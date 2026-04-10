@@ -142,10 +142,10 @@ const Hero = () => {
 
                 <ScrollReveal delay={0.6}>
                     <h2 className="text-2xl md:text-3xl text-white font-bold mb-6 max-w-4xl mx-auto">
-                        Launch your Branded AI probability based trading analysis platform.
+                        Launch Your Branded AI Algo Trading Platform - Done For You.
                     </h2>
                     <p className="text-lg md:text-xl text-gray-400 max-w-3xl mx-auto mb-12 font-light leading-relaxed">
-                        Deploy a professional-grade ecosystem featuring AI-driven probabilities, <span className="text-white font-medium">custom algo-trading</span>, and deep backtesting. We handle the complex infrastructure. You own the brand and keep <span className="text-white font-medium">70% of the profits</span>.
+                        Deploy a professional-grade platform featuring AI-powered strategy validation, <span className="text-white font-medium">custom algo-trading built by our team</span>, and deep backtesting. We handle the complex infrastructure. You own the brand and keep <span className="text-white font-medium">70% of the profits</span>.
                     </p>
                 </ScrollReveal>
 
@@ -163,10 +163,10 @@ const Hero = () => {
                 <ScrollReveal delay={1.0}>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8 max-w-5xl mx-auto border-t border-white/5 pt-12">
                         {[
-                            { label: "Model Accuracy", value: "94%", color: "text-primary" },
+                            { label: "Strategy Deployment", value: "72hr", color: "text-primary" },
+                            { label: "Revenue Yours", value: "70%", color: "text-white" },
                             { label: "Market Monitoring", value: "24/7", color: "text-white" },
-                            { label: "Supported Assets", value: "150+", color: "text-purple-400" },
-                            { label: "Data Latency", value: "<1s", color: "text-green-500" }
+                            { label: "Supported Brokers", value: "40+", color: "text-purple-400" }
                         ].map((stat, i) => (
                             <div key={i} className="p-6 bg-white/5 border border-white/10 rounded-3xl backdrop-blur-sm hover:border-white/20 transition-colors h-full">
                                 <div className={`text-3xl md:text-4xl font-bold ${stat.color} mb-2 tracking-tight`}>{stat.value}</div>

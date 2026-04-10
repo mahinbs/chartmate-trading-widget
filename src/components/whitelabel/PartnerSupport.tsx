@@ -22,7 +22,7 @@ const PartnerSupport = () => {
         },
         {
             phase: "03: Intelligence",
-            action: "Deployment of AI Probability Engine & Custom Algos.",
+            action: "Deployment of AI Validation Engine & Custom Algo Strategies.",
             asset: "Proprietary Trading Edge"
         },
         {
@@ -67,7 +67,7 @@ const PartnerSupport = () => {
         },
         {
             title: "9. Marketing & Ad Campaign Launch",
-            content: "With your marketing person, you launch your first wave of social proof and ad campaigns. We provide the \"Institutional Precision\" messaging that makes the 94% accuracy sell itself."
+            content: "With your marketing person, you launch your first wave of social proof and ad campaigns. We provide positioning focused on validated strategy outcomes, transparent backtesting, and done-for-you deployment."
         },
         {
             title: "10. Scale & Retention Management",
@@ -103,7 +103,7 @@ const PartnerSupport = () => {
         },
         {
             title: "Expert-Led Automation.",
-            desc: "Your customers get the \"Hedge Fund\" experience. They tell us their goals, and our experts build their custom algo strategies for them.",
+            desc: "Your clients tell us their strategy. Our engineers code it, add an AI validation layer, and deploy it live on their broker in 72 hours - under your brand.",
             icon: <Bot className="w-8 h-8 text-red-400" />
         }
     ];
