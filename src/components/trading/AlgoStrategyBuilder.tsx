@@ -35,6 +35,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import type {
   AlgoCondition,
+  AlgoGuidePresetId,
   ChartConfig,
   ConditionGroup,
   ConditionOp,
@@ -190,6 +191,92 @@ function makeGroup(): ConditionGroup {
   return { id: crypto.randomUUID(), logic: "AND", conditions: [makeCond()] };
 }
 
+/** Shown on Entry step when `entry_conditions.algoGuidePreset` is set (ORB, VWAP, etc.). */
+const ALGO_GUIDE_PRESET_ENTRY_COPY: Record<
+  AlgoGuidePresetId,
+  { title: string; bullets: string[] }
+> = {
+  orb: {
+    title: "Opening Range Breakout (ORB)",
+    bullets: [
+      "Builds the opening range from the first 15 minutes of the session (e.g. 9:15–9:30 IST), then watches for a breakout with range width between 0.2% and 1% of mid.",
+      "After the range forms, a close beyond the range high or low triggers entry (direction follows the breakout). Use a 5m chart interval to match the strategy guide.",
+      "This is not an EMA crossover strategy — entry is computed by the ORB engine on your candle data.",
+    ],
+  },
+  vwap_bounce: {
+    title: "VWAP bounce",
+    bullets: [
+      "Uses session VWAP from typical price × volume on your chart bars, with a touch / bounce heuristic and volume versus a short average (see Algo Guide).",
+      "Entry is evaluated by the VWAP preset logic, not by generic EMA cross conditions.",
+      "A 5m interval is typical; session hours on the Timing step should cover the cash session you trade.",
+    ],
+  },
+  supertrend_7_3: {
+    title: "Supertrend (7, ATR mult 3)",
+    bullets: [
+      "Uses Supertrend(7, 3) trend flips on live candles (dual timeframe in the engine: 5m + 15m confirmation).",
+      "Entry fires on qualifying flip signals inside your configured session window — not from manual EMA rows here.",
+    ],
+  },
+  rsi_divergence: {
+    title: "RSI divergence reversal",
+    bullets: [
+      "Looks for simplified pivot-based RSI divergence with MACD histogram confirmation on your symbol’s bars (often 1h).",
+      "Entry is driven by the divergence detector, not the visual builder when this preset is active.",
+    ],
+  },
+  liquidity_sweep_bos: {
+    title: "Liquidity sweep + break of structure",
+    bullets: [
+      "Detects liquidity sweep and BOS-style structure on your chart interval per the guide.",
+      "Entry uses the dedicated preset path on fetched OHLCV.",
+    ],
+  },
+  smc_mtf_confluence: {
+    title: "SMC multi-timeframe confluence",
+    bullets: [
+      "Combines higher-timeframe structure with lower-timeframe execution (4H / 15m / 1m stack in the engine).",
+      "Entry is SMC preset logic, not the rows below.",
+    ],
+  },
+};
+
+function AlgoGuidePresetEntryCallout({
+  presetId,
+  onSwitchToCustom,
+}: {
+  presetId: AlgoGuidePresetId;
+  onSwitchToCustom: () => void;
+}) {
+  const copy = ALGO_GUIDE_PRESET_ENTRY_COPY[presetId];
+  return (
+    <div className="space-y-3 rounded-xl border border-teal-500/30 bg-teal-500/5 p-4">
+      <p className="text-xs font-bold uppercase tracking-widest text-teal-400/90">Algo Guide preset</p>
+      <p className="text-sm font-semibold text-zinc-100">{copy.title}</p>
+      <ul className="list-disc space-y-2 pl-4 text-xs text-zinc-300 leading-relaxed">
+        {copy.bullets.map((b, i) => (
+          <li key={i}>{b}</li>
+        ))}
+      </ul>
+      <p className="text-[11px] text-zinc-500 leading-relaxed">
+        The visual condition builder is hidden for this strategy because entry is defined by this preset in the database (
+        <code className="text-zinc-400">algoGuidePreset</code>
+        ). Session times and chart interval on the Timing step still apply.
+      </p>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-8 border-zinc-600 text-xs text-zinc-400"
+        onClick={onSwitchToCustom}
+      >
+        Switch to custom visual conditions
+      </Button>
+    </div>
+  );
+}
+
 /** Parse TIME_IS(HH:MM) from saved raw expression → value suitable for <input type="time" /> */
 function parseTimeFromSavedRaw(raw: string | undefined): string | null {
   const m = /TIME_IS\s*\(\s*(\d{1,2}):(\d{2})\s*\)/i.exec(String(raw ?? ""));
@@ -270,14 +357,14 @@ function fromExisting(e?: BuilderStrategy | null): BuilderForm {
       ? "equity"
       : (["equity", "futures", "options", "indices"].includes(mtRaw) ? mtRaw : "equity")
   ) as InstrumentType;
-  const presetId = (ec as { algoGuidePreset?: string })?.algoGuidePreset;
+  const algoGuidePreset = (ec as EntryConditions).algoGuidePreset;
   const rcEx = Array.isArray((rc as RiskConfig)?.allowedExchanges) ? (rc as RiskConfig).allowedExchanges as string[] : null;
   const rcVenues = Array.isArray((rc as RiskConfig)?.sessionVenues)
     ? ((rc as RiskConfig).sessionVenues as string[]).filter((v): v is "london" | "new_york" => v === "london" || v === "new_york")
     : null;
   const globalMarketsMode =
     isGlobalEquity ||
-    presetId === "smc_mtf_confluence" ||
+    algoGuidePreset === "smc_mtf_confluence" ||
     (rcEx != null && rcEx.length > 0);
 
   const sub = ec.strategySubtype;
@@ -334,14 +421,27 @@ function fromExisting(e?: BuilderStrategy | null): BuilderForm {
     executionDays: Array.isArray(e.execution_days) && e.execution_days.length ? e.execution_days : [1,2,3,4,5],
     chartInterval: cc?.interval ?? "5m",
     chartType: cc?.chartType ?? "candlestick",
-    entryConditions: {
-      mode: ec.mode ?? "visual",
-      groupLogic: ec.groupLogic ?? "AND",
-      groups: Array.isArray(ec.groups) && ec.groups.length ? ec.groups : [makeGroup()],
-      rawExpression: ec.rawExpression ?? "",
-      strategySubtype: strategyType,
-      clockEntryTime: entryTime,
-    },
+    entryConditions: (() => {
+      const groups: ConditionGroup[] = (() => {
+        if (!Array.isArray(ec.groups)) return [makeGroup()];
+        if (ec.groups.length > 0) return ec.groups;
+        if (algoGuidePreset) return [];
+        return [makeGroup()];
+      })();
+      const base: EntryConditions = {
+        mode: ec.mode ?? "visual",
+        groupLogic: ec.groupLogic ?? "AND",
+        groups,
+        rawExpression: ec.rawExpression ?? "",
+        strategySubtype: strategyType,
+        clockEntryTime: entryTime,
+      };
+      if (algoGuidePreset) base.algoGuidePreset = algoGuidePreset;
+      if ((ec as EntryConditions).algoGuideBlockFirstSessionMinutes === true) {
+        base.algoGuideBlockFirstSessionMinutes = true;
+      }
+      return base;
+    })(),
     entryTime,
     exitClockTime,
     clockExitEnabled,
@@ -1028,36 +1128,59 @@ export default function AlgoStrategyBuilder({ open, onOpenChange, existing, onSa
 
                 {(form.strategyType === "indicator_based" || form.strategyType === "hybrid") && (
                   <>
-                    <div className="flex items-center gap-3 mb-2">
-                      <p className="text-sm font-semibold text-zinc-300">Builder Mode</p>
-                      <ChoiceGroup
-                        value={form.entryConditions.mode}
-                        onChange={v => set("entryConditions", { ...form.entryConditions, mode: v })}
-                        size="sm"
-                        options={[
-                          { v: "visual", l: "Visual Builder", sub: "Click to build conditions" },
-                          { v: "raw",    l: "Expression Editor", sub: "Write formula manually" },
-                        ]}
-                      />
-                    </div>
-
-                    {form.entryConditions.mode === "visual" ? (
-                      <ConditionBuilder
-                        groups={form.entryConditions.groups}
-                        groupLogic={form.entryConditions.groupLogic}
-                        onGroups={g => set("entryConditions", { ...form.entryConditions, groups: g })}
-                        onGroupLogic={v => set("entryConditions", { ...form.entryConditions, groupLogic: v })}
+                    {form.entryConditions.algoGuidePreset ? (
+                      <AlgoGuidePresetEntryCallout
+                        presetId={form.entryConditions.algoGuidePreset}
+                        onSwitchToCustom={() => {
+                          if (
+                            !window.confirm(
+                              "Remove the Algo Guide preset? Entry will use only the visual condition builder. The live engine will use those indicator rows instead of ORB / VWAP / Supertrend / etc. preset logic.",
+                            )
+                          ) {
+                            return;
+                          }
+                          set("entryConditions", {
+                            ...form.entryConditions,
+                            algoGuidePreset: undefined,
+                            algoGuideBlockFirstSessionMinutes: undefined,
+                            groups: form.entryConditions.groups.length ? form.entryConditions.groups : [makeGroup()],
+                          });
+                        }}
                       />
                     ) : (
-                      <Field label="Entry Expression"
-                        hint="Use: RSI(14) < 30 | EMA(50) > EMA(200) | MACD > MACD_SIGNAL | AND / OR">
-                        <Textarea
-                          value={form.entryConditions.rawExpression}
-                          onChange={e => set("entryConditions", { ...form.entryConditions, rawExpression: e.target.value })}
-                          className="min-h-[160px] bg-zinc-900 border-zinc-700 text-sm font-mono"
-                          placeholder={`EMA(50) > EMA(200)\nAND RSI(14) > 55\nAND MACD > MACD_SIGNAL`}
-                        />
-                      </Field>
+                      <>
+                        <div className="flex items-center gap-3 mb-2">
+                          <p className="text-sm font-semibold text-zinc-300">Builder Mode</p>
+                          <ChoiceGroup
+                            value={form.entryConditions.mode}
+                            onChange={v => set("entryConditions", { ...form.entryConditions, mode: v })}
+                            size="sm"
+                            options={[
+                              { v: "visual", l: "Visual Builder", sub: "Click to build conditions" },
+                              { v: "raw",    l: "Expression Editor", sub: "Write formula manually" },
+                            ]}
+                          />
+                        </div>
+
+                        {form.entryConditions.mode === "visual" ? (
+                          <ConditionBuilder
+                            groups={form.entryConditions.groups}
+                            groupLogic={form.entryConditions.groupLogic}
+                            onGroups={g => set("entryConditions", { ...form.entryConditions, groups: g })}
+                            onGroupLogic={v => set("entryConditions", { ...form.entryConditions, groupLogic: v })}
+                          />
+                        ) : (
+                          <Field label="Entry Expression"
+                            hint="Use: RSI(14) < 30 | EMA(50) > EMA(200) | MACD > MACD_SIGNAL | AND / OR">
+                            <Textarea
+                              value={form.entryConditions.rawExpression}
+                              onChange={e => set("entryConditions", { ...form.entryConditions, rawExpression: e.target.value })}
+                              className="min-h-[160px] bg-zinc-900 border-zinc-700 text-sm font-mono"
+                              placeholder={`EMA(50) > EMA(200)\nAND RSI(14) > 55\nAND MACD > MACD_SIGNAL`}
+                            />
+                          </Field>
+                        )}
+                      </>
                     )}
                   </>
                 )}

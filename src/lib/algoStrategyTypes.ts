@@ -41,6 +41,15 @@ export type ConditionGroup = {
 
 export type BuilderStrategySubtype = "indicator_based" | "time_based" | "hybrid";
 
+/** Engine + scanners use this to run PDF-aligned logic instead of visual-builder rows. */
+export type AlgoGuidePresetId =
+  | "orb"
+  | "vwap_bounce"
+  | "supertrend_7_3"
+  | "rsi_divergence"
+  | "liquidity_sweep_bos"
+  | "smc_mtf_confluence";
+
 export type EntryConditions = {
   mode: "visual" | "raw";
   groupLogic: "AND" | "OR";
@@ -50,6 +59,10 @@ export type EntryConditions = {
   strategySubtype?: BuilderStrategySubtype;
   /** For time_based / hybrid — wall-clock entry (HH:MM), evaluated in scan timezone */
   clockEntryTime?: string;
+  /** When set, live engine runs this preset; empty `groups` is valid (preset-only). */
+  algoGuidePreset?: AlgoGuidePresetId;
+  /** EMA guide row: optional scanner hint (persisted if present) */
+  algoGuideBlockFirstSessionMinutes?: boolean;
 };
 
 export type ExitConditions = {
