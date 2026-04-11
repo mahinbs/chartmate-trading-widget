@@ -73,6 +73,7 @@ interface TradeResult {
 }
 
 interface BacktestConfig {
+  strategy_type: "orb_buying" | "iron_condor" | "strangle" | "bull_put_spread" | "jade_lizard";
   underlying: string;
   exchange: string;
   expiry_type: string;
@@ -351,6 +352,309 @@ function simulateDay(
   return results;
 }
 
+function strategyTypeFromRow(
+  strategyStyle: string,
+  entryConditions: Record<string, unknown>,
+): BacktestConfig["strategy_type"] {
+  const explicit = String(entryConditions.strategy_type ?? "").toLowerCase();
+  if (
+    explicit === "orb_buying" ||
+    explicit === "iron_condor" ||
+    explicit === "strangle" ||
+    explicit === "bull_put_spread" ||
+    explicit === "jade_lizard"
+  ) {
+    return explicit;
+  }
+  if (strategyStyle === "iron_condor") return "iron_condor";
+  if (strategyStyle === "strangle") return "strangle";
+  return "orb_buying";
+}
+
+function emaSeries(values: number[], period: number): number[] {
+  if (!values.length) return [];
+  const k = 2 / (period + 1);
+  const out = new Array(values.length).fill(values[0]);
+  for (let i = 1; i < values.length; i++) {
+    out[i] = values[i] * k + out[i - 1] * (1 - k);
+  }
+  return out;
+}
+
+function rsiSeries(values: number[], period = 14): number[] {
+  const out = new Array(values.length).fill(50);
+  if (values.length < period + 1) return out;
+  let gain = 0;
+  let loss = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = values[i] - values[i - 1];
+    gain += Math.max(0, d);
+    loss += Math.max(0, -d);
+  }
+  let avgGain = gain / period;
+  let avgLoss = loss / period;
+  out[period] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  for (let i = period + 1; i < values.length; i++) {
+    const d = values[i] - values[i - 1];
+    avgGain = (avgGain * (period - 1) + Math.max(0, d)) / period;
+    avgLoss = (avgLoss * (period - 1) + Math.max(0, -d)) / period;
+    out[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  }
+  return out;
+}
+
+function roundToStep(price: number, step: number): number {
+  if (!Number.isFinite(price) || step <= 0) return price;
+  return Math.round(price / step) * step;
+}
+
+async function fetchVixDailySeries(days: number): Promise<Record<string, number>> {
+  const map: Record<string, number> = {};
+  try {
+    const range = Math.min(Math.max(days + 30, 30), 729);
+    const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/%5EINDIAVIX?interval=1d&range=${range}d`, {
+      headers: { "User-Agent": "Mozilla/5.0" },
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!res.ok) return map;
+    const d = await res.json();
+    const ts: number[] = d?.chart?.result?.[0]?.timestamp ?? [];
+    const closes: number[] = d?.chart?.result?.[0]?.indicators?.quote?.[0]?.close ?? [];
+    for (let i = 0; i < Math.min(ts.length, closes.length); i++) {
+      const c = Number(closes[i]);
+      if (!Number.isFinite(c) || c <= 0) continue;
+      map[dateKey(toIST(ts[i]))] = c;
+    }
+  } catch {
+    // VIX is optional; strategy gates fall back conservatively when missing.
+  }
+  return map;
+}
+
+function simulatePositionalStrategies(
+  cfg: BacktestConfig,
+  dayMap: Map<string, Bar[]>,
+  sortedDays: string[],
+  vixByDate: Record<string, number>,
+  ec: Record<string, unknown>,
+  er: Record<string, unknown>,
+): TradeResult[] {
+  const out: TradeResult[] = [];
+  const closes: number[] = [];
+  const ema20: number[] = [];
+  const ema50: number[] = [];
+  const rsi14: number[] = [];
+  const expiryDow = weeklyExpiryDayOfWeek(cfg.underlying) % 7;
+  const strikeStep = cfg.underlying.toUpperCase().includes("BANKNIFTY") ? 100 : 50;
+
+  const getDayStats = (bars: Bar[]) => {
+    const first = bars[0];
+    const last = bars[bars.length - 1];
+    const hi = Math.max(...bars.map((b) => b.high));
+    const lo = Math.min(...bars.map((b) => b.low));
+    return {
+      open: first.open,
+      close: last.close,
+      high: hi,
+      low: lo,
+      rangePct: first.open > 0 ? ((hi - lo) / first.open) * 100 : 0,
+      dropPct: first.open > 0 ? ((lo - first.open) / first.open) * 100 : 0,
+      movePct: first.open > 0 ? ((last.close - first.open) / first.open) * 100 : 0,
+    };
+  };
+
+  for (let i = 0; i < sortedDays.length; i++) {
+    const day = sortedDays[i];
+    const bars = (dayMap.get(day) ?? []).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    if (!bars.length) continue;
+
+    const ds = getDayStats(bars);
+    closes.push(ds.close);
+    const e20 = emaSeries(closes, 20);
+    const e50 = emaSeries(closes, 50);
+    const rsi = rsiSeries(closes, 14);
+    ema20.push(e20[e20.length - 1]);
+    ema50.push(e50[e50.length - 1]);
+    rsi14.push(rsi[rsi.length - 1]);
+
+    const dObj = new Date(`${day}T00:00:00+05:30`);
+    const dow = dObj.getDay(); // 0 Sun .. 6 Sat
+    const vix = Number(vixByDate[day] ?? NaN);
+    const holdEndIdx = (() => {
+      for (let j = i; j < sortedDays.length; j++) {
+        const jd = new Date(`${sortedDays[j]}T00:00:00+05:30`);
+        if (jd.getDay() === expiryDow && j >= i) return j;
+      }
+      return Math.min(sortedDays.length - 1, i + 4);
+    })();
+
+    let highUntilExit = -Infinity;
+    let lowUntilExit = Infinity;
+    for (let j = i; j <= holdEndIdx; j++) {
+      const jb = dayMap.get(sortedDays[j]) ?? [];
+      if (!jb.length) continue;
+      highUntilExit = Math.max(highUntilExit, ...jb.map((b) => b.high));
+      lowUntilExit = Math.min(lowUntilExit, ...jb.map((b) => b.low));
+    }
+    const validRange = Number.isFinite(highUntilExit) && Number.isFinite(lowUntilExit);
+    if (!validRange) continue;
+
+    // 1) Weekly Iron Condor
+    if (cfg.strategy_type === "iron_condor") {
+      const minVix = Number(ec.min_vix ?? 13);
+      const wing = Number(ec.wing_width_pts ?? 200);
+      const minNet = Number(ec.min_net_premium ?? 35);
+      const tpPct = Number(er.profit_target_pct ?? 45);
+      const slMult = Number(er.stop_loss_mult ?? 2);
+      if (dow !== 1 || !Number.isFinite(vix) || vix < minVix) continue; // Monday + VIX gate
+      const spot = ds.close;
+      const dte = Math.max(1, holdEndIdx - i + 1);
+      const iv = vix / 100;
+      const shortCall = roundToStep(spot * 1.015, strikeStep);
+      const shortPut = roundToStep(spot * 0.985, strikeStep);
+      const net = Math.max(minNet, spot * iv * Math.sqrt(dte / 365) * 0.30);
+      const breachUp = Math.max(0, highUntilExit - shortCall);
+      const breachDn = Math.max(0, shortPut - lowUntilExit);
+      const loss = Math.min(Math.max(breachUp, breachDn), wing);
+      const pnlPts = net - loss;
+      const pnlPct = (pnlPts / net) * 100;
+      out.push({
+        date: day,
+        direction: "CE",
+        entry_time: "10:00",
+        exit_time: "14:00",
+        entry_premium_pct: (net / spot) * 100,
+        entry_price: spot,
+        exit_reason: pnlPct >= tpPct ? "TP" : (pnlPct <= -(slMult * 100) ? "SL" : "TIME"),
+        pnl_pct: Math.max(-slMult * 100, Math.min(100, pnlPct)),
+        orb_high: shortCall,
+        orb_low: shortPut,
+        range_pct: ds.rangePct,
+      });
+      continue;
+    }
+
+    // 2) Short Strangle (high-IV)
+    if (cfg.strategy_type === "strangle") {
+      const minVix = Number(ec.min_vix ?? 18);
+      const tpPct = Number(er.profit_target_pct ?? 50);
+      const slMult = Number(er.stop_loss_mult ?? 2);
+      const vix3Key = i >= 3 ? sortedDays[i - 3] : "";
+      const vix3 = Number(vixByDate[vix3Key] ?? NaN);
+      const vixRise = Number.isFinite(vix3) && vix3 > 0 ? ((vix - vix3) / vix3) * 100 : 0;
+      if (!Number.isFinite(vix) || vix < minVix || vixRise < 15) continue;
+      const spot = ds.close;
+      const dte = Math.max(1, holdEndIdx - i + 1);
+      const iv = vix / 100;
+      const shortCall = roundToStep(spot * 1.02, strikeStep);
+      const shortPut = roundToStep(spot * 0.98, strikeStep);
+      const net = Math.max(35, spot * iv * Math.sqrt(dte / 365) * 0.35);
+      const breachUp = Math.max(0, highUntilExit - shortCall);
+      const breachDn = Math.max(0, shortPut - lowUntilExit);
+      const stress = Math.max(breachUp, breachDn);
+      const pnlPts = net - stress;
+      const pnlPct = (pnlPts / net) * 100;
+      out.push({
+        date: day,
+        direction: "CE",
+        entry_time: "11:00",
+        exit_time: "15:15",
+        entry_premium_pct: (net / spot) * 100,
+        entry_price: spot,
+        exit_reason: pnlPct >= tpPct ? "TP" : (pnlPct <= -(slMult * 100) ? "SL" : "TIME"),
+        pnl_pct: Math.max(-slMult * 100, Math.min(120, pnlPct)),
+        orb_high: shortCall,
+        orb_low: shortPut,
+        range_pct: ds.rangePct,
+      });
+      continue;
+    }
+
+    // 3) Bull Put Spread (bounce)
+    if (cfg.strategy_type === "bull_put_spread") {
+      const minDrop = Number(ec.min_drop_pct ?? 1.2);
+      const maxRsi = Number(ec.max_rsi ?? 38);
+      const width = Number(ec.wing_width_pts ?? 100);
+      const minCreditPct = Number(ec.min_credit_pct_of_width ?? 0.4);
+      const tpPct = Number(er.profit_target_pct ?? 75);
+      const slMult = Number(er.stop_loss_mult ?? 2);
+      const e20v = ema20[ema20.length - 1] ?? ds.close;
+      const e50v = ema50[ema50.length - 1] ?? ds.close;
+      const nearSupport = Math.abs(ds.close - e20v) / ds.close < 0.008 || Math.abs(ds.close - e50v) / ds.close < 0.008;
+      if (!(Math.abs(ds.dropPct) >= minDrop && ds.dropPct < 0 && rsi14[rsi14.length - 1] < maxRsi && nearSupport)) continue;
+      const spot = ds.close;
+      const shortPut = roundToStep(spot * 0.995, strikeStep);
+      const longPut = shortPut - width;
+      const net = Math.max(width * minCreditPct, width * 0.45);
+      const holdIdx = Math.min(sortedDays.length - 1, i + 5);
+      let minLow = Infinity;
+      for (let j = i; j <= holdIdx; j++) {
+        const jb = dayMap.get(sortedDays[j]) ?? [];
+        if (!jb.length) continue;
+        minLow = Math.min(minLow, ...jb.map((b) => b.low));
+      }
+      let loss = 0;
+      if (minLow < longPut) {
+        loss = width - net;
+      } else if (minLow < shortPut) {
+        loss = Math.max(0, shortPut - minLow - net);
+      }
+      const pnlPts = net - loss;
+      const pnlPct = (pnlPts / net) * 100;
+      out.push({
+        date: day,
+        direction: "PE",
+        entry_time: "11:30",
+        exit_time: "15:15",
+        entry_premium_pct: (net / spot) * 100,
+        entry_price: spot,
+        exit_reason: pnlPct >= tpPct ? "TP" : (pnlPct <= -(slMult * 100) ? "SL" : "TIME"),
+        pnl_pct: Math.max(-slMult * 100, Math.min(100, pnlPct)),
+        orb_high: shortPut,
+        orb_low: longPut,
+        range_pct: ds.rangePct,
+      });
+      continue;
+    }
+
+    // 4) Jade Lizard
+    if (cfg.strategy_type === "jade_lizard") {
+      const minVix = Number(ec.min_vix ?? 15);
+      const width = Number(ec.call_spread_width_pts ?? 150);
+      const tpPct = Number(er.profit_target_pct ?? 50);
+      const slMult = Number(er.stop_loss_mult ?? 2);
+      const e20v = ema20[ema20.length - 1] ?? ds.close;
+      const bullishBias = ds.close >= e20v;
+      if (!bullishBias || !Number.isFinite(vix) || vix < minVix) continue;
+      const spot = ds.close;
+      const shortPut = roundToStep(spot * 0.988, strikeStep);
+      const shortCall = roundToStep(spot * 1.012, strikeStep);
+      const longCall = shortCall + width;
+      const callCredit = width * 0.55;
+      const putPremium = width * 0.60;
+      const totalCredit = callCredit + putPremium;
+      if (totalCredit < width) continue; // zero-upside rule
+      const downBreach = Math.max(0, shortPut - lowUntilExit);
+      const pnlPts = totalCredit - downBreach;
+      const pnlPct = (pnlPts / totalCredit) * 100;
+      out.push({
+        date: day,
+        direction: "PE",
+        entry_time: "12:00",
+        exit_time: "14:00",
+        entry_premium_pct: (totalCredit / spot) * 100,
+        entry_price: spot,
+        exit_reason: pnlPct >= tpPct ? "TP" : (pnlPct <= -(slMult * 100) ? "SL" : "TIME"),
+        pnl_pct: Math.max(-slMult * 100, Math.min(100, pnlPct)),
+        orb_high: longCall,
+        orb_low: shortPut,
+        range_pct: ds.rangePct,
+      });
+    }
+  }
+  return out;
+}
+
 // ── Aggregate results ──────────────────────────────────────────────────────
 
 function aggregate(trades: TradeResult[], cfg: BacktestConfig) {
@@ -461,7 +765,12 @@ Deno.serve(async (req) => {
     const rc = (strategyRow?.risk_config ?? body.risk_config ?? {}) as Record<string, unknown>;
     const vixCfg = (ec.vix_filter ?? {}) as Record<string, unknown>;
 
+    const strategyType = strategyTypeFromRow(
+      String(strategyRow?.strategy_style ?? body.strategy_style ?? "buying"),
+      ec,
+    );
     const cfg: BacktestConfig = {
+      strategy_type: strategyType,
       underlying: String(strategyRow?.underlying ?? body.underlying ?? "NIFTY").toUpperCase(),
       exchange: String(strategyRow?.exchange ?? body.exchange ?? "NFO").toUpperCase(),
       expiry_type: String(strategyRow?.expiry_type ?? body.expiry_type ?? "weekly"),
@@ -504,6 +813,62 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "OPENALGO_URL not configured" }), { status: 500, headers });
     }
 
+    // Prefer OpenAlgo-native options backtest path for all supported options strategies.
+    // This keeps broker-connected options backtests on one backend engine.
+    const openalgoStrategy =
+      cfg.strategy_type === "orb_buying" ? "options_orb" : cfg.strategy_type;
+    const optionsConfig = {
+      strategy_type: cfg.strategy_type,
+      ...ec,
+      ...orb,
+      ...er,
+      ...rc,
+      expiry_type: cfg.expiry_type,
+      trade_direction: cfg.trade_direction,
+      orb_duration_mins: cfg.orb_duration_mins,
+      min_range_pct: cfg.min_range_pct,
+      max_range_pct: cfg.max_range_pct,
+      momentum_bars: cfg.momentum_bars,
+      expiry_day_guard: cfg.expiry_day_guard,
+      sl_pct: cfg.sl_pct,
+      tp_pct: cfg.tp_pct,
+      trailing_enabled: cfg.trailing_enabled,
+      trail_after_pct: cfg.trail_after_pct,
+      trail_pct: cfg.trail_pct,
+      time_exit_hhmm: cfg.time_exit_hhmm,
+      max_reentry_count: cfg.max_reentry_count,
+      lot_size: cfg.lot_size,
+      max_premium_per_lot: cfg.max_premium_per_lot,
+      options_symbol: String((rc as Record<string, unknown>).explicit_options_symbol ?? ""),
+      expiry_date: String((rc as Record<string, unknown>).explicit_expiry_iso ?? ""),
+    };
+    if (OPENALGO_APP_KEY) {
+      const oaRes = await fetch(`${OPENALGO_URL}/api/v1/platform/vectorbt-backtest`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Platform-Key": OPENALGO_APP_KEY,
+        },
+        body: JSON.stringify({
+          symbol: cfg.underlying,
+          exchange: cfg.exchange,
+          strategy: openalgoStrategy,
+          days: cfg.days,
+          openalgo_api_key: apiKey,
+          options_config: optionsConfig,
+        }),
+      });
+      const oaRaw = await oaRes.text().catch(() => "");
+      const oaJson = oaRaw ? JSON.parse(oaRaw) : {};
+      if (oaRes.ok && !oaJson?.error) {
+        return new Response(JSON.stringify({
+          ...oaJson,
+          delegatedTo: "openalgo",
+        }), { status: 200, headers });
+      }
+      console.warn("backtest-options-strategy: OpenAlgo delegation failed, using local fallback", oaJson?.error ?? oaRaw);
+    }
+
     // Date range
     const endDate = new Date();
     const startDate = new Date();
@@ -538,18 +903,22 @@ Deno.serve(async (req) => {
     // Sort days and simulate
     const allTrades: TradeResult[] = [];
     const sortedDays = [...dayMap.keys()].sort();
+    const vixByDate = await fetchVixDailySeries(cfg.days);
 
-    for (const day of sortedDays) {
-      const dayBars = (dayMap.get(day) ?? []).sort((a, b) =>
-        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-      );
-      const dayDate = new Date(day + "T00:00:00+05:30");
-      const isExpiryDay = cfg.expiry_type === "weekly"
-        ? isWeeklyExpiryDay(dayDate, cfg.underlying)
-        : dayDate.getDate() >= 25 && dayDate.getDay() === 4; // monthly: last Thursday near end of month
-
-      const dayTrades = simulateDay(dayBars, cfg, day, isExpiryDay);
-      allTrades.push(...dayTrades);
+    if (cfg.strategy_type === "orb_buying") {
+      for (let dayIdx = 0; dayIdx < sortedDays.length; dayIdx++) {
+        const day = sortedDays[dayIdx];
+        const dayBars = (dayMap.get(day) ?? []).sort((a, b) =>
+          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        );
+        const dayDate = new Date(day + "T00:00:00+05:30");
+        const isExpiryDay = cfg.expiry_type === "weekly"
+          ? isWeeklyExpiryDay(dayDate, cfg.underlying)
+          : dayDate.getDate() >= 25 && dayDate.getDay() === 4; // monthly: last Thursday near end of month
+        allTrades.push(...simulateDay(dayBars, cfg, day, isExpiryDay));
+      }
+    } else {
+      allTrades.push(...simulatePositionalStrategies(cfg, dayMap, sortedDays, vixByDate, ec, er));
     }
 
     const result = aggregate(allTrades, cfg);
@@ -572,7 +941,9 @@ Deno.serve(async (req) => {
         trade_direction: cfg.trade_direction,
       },
       daysSimulated: sortedDays.length,
-      engine: "options-orb-backtest:v1",
+      engine: cfg.strategy_type === "orb_buying"
+        ? "options-orb-backtest:v1"
+        : `options-${cfg.strategy_type}-backtest:v1`,
     }), { headers });
 
   } catch (err) {

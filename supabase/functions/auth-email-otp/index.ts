@@ -100,23 +100,124 @@ async function sendOtpEmail(params: {
   to: string;
   otp: string;
   subject: string;
-  preheader: string;
-  headline: string;
-  helperText: string;
+  template: "signup" | "recovery";
 }) {
-  const html = `
-    <div style="font-family: Inter, Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
-      <p style="margin:0 0 12px;color:#111827;font-size:14px;">${escapeHtml(params.preheader)}</p>
-      <h1 style="margin:0 0 16px;color:#0f172a;font-size:22px;">${escapeHtml(params.headline)}</h1>
-      <p style="margin:0 0 16px;color:#334155;font-size:14px;">${escapeHtml(params.helperText)}</p>
-      <div style="font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 30px; letter-spacing: 6px; color: #0f172a; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; text-align: center; padding: 14px 8px; margin-bottom: 16px;">
-        ${escapeHtml(params.otp)}
-      </div>
-      <p style="margin:0;color:#64748b;font-size:12px;">If you did not request this, you can ignore this email.</p>
-    </div>
-  `.trim();
+  const safeEmail = escapeHtml(params.to);
+  const safeOtp = escapeHtml(params.otp);
 
-  const text = `${params.headline}\n\n${params.helperText}\n\nYour code: ${params.otp}\n\nIf you did not request this, you can ignore this email.`;
+  const signupHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your TradingSmart.ai verification code</title>
+</head>
+<body style="margin:0;padding:0;background-color:#050505;">
+  <div style="display:none;max-height:0;overflow:hidden;">
+    Your TradingSmart.ai code is ${safeOtp}. Enter it in the app to verify ${safeEmail}.
+  </div>
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color:#050505;">
+    <tr>
+      <td align="center" style="padding:40px 16px;">
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width:480px;background-color:#0f1419;border:1px solid #1e293b;border-radius:16px;">
+          <tr>
+            <td align="center" style="padding:32px 24px 16px;background:linear-gradient(180deg,#0c1917,#0f1419);">
+              <img src="https://www.tradingsmart.ai/assets/logo-BvaV304R.png" width="100" alt="TradingSmart.ai" style="display:block;border:0;">
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:8px 28px 8px;font-family:Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;">
+              <h1 style="margin:0;font-size:22px;font-weight:700;color:#f8fafc;">Verify your email</h1>
+              <p style="margin:12px 0 0;font-size:15px;line-height:1.55;color:#94a3b8;">
+                Enter this code in the app to finish signing up for <strong style="color:#e2e8f0;">${safeEmail}</strong>:
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding:24px 28px 8px;">
+              <div style="font-family:Consolas,Monaco,ui-monospace,monospace;font-size:36px;font-weight:700;letter-spacing:0.35em;color:#14b8a6;padding:16px 24px;background:#0a1210;border:1px solid #134e4a;border-radius:12px;display:inline-block;">
+                ${safeOtp}
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:8px 28px 28px;font-family:Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;">
+              <p style="margin:0;font-size:13px;line-height:1.5;color:#64748b;">
+                This code expires soon. If you did not create an account, ignore this message.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 28px;background:#0a0f14;border-top:1px solid #1e293b;text-align:center;font-size:12px;color:#64748b;font-family:Segoe UI,Roboto,sans-serif;">
+              <a href="https://www.tradingsmart.ai/" style="color:#14b8a6;text-decoration:none;">tradingsmart.ai</a>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  const recoveryHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reset your TradingSmart.ai password</title>
+</head>
+<body style="margin:0;padding:0;background-color:#050505;">
+  <div style="display:none;max-height:0;overflow:hidden;">
+    TradingSmart.ai password reset code ${safeOtp} for ${safeEmail}.
+  </div>
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color:#050505;">
+    <tr>
+      <td align="center" style="padding:40px 16px;">
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width:480px;background-color:#0f1419;border:1px solid #1e293b;border-radius:16px;">
+          <tr>
+            <td align="center" style="padding:32px 24px 16px;background:linear-gradient(180deg,#0c1917,#0f1419);">
+              <img src="https://www.tradingsmart.ai/assets/logo-BvaV304R.png" width="100" alt="TradingSmart.ai" style="display:block;border:0;">
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:8px 28px 8px;font-family:Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;">
+              <h1 style="margin:0;font-size:22px;font-weight:700;color:#f8fafc;">Password reset code</h1>
+              <p style="margin:12px 0 0;font-size:15px;line-height:1.55;color:#94a3b8;">
+                We received a request to reset the password for <strong style="color:#e2e8f0;">${safeEmail}</strong>. Enter this code on the sign-in page under <strong style="color:#e2e8f0;">Forgot password</strong>:
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding:24px 28px 8px;">
+              <div style="font-family:Consolas,Monaco,ui-monospace,monospace;font-size:36px;font-weight:700;letter-spacing:0.35em;color:#14b8a6;padding:16px 24px;background:#0a1210;border:1px solid #134e4a;border-radius:12px;display:inline-block;">
+                ${safeOtp}
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:8px 28px 28px;font-family:Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;">
+              <p style="margin:0;font-size:13px;line-height:1.5;color:#64748b;">
+                If you did not request this, you can ignore this email. Your password will stay the same.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 28px;background:#0a0f14;border-top:1px solid #1e293b;text-align:center;font-size:12px;color:#64748b;font-family:Segoe UI,Roboto,sans-serif;">
+              <a href="https://www.tradingsmart.ai/" style="color:#14b8a6;text-decoration:none;">tradingsmart.ai</a>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  const html = params.template === "signup" ? signupHtml : recoveryHtml;
+  const text =
+    params.template === "signup"
+      ? `Verify your email\n\nEnter this code in the app to finish signing up for ${params.to}:\n\n${params.otp}`
+      : `Password reset code\n\nUse this code to reset the password for ${params.to}:\n\n${params.otp}`;
 
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -212,10 +313,8 @@ serve(async (req) => {
         from: resendFrom,
         to: email,
         otp,
-        subject: "Verify your ChartMate account",
-        preheader: "Use this verification code to finish signup.",
-        headline: "Confirm your email",
-        helperText: "Enter this 6-digit code on the signup screen to activate your account.",
+        subject: "Your TradingSmart.ai verification code",
+        template: "signup",
       });
 
       return jsonResponse({ ok: true });
@@ -244,10 +343,8 @@ serve(async (req) => {
         from: resendFrom,
         to: email,
         otp,
-        subject: "Reset your ChartMate password",
-        preheader: "Use this code to reset your password.",
-        headline: "Password reset code",
-        helperText: "Enter this 6-digit code on the reset screen and set your new password.",
+        subject: "Reset your TradingSmart.ai password",
+        template: "recovery",
       });
 
       return jsonResponse({ ok: true });
