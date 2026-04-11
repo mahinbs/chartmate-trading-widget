@@ -8,20 +8,18 @@
  *   1. Skip if: outside execution_days, before start_time, after end_time
  *   2. Skip if: already has an open position today for this strategy
  *   3. Skip if: reentry_count >= max_reentry_count
- *   4. Skip if: expiry_day_guard enabled AND today is expiry day
- *   5. Skip if: vix_filter enabled AND VIX > max_vix
- *   6. ORB check: fetch 5m candles from 09:15 to orb_end_time, lock range high/low
- *   7. Momentum check: last N candles all making higher closes (for BUY) or lower closes (for SELL)
- *   8. Breakout: current close > ORB high (BUY CE) or current close < ORB low (BUY PE)
- *   9. On signal: call options-place-order to fire the trade
+ *   4. Build dynamic strategy params from DB JSON fields
+ *   5. Delegate signal + execution to chartmate-options-api /execute-internal
+ *   6. Update per-strategy run state after successful entry
  *
  * Auth: X-Cron-Secret header matching CRON_SECRET env var
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
-const OPENALGO_URL = (Deno.env.get("OPENALGO_URL") ?? "").replace(/\/$/, "");
 const OPENALGO_APP_KEY = Deno.env.get("OPENALGO_APP_KEY") ?? "";
+const OPTIONS_API_URL = (Deno.env.get("OPTIONS_API_URL") ?? "").replace(/\/$/, "");
+const OPTIONS_API_INTERNAL_KEY = Deno.env.get("OPTIONS_API_INTERNAL_KEY") ?? "";
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
 
 const corsHeaders = {
@@ -49,121 +47,117 @@ function isoDateIST(d: Date): string {
   return `${ist.getFullYear()}-${String(ist.getMonth() + 1).padStart(2, "0")}-${String(ist.getDate()).padStart(2, "0")}`;
 }
 
-/** Fetch 5m OHLCV bars from OpenAlgo platform API for a given symbol */
-async function fetch5mBars(
-  symbol: string,
-  exchange: string,
-  days: number,
-  apiKey: string,
-): Promise<{ o: number[]; h: number[]; l: number[]; c: number[]; v: number[]; t: number[] } | null> {
-  try {
-    const res = await fetch(`${OPENALGO_URL}/api/v1/history`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        apikey: apiKey,
-        symbol,
-        exchange,
-        interval: "5m",
-        start_date: new Date(Date.now() - days * 86400 * 1000).toISOString().split("T")[0],
-        end_date: new Date().toISOString().split("T")[0],
-      }),
-      signal: AbortSignal.timeout(12000),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const bars = data?.data ?? data;
-    if (!Array.isArray(bars) || bars.length === 0) return null;
+type StrategyType = "iron_condor" | "strangle" | "bull_put_spread" | "jade_lizard" | "orb_buying";
+
+function lotUnitsForUnderlying(underlying: string): number {
+  const u = String(underlying ?? "").toUpperCase();
+  if (u === "BANKNIFTY") return 15;
+  if (u === "FINNIFTY") return 25;
+  if (u === "MIDCPNIFTY") return 50;
+  return 25;
+}
+
+function resolveStrategyType(strategy: Record<string, any>): StrategyType {
+  const ec = (strategy.entry_conditions ?? {}) as Record<string, unknown>;
+  const explicit = String(ec.strategy_type ?? "").toLowerCase();
+  if (
+    explicit === "iron_condor" ||
+    explicit === "strangle" ||
+    explicit === "bull_put_spread" ||
+    explicit === "jade_lizard" ||
+    explicit === "orb_buying"
+  ) {
+    return explicit as StrategyType;
+  }
+  const style = String(strategy.strategy_style ?? "").toLowerCase();
+  if (style === "iron_condor" || style === "strangle") return style as StrategyType;
+  return "orb_buying";
+}
+
+function buildExecuteParams(strategy: Record<string, any>, strategyType: StrategyType): Record<string, unknown> {
+  const ec = (strategy.entry_conditions ?? {}) as Record<string, unknown>;
+  const er = (strategy.exit_rules ?? {}) as Record<string, unknown>;
+  const rc = (strategy.risk_config ?? {}) as Record<string, unknown>;
+  const orb = (strategy.orb_config ?? {}) as Record<string, unknown>;
+  const lots = Math.max(1, Number(rc.lot_size ?? 1));
+  const lotSize = lotUnitsForUnderlying(String(strategy.underlying ?? "NIFTY"));
+  const common = {
+    underlying: strategy.underlying,
+    exchange: "NSE_INDEX",
+    expiry_date: typeof rc.explicit_expiry_iso === "string" ? rc.explicit_expiry_iso : undefined,
+    lots,
+    lot_size: lotSize,
+    capital: Number(rc.capital ?? 500000),
+    risk_pct: Number(ec.risk_pct ?? 0.02),
+  };
+
+  if (strategyType === "iron_condor") {
     return {
-      o: bars.map((b: Record<string, unknown>) => Number(b.open ?? b.o ?? 0)),
-      h: bars.map((b: Record<string, unknown>) => Number(b.high ?? b.h ?? 0)),
-      l: bars.map((b: Record<string, unknown>) => Number(b.low ?? b.l ?? 0)),
-      c: bars.map((b: Record<string, unknown>) => Number(b.close ?? b.c ?? 0)),
-      v: bars.map((b: Record<string, unknown>) => Number(b.volume ?? b.v ?? 0)),
-      t: bars.map((b: Record<string, unknown>) => Number(b.timestamp ?? b.t ?? b.time ?? 0)),
+      ...common,
+      wing_width_pts: Number(ec.wing_width_pts ?? 200),
+      delta_target: Number(ec.delta_target ?? 0.16),
+      min_vix: Number(ec.min_vix ?? 13),
+      min_net_premium: Number(ec.min_net_premium ?? 35),
+      profit_target_pct: Number(er.profit_target_pct ?? 45) / 100,
+      stop_loss_mult: Number(er.stop_loss_mult ?? 2),
     };
-  } catch {
-    return null;
   }
-}
-
-/** Fetch current VIX from NSE (Yahoo Finance as fallback) */
-async function fetchVix(): Promise<number | null> {
-  try {
-    const res = await fetch(
-      "https://query1.finance.yahoo.com/v8/finance/chart/%5EINDIAVIX?interval=1m&range=1d",
-      { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(8000) },
-    );
-    if (!res.ok) return null;
-    const data = await res.json();
-    const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice;
-    return price != null ? Number(price) : null;
-  } catch {
-    return null;
+  if (strategyType === "strangle") {
+    return {
+      ...common,
+      delta_target: Number(ec.delta_target ?? 0.2),
+      min_vix: Number(ec.min_vix ?? 18),
+      min_net_premium: Number(ec.min_net_premium ?? 35),
+      roll_trigger_pts: Number(ec.roll_trigger_pts ?? 30),
+      max_adjustments: Number(ec.max_adjustments ?? 2),
+      profit_target_pct: Number(er.profit_target_pct ?? 50) / 100,
+      stop_loss_mult: Number(er.stop_loss_mult ?? 2),
+    };
   }
-}
-
-/** Check ORB breakout and momentum. Returns "CE", "PE", or null */
-function evaluateORBSignal(
-  bars: { o: number[]; h: number[]; l: number[]; c: number[]; t: number[] },
-  orbConfig: {
-    orb_duration_mins: number;
-    min_range_pct: number;
-    max_range_pct: number;
-    momentum_bars: number;
-  },
-  todayDateStr: string,
-): "CE" | "PE" | null {
-  const { orb_duration_mins, min_range_pct, max_range_pct, momentum_bars } = orbConfig;
-
-  // Filter today's bars
-  const todayBars: { o: number; h: number; l: number; c: number; t: number }[] = [];
-  for (let i = 0; i < bars.c.length; i++) {
-    const barDate = new Date(bars.t[i] * 1000).toISOString().split("T")[0];
-    if (barDate === todayDateStr) {
-      todayBars.push({ o: bars.o[i], h: bars.h[i], l: bars.l[i], c: bars.c[i], t: bars.t[i] });
-    }
+  if (strategyType === "bull_put_spread") {
+    return {
+      ...common,
+      wing_width_pts: Number(ec.wing_width_pts ?? 100),
+      min_drop_pct: Number(ec.min_drop_pct ?? 1.2),
+      max_rsi: Number(ec.max_rsi ?? 38),
+      min_credit_pct_of_width: Number(ec.min_credit_pct_of_width ?? 0.4),
+      profit_target_pct: Number(er.profit_target_pct ?? 75) / 100,
+      stop_loss_mult: Number(er.stop_loss_mult ?? 2),
+    };
   }
-  if (todayBars.length < momentum_bars + 1) return null;
-
-  // ORB = first N bars of the day (each bar = 5m, so N = orb_duration_mins / 5)
-  const orbBarsCount = Math.max(1, Math.floor(orb_duration_mins / 5));
-  const orbBars = todayBars.slice(0, orbBarsCount);
-  const remainBars = todayBars.slice(orbBarsCount);
-  if (remainBars.length < momentum_bars) return null;
-
-  const orbHigh = Math.max(...orbBars.map((b) => b.h));
-  const orbLow = Math.min(...orbBars.map((b) => b.l));
-  const orbRange = orbHigh - orbLow;
-  const orbMid = (orbHigh + orbLow) / 2;
-  const rangePct = orbRange / orbMid;
-
-  // Range validity check
-  if (rangePct < min_range_pct / 100 || rangePct > max_range_pct / 100) return null;
-
-  // Latest bars for momentum check
-  const recentBars = remainBars.slice(-momentum_bars);
-  const latestClose = recentBars[recentBars.length - 1].c;
-
-  // Bullish breakout: price above ORB high with N consecutive higher closes
-  if (latestClose > orbHigh) {
-    const bullishMomentum = recentBars.every((b, idx) => {
-      if (idx === 0) return true;
-      return b.c > recentBars[idx - 1].c;
-    });
-    if (bullishMomentum) return "CE";
+  if (strategyType === "jade_lizard") {
+    return {
+      ...common,
+      min_vix: Number(ec.min_vix ?? 15),
+      short_put_delta: Number(ec.short_put_delta ?? 0.25),
+      short_call_delta: Number(ec.short_call_delta ?? 0.2),
+      call_spread_width_pts: Number(ec.call_spread_width_pts ?? 150),
+      profit_target_pct: Number(er.profit_target_pct ?? 50) / 100,
+      stop_loss_mult: Number(er.stop_loss_mult ?? 2),
+    };
   }
-
-  // Bearish breakout: price below ORB low with N consecutive lower closes
-  if (latestClose < orbLow) {
-    const bearishMomentum = recentBars.every((b, idx) => {
-      if (idx === 0) return true;
-      return b.c < recentBars[idx - 1].c;
-    });
-    if (bearishMomentum) return "PE";
-  }
-
-  return null;
+  return {
+    underlying: strategy.underlying,
+    exchange_underlying: "NSE",
+    exchange_options: "NFO",
+    expiry_type: strategy.expiry_type === "monthly" ? "monthly" : "weekly",
+    strike_offset: strategy.strike_selection ?? "ATM",
+    lots,
+    lot_size: lotSize,
+    orb_duration_mins: Number(orb.orb_duration_mins ?? 15),
+    min_range_pct: Number(orb.min_range_pct ?? 0.2),
+    max_range_pct: Number(orb.max_range_pct ?? 1.0),
+    momentum_bars: Number(orb.momentum_bars ?? 3),
+    trade_direction: strategy.trade_direction ?? "both",
+    expiry_day_guard: Boolean(ec.expiry_day_guard ?? true),
+    sl_pct: Number(er.sl_pct ?? 30),
+    tp_pct: Number(er.tp_pct ?? 50),
+    trailing_enabled: Boolean(er.trailing_enabled ?? true),
+    trail_after_pct: Number(er.trail_after_pct ?? 30),
+    trail_pct: Number(er.trail_pct ?? 15),
+    time_exit_hhmm: String(er.time_exit_hhmm ?? "15:15"),
+    max_reentry_count: Number(er.max_reentry_count ?? 1),
+  };
 }
 
 // ── Main handler ─────────────────────────────────────────────────────────
@@ -207,15 +201,10 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Fetch VIX once for all strategies
-    const currentVix = await fetchVix();
-
     for (const strategy of strategies) {
       const sid = strategy.id as string;
       try {
         const exitRules = strategy.exit_rules ?? {};
-        const orbConfig = strategy.orb_config ?? {};
-        const riskConfig = strategy.risk_config ?? {};
         const entryConditions = strategy.entry_conditions ?? {};
         const strategyState = strategy.strategy_state ?? {};
 
@@ -260,15 +249,6 @@ Deno.serve(async (req) => {
           }
         }
 
-        // ── VIX filter ──────────────────────────────────────────────────
-        if (entryConditions.vix_filter?.enabled && currentVix !== null) {
-          const maxVix = entryConditions.vix_filter.max_vix ?? 25;
-          if (currentVix > maxVix) {
-            results.push({ strategy_id: sid, result: `skipped:vix_too_high(${currentVix})` });
-            continue;
-          }
-        }
-
         // ── Check for existing open position ────────────────────────────
         const { data: openTrades } = await (supabase as any)
           .from("active_trades")
@@ -293,94 +273,45 @@ Deno.serve(async (req) => {
           results.push({ strategy_id: sid, result: "skipped:no_api_key" });
           continue;
         }
-
-        // ── ORB breakout check ──────────────────────────────────────────
-        let signal: "CE" | "PE" | null = null;
-
-        if (entryConditions.orb_breakout !== false) {
-          const bars = await fetch5mBars(strategy.underlying, "NSE", 3, apiKey || "");
-          if (!bars) {
-            results.push({ strategy_id: sid, result: "skipped:no_price_data" });
-            continue;
-          }
-          signal = evaluateORBSignal(bars, {
-            orb_duration_mins: orbConfig.orb_duration_mins ?? 15,
-            min_range_pct: orbConfig.min_range_pct ?? 0.2,
-            max_range_pct: orbConfig.max_range_pct ?? 1.0,
-            momentum_bars: orbConfig.momentum_bars ?? 3,
-          }, todayDateStr);
-        }
-
-        // ── Override with strategy's option_type if not auto ───────────
-        const resolvedOptionType =
-          strategy.option_type === "auto" ? signal : (strategy.option_type ?? signal);
-        if (!resolvedOptionType) {
-          results.push({ strategy_id: sid, result: "no_signal" });
+        if (!apiKey && !OPENALGO_APP_KEY) {
+          results.push({ strategy_id: sid, result: "skipped:no_data_api_key" });
           continue;
         }
 
-        // ── Fetch nearest expiry ────────────────────────────────────────
-        const expiryType = strategy.expiry_type ?? "weekly";
-        let expiryDate: string | null = null;
-        if (apiKey) {
-          try {
-            const expiryRes = await fetch(`${OPENALGO_URL}/api/v1/expiry`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                apikey: apiKey,
-                symbol: strategy.underlying,
-                exchange: strategy.exchange,
-                instrumenttype: strategy.instrument_type ?? "OPTIDX",
-              }),
-              signal: AbortSignal.timeout(10000),
-            });
-            if (expiryRes.ok) {
-              const expiryData = await expiryRes.json();
-              const dates: string[] = Array.isArray(expiryData?.data) ? expiryData.data : [];
-              expiryDate = dates[expiryType === "monthly" ? 1 : 0] ?? dates[0] ?? null;
-            }
-          } catch { /* use null */ }
-        }
-
-        if (!expiryDate) {
-          results.push({ strategy_id: sid, result: "skipped:no_expiry_resolved" });
-          continue;
-        }
-
-        // ── Place the order ─────────────────────────────────────────────
-        const lotSize = riskConfig.lot_size ?? 1;
         const isPaper = strategy.is_paper_only === true;
+        const strategyType = resolveStrategyType(strategy);
+        const params = buildExecuteParams(strategy, strategyType);
 
-        // Use internal options-place-order via supabase.functions or direct HTTP
-        const placeRes = await fetch(
-          `${SUPABASE_URL}/functions/v1/options-place-order`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
-            },
-            body: JSON.stringify({
-              options_strategy_id: sid,
-              underlying: strategy.underlying,
-              exchange: strategy.exchange,
-              expiry_date: expiryDate,
-              strike_offset: strategy.strike_selection ?? "ATM",
-              option_type: resolvedOptionType,
-              action: "BUY",
-              quantity: lotSize,
-              product: "MIS",
-              is_paper_trade: isPaper,
-            }),
-            signal: AbortSignal.timeout(20000),
+        if (!OPTIONS_API_URL || !OPTIONS_API_INTERNAL_KEY) {
+          results.push({ strategy_id: sid, result: "error:options_api_not_configured" });
+          continue;
+        }
+
+        const execRes = await fetch(`${OPTIONS_API_URL}/api/options/strategies/execute-internal`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Internal-Key": OPTIONS_API_INTERNAL_KEY,
           },
-        );
+          body: JSON.stringify({
+            user_id: strategy.user_id,
+            openalgo_api_key: apiKey || OPENALGO_APP_KEY,
+            strategy_type: strategyType,
+            params,
+            is_paper: isPaper,
+            strategy_id: sid,
+          }),
+          signal: AbortSignal.timeout(25000),
+        });
 
-        const placeData = await placeRes.json().catch(() => ({}));
-
-        if (!placeRes.ok) {
-          results.push({ strategy_id: sid, result: `error:place_order_failed(${placeData?.error ?? placeRes.status})` });
+        const execData = await execRes.json().catch(() => ({} as Record<string, unknown>));
+        if (!execRes.ok) {
+          const detail = String((execData as any)?.detail ?? (execData as any)?.error ?? execRes.status);
+          results.push({ strategy_id: sid, result: `error:execute_failed(${detail})` });
+          continue;
+        }
+        if (!execData?.executed) {
+          results.push({ strategy_id: sid, result: `no_signal:${String(execData?.reason ?? "strategy_conditions_not_met")}` });
           continue;
         }
 
@@ -395,13 +326,13 @@ Deno.serve(async (req) => {
               ...strategyState,
               last_run_date: todayDateStr,
               reentry_count: prevReentry + 1,
-              last_signal: resolvedOptionType,
-              last_trade_id: placeData.trade_id,
+              last_signal: String((execData as any)?.signal?.strategy ?? strategyType),
+              last_trade_id: String((execData as any)?.order_result?.trade_id ?? ""),
             },
           })
           .eq("id", sid);
 
-        results.push({ strategy_id: sid, result: `entered:${resolvedOptionType}(${isPaper ? "paper" : "live"})` });
+        results.push({ strategy_id: sid, result: `entered:${strategyType}(${isPaper ? "paper" : "live"})` });
       } catch (stratErr) {
         console.error(`[options-strategy-entry] strategy ${sid} error:`, stratErr);
         results.push({ strategy_id: sid, result: `error:${String(stratErr)}` });
