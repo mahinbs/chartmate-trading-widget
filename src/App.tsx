@@ -214,8 +214,11 @@ function MobileSplashGuard({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
   const hasSeenSplash = localStorage.getItem('hasSeenMobileSplash') === 'true';
 
-  if (isMobile && !hasSeenSplash && pathname === '/') {
-    return <MobileSplashScreens />;
+  if (isMobile && pathname === '/') {
+    if (!hasSeenSplash) {
+      return <MobileSplashScreens />;
+    }
+    return <Navigate to="/auth" replace />;
   }
 
   return <>{children}</>;
