@@ -171,6 +171,7 @@ export default function StrategiesPage() {
   const [creating, setCreating]         = useState(false);
   const [form, setForm]                 = useState({ ...EMPTY_FORM });
   const [paperTradeStrategyId, setPaperTradeStrategyId] = useState<string | null>(null);
+  const [seedingPresets, setSeedingPresets] = useState(false);
 
   const stratLimits = getAlgoStrategyLimits(subscription?.plan_id);
   const canDeleteStrategies = stratLimits?.allowDeleteStrategies ?? false;
@@ -204,6 +205,39 @@ export default function StrategiesPage() {
   }, [navigate]);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleSeedPresets = useCallback(async () => {
+    setSeedingPresets(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { navigate("/auth"); return; }
+
+      const res = await supabase.functions.invoke("manage-strategy", {
+        body: { action: "seed_guide_presets" },
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const result = res.data as { seeded?: number; strategies?: UserStrategy[]; error?: string } | null;
+      if (res.error || result?.error) {
+        toast.error(result?.error ?? res.error?.message ?? "Failed to load presets");
+        return;
+      }
+      const seeded = Number(result?.seeded ?? 0);
+      if (seeded > 0) {
+        toast.success(`Loaded ${seeded} Algo Guide preset${seeded === 1 ? "" : "s"} — connect a broker, then activate to start trading.`);
+      } else {
+        toast.info("Algo Guide presets already loaded");
+      }
+      if (Array.isArray(result?.strategies)) {
+        setStrategies(result.strategies);
+      } else {
+        await load();
+      }
+    } catch (e: any) {
+      toast.error("Error loading presets: " + (e.message ?? "unknown"));
+    } finally {
+      setSeedingPresets(false);
+    }
+  }, [load, navigate]);
 
   const handleCreate = async () => {
     if (!form.name.trim()) { toast.error("Strategy name is required"); return; }
@@ -396,6 +430,26 @@ export default function StrategiesPage() {
                 <Plus className="h-4 w-4 mr-1.5" />
                 Create Strategy
               </Button>
+              <div className="flex flex-col items-center gap-2 mt-2">
+                <Button
+                  onClick={handleSeedPresets}
+                  disabled={seedingPresets}
+                  variant="outline"
+                  className="border-teal-700/50 text-teal-300 hover:bg-teal-500/10"
+                >
+                  {seedingPresets ? (
+                    <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                  ) : (
+                    <Zap className="h-4 w-4 mr-1.5" />
+                  )}
+                  Load 7 Algo Guide Presets
+                </Button>
+                <p className="text-zinc-500 text-xs max-w-md text-center">
+                  EMA 20/50, ORB, Supertrend, VWAP Bounce, RSI Divergence,
+                  Liquidity Sweep + BOS, and SMC Multi-Timeframe — all from the
+                  Algo Trading Guide. Loaded as paused; activate after connecting a broker.
+                </p>
+              </div>
             </CardContent>
           </Card>
         ) : (

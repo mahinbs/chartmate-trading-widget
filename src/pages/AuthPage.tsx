@@ -20,10 +20,6 @@ import { getSessionAffiliateAttribution } from "@/hooks/useAffiliateRef";
 import { useAuthEmailCooldown } from "@/hooks/useAuthEmailCooldown";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useToast } from "@/hooks/use-toast";
-import {
-  isAuthEmailRateLimitError,
-  parseAuthRateLimitWaitSeconds,
-} from "@/lib/authRateLimitMessage";
 import { Clock, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { PhoneCountryCodeCombobox } from "@/components/auth/PhoneCountryCodeCombobox";
@@ -106,10 +102,34 @@ type AuthPhase =
   | "forgot-send"
   | "forgot-otp";
 
+type PendingSignupContext = {
+  email: string;
+  password: string;
+  profile: {
+    full_name: string;
+    date_of_birth: string;
+    phone?: string;
+    country?: string;
+    affiliate_id?: string | null;
+    referral_code?: string | null;
+  };
+};
+
+type AuthEmailOtpAction = "signup_send" | "recovery_send";
+
+type AuthEmailOtpResult = {
+  ok: boolean;
+  code?: string;
+  message?: string;
+};
+
 const AuthPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [authPhase, setAuthPhase] = useState<AuthPhase>("tabs");
   const [pendingSignupEmail, setPendingSignupEmail] = useState("");
+  const [pendingSignupContext, setPendingSignupContext] = useState<PendingSignupContext | null>(
+    null,
+  );
   const [signUpOtp, setSignUpOtp] = useState("");
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotOtp, setForgotOtp] = useState("");
@@ -130,7 +150,7 @@ const AuthPage = () => {
     termsAcknowledge: false,
   });
 
-  const { signIn, signUp, user } = useAuth();
+  const { signIn, user } = useAuth();
   const { role, loading: roleLoading } = useUserRole();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -139,20 +159,35 @@ const AuthPage = () => {
   const emailCooldown = useAuthEmailCooldown();
   const [genericEmailRateLimit, setGenericEmailRateLimit] = useState(false);
 
-  const applyEmailRateLimitFromError = (error: {
-    message?: string;
-    code?: string;
-    status?: number;
-  }) => {
-    if (!isAuthEmailRateLimitError(error)) return;
-    const sec = parseAuthRateLimitWaitSeconds(error);
-    if (sec != null) {
-      setGenericEmailRateLimit(false);
-      emailCooldown.startCooldownSeconds(sec);
-    } else {
-      emailCooldown.clearCooldown();
-      setGenericEmailRateLimit(true);
+  const sendAuthEmailOtp = async (
+    action: AuthEmailOtpAction,
+    payload: {
+      email: string;
+      password?: string;
+      profile?: PendingSignupContext["profile"];
+    },
+  ) => {
+    const { data, error } = await supabase.functions.invoke("auth-email-otp", {
+      body: {
+        action,
+        email: payload.email,
+        password: payload.password,
+        profile: payload.profile,
+        redirectTo: `${window.location.origin}/auth`,
+      },
+    });
+
+    if (error) {
+      return {
+        ok: false,
+        message: "Could not send email. Please try again.",
+      } as AuthEmailOtpResult;
     }
+
+    return (data ?? {
+      ok: false,
+      message: "Could not send email. Please try again.",
+    }) as AuthEmailOtpResult;
   };
 
   const signUpAge = useMemo(
@@ -341,22 +376,31 @@ const AuthPage = () => {
         signUpData.phoneCountryIso,
         signUpData.phoneNational,
       );
+      const email = signUpData.email.trim().toLowerCase();
+      const password = signUpData.password;
       const { affiliateId, referralCode } = getSessionAffiliateAttribution();
-      const { data, error } = await signUp(signUpData.email, signUpData.password, {
+      const profile: PendingSignupContext["profile"] = {
         full_name: name,
         date_of_birth: signUpData.dateOfBirth,
         phone: phoneE164,
         country: signUpData.country,
         affiliate_id: affiliateId,
         referral_code: referralCode ?? undefined,
+      };
+      const result = await sendAuthEmailOtp("signup_send", {
+        email,
+        password,
+        profile,
       });
 
-      if (error) {
-        applyEmailRateLimitFromError(error);
-        if (isAuthEmailRateLimitError(error)) {
-          return;
-        }
-        if (isEmailAlreadyRegisteredAuthError(error)) {
+      if (!result.ok) {
+        if (
+          result.code === "user_exists" ||
+          isEmailAlreadyRegisteredAuthError({
+            message: result.message,
+            code: result.code,
+          })
+        ) {
           toast({
             title: "Account exists",
             description: "An account with this email already exists. Please sign in instead.",
@@ -365,24 +409,16 @@ const AuthPage = () => {
         } else {
           toast({
             title: "Sign up failed",
-            description: error.message,
+            description: result.message ?? "Could not start signup verification.",
             variant: "destructive",
           });
         }
         return;
       }
 
-      if (data?.session) {
-        setGenericEmailRateLimit(false);
-        toast({
-          title: "Welcome!",
-          description: "Your account is ready.",
-        });
-        return;
-      }
-
       setGenericEmailRateLimit(false);
-      setPendingSignupEmail(signUpData.email.trim());
+      setPendingSignupEmail(email);
+      setPendingSignupContext({ email, password, profile });
       setSignUpOtp("");
       setAuthPhase("signup-otp");
       toast({
@@ -430,6 +466,7 @@ const AuthPage = () => {
         toast({ title: "Email verified", description: "You're signed in." });
         setAuthPhase("tabs");
         setSignUpOtp("");
+        setPendingSignupContext(null);
       }
     } finally {
       setIsLoading(false);
@@ -437,22 +474,27 @@ const AuthPage = () => {
   };
 
   const handleResendSignupOtp = async () => {
-    if (!pendingSignupEmail) return;
+    if (!pendingSignupContext) {
+      toast({
+        title: "Session expired",
+        description: "Please sign up again to resend the code.",
+        variant: "destructive",
+      });
+      return;
+    }
     setIsLoading(true);
     try {
-      const { error } = await supabase.auth.resend({
-        type: "signup",
-        email: pendingSignupEmail,
-        options: {
-          emailRedirectTo: `${window.location.origin}/`,
-        },
+      const result = await sendAuthEmailOtp("signup_send", {
+        email: pendingSignupContext.email,
+        password: pendingSignupContext.password,
+        profile: pendingSignupContext.profile,
       });
-      if (error) {
-        applyEmailRateLimitFromError(error);
-        if (isAuthEmailRateLimitError(error)) {
-          return;
-        }
-        toast({ title: "Could not resend", description: error.message, variant: "destructive" });
+      if (!result.ok) {
+        toast({
+          title: "Could not resend",
+          description: result.message ?? "Please try again.",
+          variant: "destructive",
+        });
         return;
       }
       setGenericEmailRateLimit(false);
@@ -471,15 +513,15 @@ const AuthPage = () => {
     }
     setIsLoading(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/auth`,
+      const result = await sendAuthEmailOtp("recovery_send", {
+        email,
       });
-      if (error) {
-        applyEmailRateLimitFromError(error);
-        if (isAuthEmailRateLimitError(error)) {
-          return;
-        }
-        toast({ title: "Request failed", description: error.message, variant: "destructive" });
+      if (!result.ok) {
+        toast({
+          title: "Request failed",
+          description: result.message ?? "Could not send reset code.",
+          variant: "destructive",
+        });
         return;
       }
       setGenericEmailRateLimit(false);
@@ -501,15 +543,15 @@ const AuthPage = () => {
     if (!email) return;
     setIsLoading(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/auth`,
+      const result = await sendAuthEmailOtp("recovery_send", {
+        email,
       });
-      if (error) {
-        applyEmailRateLimitFromError(error);
-        if (isAuthEmailRateLimitError(error)) {
-          return;
-        }
-        toast({ title: "Could not resend", description: error.message, variant: "destructive" });
+      if (!result.ok) {
+        toast({
+          title: "Could not resend",
+          description: result.message ?? "Could not send reset code.",
+          variant: "destructive",
+        });
         return;
       }
       setGenericEmailRateLimit(false);
@@ -590,6 +632,7 @@ const AuthPage = () => {
   const backToTabs = () => {
     setAuthPhase("tabs");
     setSignUpOtp("");
+    setPendingSignupContext(null);
     setForgotOtp("");
     setForgotPassword("");
     setForgotPasswordConfirm("");
