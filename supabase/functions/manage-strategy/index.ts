@@ -4,11 +4,13 @@
  * CRUD for user strategies. Syncs create/delete to OpenAlgo automatically.
  *
  * Actions:
- *   create  — create strategy in Supabase + OpenAlgo
- *   update  — update strategy config in Supabase (name, symbols, risk, times)
- *   delete  — delete from Supabase + OpenAlgo
- *   list    — list all strategies for the user
- *   toggle  — toggle is_active
+ *   create              — create strategy in Supabase + OpenAlgo
+ *   update              — update strategy config in Supabase (name, symbols, risk, times)
+ *   delete              — delete from Supabase + OpenAlgo
+ *   list                — list all strategies for the user
+ *   toggle              — toggle is_active
+ *   seed_guide_presets  — bulk-load the 7 canonical Algo Trading Guide presets
+ *                          (idempotent; rows insert as paused, user activates later)
  */ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { planAllowsAlgo } from "../_shared/subscription-plans.ts";
 import { getAlgoStrategyLimits, UNLIMITED_CUSTOM_STRATEGIES } from "../_shared/algo-strategy-limits.ts";
@@ -84,6 +86,53 @@ Deno.serve(async (req)=>{
         }));
       return new Response(JSON.stringify({
         strategies
+      }), {
+        status: 200,
+        headers
+      });
+    }
+    // ── SEED ALGO GUIDE PRESETS ───────────────────────────────────────────
+    // Bulk-loads the 7 canonical Algo Trading Guide preset strategies for the
+    // current user. Idempotent — uses public.seed_algo_guide_presets_for_user
+    // SQL function which inserts only rows that don't already exist.
+    // Templates land as is_active=false (paused); the user must connect a
+    // broker and toggle active before any of them fires.
+    if (action === "seed_guide_presets") {
+      const { data: rpcCount, error: rpcErr } = await supabase.rpc(
+        "seed_algo_guide_presets_for_user",
+        { p_user_id: user.id }
+      );
+      if (rpcErr) {
+        return new Response(JSON.stringify({
+          error: "Failed to seed Algo Guide presets: " + rpcErr.message
+        }), {
+          status: 500,
+          headers
+        });
+      }
+      // Re-list strategies so the client can refresh in one round-trip
+      const { data: strats, error: listErr } = await supabase
+        .from("user_strategies")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+      if (listErr) {
+        return new Response(JSON.stringify({
+          error: "Seed succeeded but list failed: " + listErr.message
+        }), {
+          status: 500,
+          headers
+        });
+      }
+      const seededStrategies = (strats ?? []).map((s) => ({
+        ...s,
+        webhook_url: s.openalgo_webhook_id && OPENALGO_URL
+          ? `${OPENALGO_URL}/webhook/${s.openalgo_webhook_id}`
+          : null
+      }));
+      return new Response(JSON.stringify({
+        seeded: typeof rpcCount === "number" ? rpcCount : 0,
+        strategies: seededStrategies
       }), {
         status: 200,
         headers
