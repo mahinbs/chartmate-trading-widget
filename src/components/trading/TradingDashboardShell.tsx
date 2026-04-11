@@ -178,18 +178,15 @@ export function TradingDashboardShell({ broker, children, pageTitle, hideHeader 
         {!hideHeader && <header className="sticky top-0 z-50 border-b border-zinc-800 bg-black/90 backdrop-blur-xl">
           <div className="container mx-auto px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3 min-w-0">
-              <Link to="/home" className="text-zinc-500 hover:text-zinc-300 transition-colors shrink-0">
-                <ArrowLeft className="h-4 w-4" />
-              </Link>
               <div className="min-w-0">
-                <h1 className="text-base font-bold text-white tracking-tight truncate">
+                <h1 className="text-base font-bold text-white tracking-tight truncate max-lg:hidden">
                   Live Trading Dashboard
                   {pageTitle ? (
                     <span className="text-zinc-500 font-normal"> · {pageTitle}</span>
                   ) : null}
                 </h1>
                 <p className="text-[11px] text-zinc-500">Powered by {brokerLabel} via OpenAlgo</p>
-                <p className="text-[10px] text-zinc-600 mt-0.5 max-w-xl leading-snug">
+                <p className="hidden sm:block text-[10px] text-zinc-600 mt-0.5 max-w-xl leading-snug">
                   Equities and options (F&amp;O) use live market data through OpenAlgo when your broker session
                   is active — connect if sync shows expired. Open the{" "}
                   <span className="text-zinc-400">Options strategies</span> tab below for F&amp;O.

@@ -376,7 +376,7 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
   return (
     <>
       {/* Floating trigger */}
-      <div className="fixed bottom-5 right-5 z-[100] flex flex-col items-end gap-2">
+      <div className="fixed max-md:bottom-[90px] bottom-5 right-5 z-[100] flex flex-col items-end gap-2 transition-all duration-300">
         {!open && (
           <div className="absolute -top-8 right-0 bg-background/80 backdrop-blur-md border border-primary/20 px-3 py-1.5 rounded-xl shadow-xl shadow-primary/10 animate-bounce">
             <p className="text-[10px] font-medium whitespace-nowrap text-primary">Ask about stocks, prices & markets</p>
@@ -412,7 +412,8 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
 
       {/* Chat window */}
       <div className={cn(
-        "fixed bottom-24 right-5 z-[100] w-[420px] max-w-[calc(100vw-2rem)] bg-background/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex flex-col transition-all duration-500 origin-bottom-right",
+        "fixed right-5 z-[100] w-[420px] max-w-[calc(100vw-2rem)] bg-background/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex flex-col transition-all duration-500 origin-bottom-right",
+        "bottom-24 max-md:bottom-[160px]",
         open ? "scale-100 opacity-100 translate-y-0" : "scale-90 opacity-0 translate-y-10 pointer-events-none"
       )} style={{ height: "620px", maxHeight: "calc(100vh - 10rem)" }}>
 

@@ -287,14 +287,25 @@ export function DashboardSidebar({
         </div>
       </aside>
 
-      <button
-        type="button"
-        onClick={() => setIsMobileMenuOpen(true)}
-        className="lg:hidden fixed left-4 top-5 z-[85] p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors border border-transparent hover:border-border bg-slate-950"
-        aria-label="Open menu"
-      >
-        <Menu className="h-6 w-6" />
-      </button>
+      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-background/95 backdrop-blur-xl border-b border-border shadow-sm z-[85] flex items-center px-4 gap-3">
+        <button
+          type="button"
+          onClick={() => setIsMobileMenuOpen(true)}
+          className="p-1.5 -ml-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+          aria-label="Open menu"
+        >
+          <Menu className="h-[22px] w-[22px]" />
+        </button>
+        <span className="font-bold text-foreground truncate tracking-tight text-[17px]">
+          {pathname === "/home" && "Dashboard"}
+          {pathname.startsWith("/active-trades") && "Active Trades"}
+          {pathname === "/news" && "Market News"}
+          {pathname === "/trading-dashboard" && "Live Trading Dashboard"}
+          {pathname === "/ai-trading-analysis" && "Analysis"}
+          {pathname === "/backtest" && "Backtesting"}
+          {pathname === "/subscription" && "Subscription & billing"}
+        </span>
+      </div>
 
       <DashboardMobileDrawer
         ref={mobileMenuRef}

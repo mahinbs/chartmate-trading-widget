@@ -68,6 +68,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useLocation } from "react-router-dom";
 import { AlgoToolsDashboardLayout } from "./components/layout/AlgoToolsDashboardLayout";
 import LandingPageNew from "./pages/LandingPageNew";
+import { MobileSplashScreens } from "./mobile-app/MobileSplashScreens";
+import { MobileAppOverlay } from "./mobile-app/MobileAppOverlay";
+import { useIsMobileApp } from "./mobile-app/isMobileDevice";
 
 // OpenAlgo ping temporarily disabled in mock-order mode to avoid CORS noise
 
@@ -99,7 +102,7 @@ function isPublicMarketingPath(pathname: string): boolean {
 }
 
 /** Logged-in trading app — stock / market assistant chatbot. */
-function isLoggedInAppPath(pathname: string): boolean {
+export function isLoggedInAppPath(pathname: string): boolean {
   if (pathname === "/tick-chart") return false;
   if (pathname === "/auth" || pathname === "/register") return false;
   if (pathname.startsWith("/auth/") && pathname !== "/auth/change-password") return false;
@@ -206,6 +209,18 @@ function AppChatbots() {
   );
 }
 
+function MobileSplashGuard({ children }: { children: React.ReactNode }) {
+  const isMobile = useIsMobileApp();
+  const { pathname } = useLocation();
+  const hasSeenSplash = localStorage.getItem('hasSeenMobileSplash') === 'true';
+
+  if (isMobile && !hasSeenSplash && pathname === '/') {
+    return <MobileSplashScreens />;
+  }
+
+  return <>{children}</>;
+}
+
 const App = () => (
   <HelmetProvider>
     <QueryClientProvider client={queryClient}>
@@ -215,6 +230,7 @@ const App = () => (
         <BrowserRouter>
           <AffiliateRefCapture />
           <AffiliateIpAttributionSync />
+          <MobileSplashGuard>
           <div className="min-h-screen bg-background text-foreground">
             <Routes>
               <Route path="/" element={<LandingPageNew />} />
@@ -405,7 +421,9 @@ const App = () => (
               <Route path="*" element={<Navigate to="/home" replace />} />
             </Routes>
             <AppChatbots />
+            <MobileAppOverlay />
           </div>
+          </MobileSplashGuard>
         </BrowserRouter>
       </TooltipProvider>
     </QueryClientProvider>

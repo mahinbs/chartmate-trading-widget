@@ -281,7 +281,7 @@ export default function HomePage() {
       <DashboardShellLayout>
         <div className="flex flex-col gap-6 xl:grid xl:grid-cols-[1fr_300px] xl:gap-8 xl:items-start">
           <div className="min-w-0 space-y-7 xl:min-h-0">
-            <header className="flex pt-3 shrink-0 items-center border-b border-white/5 lg:border-transparent -mx-4 sm:-mx-6 lg:mx-0 pl-16 pr-2 sm:pr-4 lg:px-0 ">
+            <header className="flex pt-3 shrink-0 items-center border-b border-white/5 lg:border-transparent -mx-4 sm:-mx-6 lg:mx-0 pl-16 pr-2 sm:pr-4 lg:px-0 max-lg:hidden">
               <h1 className="text-xl lg:text-2xl font-bold text-foreground">
                 Dashboard
               </h1>
