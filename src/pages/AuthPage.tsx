@@ -30,6 +30,7 @@ import {
 import { PRICING_PLANS } from "@/constants/pricing";
 import { premiumPlanCheckoutUrls } from "@/lib/premiumCheckoutUrls";
 import { createCheckoutSession } from "@/services/stripeService";
+import { useIsMobileApp } from "@/mobile-app/isMobileDevice";
 
 const VALID_PREMIUM_CHECKOUT_PLANS = new Set(PRICING_PLANS.map((p) => p.id));
 
@@ -158,6 +159,7 @@ const AuthPage = () => {
   const postAuthCheckoutStartedRef = useRef(false);
   const emailCooldown = useAuthEmailCooldown();
   const [genericEmailRateLimit, setGenericEmailRateLimit] = useState(false);
+  const isMobile = useIsMobileApp();
 
   const sendAuthEmailOtp = async (
     action: AuthEmailOtpAction,
@@ -250,7 +252,13 @@ const AuthPage = () => {
         return;
       }
       if (role === "affiliate") navigate("/affiliate/dashboard", { replace: true });
-      else if (role === "user") navigate("/home", { replace: true });
+      else if (role === "user") {
+        if (isMobile) {
+          navigate("/trading-dashboard?tab=options", { replace: true });
+        } else {
+          navigate("/home", { replace: true });
+        }
+      }
     };
     routeAfterLogin();
   }, [user, role, roleLoading, navigate, searchParams]);
