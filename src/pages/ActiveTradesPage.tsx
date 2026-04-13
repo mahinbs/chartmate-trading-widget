@@ -162,7 +162,11 @@ export default function ActiveTradesPage() {
   const [paperSymbolValue, setPaperSymbolValue] = useState("");
   const [paperSymbolData, setPaperSymbolData] = useState<SymbolData | null>(null);
   const [paperQuantity, setPaperQuantity] = useState<string>("1");
+  const [paperInvestmentAmount, setPaperInvestmentAmount] = useState<string>("");
+  const [paperInvestmentCurrency, setPaperInvestmentCurrency] = useState<"INR" | "USD">("INR");
+  const paperInvestmentRawRef = useRef<number | null>(null);
   const [paperEntryPrice, setPaperEntryPrice] = useState<number | null>(null);
+  const [paperSymbolPriceLoading, setPaperSymbolPriceLoading] = useState(false);
   const [paperPriceLoading, setPaperPriceLoading] = useState(false);
   const [paperCreating, setPaperCreating] = useState(false);
   // Pending paper trades (strategies waiting for conditions)
@@ -429,17 +433,241 @@ export default function ActiveTradesPage() {
     setPaperSymbolValue("");
     setPaperSymbolData(null);
     setPaperQuantity("1");
+    setPaperInvestmentAmount("");
+    setPaperInvestmentCurrency("INR");
+    paperInvestmentRawRef.current = null;
     setPaperEntryPrice(null);
     setShowQuickPaperDialog(true);
   }, []);
 
+  const resolveExchangeCurrency = useCallback(
+    (exchange?: string | null): "INR" | "USD" => {
+      const normalized = (exchange ?? "").toUpperCase();
+      return normalized === "NSE" || normalized === "BSE" ? "INR" : "USD";
+    },
+    [],
+  );
+
+  const convertBetweenInrUsd = useCallback(
+    (amount: number, from: "INR" | "USD", to: "INR" | "USD") => {
+      if (!Number.isFinite(amount) || from === to) return amount;
+      if (!usdPerInr || usdPerInr <= 0) return amount;
+      if (from === "INR" && to === "USD") return amount * usdPerInr;
+      if (from === "USD" && to === "INR") return amount / usdPerInr;
+      return amount;
+    },
+    [usdPerInr],
+  );
+
+  const paperAssetCurrency = useMemo(
+    () => resolveExchangeCurrency(paperSymbolData?.exchange),
+    [paperSymbolData?.exchange, resolveExchangeCurrency],
+  );
+  const isPaperCrypto = useMemo(
+    () => String(paperSymbolData?.type || "").toLowerCase() === "crypto",
+    [paperSymbolData?.type],
+  );
+
+  const handlePaperSymbolValueChange = useCallback(
+    (value: string) => {
+      setPaperSymbolValue(value);
+      if (paperSymbolData && value !== paperSymbolData.full_symbol) {
+        setPaperSymbolData(null);
+        setPaperQuantity("1");
+        setPaperEntryPrice(null);
+        setPaperInvestmentAmount("");
+        setPaperInvestmentCurrency("INR");
+        paperInvestmentRawRef.current = null;
+      }
+    },
+    [paperSymbolData],
+  );
+
+  const handlePaperSymbolSelect = useCallback(
+    async (selected: SymbolData | null) => {
+      const isSymbolChanged =
+        (paperSymbolData?.full_symbol ?? "") !== (selected?.full_symbol ?? "");
+
+      setPaperSymbolData(selected);
+      if (!selected?.full_symbol) {
+        setPaperQuantity("1");
+        setPaperEntryPrice(null);
+        setPaperInvestmentAmount("");
+        setPaperInvestmentCurrency("INR");
+        paperInvestmentRawRef.current = null;
+        return;
+      }
+
+      try {
+        setPaperSymbolPriceLoading(true);
+        const assetCurrency = resolveExchangeCurrency(selected.exchange);
+        setPaperInvestmentCurrency(assetCurrency);
+        const latestPrice = await resolveLatestPrice(selected.full_symbol);
+        setPaperEntryPrice(latestPrice);
+        const qty = isSymbolChanged ? 1 : Math.max(1, Math.round(Number(paperQuantity) || 1));
+        if (isSymbolChanged) setPaperQuantity("1");
+        const investmentAmount = convertBetweenInrUsd(
+          latestPrice * qty,
+          assetCurrency,
+          assetCurrency,
+        );
+        paperInvestmentRawRef.current = investmentAmount;
+        setPaperInvestmentAmount(investmentAmount.toFixed(2));
+      } catch (e: unknown) {
+        setPaperEntryPrice(null);
+        setPaperInvestmentAmount("");
+        paperInvestmentRawRef.current = null;
+        const message =
+          e instanceof Error
+            ? e.message
+            : "Unable to fetch latest price for selected symbol.";
+        toast({
+          title: "Price lookup failed",
+          description: message,
+          variant: "destructive",
+        });
+      } finally {
+        setPaperSymbolPriceLoading(false);
+      }
+    },
+    [
+      convertBetweenInrUsd,
+      paperQuantity,
+      paperSymbolData?.full_symbol,
+      resolveExchangeCurrency,
+      resolveLatestPrice,
+      toast,
+    ],
+  );
+
+  const handlePaperQuantityChange = useCallback(
+    (value: string) => {
+      if (!isPaperCrypto) {
+        const wholePart = (value ?? "").split(/[.,]/)[0] ?? "";
+        const integerValue = wholePart.replace(/[^\d]/g, "");
+        setPaperQuantity(integerValue);
+        const qty = Number(integerValue);
+        if (
+          paperSymbolData?.full_symbol &&
+          Number.isFinite(qty) &&
+          qty > 0 &&
+          paperEntryPrice != null
+        ) {
+          const recalculated = convertBetweenInrUsd(
+            paperEntryPrice * qty,
+            paperAssetCurrency,
+            paperInvestmentCurrency,
+          );
+          paperInvestmentRawRef.current = recalculated;
+          setPaperInvestmentAmount(recalculated.toFixed(2));
+        }
+        return;
+      }
+
+      setPaperQuantity(value);
+      const qty = Number(value);
+      if (
+        paperSymbolData?.full_symbol &&
+        Number.isFinite(qty) &&
+        qty > 0 &&
+        paperEntryPrice != null
+      ) {
+        const recalculated = convertBetweenInrUsd(
+          paperEntryPrice * qty,
+          paperAssetCurrency,
+          paperInvestmentCurrency,
+        );
+        paperInvestmentRawRef.current = recalculated;
+        setPaperInvestmentAmount(recalculated.toFixed(2));
+      }
+    },
+    [
+      convertBetweenInrUsd,
+      isPaperCrypto,
+      paperAssetCurrency,
+      paperEntryPrice,
+      paperInvestmentCurrency,
+      paperSymbolData,
+    ],
+  );
+
+  const handlePaperInvestmentAmountChange = useCallback((value: string) => {
+    setPaperInvestmentAmount(value);
+    const parsed = Number(value);
+    paperInvestmentRawRef.current =
+      Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+  }, []);
+
+  const adjustPaperQuantity = useCallback(
+    (direction: "up" | "down") => {
+      if (!paperSymbolData) return;
+      const step = isPaperCrypto ? 0.000001 : 1;
+      const min = isPaperCrypto ? 0.000001 : 1;
+      const parsedQty = Number(paperQuantity);
+      const currentQty =
+        Number.isFinite(parsedQty) && parsedQty > 0 ? parsedQty : min;
+      const nextQty =
+        direction === "up"
+          ? currentQty + step
+          : Math.max(min, currentQty - step);
+      const normalizedQty = isPaperCrypto
+        ? Number(nextQty.toFixed(6))
+        : Math.max(1, Math.round(nextQty));
+      handlePaperQuantityChange(String(normalizedQty));
+    },
+    [handlePaperQuantityChange, isPaperCrypto, paperQuantity, paperSymbolData],
+  );
+
+  const adjustPaperInvestmentAmount = useCallback(
+    (direction: "up" | "down") => {
+      if (!paperSymbolData) return;
+      const step = 0.01;
+      const parsedInvestment = Number(paperInvestmentAmount);
+      const currentInvestment =
+        Number.isFinite(parsedInvestment) && parsedInvestment >= 0
+          ? parsedInvestment
+          : 0;
+      const nextInvestment =
+        direction === "up"
+          ? currentInvestment + step
+          : Math.max(0, currentInvestment - step);
+      handlePaperInvestmentAmountChange(nextInvestment.toFixed(2));
+    },
+    [
+      handlePaperInvestmentAmountChange,
+      paperInvestmentAmount,
+      paperSymbolData,
+    ],
+  );
+
+  const handlePaperInvestmentCurrencyChange = useCallback(
+    (nextCurrency: "INR" | "USD") => {
+      if (nextCurrency === paperInvestmentCurrency) return;
+      const currentAmount =
+        paperInvestmentRawRef.current != null
+          ? paperInvestmentRawRef.current
+          : Number(paperInvestmentAmount);
+      if (Number.isFinite(currentAmount) && currentAmount > 0) {
+        const converted = convertBetweenInrUsd(
+          currentAmount,
+          paperInvestmentCurrency,
+          nextCurrency,
+        );
+        paperInvestmentRawRef.current = converted;
+        setPaperInvestmentAmount(converted.toFixed(2));
+      }
+      setPaperInvestmentCurrency(nextCurrency);
+    },
+    [convertBetweenInrUsd, paperInvestmentAmount, paperInvestmentCurrency],
+  );
+
   const handleContinuePaperSetup = useCallback(async () => {
-    const symbol = paperSymbolData?.full_symbol || paperSymbolValue;
+    const symbol = paperSymbolData?.full_symbol;
     const qty = Number(paperQuantity);
-    if (!symbol) {
+    if (!symbol || !paperSymbolData) {
       toast({
         title: "Symbol required",
-        description: "Select a symbol before continuing.",
+        description: "Select a stock from results before continuing.",
         variant: "destructive",
       });
       return;
@@ -452,23 +680,38 @@ export default function ActiveTradesPage() {
       });
       return;
     }
+    if (!isPaperCrypto && !Number.isInteger(qty)) {
+      toast({
+        title: "Invalid quantity",
+        description: "Fractional quantity is only allowed for crypto.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     try {
       setPaperPriceLoading(true);
-      const px = await resolveLatestPrice(symbol);
+      const px =
+        paperEntryPrice != null && paperEntryPrice > 0
+          ? paperEntryPrice
+          : await resolveLatestPrice(symbol);
       setPaperEntryPrice(px);
       setShowQuickPaperDialog(false);
       setShowPaperStrategyDialog(true);
-    } catch (e: any) {
+    } catch (e: unknown) {
+      const message =
+        e instanceof Error
+          ? e.message
+          : "Unable to fetch latest price for selected symbol.";
       toast({
         title: "Price lookup failed",
-        description: e?.message || "Unable to fetch latest price for selected symbol.",
+        description: message,
         variant: "destructive",
       });
     } finally {
       setPaperPriceLoading(false);
     }
-  }, [paperSymbolData, paperSymbolValue, paperQuantity, resolveLatestPrice, toast]);
+  }, [isPaperCrypto, paperEntryPrice, paperQuantity, paperSymbolData, resolveLatestPrice, toast]);
 
   const handleCreatePaperTrade = useCallback(
     async (
@@ -499,7 +742,9 @@ export default function ActiveTradesPage() {
         const shares =
           action === "SELL" && sellPosition?.shares
             ? sellPosition.shares
-            : Math.max(1, Math.round(qty));
+            : isPaperCrypto
+              ? qty
+              : Math.max(1, Math.round(qty));
         const liveAtConfirm = await resolveLatestPrice(symbol);
         const entryPrice =
           action === "SELL" && sellPosition?.entryPrice
@@ -556,7 +801,7 @@ export default function ActiveTradesPage() {
         setPaperCreating(false);
       }
     },
-    [paperSymbolData, paperSymbolValue, paperQuantity, resolveLatestPrice, toast, navigate],
+    [isPaperCrypto, paperSymbolData, paperSymbolValue, paperQuantity, resolveLatestPrice, toast, navigate],
   );
 
   // ── Pending paper trades ────────────────────────────────────────────────────
@@ -1345,8 +1590,9 @@ export default function ActiveTradesPage() {
               <>
                 <div className="minimal-panel rounded-xl overflow-hidden">
                   {/* Table Header — hidden on xs, visible sm+ */}
-                  <div className="hidden sm:grid grid-cols-[1fr_auto_auto_auto] gap-x-3 px-4 py-3 border-b border-white/5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider bg-black/20">
+                  <div className="hidden sm:grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-3 px-4 py-3 border-b border-white/5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider bg-black/20">
                     <div>Market</div>
+                    <div className="text-right w-24 sm:w-32">Invested</div>
                     <div className="text-right w-24 sm:w-32">Entry</div>
                     <div className="text-right w-24 sm:w-32">Current</div>
                     <div className="text-right w-24 sm:w-32">P/L</div>
@@ -1359,6 +1605,14 @@ export default function ActiveTradesPage() {
                         trade.currentPnl ?? 0,
                         trade.symbol,
                       );
+                      const pnlPercentage =
+                        trade.currentPnlPercentage != null
+                          ? trade.currentPnlPercentage
+                          : (trade.investmentAmount ?? 0) > 0
+                            ? ((trade.currentPnl ?? 0) /
+                                (trade.investmentAmount ?? 1)) *
+                              100
+                            : 0;
                       const isNeutral = Math.abs(pnl) < 0.005;
                       const isPositive = !isNeutral && pnl > 0;
                       const pnlClass = isNeutral
@@ -1374,7 +1628,7 @@ export default function ActiveTradesPage() {
                       return (
                         <div
                           key={trade.id}
-                          className="flex flex-col sm:grid sm:grid-cols-[1fr_auto_auto_auto] gap-x-3 sm:items-center px-3 sm:px-4 py-3 sm:py-4 hover:bg-white/5 cursor-pointer transition-colors"
+                          className="flex flex-col sm:grid sm:grid-cols-[1fr_auto_auto_auto_auto] gap-x-3 sm:items-center px-3 sm:px-4 py-3 sm:py-4 hover:bg-white/5 cursor-pointer transition-colors"
                           onClick={() => setSelectedTradeDetail(trade)}
                         >
                           {/* Mobile layout: full width info */}
@@ -1401,16 +1655,22 @@ export default function ActiveTradesPage() {
                               </div>
                               {/* Mobile-only P/L on the right */}
                               <div
-                                className={`sm:hidden flex items-center gap-1 text-sm font-bold ${pnlClass}`}
+                                className={`sm:hidden flex flex-col items-end leading-tight ${pnlClass}`}
                               >
-                                {isNeutral ? null : isPositive ? (
-                                  <TrendingUp className="h-3.5 w-3.5" />
-                                ) : (
-                                  <TrendingDown className="h-3.5 w-3.5" />
-                                )}
-                                {pnlPrefix}
-                                {currencySymbol}
-                                {Math.abs(displayPnl).toFixed(2)}
+                                <div className="flex items-center gap-1 text-sm font-bold">
+                                  {isNeutral ? null : isPositive ? (
+                                    <TrendingUp className="h-3.5 w-3.5" />
+                                  ) : (
+                                    <TrendingDown className="h-3.5 w-3.5" />
+                                  )}
+                                  {pnlPrefix}
+                                  {currencySymbol}
+                                  {Math.abs(displayPnl).toFixed(2)}
+                                </div>
+                                <span className="text-[11px] font-medium">
+                                  {pnlPercentage >= 0 ? "+" : ""}
+                                  {pnlPercentage.toFixed(2)}%
+                                </span>
                               </div>
                             </div>
                             <div
@@ -1497,6 +1757,15 @@ export default function ActiveTradesPage() {
                             </div>
                           </div>
 
+                          {/* Invested Amount Column — desktop only */}
+                          <div className="hidden sm:block text-right w-24 sm:w-32 text-xs sm:text-sm font-medium text-muted-foreground tabular-nums">
+                            {currencySymbol}
+                            {convertAmount(
+                              trade.investmentAmount || 0,
+                              trade.symbol,
+                            ).toFixed(2)}
+                          </div>
+
                           {/* Entry Price Column — desktop only */}
                           <div className="hidden sm:flex flex-col items-end justify-center w-24 sm:w-36 text-right gap-0.5">
                             <span className="text-xs sm:text-sm font-medium text-muted-foreground tabular-nums">
@@ -1530,11 +1799,17 @@ export default function ActiveTradesPage() {
 
                           {/* P/L Column — desktop only */}
                           <div
-                            className={`hidden sm:block text-right w-24 sm:w-32 text-xs sm:text-sm font-bold tabular-nums ${pnlClass}`}
+                            className={`hidden sm:flex flex-col items-end text-right w-24 sm:w-32 tabular-nums ${pnlClass}`}
                           >
-                            {pnlPrefix}
-                            {currencySymbol}
-                            {Math.abs(displayPnl).toFixed(2)}
+                            <span className="text-xs sm:text-sm font-bold">
+                              {pnlPrefix}
+                              {currencySymbol}
+                              {Math.abs(displayPnl).toFixed(2)}
+                            </span>
+                            <span className="text-[11px] font-medium">
+                              {pnlPercentage >= 0 ? "+" : ""}
+                              {pnlPercentage.toFixed(2)}%
+                            </span>
                           </div>
                         </div>
                       );
@@ -2091,7 +2366,43 @@ export default function ActiveTradesPage() {
         </Tabs>
 
         <Dialog open={showQuickPaperDialog} onOpenChange={setShowQuickPaperDialog}>
-          <DialogContent className="w-[92vw] sm:max-w-[425px]">
+          <DialogContent className="w-[92vw] sm:max-w-lg">
+            {(() => {
+              const qty = Number(paperQuantity);
+              const parsedInvestment = Number(paperInvestmentAmount);
+              const actualInvestmentAmountInAsset =
+                paperSymbolData?.full_symbol &&
+                Number.isFinite(qty) &&
+                qty > 0 &&
+                paperEntryPrice != null
+                  ? paperEntryPrice * qty
+                  : null;
+              const actualInvestmentAmount =
+                actualInvestmentAmountInAsset != null
+                  ? convertBetweenInrUsd(
+                      actualInvestmentAmountInAsset,
+                      paperAssetCurrency,
+                      paperInvestmentCurrency,
+                    )
+                  : null;
+              const showInvestmentMismatch =
+                actualInvestmentAmount != null &&
+                Number.isFinite(parsedInvestment) &&
+                parsedInvestment > 0 &&
+                Math.abs(parsedInvestment - actualInvestmentAmount) > 0.009;
+              const quantityLabel =
+                Number.isFinite(qty) && qty > 0
+                  ? isPaperCrypto
+                    ? qty
+                    : Math.max(1, Math.round(qty))
+                  : isPaperCrypto
+                    ? 0
+                    : 1;
+              const paperCurrencySymbol =
+                paperInvestmentCurrency === "USD" ? "$" : "₹";
+
+              return (
+                <>
             <DialogHeader>
               <DialogTitle>Quick Paper Trade</DialogTitle>
               <DialogDescription>
@@ -2103,32 +2414,140 @@ export default function ActiveTradesPage() {
                 <Label>Symbol</Label>
                 <SymbolSearch
                   value={paperSymbolValue}
-                  onValueChange={setPaperSymbolValue}
-                  onSelectSymbol={setPaperSymbolData}
+                  onValueChange={handlePaperSymbolValueChange}
+                  onSelectSymbol={handlePaperSymbolSelect}
                   placeholder="Search symbol (NYSE, LSE, NSE, BSE, crypto, forex)"
                 />
+                {paperSymbolPriceLoading && (
+                  <p className="text-xs text-muted-foreground">
+                    Fetching latest price...
+                  </p>
+                )}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="paper-qty">Quantity</Label>
-                <Input
-                  id="paper-qty"
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={paperQuantity}
-                  onChange={(e) => setPaperQuantity(e.target.value)}
-                  placeholder="e.g. 10"
-                />
+              <div className="grid grid-cols-1 lg:grid-cols-[30%,1fr] gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="paper-qty">Quantity</Label>
+                  <div className="relative">
+                    <Input
+                      id="paper-qty"
+                      type="number"
+                      min={isPaperCrypto ? 0.000001 : 1}
+                      step={isPaperCrypto ? "0.000001" : 1}
+                      value={paperQuantity}
+                      onChange={(e) => handlePaperQuantityChange(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (
+                          !isPaperCrypto &&
+                          [".", ",", "e", "E", "+", "-"].includes(e.key)
+                        ) {
+                          e.preventDefault();
+                        }
+                      }}
+                      placeholder={isPaperCrypto ? "e.g. 0.25" : "e.g. 10"}
+                      disabled={!paperSymbolData}
+                      className="pr-10 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    />
+                    <div className="absolute inset-y-0 right-1 my-1 flex w-7 flex-col overflow-hidden rounded border border-white/10 bg-black/30">
+                      <button
+                        type="button"
+                        className="flex-1 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/5 disabled:opacity-40"
+                        onClick={() => adjustPaperQuantity("up")}
+                        disabled={!paperSymbolData}
+                      >
+                        <ChevronUp className="h-3 w-3" />
+                      </button>
+                      <button
+                        type="button"
+                        className="flex-1 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/5 border-t border-white/10 disabled:opacity-40"
+                        onClick={() => adjustPaperQuantity("down")}
+                        disabled={!paperSymbolData}
+                      >
+                        <ChevronDown className="h-3 w-3" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="paper-investment">Investment Amount</Label>
+                  <div className="flex items-center gap-2">
+                    <div className="inline-flex rounded-md border border-white/10 bg-black/20 p-0.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handlePaperInvestmentCurrencyChange("INR")}
+                        disabled={!paperSymbolData}
+                        className={`px-2 py-1 text-xs rounded ${paperInvestmentCurrency === "INR" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                      >
+                        ₹ INR
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handlePaperInvestmentCurrencyChange("USD")}
+                        disabled={!paperSymbolData}
+                        className={`px-2 py-1 text-xs rounded ${paperInvestmentCurrency === "USD" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                      >
+                        $ USD
+                      </button>
+                    </div>
+                    <div className="relative flex-1">
+                      <Input
+                        id="paper-investment"
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={paperInvestmentAmount}
+                        onChange={(e) =>
+                          handlePaperInvestmentAmountChange(e.target.value)
+                        }
+                        placeholder={
+                          paperInvestmentCurrency === "USD" ? "e.g. 500.00 USD" : "e.g. 500.00 INR"
+                        }
+                        disabled={!paperSymbolData}
+                        className="pr-10 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                      />
+                      <div className="absolute inset-y-0 right-1 my-1 flex w-7 flex-col overflow-hidden rounded border border-white/10 bg-black/30">
+                        <button
+                          type="button"
+                          className="flex-1 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/5 disabled:opacity-40"
+                          onClick={() => adjustPaperInvestmentAmount("up")}
+                          disabled={!paperSymbolData}
+                        >
+                          <ChevronUp className="h-3 w-3" />
+                        </button>
+                        <button
+                          type="button"
+                          className="flex-1 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/5 border-t border-white/10 disabled:opacity-40"
+                          onClick={() => adjustPaperInvestmentAmount("down")}
+                          disabled={!paperSymbolData}
+                        >
+                          <ChevronDown className="h-3 w-3" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
+              {showInvestmentMismatch && actualInvestmentAmount != null && (
+                <p className="text-xs text-amber-400">
+                  Actual amount for {quantityLabel} quantity is{" "}
+                  {paperCurrencySymbol}
+                  {actualInvestmentAmount.toFixed(2)}.
+                </p>
+              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowQuickPaperDialog(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleContinuePaperSetup} disabled={paperPriceLoading}>
+              <Button
+                onClick={handleContinuePaperSetup}
+                disabled={paperPriceLoading || paperSymbolPriceLoading || !paperSymbolData}
+              >
                 {paperPriceLoading ? "Loading price..." : "Continue to Strategy"}
               </Button>
             </DialogFooter>
+                </>
+              );
+            })()}
           </DialogContent>
         </Dialog>
 
@@ -2139,9 +2558,11 @@ export default function ActiveTradesPage() {
           symbol={paperSymbolData?.full_symbol || paperSymbolValue}
           action="BUY"
           investment={
-            paperEntryPrice && Number(paperQuantity) > 0
-              ? paperEntryPrice * Number(paperQuantity)
-              : 10000
+            Number(paperInvestmentAmount) > 0
+              ? Number(paperInvestmentAmount)
+              : paperEntryPrice && Number(paperQuantity) > 0
+                ? paperEntryPrice * Number(paperQuantity)
+                : 10000
           }
           timeframe="1d"
           currentPrice={paperEntryPrice ?? undefined}
