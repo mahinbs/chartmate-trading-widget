@@ -1028,7 +1028,7 @@ export default function ActiveTradesPage() {
       <div className="container max-w-7xl mx-auto p-3 sm:p-6 space-y-4 sm:space-y-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-3">
-          <div className="pt-10 lg:pt-0">
+          <div className="pt-10 lg:pt-0 max-lg:hidden">
             <h1 className="text-2xl sm:text-3xl font-bold text-gradient">
               Active Trades
             </h1>
@@ -2091,7 +2091,7 @@ export default function ActiveTradesPage() {
         </Tabs>
 
         <Dialog open={showQuickPaperDialog} onOpenChange={setShowQuickPaperDialog}>
-          <DialogContent>
+          <DialogContent className="w-[92vw] sm:max-w-[425px]">
             <DialogHeader>
               <DialogTitle>Quick Paper Trade</DialogTitle>
               <DialogDescription>
@@ -2300,7 +2300,7 @@ export default function ActiveTradesPage() {
           open={Boolean(closePaperTradeId)}
           onOpenChange={(o) => { if (!o) setClosePaperTradeId(null); }}
         >
-          <DialogContent>
+          <DialogContent className="w-[92vw] sm:max-w-[425px]">
             <DialogHeader>
               <DialogTitle>Close Paper Position</DialogTitle>
               <DialogDescription>

@@ -122,24 +122,25 @@ export default function ProfilePage() {
   return (
     <DashboardShellLayout>
       <div className="mx-auto max-w-2xl space-y-8 pb-10">
-        <header className="space-y-1">
-          <div className="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
-            <UserRound className="h-3.5 w-3.5" />
-            Account
+        <header className="space-y-4 mb-4 sm:mb-8">
+          <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3.5 py-1.5 text-xs sm:text-[13px] font-semibold text-primary/90 shadow-sm backdrop-blur-sm w-fit">
+            <UserRound className="h-4 w-4" />
+            Account Overview
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Profile</h1>
-          <p className="text-sm text-muted-foreground">
-            Your name, contact details, and password. Name matches what you entered at signup (one
-            full name field — not split).
-          </p>
+          <div>
+            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight bg-gradient-to-br from-foreground to-foreground/70 bg-clip-text text-transparent">Profile Settings</h1>
+            <p className="text-muted-foreground/90 text-sm sm:text-base mt-2 max-w-xl leading-relaxed">
+              Manage your personal information, update your contact details, and secure your account with a strong password.
+            </p>
+          </div>
         </header>
 
-        <Card className="border-border/80 bg-card/50">
-          <CardHeader>
-            <CardTitle className="text-lg">Personal details</CardTitle>
-            <CardDescription>
+        <Card className="border border-border/50 bg-gradient-to-b from-card/80 to-card/30 shadow-xl backdrop-blur-2xl overflow-hidden rounded-2xl">
+          <CardHeader className="bg-primary/5 border-b border-border/50 pb-5">
+            <CardTitle className="text-xl font-semibold">Personal details</CardTitle>
+            <CardDescription className="text-[13px] opacity-80 mt-1">
               Your sign-in email is fixed. You can update name, phone, and country — saving updates
-              your account and signup profile.
+              your account system-wide.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -221,11 +222,11 @@ export default function ProfilePage() {
           </CardContent>
         </Card>
 
-        <Card className="border-border/80 bg-card/50">
-          <CardHeader>
-            <CardTitle className="text-lg">Password</CardTitle>
-            <CardDescription>
-              Enter your current password, then your new password twice.
+        <Card className="border border-border/50 bg-gradient-to-b from-card/80 to-card/30 shadow-xl backdrop-blur-2xl overflow-hidden rounded-2xl">
+          <CardHeader className="bg-primary/5 border-b border-border/50 pb-5">
+            <CardTitle className="text-xl font-semibold">Security</CardTitle>
+            <CardDescription className="text-[13px] opacity-80 mt-1">
+              Ensure your account is using a long, random password to stay secure.
             </CardDescription>
           </CardHeader>
           <CardContent>

@@ -246,7 +246,7 @@ export default function SubscriptionSettingsPage() {
           <div className="absolute right-0 top-48 h-64 w-64 rounded-full bg-teal-500/15 blur-[90px]" />
         </div>
 
-        <header className="mb-10 space-y-4">
+        <header className="mb-10 space-y-4 max-lg:hidden">
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3.5 py-1.5 text-xs font-semibold uppercase tracking-wider text-primary shadow-sm shadow-primary/10">
             <Sparkles className="h-3.5 w-3.5" />
             Billing & access

@@ -320,9 +320,9 @@ function isMixedVerdict(v: string): boolean {
 function splitIndexedIntoColumns<T>(
   items: T[],
 ): [
-  Array<{ item: T; originalIndex: number }>,
-  Array<{ item: T; originalIndex: number }>,
-] {
+    Array<{ item: T; originalIndex: number }>,
+    Array<{ item: T; originalIndex: number }>,
+  ] {
   const left: Array<{ item: T; originalIndex: number }> = [];
   const right: Array<{ item: T; originalIndex: number }> = [];
   items.forEach((item, originalIndex) => {
@@ -892,8 +892,8 @@ function CustomStrategySavedPlanBlock({
   const dayStr =
     days.length > 0
       ? days
-          .map((d) => DAY_LABELS.find((x) => x.bit === d)?.label ?? String(d))
-          .join(", ")
+        .map((d) => DAY_LABELS.find((x) => x.bit === d)?.label ?? String(d))
+        .join(", ")
       : null;
   const ex =
     meta.exitConditions && typeof meta.exitConditions === "object"
@@ -1038,7 +1038,7 @@ function SignalAnalysisCard(props: {
   const barMs = entryBarMs(row);
   const uiExp =
     typeof row.liveUiExpiresAtMs === "number" &&
-    Number.isFinite(row.liveUiExpiresAtMs)
+      Number.isFinite(row.liveUiExpiresAtMs)
       ? row.liveUiExpiresAtMs
       : null;
   const liveRemainingMs =
@@ -1081,22 +1081,21 @@ function SignalAnalysisCard(props: {
           : "·";
   const headerWhen = row.scanEvaluatedAt
     ? new Date(row.scanEvaluatedAt).toLocaleString(
-        undefined,
-        SCAN_DATETIME_OPTS,
-      )
+      undefined,
+      SCAN_DATETIME_OPTS,
+    )
     : formatEntry(row);
 
   return (
     <div
-      className={`self-start rounded-xl border p-4 space-y-3 ${
-        row.verdict === "reject"
+      className={`self-start rounded-xl border p-4 space-y-3 ${row.verdict === "reject"
           ? "border-red-500/40 bg-red-950/25"
           : row.isLive
             ? "border-teal-500/35 bg-teal-950/20"
             : row.entryDate === todayKey
               ? "border-teal-500/20 bg-black/35"
               : "border-white/10 bg-black/25"
-      }`}
+        }`}
     >
       <div className="border-b border-white/10 pb-3 space-y-2">
         <p className="font-mono text-[11px] sm:text-xs text-zinc-300 tracking-tight">
@@ -1334,14 +1333,14 @@ function SignalAnalysisCard(props: {
           </div>
 
           {row.customStrategyMeta &&
-          typeof row.customStrategyMeta === "object" ? (
+            typeof row.customStrategyMeta === "object" ? (
             <CustomStrategySavedPlanBlock meta={row.customStrategyMeta} />
           ) : null}
 
           {row.simpleOutcomeLabel &&
-          row.simpleOutcomeLabel !== "pending" &&
-          row.simpleOutcomeLabel !== "unknown" &&
-          row.simpleOutcomeNote ? (
+            row.simpleOutcomeLabel !== "pending" &&
+            row.simpleOutcomeLabel !== "unknown" &&
+            row.simpleOutcomeNote ? (
             <div className="rounded-lg border border-zinc-600/40 bg-zinc-900/40 p-3 space-y-1">
               <p className="text-xs font-bold uppercase tracking-wide text-zinc-400">
                 After signal (same chart series)
@@ -1350,7 +1349,7 @@ function SignalAnalysisCard(props: {
                 {row.simpleOutcomeNote}
               </p>
               {row.forwardMaxFavorablePct != null &&
-              row.forwardMaxAdversePct != null ? (
+                row.forwardMaxAdversePct != null ? (
                 <p className="text-[11px] text-zinc-500">
                   Max favorable ≈ {row.forwardMaxFavorablePct}% · Max adverse ≈{" "}
                   {row.forwardMaxAdversePct}% over {row.forwardProbeBars ?? "?"}
@@ -1365,8 +1364,8 @@ function SignalAnalysisCard(props: {
           ) : null}
 
           {row.conditionAudit &&
-          row.conditionAudit.lines &&
-          row.conditionAudit.lines.length > 0 ? (
+            row.conditionAudit.lines &&
+            row.conditionAudit.lines.length > 0 ? (
             <div className="rounded-lg border border-purple-500/30 bg-purple-950/20 p-3 space-y-2">
               <p className="text-xs font-bold uppercase tracking-wide text-purple-300">
                 Strategy conditions (this bar, engine-checked)
@@ -1394,18 +1393,17 @@ function SignalAnalysisCard(props: {
                 {row.conditionAudit.lines.map((ln, j) => (
                   <li
                     key={j}
-                    className={`font-mono text-[13px] pl-2 border-l-2 ${
-                      ln.ok
+                    className={`font-mono text-[13px] pl-2 border-l-2 ${ln.ok
                         ? "border-emerald-500/60 text-emerald-100/95"
                         : "border-red-500/60 text-red-200/90"
-                    }`}
+                      }`}
                   >
                     {ln.label}
                   </li>
                 ))}
               </ul>
               {row.conditionAudit.snapshot &&
-              Object.keys(row.conditionAudit.snapshot).length > 0 ? (
+                Object.keys(row.conditionAudit.snapshot).length > 0 ? (
                 <details className="pt-2 border-t border-white/10">
                   <summary className="cursor-pointer list-none text-[10px] font-semibold uppercase tracking-wide text-zinc-500 hover:text-zinc-300 [&::-webkit-details-marker]:hidden">
                     Show raw data ▾
@@ -1462,20 +1460,18 @@ function SignalAnalysisCard(props: {
           ) : null}
 
           {(row.verdict === "reject" || isMixedVerdict(row.verdict)) &&
-          (row.rejectionDetail || row.rationale) ? (
+            (row.rejectionDetail || row.rationale) ? (
             <div
-              className={`rounded-lg border p-3 space-y-1 ${
-                row.verdict === "reject"
+              className={`rounded-lg border p-3 space-y-1 ${row.verdict === "reject"
                   ? "border-red-500/30 bg-red-950/20"
                   : "border-amber-500/25 bg-amber-950/15"
-              }`}
+                }`}
             >
               <p
-                className={`text-xs font-bold uppercase tracking-wide ${
-                  row.verdict === "reject"
+                className={`text-xs font-bold uppercase tracking-wide ${row.verdict === "reject"
                     ? "text-red-300"
                     : "text-amber-200/90"
-                }`}
+                  }`}
               >
                 {row.verdict === "reject"
                   ? "Rejected — detail"
@@ -1522,14 +1518,14 @@ const MODULE_ROWS: {
   label: string;
   invert?: boolean;
 }[] = [
-  { key: "market_strength_score", label: "Market Context" },
-  { key: "trend_alignment_score", label: "Trend Alignment" },
-  { key: "signal_strength_score", label: "Signal Strength" },
-  { key: "volume_confirmation_score", label: "Volume & Flow" },
-  { key: "volatility_score", label: "Volatility" },
-  { key: "rr_score", label: "Risk-Reward" },
-  { key: "trap_probability", label: "Trap Risk" },
-];
+    { key: "market_strength_score", label: "Market Context" },
+    { key: "trend_alignment_score", label: "Trend Alignment" },
+    { key: "signal_strength_score", label: "Signal Strength" },
+    { key: "volume_confirmation_score", label: "Volume & Flow" },
+    { key: "volatility_score", label: "Volatility" },
+    { key: "rr_score", label: "Risk-Reward" },
+    { key: "trap_probability", label: "Trap Risk" },
+  ];
 
 function scoreBandBarClass(score0to100: number): string {
   if (score0to100 < 40) return "bg-red-500";
@@ -1627,15 +1623,15 @@ function gateColors(execute: boolean): {
 } {
   return execute
     ? {
-        bg: "bg-teal-500/15",
-        border: "border-teal-500/35",
-        text: "text-teal-200",
-      }
+      bg: "bg-teal-500/15",
+      border: "border-teal-500/35",
+      text: "text-teal-200",
+    }
     : {
-        bg: "bg-zinc-800/60",
-        border: "border-zinc-700",
-        text: "text-zinc-400",
-      };
+      bg: "bg-zinc-800/60",
+      border: "border-zinc-700",
+      text: "text-zinc-400",
+    };
 }
 
 function trendArrow(d: "UP" | "DOWN" | "NEUTRAL"): string {
@@ -2585,11 +2581,11 @@ export function StrategyEntrySignalsPanel({
             intradayLookbackMinutes,
             postAnalysis: postAnalysis?.result
               ? {
-                  result: postAnalysis.result,
-                  actualChangePercent: postAnalysis.actualChangePercent,
-                  predictedDirection:
-                    postAnalysis.predictedDirection ?? undefined,
-                }
+                result: postAnalysis.result,
+                actualChangePercent: postAnalysis.actualChangePercent,
+                predictedDirection:
+                  postAnalysis.predictedDirection ?? undefined,
+              }
               : undefined,
           },
           headers: { Authorization: `Bearer ${session.access_token}` },
@@ -2755,20 +2751,20 @@ export function StrategyEntrySignalsPanel({
         const slPct =
           sv?.stop_loss_price != null
             ? Math.max(
-                0.1,
-                Math.abs(
-                  ((entryPrice - sv.stop_loss_price) / entryPrice) * 100,
-                ),
-              )
+              0.1,
+              Math.abs(
+                ((entryPrice - sv.stop_loss_price) / entryPrice) * 100,
+              ),
+            )
             : 2;
         const tpPct =
           sv?.take_profit_price != null
             ? Math.max(
-                0.1,
-                Math.abs(
-                  ((sv.take_profit_price - entryPrice) / entryPrice) * 100,
-                ),
-              )
+              0.1,
+              Math.abs(
+                ((sv.take_profit_price - entryPrice) / entryPrice) * 100,
+              ),
+            )
             : 4;
 
         const response = await tradeTrackingService.startTradeSession({
@@ -2976,9 +2972,9 @@ export function StrategyEntrySignalsPanel({
     const venueAllowsLive = allowsLiveEntryExitUI(marketStatus, nowMs);
     return mergeEquivalentSignals(
       (historyDetail?.signals ?? [])
-      .filter((s) => !s.isPredicted)
-      .map((row) => applyRowLiveWindow(row, nowMs, w))
-      .map((row) => stripLiveWhenVenueClosed(row, venueAllowsLive)),
+        .filter((s) => !s.isPredicted)
+        .map((row) => applyRowLiveWindow(row, nowMs, w))
+        .map((row) => stripLiveWhenVenueClosed(row, venueAllowsLive)),
     );
   }, [historyDetail, nowMs, liveWindowMsHistory, marketStatus]);
   const historySignalTotalPages = Math.max(
@@ -3217,23 +3213,23 @@ export function StrategyEntrySignalsPanel({
                           Strategies:{" "}
                           {(row.selected_strategies ?? []).length > 0
                             ? (row.selected_strategies ?? [])
-                                .map(
-                                  (id) =>
-                                    STRATEGIES.find((s) => s.value === id)
-                                      ?.label ?? id,
-                                )
-                                .join(", ")
+                              .map(
+                                (id) =>
+                                  STRATEGIES.find((s) => s.value === id)
+                                    ?.label ?? id,
+                              )
+                              .join(", ")
                             : "Default"}
                           {(row.selected_custom_strategy_ids ?? []).length > 0
                             ? ` · Custom: ${(
-                                row.selected_custom_strategy_ids ?? []
+                              row.selected_custom_strategy_ids ?? []
+                            )
+                              .map(
+                                (id) =>
+                                  customStrategies.find((c) => c.id === id)
+                                    ?.name ?? id,
                               )
-                                .map(
-                                  (id) =>
-                                    customStrategies.find((c) => c.id === id)
-                                      ?.name ?? id,
-                                )
-                                .join(", ")}`
+                              .join(", ")}`
                             : ""}
                         </p>
                       </div>
@@ -3601,7 +3597,7 @@ export function StrategyEntrySignalsPanel({
 
         {/* Results popup */}
         <Dialog open={scanResultsOpen} onOpenChange={setScanResultsOpen}>
-          <DialogContent className="flex h-[92vh] max-h-[92vh] w-[98vw] !max-w-[98vw] flex-col gap-0 !overflow-hidden border-zinc-800 bg-zinc-950 p-0 sm:!max-w-[98vw]">
+          <DialogContent className="flex h-[92vh] max-h-[92vh] w-[95vw] sm:w-[98vw] sm:max-w-[98vw] flex-col gap-0 overflow-hidden border-zinc-800 bg-zinc-950 p-0">
             <div className="flex min-h-0 flex-1 flex-col">
               <div className="shrink-0 border-b border-zinc-800 px-5 py-4">
                 <DialogHeader className="space-y-1">
@@ -3881,7 +3877,7 @@ export function StrategyEntrySignalsPanel({
         </div>
 
         <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
-          <DialogContent className="flex h-[92vh] max-h-[92vh] w-[98vw] !max-w-[98vw] flex-col gap-0 !overflow-hidden border-zinc-800 bg-zinc-950 p-0 sm:!max-w-[98vw]">
+          <DialogContent className="flex h-[92vh] max-h-[92vh] w-[95vw] sm:w-[98vw] sm:max-w-[98vw] flex-col gap-0 overflow-hidden border-zinc-800 bg-zinc-950 p-0">
             <div className="flex min-h-0 flex-1 flex-col">
               <div className="shrink-0 border-b border-zinc-800 px-5 py-4">
                 <DialogHeader className="space-y-1">

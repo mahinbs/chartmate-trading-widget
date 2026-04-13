@@ -420,7 +420,7 @@ export function OptionsStrategiesWorkspace({ embedded = false }: { embedded?: bo
         )}
         {/* Header */}
         <div className="border-b border-border/50 bg-background/95 backdrop-blur-sm sticky top-0 z-10">
-          <div className="px-6 py-4 flex items-center justify-between">
+          <div className="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
                 <Zap className="h-5 w-5 text-primary" />
@@ -537,7 +537,7 @@ export function OptionsStrategiesWorkspace({ embedded = false }: { embedded?: bo
 
                     <CardContent className="pt-0">
                       {/* Quick stats row */}
-                      <div className="grid grid-cols-4 gap-2 text-xs mb-3">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs mb-3">
                         <div className="rounded bg-muted/40 px-2 py-1.5">
                           <p className="text-muted-foreground/70">Strike</p>
                           <p className="font-semibold">{s.strike_selection}</p>
