@@ -8,7 +8,7 @@ import { useUserRole } from "@/hooks/useUserRole";
 import { useMyTenantMembership } from "@/hooks/useWhitelabel";
 import { supabase } from "@/integrations/supabase/client";
 import { motion, AnimatePresence, Variants } from "framer-motion";
-import { Shield, Eye, Pause, Lock, Clock, UserPlus, Code2, Rocket, Link2, Lightbulb, Cpu, LineChart, Globe, CheckCircle2, TrendingDown, DollarSign, Wrench, ChevronDown } from "lucide-react";
+import { Shield, Eye, Pause, Lock, Clock, UserPlus, Code2, Rocket, Link2, Lightbulb, Cpu, LineChart, Globe, CheckCircle2, TrendingDown, DollarSign, Wrench, ChevronDown, BarChart3, FlaskConical, Layers, Banknote, Zap } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
@@ -336,11 +336,11 @@ const LandingPageNew = () => {
       />
       <Helmet>
         <title>
-          Launch Your Own Algo Trading System Without Coding | TradingSmart.ai
+          Trading platform: analysis, backtests, options, paper &amp; live | TradingSmart.ai
         </title>
         <meta
           name="description"
-          content="Build, backtest, and deploy trading strategies with AI — without writing a single line of code. Our developers build everything for you and integrate your strategy within 72 hours."
+          content="One workspace for AI-assisted analysis, deep backtests, strategies, options, and paper-to-live trading. Every subscriber gets the full platform—our team integrates your custom algo logic into a broker-ready stack."
         />
       </Helmet>
 
@@ -400,9 +400,15 @@ const LandingPageNew = () => {
           </motion.p>
           <motion.p
             variants={fadeUp}
-            className={`text-xs md:text-sm text-zinc-500 font-light max-w-2xl mx-auto mb-12 leading-relaxed`}
+            className="text-sm md:text-base text-white font-semibold max-w-2xl mx-auto mb-3 leading-relaxed"
           >
-            We are a technology platform that enables users to integrate and automate their own trading systems. We do not provide any trading strategies, investment advice, or recommendations.
+            You get the full platform on every plan, and your edge comes from our team integrating your strategy logic into a live, broker-ready stack.
+          </motion.p>
+          <motion.p
+            variants={fadeUp}
+            className={`text-xs md:text-sm text-white/80 font-light max-w-2xl mx-auto mb-12 leading-relaxed`}
+          >
+            You stay in control of every decision. We provide the technology infrastructure and integration tools; we do not provide investment advice or trade recommendations.
           </motion.p>
           <motion.div
             variants={fadeUp}
@@ -644,7 +650,7 @@ const LandingPageNew = () => {
                 </li>
                 <li className="flex gap-3 items-start">
                   <DiamondIcon />
-                  <span className="leading-snug">Metrics: win rate, drawdown, profit factor</span>
+                  <span className="leading-snug">Drawdown, profit factor, and trade-level stats</span>
                 </li>
                 <li className="flex gap-3 items-start">
                   <DiamondIcon />
@@ -683,16 +689,16 @@ const LandingPageNew = () => {
 
           <motion.div variants={fadeUp} className="flex flex-col sm:flex-row gap-4 mt-16 justify-center items-center">
             <Link
-              to="/ai-probability-engine"
+              to="/ai-trading-analysis-and-back-testing"
               className="px-8 py-4 bg-teal-500 text-black font-bold rounded-full hover:bg-teal-400 transition-all shadow-[0_0_20px_rgba(20,184,166,0.3)] hover:scale-105 active:scale-95 text-center min-w-[260px] font-syne"
             >
-              AI Robot Trade
+              See analysis &amp; backtesting
             </Link>
             <Link
-              to="/ai-trading-analysis-and-back-testing"
+              to="/pricing"
               className="px-8 py-4 bg-transparent border border-teal-500/50 text-teal-400 font-bold rounded-full hover:bg-teal-500/10 transition-all hover:scale-105 active:scale-95 text-center min-w-[260px] font-syne"
             >
-              AI Trading Analysis and Back Testing
+              View pricing
             </Link>
           </motion.div>
         </div>
@@ -805,7 +811,7 @@ const LandingPageNew = () => {
                   "100% no coding required",
                   "Developers build your strategy for you",
                   "Fast 72-hour integration",
-                  "AI-powered analysis engine",
+                  "AI-assisted analysis tooling",
                   "Works with your custom logic",
                   "Full control over your trading"
                 ].map((text, i) => (
@@ -848,6 +854,108 @@ const LandingPageNew = () => {
               </ul>
             </motion.div>
           </div>
+        </div>
+      </motion.section>
+
+      {/* FULL PLATFORM — product modules overview */}
+      <motion.section
+        initial="hidden"
+        whileInView="visible"
+        viewport={{ once: true, margin: "-80px" }}
+        variants={staggerContainer}
+        id="full-platform"
+        className="py-24 bg-black relative border-b border-zinc-900"
+      >
+        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-teal-500/30 to-transparent" />
+        <div className="container mx-auto px-4 max-w-6xl relative z-10">
+          <div className="flex items-center gap-4 mb-6 justify-center md:justify-start">
+            <div className="w-2 h-2 rounded-full bg-teal-500 animate-pulse shrink-0" />
+            <span className="text-[11px] text-zinc-500 tracking-[0.3em] uppercase font-medium">
+              FULL PLATFORM
+            </span>
+          </div>
+          <motion.h2 variants={fadeUp} className={`${sectionTitle} text-center md:text-left max-w-4xl`}>
+            One workspace for analysis, backtests, strategies, options, and execution
+          </motion.h2>
+          <motion.p
+            variants={fadeUp}
+            className="mt-4 text-center md:text-left text-white text-base md:text-lg font-semibold max-w-4xl font-dm-sans"
+          >
+            Your edge isn&apos;t a locked feature. It&apos;s the support you get from our team to integrate your strategy into a live, broker-ready stack.
+          </motion.p>
+          <motion.p variants={fadeUp} className={`${bodyMuted} mt-6 max-w-3xl text-center md:text-left text-base`}>
+            Every subscriber gets the same product surface: AI-assisted analysis, deep backtests, strategy management, options workflows, and paper-to-live trade tracking in one dashboard. What separates TradingSmart is{" "}
+            <span className="text-zinc-200 font-medium">done-for-you custom algo integration</span>
+            —we encode the logic, wire the broker path, and ship deployable automation—not a menu of paid add-ons.
+          </motion.p>
+
+          <motion.div
+            variants={staggerContainer}
+            className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 mt-14"
+          >
+            {[
+              {
+                icon: BarChart3,
+                title: "AI trading analysis",
+                body: "Multi-factor validation and plain-English context on setups so users see why a case passed or failed your rules—not a black box.",
+              },
+              {
+                icon: FlaskConical,
+                title: "Deep backtesting",
+                body: "Run strategies on historical data with per-trade detail: entries, exits, indicator state, and AI summaries for post-run review.",
+              },
+              {
+                icon: Code2,
+                title: "Custom algo integration (core moat)",
+                body: "You describe the strategy; our engineers implement, validate, and deploy it for production—presets and builder included so nothing stays stuck in a spreadsheet.",
+              },
+              {
+                icon: Layers,
+                title: "Options strategy workspace",
+                body: "Design and manage options strategies alongside equities workflows inside the trading hub—built for traders who run more than single-leg spot ideas.",
+              },
+              {
+                icon: Banknote,
+                title: "Paper trading",
+                body: "Practice and prove workflows without capital at risk; move to live only when the user and your team are ready.",
+              },
+              {
+                icon: Zap,
+                title: "Live execution & control",
+                body: "Broker-connected orders, open positions, armed strategies, and safety controls users expect from a serious trading stack.",
+              },
+            ].map((item, i) => {
+              const Icon = item.icon;
+              return (
+                <motion.div
+                  key={i}
+                  variants={fadeUp}
+                  className="p-6 rounded-2xl bg-white/[0.02] border border-white/[0.08] hover:border-teal-500/25 transition-colors"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center mb-4">
+                    <Icon className="w-5 h-5 text-teal-400" strokeWidth={1.5} />
+                  </div>
+                  <h3 className="text-white font-semibold text-sm mb-2">{item.title}</h3>
+                  <p className="text-zinc-400 text-sm font-light leading-relaxed">{item.body}</p>
+                </motion.div>
+              );
+            })}
+          </motion.div>
+
+          <motion.div variants={fadeUp} className="flex flex-col sm:flex-row gap-4 mt-12 justify-center md:justify-start">
+            <Link
+              to="/ai-trading-analysis-and-back-testing"
+              className="inline-flex items-center justify-center px-8 py-3.5 bg-teal-500 text-black font-bold rounded-full hover:bg-teal-400 transition-colors text-sm font-syne"
+            >
+              See analysis &amp; backtesting
+            </Link>
+            <Link
+              to="/pricing"
+              className="inline-flex items-center justify-center px-8 py-3.5 border border-teal-500/40 text-teal-400 font-bold rounded-full hover:bg-teal-500/10 transition-colors text-sm font-syne"
+            >
+              View pricing
+            </Link>
+          </motion.div>
         </div>
       </motion.section>
 
@@ -969,6 +1077,22 @@ const LandingPageNew = () => {
               {
                 q: "Can I make changes after deployment?",
                 a: "Yes. Any modification request is handled by the team. Growth and Pro plans support multiple strategies running simultaneously.",
+              },
+              {
+                q: "Do you support options and equities in the same platform?",
+                a: "Yes. Subscribers use the trading dashboard for execution and monitoring, including an options-focused workspace alongside equity and strategy tools.",
+              },
+              {
+                q: "Can users paper trade before going live?",
+                a: "Yes. Paper workflows let users validate process and discipline before connecting live capital and broker execution.",
+              },
+              {
+                q: "Are options or backtests limited to higher plans?",
+                a: "No. The full platform capability set is included for every subscriber. Plans differ on commercial terms (such as billing and support), not on turning major modules off.",
+              },
+              {
+                q: "What do you actually build for me?",
+                a: "We take your strategy specification and deliver integrated, production-oriented automation inside the platform—coding, validation layers, and broker-aligned deployment—not a generic indicator pack.",
               },
             ].map((item, i) => (
               <motion.div

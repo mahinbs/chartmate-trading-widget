@@ -113,16 +113,56 @@ export function TradingSmartPricingMatrix() {
               <td className="py-5 px-4 font-light text-zinc-400 text-sm">Platform access</td>
               <td className="py-5 px-6 text-center font-ibm-mono text-sm text-teal-400">
                 Full access
-                <span className="block text-[10px] text-zinc-500 font-light normal-case mt-0.5">(AI engine, backtesting, broker sync, trade tracking)</span>
+                <span className="block text-[10px] text-zinc-500 font-light normal-case mt-0.5">(analysis, backtesting, broker sync, trade tracking)</span>
               </td>
               <td className="py-5 px-6 text-center font-ibm-mono text-sm bg-amber-400/[0.03] border-x border-amber-400/20 text-amber-200">
                 Full access
-                <span className="block text-[10px] text-zinc-500 font-light normal-case mt-0.5">(AI engine, backtesting, broker sync, trade tracking)</span>
+                <span className="block text-[10px] text-zinc-500 font-light normal-case mt-0.5">(analysis, backtesting, broker sync, trade tracking)</span>
               </td>
               <td className="py-5 px-6 text-center font-ibm-mono text-sm text-teal-400">
                 Full access
-                <span className="block text-[10px] text-zinc-500 font-light normal-case mt-0.5">(AI engine, backtesting, broker sync, trade tracking)</span>
+                <span className="block text-[10px] text-zinc-500 font-light normal-case mt-0.5">(analysis, backtesting, broker sync, trade tracking)</span>
               </td>
+            </tr>
+            <tr className="border-b border-zinc-800/50 hover:bg-white/[0.01]">
+              <td className="py-5 px-4 font-light text-zinc-400 text-sm">
+                Full product modules
+                <span className="block text-[10px] text-zinc-600 font-light normal-case mt-1">
+                  Analysis, strategies, options workspace, paper/live hub
+                </span>
+              </td>
+              <td className="py-5 px-6 text-center text-teal-400">✓</td>
+              <td className="py-5 px-6 text-center bg-amber-400/[0.03] border-x border-amber-400/20 text-amber-400">✓</td>
+              <td className="py-5 px-6 text-center text-teal-400">✓</td>
+            </tr>
+            <tr className="border-b border-zinc-800/50 hover:bg-white/[0.01]">
+              <td className="py-5 px-4 font-light text-zinc-400 text-sm">
+                Options strategy workspace
+                <span className="block text-[10px] text-zinc-600 font-light normal-case mt-1">Included for all subscribers</span>
+              </td>
+              <td className="py-5 px-6 text-center text-teal-400">✓</td>
+              <td className="py-5 px-6 text-center bg-amber-400/[0.03] border-x border-amber-400/20 text-amber-400">✓</td>
+              <td className="py-5 px-6 text-center text-teal-400">✓</td>
+            </tr>
+            <tr className="border-b border-zinc-800/50 hover:bg-white/[0.01]">
+              <td className="py-5 px-4 font-light text-zinc-400 text-sm">
+                Paper &amp; live trade tracking
+                <span className="block text-[10px] text-zinc-600 font-light normal-case mt-1">Live requires broker connection</span>
+              </td>
+              <td className="py-5 px-6 text-center text-teal-400">✓</td>
+              <td className="py-5 px-6 text-center bg-amber-400/[0.03] border-x border-amber-400/20 text-amber-400">✓</td>
+              <td className="py-5 px-6 text-center text-teal-400">✓</td>
+            </tr>
+            <tr className="border-b border-zinc-800/50 hover:bg-white/[0.01]">
+              <td className="py-5 px-4 font-light text-zinc-400 text-sm">
+                Custom algo integration
+                <span className="block text-[10px] text-zinc-600 font-light normal-case mt-1">Engineering-led build &amp; deploy — core moat</span>
+              </td>
+              <td className="py-5 px-6 text-center font-ibm-mono text-xs text-teal-400">Included</td>
+              <td className="py-5 px-6 text-center font-ibm-mono text-xs bg-amber-400/[0.03] border-x border-amber-400/20 text-amber-200">
+                Included
+              </td>
+              <td className="py-5 px-6 text-center font-ibm-mono text-xs text-teal-400">Included</td>
             </tr>
             <tr className="border-b border-zinc-800/50 hover:bg-white/[0.01]">
               <td className="py-5 px-4 font-light text-zinc-400 text-sm">Custom algo strategies</td>
@@ -136,12 +176,14 @@ export function TradingSmartPricingMatrix() {
             </tr>
             <tr className="border-b border-zinc-800/50 hover:bg-white/[0.01]">
               <td className="py-5 px-4 font-light text-zinc-400 text-sm">Backtesting &amp; analytics</td>
-              <td className="py-5 px-6 text-center font-ibm-mono text-sm text-teal-400">Standard</td>
+              <td className="py-5 px-6 text-center font-ibm-mono text-sm text-teal-400">
+                Full depth + AI review
+              </td>
               <td className="py-5 px-6 text-center font-ibm-mono text-sm bg-amber-400/[0.03] border-x border-amber-400/20 text-amber-200">
-                Advanced
+                Full depth + AI review
               </td>
               <td className="py-5 px-6 text-center font-ibm-mono text-sm text-teal-400">
-                Advanced + optimization
+                Full depth + AI review
               </td>
             </tr>
             <tr className="border-b border-zinc-800/50 hover:bg-white/[0.01]">

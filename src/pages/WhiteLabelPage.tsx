@@ -1,5 +1,6 @@
 import React from 'react';
 import { useLocation } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import Layout from '../components/landingpage/Layout';
 import WhiteLabelHero from '../components/whitelabel/Hero';
 import PartnerSupport from '../components/whitelabel/PartnerSupport';
@@ -26,6 +27,13 @@ const WhiteLabelPage = () => {
 
     return (
         <Layout>
+            <Helmet>
+                <title>White-label trading platform | TradingSmart.ai</title>
+                <meta
+                    name="description"
+                    content="Resell a full trading stack under your brand: analysis, backtests, strategies, options, paper and live execution—plus engineering-led custom algo integration for your clients."
+                />
+            </Helmet>
             <div className="bg-black text-white font-sans selection:bg-cyan-500 selection:text-black min-h-screen">
                 <WhiteLabelHero />
                 <PartnerSupport />

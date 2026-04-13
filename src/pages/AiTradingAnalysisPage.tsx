@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { motion, AnimatePresence, useInView } from "framer-motion";
-import { Shield, Eye, Pause, Lock } from "lucide-react";
+import { Shield, Eye, Pause, Lock, BarChart3, FlaskConical, Code2, Layers } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
@@ -336,10 +336,10 @@ const AiTradingAnalysisPage = () => {
   return (
     <div className="bg-black min-h-screen overflow-x-hidden font-ibm-sans selection:bg-teal-500/30 selection:text-teal-400">
       <Helmet>
-        <title>Backtest Your Strategy | TradingSmart.ai</title>
+        <title>Platform tour: analysis, backtests, strategies &amp; execution | TradingSmart.ai</title>
         <meta
           name="description"
-          content="Run backtests on any stock, any timeframe, any number of days — and get detailed analytical insights powered by AI."
+          content="Built as a suite: AI-assisted analysis, backtesting, strategy workspace, and options plus paper/live execution in one stack. Full modules for every subscriber—custom algo integration is how we operationalize your logic."
         />
       </Helmet>
 
@@ -387,7 +387,7 @@ const AiTradingAnalysisPage = () => {
                 <div className="hero-rule h-px bg-teal-500/50 w-full max-w-[80%] origin-left mb-6" />
 
                 <p className="font-ibm-sans font-light text-zinc-400 text-lg md:text-xl mb-12 max-w-lg leading-relaxed">
-                  Run backtests on any stock, any timeframe, any number of days — and get detailed analytical insights powered by AI.
+                  Backtests and AI-assisted analysis are the headline—but the same subscription includes strategies, options workflows, and paper-to-live execution. We integrate your logic into this stack.
                 </p>
 
                 <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
@@ -556,6 +556,90 @@ const AiTradingAnalysisPage = () => {
         </div>
       </section>
 
+      {/* FULL PLATFORM SUITE */}
+      <section className="py-24 bg-black border-b border-zinc-900">
+        <div className="container mx-auto px-4 max-w-6xl">
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: "-80px" }}
+            variants={staggerContainer}
+          >
+            <motion.h2 variants={fadeUp} className="font-bebas text-4xl md:text-5xl text-white mb-4 text-center md:text-left">
+              Built as a suite—not a single screen
+            </motion.h2>
+            <motion.p variants={fadeUp} className="font-ibm-sans text-zinc-400 text-lg max-w-3xl mb-12 text-center md:text-left leading-relaxed">
+              Analysis and backtesting anchor the story, but they are not gated extras:{" "}
+              <span className="text-zinc-200 font-medium">every subscriber</span> gets the same modules traders use before and after they trade. The reason teams choose us is{" "}
+              <span className="text-zinc-200 font-medium">custom algo integration</span>
+              —we operationalize your logic inside this stack.
+            </motion.p>
+
+            <div className="grid md:grid-cols-2 gap-6">
+              {[
+                {
+                  icon: BarChart3,
+                  title: "AI trading analysis",
+                  body: "Score and validate setups with structured factors and readable explanations. Use it to sanity-check ideas before size or automation.",
+                  cta: "Explore analysis",
+                  path: "/ai-trading-analysis",
+                },
+                {
+                  icon: FlaskConical,
+                  title: "Backtesting lab",
+                  body: "Replay rules on history with trade-by-trade detail and AI-assisted review so users understand what drove outcomes.",
+                  cta: "Open backtests",
+                  path: "/backtest",
+                },
+                {
+                  icon: Code2,
+                  title: "Strategy builder",
+                  body: "Create and manage algo rules, presets, and deployment-ready configurations in one strategies workspace—then lean on our team when you need bespoke logic wired for production.",
+                  cta: "View strategies",
+                  path: "/strategies",
+                },
+                {
+                  icon: Layers,
+                  title: "Options & execution hub",
+                  body: "Options strategies and live or paper workflows live in the trading dashboard—positions, orders, and controls in one place.",
+                  cta: "See trading hub",
+                  path: "/trading-dashboard",
+                },
+              ].map((card, i) => {
+                const Icon = card.icon;
+                return (
+                  <motion.div
+                    key={card.title}
+                    variants={fadeUp}
+                    className="border border-zinc-800 bg-[#080808] p-6 md:p-8 flex flex-col"
+                  >
+                    <Icon className="w-8 h-8 text-teal-500 mb-4 stroke-1" />
+                    <h3 className="font-bebas text-2xl text-white mb-3 tracking-wide">{card.title}</h3>
+                    <p className="font-ibm-sans text-zinc-400 text-sm leading-relaxed flex-1 mb-6">{card.body}</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() =>
+                        user
+                          ? navigate(card.path)
+                          : navigate(`/auth?redirect=${encodeURIComponent(card.path)}`)
+                      }
+                      className="font-ibm-mono rounded-none border-teal-500/40 text-teal-400 hover:bg-teal-500/10 w-full sm:w-auto self-start uppercase tracking-wider"
+                    >
+                      {card.cta}
+                    </Button>
+                  </motion.div>
+                );
+              })}
+            </div>
+
+            <motion.p variants={fadeUp} className="mt-10 text-[11px] text-zinc-600 font-ibm-sans max-w-3xl leading-relaxed">
+              Full platform modules are included for every subscriber; live order flow still requires a supported broker connection where applicable. Nothing here is investment advice or a promise of results.
+            </motion.p>
+          </motion.div>
+        </div>
+      </section>
+
       {/* HOW IT WORKS */}
       <HowItWorksTimeline />
 
@@ -575,7 +659,7 @@ const AiTradingAnalysisPage = () => {
                      {[
                        "No coding required from user",
                        "User-defined strategy only",
-                       "Manual configuration for accuracy",
+                       "Manual configuration for quality",
                        "Detailed analytical reporting",
                        "Full user control at all times"
                      ].map((item, i) => (

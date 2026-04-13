@@ -418,8 +418,8 @@ export default function StrategiesPage() {
               <BarChart2 className="h-12 w-12 text-zinc-700" />
               <div className="text-center">
                 <p className="text-white font-semibold">No strategies yet</p>
-                <p className="text-zinc-400 text-sm mt-1">
-                  Create your first strategy — AI will analyze and backtest it instantly.
+                <p className="text-zinc-400 text-sm mt-1 max-w-md">
+                  Same strategies workspace as on the marketing site—create rules here, then run analysis and backtests from the Algo Tools sidebar.
                 </p>
               </div>
               <Button

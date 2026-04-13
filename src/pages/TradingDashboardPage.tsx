@@ -622,10 +622,12 @@ function StrategiesPanel({ broker }: { broker: string }) {
             <Loader2 className="h-5 w-5 animate-spin text-zinc-600" />
                     </div>
         ) : strategies.length === 0 ? (
-          <div className="text-center py-5">
+          <div className="text-center py-5 px-2">
             <Zap className="h-7 w-7 text-zinc-800 mx-auto mb-2" />
             <p className="text-xs text-zinc-600">No strategies yet</p>
-            <p className="text-[10px] text-zinc-700 mt-0.5">Create one to get a webhook URL for auto-execution</p>
+            <p className="text-[10px] text-zinc-700 mt-0.5 max-w-xs mx-auto">
+              Add a strategy for webhooks and live control—options and paper/live tabs on this dashboard match the full platform story.
+            </p>
           </div>
         ) : (
                     <div className="space-y-2">

@@ -3405,7 +3405,9 @@ export default function BacktestingSection() {
           </AlertDialog>
 
           {history.length === 0 ? (
-            <p className="text-xs text-zinc-600">No backtests saved yet.</p>
+            <p className="text-xs text-zinc-600">
+              No backtests saved yet—runs you save show up here with the same trade-level detail we describe on the public platform tour.
+            </p>
           ) : (
             <>
               <p className="text-[10px] text-zinc-600">

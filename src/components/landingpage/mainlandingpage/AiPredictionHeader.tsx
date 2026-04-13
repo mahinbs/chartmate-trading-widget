@@ -9,14 +9,15 @@ import { ChevronDown } from "lucide-react";
 
 const BASE_NAV_ITEMS = [
   { id: "affiliate-partner", label: "Affiliates", isRoute: true },
-  { id: "white-label", label: "White Label", isRoute: true },
-  { id: "pricing", label: "Software Pricing", isRoute: true },
   { id: "contact-us", label: "Contact Us", isRoute: true },
 ];
 
-const FEATURE_ITEMS = [
-  { id: "ai-probability-engine", label: "AI Robot Trade", isRoute: true },
-  { id: "ai-trading-analysis-and-back-testing", label: "AI Trading Analysis and Back Testing", isRoute: true },
+/** Platform cluster (audit §5.3) — pricing & white-label live here to match Navbar.tsx on Layout pages. */
+const PLATFORM_ITEMS = [
+  { id: "ai-trading-analysis-and-back-testing", label: "Analysis & backtesting", isRoute: true },
+  { id: "features", label: "All modules", isRoute: true },
+  { id: "pricing", label: "Pricing", isRoute: true },
+  { id: "white-label", label: "White label", isRoute: true },
 ];
 
 const scrollToSection = (id: string) => {
@@ -36,8 +37,8 @@ const scrollToSection = (id: string) => {
 const AiPredictionHeader: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [hasBlogs, setHasBlogs] = useState(false);
-  const [isFeaturesOpen, setIsFeaturesOpen] = useState(false);
-  const [isMobileFeaturesOpen, setIsMobileFeaturesOpen] = useState(false);
+  const [isPlatformOpen, setIsPlatformOpen] = useState(false);
+  const [isMobilePlatformOpen, setIsMobilePlatformOpen] = useState(false);
   const { user } = useAuth();
 
   useEffect(() => {
@@ -92,19 +93,19 @@ const AiPredictionHeader: React.FC = () => {
 
           {/* Desktop nav */}
           <nav className="hidden items-center 2xl:gap-12 gap-8 text-sm font-medium text-gray-300 lg:flex">
-            {/* Features Dropdown */}
+            {/* Platform dropdown */}
             <div 
               className="relative group py-4"
-              onMouseEnter={() => setIsFeaturesOpen(true)}
-              onMouseLeave={() => setIsFeaturesOpen(false)}
+              onMouseEnter={() => setIsPlatformOpen(true)}
+              onMouseLeave={() => setIsPlatformOpen(false)}
             >
               <button className="flex items-center gap-1 hover:text-white transition-colors cursor-pointer outline-none">
-                <span>Features</span>
-                <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isFeaturesOpen ? "rotate-180" : ""}`} />
+                <span>Platform</span>
+                <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isPlatformOpen ? "rotate-180" : ""}`} />
               </button>
 
               <AnimatePresence>
-                {isFeaturesOpen && (
+                {isPlatformOpen && (
                   <motion.div
                     initial={{ opacity: 0, y: 10, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -113,7 +114,7 @@ const AiPredictionHeader: React.FC = () => {
                     className="absolute left-0 top-full pt-2 w-64"
                   >
                     <div className="bg-zinc-900/90 backdrop-blur-2xl border border-white/10 rounded-2xl p-2 shadow-2xl">
-                      {FEATURE_ITEMS.map((subItem) => (
+                      {PLATFORM_ITEMS.map((subItem) => (
                         <Link
                           key={subItem.id}
                           to={`/${subItem.id}`}
@@ -203,25 +204,25 @@ const AiPredictionHeader: React.FC = () => {
           </div>
 
           <nav className="flex flex-col gap-2 px-6 py-4 text-sm">
-            {/* Mobile Features Accordion */}
+            {/* Mobile Platform accordion */}
             <div className="flex flex-col">
               <button 
-                onClick={() => setIsMobileFeaturesOpen(!isMobileFeaturesOpen)}
+                onClick={() => setIsMobilePlatformOpen(!isMobilePlatformOpen)}
                 className="flex items-center justify-between rounded-xl px-3 py-3 text-left text-gray-200 hover:bg-white/5 hover:text-white transition-colors group"
               >
-                <span className="text-sm font-medium">Features</span>
-                <ChevronDown className={`w-4 h-4 transition-transform ${isMobileFeaturesOpen ? "rotate-180" : ""}`} />
+                <span className="text-sm font-medium">Platform</span>
+                <ChevronDown className={`w-4 h-4 transition-transform ${isMobilePlatformOpen ? "rotate-180" : ""}`} />
               </button>
               
               <AnimatePresence>
-                {isMobileFeaturesOpen && (
+                {isMobilePlatformOpen && (
                   <motion.div
                     initial={{ height: 0, opacity: 0 }}
                     animate={{ height: "auto", opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}
                     className="overflow-hidden bg-white/[0.02] rounded-xl mx-2 mb-2"
                   >
-                    {FEATURE_ITEMS.map((subItem) => (
+                    {PLATFORM_ITEMS.map((subItem) => (
                       <Link
                         key={subItem.id}
                         to={`/${subItem.id}`}

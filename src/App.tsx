@@ -49,7 +49,6 @@ import { AffiliateRoute } from "./components/AffiliateRoute";
 import { HelmetProvider } from "react-helmet-async";
 import { PlatformChatbot } from "./components/PlatformChatbot";
 import RegisterPage from "./pages/RegisterPage";
-import AIPobabilityEnginePage from "./pages/AIPobabilityEnginePage";
 import AffiliatePartnerPage from "./pages/AffiliatePartnerPage";
 import TradingDashboardPage from "./pages/TradingDashboardPage";
 import TradingAiAnalysisPage from "./pages/TradingAiAnalysisPage";
@@ -68,6 +67,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useLocation } from "react-router-dom";
 import { AlgoToolsDashboardLayout } from "./components/layout/AlgoToolsDashboardLayout";
 import LandingPageNew from "./pages/LandingPageNew";
+import FeaturesPage from "./pages/FeaturesPage";
 import { MobileSplashScreens } from "./mobile-app/MobileSplashScreens";
 import { MobileAppOverlay } from "./mobile-app/MobileAppOverlay";
 import { useIsMobileApp } from "./mobile-app/isMobileDevice";
@@ -89,8 +89,8 @@ function isPublicMarketingPath(pathname: string): boolean {
     "/terms",
     "/risk-disclaimer",
     "/privacy-policy",
-    "/ai-probability-engine",
     "/ai-trading-analysis-and-back-testing",
+    "/features",
     "/affiliate-partner",
     "/dashboard",
     "/market-picks",
@@ -244,8 +244,12 @@ const App = () => (
               <Route path="/risk-disclaimer" element={<RiskDisclaimer />} />
               <Route path="/privacy-policy" element={<PrivacyPolicy />} />
               <Route path="/ai-trading-analysis-and-back-testing" element={<AiTradingAnalysisPage />} />
+              <Route path="/features" element={<FeaturesPage />} />
               <Route path="/pricing" element={<PricingPage />} />
-              <Route path="/ai-probability-engine" element={<AIPobabilityEnginePage />} />
+              <Route
+                path="/ai-probability-engine"
+                element={<Navigate to="/ai-trading-analysis-and-back-testing" replace />}
+              />
               <Route path="/affiliate-partner" element={<AffiliatePartnerPage />} />
               <Route
                 element={

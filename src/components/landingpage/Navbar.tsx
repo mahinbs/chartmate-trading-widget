@@ -104,6 +104,24 @@ const Navbar = () => {
               Daily Analyses
             </Link>
             <Link
+              to="/ai-trading-analysis-and-back-testing"
+              className="text-white hover:text-primary font-medium transition-colors text-sm"
+            >
+              Platform
+            </Link>
+            <Link
+              to="/features"
+              className="text-white hover:text-primary font-medium transition-colors text-sm"
+            >
+              Modules
+            </Link>
+            <Link
+              to="/pricing"
+              className="text-white hover:text-primary font-medium transition-colors text-sm"
+            >
+              Pricing
+            </Link>
+            <Link
               to="/white-label"
               className="text-white hover:text-primary font-medium transition-colors text-sm"
             >
@@ -178,6 +196,36 @@ const Navbar = () => {
                 Daily Analyses
               </span>
               <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_10px_rgba(34,211,238,0.6)] group-hover:scale-125 transition-transform" />
+            </Link>
+
+            <Link
+              to="/ai-trading-analysis-and-back-testing"
+              className="flex items-center justify-between rounded-xl px-3 py-3 text-left text-gray-200 hover:bg-white/5 hover:text-white transition-colors group"
+              onClick={() => setIsMobileMenuOpen(false)}
+            >
+              <span className="text-sm font-medium uppercase tracking-wider">
+                Platform
+              </span>
+            </Link>
+
+            <Link
+              to="/features"
+              className="flex items-center justify-between rounded-xl px-3 py-3 text-left text-gray-200 hover:bg-white/5 hover:text-white transition-colors group"
+              onClick={() => setIsMobileMenuOpen(false)}
+            >
+              <span className="text-sm font-medium uppercase tracking-wider">
+                Modules
+              </span>
+            </Link>
+
+            <Link
+              to="/pricing"
+              className="flex items-center justify-between rounded-xl px-3 py-3 text-left text-gray-200 hover:bg-white/5 hover:text-white transition-colors group"
+              onClick={() => setIsMobileMenuOpen(false)}
+            >
+              <span className="text-sm font-medium uppercase tracking-wider">
+                Pricing
+              </span>
             </Link>
 
             <Link

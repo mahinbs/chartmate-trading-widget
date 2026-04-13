@@ -13,26 +13,29 @@ const WorkSlider = () => {
     const caseStudies = [
         {
             id: 1,
-            client: "BTC/USD",
-            title: "Capturing the Bitcoin Breakout",
-            tech: "15m Timeframe",
-            description: "Our multi-horizon AI model identified a high-probability accumulation pattern 5 hours before the massive 8% surge. Users utilizing the 'Aggressive' risk profile received an early entry signal, maximizing their upside.",
+            client: "Backtesting",
+            title: "From history to trade-level review",
+            tech: "Replay & reporting",
+            description:
+                "A trader replayed their rules on years of data with per-trade entries, exits, and indicator context—then used AI-assisted summaries to tighten risk before any live capital went out.",
             image: "https://images.unsplash.com/photo-1642790106117-e829e14a795f?auto=format&fit=crop&q=80&w=1000",
         },
         {
             id: 2,
-            client: "NVDA",
-            title: "Protecting Capital on Tech Reversals",
-            tech: "Daily Timeframe",
-            description: "While retail sentiment was maximum bullish, our ai probability software's sentiment analysis diverged, identifying a top with 94% confidence. This alert helped thousands of traders lock in profits before the 12% correction.",
+            client: "Custom algo",
+            title: "Spec in, broker-ready automation out",
+            tech: "Engineering-led",
+            description:
+                "A crossover and filter logic that did not fit off-the-shelf builders was coded by our team, validated in paper mode, and connected to the client’s broker API—same stack as analysis and backtests.",
             image: "https://images.unsplash.com/photo-1591696205602-2f950c417cb9?auto=format&fit=crop&q=80&w=1000",
         },
         {
             id: 3,
-            client: "EUR/USD",
-            title: "Riding the Institutional Trend",
-            tech: "4h Timeframe",
-            description: "Forex markets are noisy. Our volume profile analysis filtered out the noise to identify true institutional order flow, allowing trend followers to catch the entire 300-pip move with trailing stops.",
+            client: "Options + equities",
+            title: "One hub for multi-leg workflows",
+            tech: "Trading dashboard",
+            description:
+                "Users managing both spot and options legs kept positions, orders, and armed strategies in one dashboard—reducing context switching and execution errors during volatile sessions.",
             image: "https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?auto=format&fit=crop&q=80&w=1000",
         }
     ];
@@ -42,13 +45,11 @@ const WorkSlider = () => {
             <ScrollReveal>
                 <div className="container mx-auto !bg-zinc-950/80 border border-white/5 overflow-hidden py-16 !px-6 md:!px-12 rounded-[2.5rem] relative">
 
-                    {/* Background glow */}
                     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-secondary/10 rounded-full blur-[100px] pointer-events-none"></div>
 
-                    {/* Header with Navigation */}
                     <div className="flex flex-col md:flex-row justify-between items-end mb-12 relative z-10">
                         <h2 className="text-4xl md:text-5xl font-bold mb-6 md:mb-0 text-white leading-tight tracking-tight">
-                            See The AI <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-primary">In Action</span>
+                            How teams use the <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-primary">platform</span>
                         </h2>
 
                         <div className="flex space-x-4">
@@ -69,7 +70,6 @@ const WorkSlider = () => {
                         </div>
                     </div>
 
-                    {/* Slider Track */}
                     <Swiper
                         modules={[Navigation]}
                         spaceBetween={30}
@@ -90,7 +90,6 @@ const WorkSlider = () => {
                                 <div className="w-full h-full p-1">
                                     <div className="bg-black/60 rounded-[2rem] border border-white/10 overflow-hidden flex flex-col lg:flex-row min-h-[500px] h-full backdrop-blur-md hover:border-secondary/30 transition-colors group">
 
-                                        {/* Image Side */}
                                         <div className="lg:w-[45%] relative p-4 md:p-6 lg:border-r border-white/5">
                                             <div className="relative w-full h-full rounded-xl overflow-hidden min-h-[300px]">
                                                 <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent z-10"></div>
@@ -101,7 +100,6 @@ const WorkSlider = () => {
                                             </div>
                                         </div>
 
-                                        {/* Content Side */}
                                         <div className="lg:w-[55%] p-8 md:p-12 flex flex-col justify-center h-full">
                                             <div className="flex items-center space-x-2 mb-6 bg-cyan-900/20 w-fit px-3 py-1.5 rounded-full border border-cyan-500/20">
                                                 <TrendingUp className="w-4 h-4 text-primary" />
@@ -115,8 +113,8 @@ const WorkSlider = () => {
                                                 {study.description}
                                             </p>
                                             <div>
-                                                <Link to="/contact-us" className="inline-flex items-center text-white font-bold text-base hover:text-primary transition-colors">
-                                                    Analyze This Asset
+                                                <Link to="/ai-trading-analysis-and-back-testing" className="inline-flex items-center text-white font-bold text-base hover:text-primary transition-colors">
+                                                    See platform tour
                                                     <ArrowRight className="w-5 h-5 ml-2 transform group-hover:translate-x-2 transition-transform" />
                                                 </Link>
                                             </div>

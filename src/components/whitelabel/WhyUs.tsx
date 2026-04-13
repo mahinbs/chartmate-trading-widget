@@ -49,7 +49,7 @@ const WhyUs = () => {
                             A Product Your Traders <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-primary">Will Never Leave</span>
                         </h2>
                         <p className="text-xl text-gray-400 leading-relaxed font-light">
-                            We've built the features retail traders actually crave. When you whitelabel this platform, you're offering institutional-grade tools that turn casual users into lifetime subscribers.
+                            We built the workflows traders use every day. When you white-label this platform, you offer the same full module set as our flagship—analysis, backtests, strategies, options, paper/live—with custom algo integration as your differentiated story.
                         </p>
                     </div>
                 </ScrollReveal>

@@ -40,20 +40,24 @@ const FAQ = () => {
 
     const faqs = [
         {
-            question: "How accurate is the AI probability analysis?",
-            answer: "Our models utilize advanced machine learning algorithms trained on decades of market data. While no system can guarantee 100% accuracy, our ai probability software AI consistently maintains a 70-80% success rate on high-confidence setups."
+            question: "What is included in the platform?",
+            answer:
+                "Subscribers get the same product surface: AI-assisted analysis, deep backtesting, strategy management, an options-focused workspace, and paper-to-live trade tracking. Custom algo integration is how we encode your logic and deploy it—plans differ on billing and support, not on hiding major modules.",
         },
         {
-            question: "Do you execute trades for me?",
-            answer: "No, our ai probability software is an intelligence tool, not an auto-trader. We provide probability analysis and risk parameters."
+            question: "Do you execute trades or give recommendations?",
+            answer:
+                "No. TradingSmart is a technology platform. Users define or approve their own strategy logic; we provide infrastructure, integration, and tooling—not investment advice or trade tips.",
         },
         {
-            question: "What markets are supported?",
-            answer: "We support over 150 assets including major Forex pairs (EUR/USD, GBP/JPY), global equities (US Stocks), and top cryptocurrencies (BTC, ETH, SOL)."
+            question: "What markets and brokers are supported?",
+            answer:
+                "We integrate with brokers that expose APIs (e.g. Zerodha, Fyers, Dhan, and others). Supported symbols and asset classes depend on your broker and data feeds.",
         },
         {
-            question: "Is there a free trial?",
-            answer: "Yes! We offer a 7-day free trial with full access to all features. After the trial period, your selected subscription plan will begin."
+            question: "Can users paper trade before going live?",
+            answer:
+                "Yes. Paper workflows help validate process and controls before connecting live capital and broker execution.",
         },
     ];
 
@@ -70,7 +74,7 @@ const FAQ = () => {
                             Frequently Asked <span className="text-primary">Questions</span>
                         </h2>
                         <p className="text-xl text-gray-400 font-light">
-                            Everything you need to know about trading with our ai probability software AI.
+                            How the platform works—and what we do not provide.
                         </p>
                     </div>
                 </ScrollReveal>

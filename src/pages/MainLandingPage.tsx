@@ -255,11 +255,11 @@ const MainLandingPage = () => {
       />
       <Helmet>
         <title>
-          Launch Your Own Algo Trading System Without Coding | TradingSmart.ai
+          TradingSmart.ai — classic landing | Algo integration &amp; full platform
         </title>
         <meta
           name="description"
-          content="Build, backtest, and deploy trading strategies with AI — without writing a single line of code. Our developers build everything for you and integrate your strategy within 72 hours."
+          content="Analysis, backtests, strategies, options, paper and live execution—plus done-for-you custom algo integration. Same modules for every subscriber; plans differ on commercial terms."
         />
       </Helmet>
 
@@ -443,16 +443,16 @@ const MainLandingPage = () => {
 
           <motion.div variants={fadeUp} className="flex flex-col sm:flex-row gap-4 mt-16 justify-center items-center">
             <Link 
-              to="/ai-probability-engine"
+              to="/ai-trading-analysis-and-back-testing"
               className="px-8 py-4 bg-teal-500 text-black font-bold rounded-full hover:bg-teal-400 transition-all shadow-[0_0_20px_rgba(20,184,166,0.3)] hover:scale-105 active:scale-95 text-center min-w-[260px] font-syne"
             >
-              AI Robot Trade
+              See analysis &amp; backtesting
             </Link>
             <Link 
-              to="/ai-trading-analysis-and-back-testing"
+              to="/pricing"
               className="px-8 py-4 bg-transparent border border-teal-500/50 text-teal-400 font-bold rounded-full hover:bg-teal-500/10 transition-all hover:scale-105 active:scale-95 text-center min-w-[260px] font-syne"
             >
-              AI Trading Analysis and Back Testing
+              View pricing
             </Link>
           </motion.div>
           <motion.p variants={fadeUp} className="text-zinc-500 text-xs mt-4 text-center">

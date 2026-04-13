@@ -130,7 +130,7 @@ const Hero = () => {
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
                             <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
                         </span>
-                        Our AI Probability Software Now Live
+                        TradingSmart — full platform + custom algo integration
                     </div>
                 </ScrollReveal>
 
@@ -143,8 +143,8 @@ const Hero = () => {
 
                 <ScrollReveal delay={0.6}>
                     <p className="text-xl md:text-2xl text-gray-400 max-w-3xl mx-auto mb-12 font-light leading-relaxed">
-                        The world's first turnkey, probability-based trading platform. <br />
-                        <span className="text-white font-medium">Fully brandable. Deploy on your own domain.</span>
+                        One workspace for analysis, backtests, strategies, options, and paper-to-live execution—
+                        <span className="text-white font-medium"> fully brandable on your domain. Our engineers integrate your traders&apos; algos into a broker-ready stack.</span>
                     </p>
                 </ScrollReveal>
 
@@ -169,10 +169,10 @@ const Hero = () => {
                 <ScrollReveal delay={1.0}>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8 max-w-5xl mx-auto border-t border-white/5 pt-12">
                         {[
-                            { label: "Model Accuracy", value: "94%", color: "text-primary" },
-                            { label: "Market Monitoring", value: "24/7", color: "text-white" },
-                            { label: "Supported Assets", value: "150+", color: "text-purple-400" },
-                            { label: "Data Latency", value: "<1s", color: "text-green-500" }
+                            { label: "Algo systems deployed", value: "1,500+", color: "text-primary" },
+                            { label: "Full platform modules", value: "6+", color: "text-white" },
+                            { label: "Broker API integrations", value: "Many", color: "text-purple-400" },
+                            { label: "Typical build window", value: "72h", color: "text-green-500" }
                         ].map((stat, i) => (
                             <div key={i} className="p-6 bg-white/5 border border-white/10 rounded-3xl backdrop-blur-sm hover:border-white/20 transition-colors h-full">
                                 <div className={`text-3xl md:text-4xl font-bold ${stat.color} mb-2 tracking-tight`}>{stat.value}</div>

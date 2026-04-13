@@ -22,8 +22,8 @@ const PartnerSupport = () => {
         },
         {
             phase: "03: Intelligence",
-            action: "Deployment of AI Validation Engine & Custom Algo Strategies.",
-            asset: "Proprietary Trading Edge"
+            action: "Deployment of analysis & backtest tooling plus custom algo strategies built by our engineers.",
+            asset: "Full platform + integration moat"
         },
         {
             phase: "04: Profit",

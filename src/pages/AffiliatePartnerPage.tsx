@@ -153,10 +153,10 @@ const AffiliatePartnerPage = () => {
   return (
     <div className="min-h-screen bg-black text-zinc-100 font-sans selection:bg-teal-500/30 selection:text-teal-100 overflow-x-hidden">
       <Helmet>
-        <title>Distribution Partner Program | AI Trading Business | TradingSmart.ai</title>
+        <title>Affiliate partner program | TradingSmart.ai</title>
         <meta
           name="description"
-          content="Turn your trading audience into recurring revenue. Partner with TradingSmart.ai—premium AI traders use daily. Limited partner slots. Apply for exclusive access."
+          content="Earn commissions promoting a full trading stack: analysis, backtests, strategies, options, paper/live execution, and custom algo integration. Built for retention—not hype."
         />
       </Helmet>
 
@@ -403,7 +403,7 @@ const AffiliatePartnerPage = () => {
             {[
               {
                 title: "Solves a real pain",
-                body: "Traders struggle with uncertainty. We give them probability-based decision clarity.",
+                body: "Traders need structure: analysis, backtests, and a path to automation. We bundle the full platform with engineering-led custom algo integration.",
                 icon: <FaChartLine />,
               },
               {
@@ -596,9 +596,9 @@ const AffiliatePartnerPage = () => {
           </motion.p>
           <motion.div variants={fadeUp} className="rounded-3xl border border-zinc-800 bg-black/60 p-8 space-y-6">
             {[
-              { q: "“What trade should I take?”", a: "→ Solved." },
-              { q: "“What’s the probability?”", a: "→ Solved." },
-              { q: "“Can I automate this?”", a: "→ Solved." },
+              { q: "“How do I validate my rules?”", a: "→ Analysis + backtests." },
+              { q: "“Can I automate without coding?”", a: "→ Custom integration." },
+              { q: "“Options and live execution?”", a: "→ Same dashboard." },
             ].map((row) => (
               <div
                 key={row.q}
