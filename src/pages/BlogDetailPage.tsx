@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
+import { Helmet } from "react-helmet-async";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Clock } from "lucide-react";
+import { buildFaqSchema, ensureArrayStrings, ensureFaqItems, ensureSourceItems, type FaqItem, type SourceItem } from "@/lib/blogSeo";
 
 interface Blog {
   id: string;
@@ -18,6 +20,11 @@ interface Blog {
   content_html: string | null;
   category: string | null;
   read_time: string | null;
+  primary_keyword: string | null;
+  meta_description: string | null;
+  key_takeaways: string[];
+  faq_items: FaqItem[];
+  external_sources: SourceItem[];
 }
 
 function formatDate(iso?: string | null) {
@@ -59,7 +66,17 @@ export default function BlogDetailPage() {
         }
 
         if (error) throw error;
-        setBlog((data as any) ?? null);
+        const raw = (data as Record<string, unknown> | null) ?? null;
+        setBlog(
+          raw
+            ? {
+                ...raw,
+                key_takeaways: ensureArrayStrings(raw.key_takeaways),
+                faq_items: ensureFaqItems(raw.faq_items),
+                external_sources: ensureSourceItems(raw.external_sources),
+              }
+            : null,
+        );
       } catch (e) {
         console.error("Failed to load blog", e);
         setBlog(null);
@@ -72,6 +89,15 @@ export default function BlogDetailPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      {blog && (
+        <Helmet>
+          <title>{blog.title} | TradingSmart.ai</title>
+          <meta name="description" content={blog.meta_description || blog.subtitle || blog.title} />
+          {blog.faq_items.filter((item) => item.question && item.answer).length > 0 && (
+            <script type="application/ld+json">{JSON.stringify(buildFaqSchema(blog.faq_items))}</script>
+          )}
+        </Helmet>
+      )}
       {/* Sticky nav */}
       <div className="border-b border-white/5 bg-background/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
@@ -170,6 +196,16 @@ export default function BlogDetailPage() {
 
           {/* Content body */}
           <div className="max-w-3xl mx-auto px-6 pb-32">
+            {blog.key_takeaways.length > 0 && (
+              <section className="mb-10 rounded-2xl border border-primary/20 bg-primary/5 p-6">
+                <h2 className="text-lg font-semibold text-white mb-3">Key Takeaways</h2>
+                <ul className="list-disc pl-5 text-zinc-300 space-y-2">
+                  {blog.key_takeaways.map((item, index) => (
+                    <li key={`${item}-${index}`}>{item}</li>
+                  ))}
+                </ul>
+              </section>
+            )}
             {blog.subtitle && (
               <p className="text-xl md:text-2xl text-zinc-300 leading-relaxed mb-12 font-medium border-l-4 border-primary/50 pl-6 py-1">
                 {blog.subtitle}
@@ -194,6 +230,35 @@ export default function BlogDetailPage() {
               "
               dangerouslySetInnerHTML={{ __html: blog.content_html || "" }}
             />
+
+            {blog.external_sources.length > 0 && (
+              <section className="mt-14">
+                <h2 className="text-2xl font-bold text-white mb-4">Sources</h2>
+                <ul className="space-y-2">
+                  {blog.external_sources.map((source, index) => (
+                    <li key={`${source.url}-${index}`}>
+                      <a href={source.url} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-4">
+                        {source.title || source.url}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {blog.faq_items.length > 0 && (
+              <section className="mt-14">
+                <h2 className="text-2xl font-bold text-white mb-4">FAQ</h2>
+                <div className="space-y-4">
+                  {blog.faq_items.map((faq, index) => (
+                    <div key={`${faq.question}-${index}`} className="rounded-xl border border-white/10 p-4 bg-white/5">
+                      <h3 className="text-lg font-semibold text-white">{faq.question}</h3>
+                      <p className="mt-2 text-zinc-300">{faq.answer}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
         </article>
       )}

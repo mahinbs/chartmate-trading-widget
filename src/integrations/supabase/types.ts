@@ -14,6 +14,69 @@ export type Database = {
   }
   public: {
     Tables: {
+      blogs: {
+        Row: {
+          author_image_url: string | null
+          author_name: string | null
+          category: string | null
+          content_html: string | null
+          cover_image_url: string | null
+          created_at: string
+          external_sources: Json
+          faq_items: Json
+          id: string
+          is_published: boolean
+          key_takeaways: Json
+          meta_description: string | null
+          primary_keyword: string | null
+          published_at: string | null
+          read_time: string | null
+          slug: string | null
+          subtitle: string | null
+          title: string
+        }
+        Insert: {
+          author_image_url?: string | null
+          author_name?: string | null
+          category?: string | null
+          content_html?: string | null
+          cover_image_url?: string | null
+          created_at?: string
+          external_sources?: Json
+          faq_items?: Json
+          id?: string
+          is_published?: boolean
+          key_takeaways?: Json
+          meta_description?: string | null
+          primary_keyword?: string | null
+          published_at?: string | null
+          read_time?: string | null
+          slug?: string | null
+          subtitle?: string | null
+          title: string
+        }
+        Update: {
+          author_image_url?: string | null
+          author_name?: string | null
+          category?: string | null
+          content_html?: string | null
+          cover_image_url?: string | null
+          created_at?: string
+          external_sources?: Json
+          faq_items?: Json
+          id?: string
+          is_published?: boolean
+          key_takeaways?: Json
+          meta_description?: string | null
+          primary_keyword?: string | null
+          published_at?: string | null
+          read_time?: string | null
+          slug?: string | null
+          subtitle?: string | null
+          title?: string
+        }
+        Relationships: []
+      }
       watchlists: {
         Row: {
           created_at: string
