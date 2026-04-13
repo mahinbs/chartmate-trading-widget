@@ -31,13 +31,13 @@ export function MobileSplashScreens() {
       setCurrentSlide(prev => prev + 1);
     } else {
       localStorage.setItem('hasSeenMobileSplash', 'true');
-      navigate('/auth', { replace: true });
+      navigate('/', { replace: true });
     }
   };
 
   const handleSkip = () => {
     localStorage.setItem('hasSeenMobileSplash', 'true');
-    navigate('/auth', { replace: true });
+    navigate('/', { replace: true });
   };
 
   return (
