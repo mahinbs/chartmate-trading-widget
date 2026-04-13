@@ -2037,6 +2037,7 @@ export function StrategyEntrySignalsPanel({
     initialHistoryId,
   );
   const [entryAlarmsOpen, setEntryAlarmsOpen] = useState(false);
+  const [entryAlarmTargetSymbol, setEntryAlarmTargetSymbol] = useState("");
   const [scheduleTab, setScheduleTab] = useState<"create" | "existing">(
     "create",
   );
@@ -2089,6 +2090,20 @@ export function StrategyEntrySignalsPanel({
 
   const symbolRef = useRef(symbol);
   symbolRef.current = symbol;
+
+  const activeEntryAlarmSymbol = useMemo(() => {
+    const target = entryAlarmTargetSymbol.trim();
+    return target || symbol;
+  }, [entryAlarmTargetSymbol, symbol]);
+
+  const openEntryAlarmsForSymbol = useCallback(
+    (targetSymbol?: string | null) => {
+      const nextSymbol = (targetSymbol ?? symbol).trim();
+      setEntryAlarmTargetSymbol(nextSymbol);
+      setEntryAlarmsOpen(true);
+    },
+    [symbol],
+  );
 
   const fetchMarketStatus = useCallback(async () => {
     const sym = symbolRef.current?.trim();
@@ -3099,7 +3114,7 @@ export function StrategyEntrySignalsPanel({
                   size="sm"
                   className="shrink-0 h-8 px-3 rounded-md border-teal-500/30 bg-black/40 text-teal-300 hover:bg-teal-500/10 hover:border-teal-400/50 text-xs"
                   aria-label="Open schedule popup"
-                  onClick={() => setEntryAlarmsOpen(true)}
+                  onClick={() => openEntryAlarmsForSymbol(symbol)}
                 >
                   <Clock3 className="h-3.5 w-3.5 mr-1.5" />
                   Schedule
@@ -3113,7 +3128,13 @@ export function StrategyEntrySignalsPanel({
         </div>
       </CardHeader>
 
-      <Sheet open={entryAlarmsOpen} onOpenChange={setEntryAlarmsOpen}>
+      <Sheet
+        open={entryAlarmsOpen}
+        onOpenChange={(open) => {
+          setEntryAlarmsOpen(open);
+          if (!open) setEntryAlarmTargetSymbol("");
+        }}
+      >
         <SheetContent
           side="right"
           className="w-full sm:max-w-lg overflow-y-auto border-l border-zinc-800 bg-zinc-950 p-4 pt-10"
@@ -3125,7 +3146,7 @@ export function StrategyEntrySignalsPanel({
                 Turn on{" "}
                 <span className="text-zinc-300">entry point alarms</span> for{" "}
                 <span className="font-mono text-teal-200/90">
-                  {symbol.trim().toUpperCase() || "this symbol"}
+                  {activeEntryAlarmSymbol.trim().toUpperCase() || "this symbol"}
                 </span>{" "}
                 at a daily wall time. When due, the backend runs the same
                 scanner as &quot;Run strategy entry scan&quot;, saves a row in{" "}
@@ -3180,7 +3201,7 @@ export function StrategyEntrySignalsPanel({
 
             <TabsContent value="create" className="mt-0">
               <LiveEntryTrackingSection
-                symbol={symbol}
+                symbol={activeEntryAlarmSymbol}
                 selectedBuiltInStrategies={Array.from(selected)}
                 selectedCustomStrategyIds={Array.from(selectedCustom)}
               />
@@ -3639,7 +3660,7 @@ export function StrategyEntrySignalsPanel({
                           <ScanSignalSummaryBanner
                             synthesis={scanSynthesis}
                             symbol={symbol.trim()}
-                            onSetAlert={() => setEntryAlarmsOpen(true)}
+                            onSetAlert={() => openEntryAlarmsForSymbol(symbol)}
                           />
                         </div>
                       ) : null}
@@ -3917,7 +3938,9 @@ export function StrategyEntrySignalsPanel({
                             synthesis={historyScanSynthesis}
                             symbol={historyDetail.symbol}
                             titleSuffix="Saved scan summary"
-                            onSetAlert={() => setEntryAlarmsOpen(true)}
+                            onSetAlert={() =>
+                              openEntryAlarmsForSymbol(historyDetail.symbol)
+                            }
                           />
                         </div>
                       ) : null}
