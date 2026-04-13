@@ -400,12 +400,6 @@ const LandingPageNew = () => {
           </motion.p>
           <motion.p
             variants={fadeUp}
-            className="text-sm md:text-base text-white font-semibold max-w-2xl mx-auto mb-3 leading-relaxed"
-          >
-            You get the full platform on every plan, and your edge comes from our team integrating your strategy logic into a live, broker-ready stack.
-          </motion.p>
-          <motion.p
-            variants={fadeUp}
             className={`text-xs md:text-sm text-white/80 font-light max-w-2xl mx-auto mb-12 leading-relaxed`}
           >
             You stay in control of every decision. We provide the technology infrastructure and integration tools; we do not provide investment advice or trade recommendations.
