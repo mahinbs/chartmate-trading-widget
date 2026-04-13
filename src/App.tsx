@@ -218,7 +218,6 @@ function MobileSplashGuard({ children }: { children: React.ReactNode }) {
     if (!hasSeenSplash) {
       return <MobileSplashScreens />;
     }
-    return <Navigate to="/auth" replace />;
   }
 
   return <>{children}</>;
