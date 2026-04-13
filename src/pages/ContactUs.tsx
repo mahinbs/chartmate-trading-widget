@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { Helmet } from "react-helmet-async";
 import Layout from "../components/landingpage/Layout";
 import { useForm, Controller } from "react-hook-form";
 import { supabase } from "@/integrations/supabase/client";
@@ -187,6 +188,13 @@ const ContactUsPage = () => {
 
   return (
     <Layout>
+      <Helmet>
+        <title>Contact TradingSmart.ai</title>
+        <meta
+          name="description"
+          content="Reach the team for platform questions, custom algo integration, white-label, or partnerships. Technology platform—not investment advice."
+        />
+      </Helmet>
       <section className="relative min-h-screen flex items-center justify-center pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden bg-black">
         {/* Overlay Gradients for Depth */}
         <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/50 to-black z-0 pointer-events-none"></div>

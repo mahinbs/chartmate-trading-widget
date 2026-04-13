@@ -7,29 +7,29 @@ const LatestInsights = () => {
     const insights = [
         {
             id: 1,
-            category: "Crypto Analysis",
-            title: "Bitcoin (BTC) Approaching Key Resistance at $68k",
-            description: "Volume profile suggests a breakout is imminent. Our AI indicates a 78% probability of a push to $72k within the next 48 hours.",
+            category: "Workflow",
+            title: "Structure ideas before you size up",
+            description: "Use multi-factor analysis and backtests to document why a setup passed your rules—then rehearse execution in paper mode before live orders.",
             image: "https://images.unsplash.com/photo-1518546305927-5a555bb7020d?q=80&w=1000&auto=format&fit=crop",
-            sentiment: "Bullish",
+            sentiment: "Process",
             icon: <TrendingUp className="w-4 h-4 text-green-500 mr-2" />
         },
         {
             id: 2,
-            category: "Equities",
-            title: "NVIDIA (NVDA) Overextended on Daily RSI",
-            description: "RSI divergence on the 4h and Daily charts points to a potential pullback. Risk/Reward ratio for long positions is currently unfavorable.",
+            category: "Risk",
+            title: "Keep risk visible across modules",
+            description: "Pair per-trade backtest stats with live and paper dashboards so drawdowns and open risk stay in one place—not scattered across spreadsheets.",
             image: "https://images.unsplash.com/photo-1591696205602-2f950c417cb9?q=80&w=1000&auto=format&fit=crop",
-            sentiment: "Bearish",
+            sentiment: "Discipline",
             icon: <TrendingDown className="w-4 h-4 text-red-500 mr-2" />
         },
         {
             id: 3,
-            category: "Forex",
-            title: "EUR/USD Liquidity Sweep Completed",
-            description: "The pair has swept sell-side liquidity below 1.0800. Watch for a reversal pattern on the 15m timeframe to target 1.0950.",
+            category: "Integration",
+            title: "From spec to deployed logic",
+            description: "When off-the-shelf builders stop matching your rules, engineering-led integration encodes your strategy, validates it, and connects supported broker APIs.",
             image: "https://images.unsplash.com/photo-1642790106117-e829e14a795f?auto=format&fit=crop&q=80&w=1000",
-            sentiment: "Neutral/Bullish",
+            sentiment: "Build",
             icon: <Activity className="w-4 h-4 text-primary mr-2" />
         }
     ];
@@ -42,10 +42,10 @@ const LatestInsights = () => {
                 <ScrollReveal>
                     <div className="flex flex-col md:flex-row justify-between items-end mb-16 border-b border-white/10 pb-6">
                         <h2 className="text-4xl md:text-5xl font-bold text-white tracking-tight">
-                            Recent Market <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">Analysis</span>
+                            Platform <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">highlights</span>
                         </h2>
-                        <Link to="/contact-us" className="hidden md:inline-flex items-center justify-center border border-cyan-500/50 text-primary font-bold py-3 px-8 rounded-full hover:bg-cyan-500 hover:text-black transition-all shadow-[0_0_15px_rgba(6,182,212,0.15)] hover:shadow-[0_0_25px_rgba(6,182,212,0.3)] text-base">
-                            View All Analysis
+                        <Link to="/features" className="hidden md:inline-flex items-center justify-center border border-cyan-500/50 text-primary font-bold py-3 px-8 rounded-full hover:bg-cyan-500 hover:text-black transition-all shadow-[0_0_15px_rgba(6,182,212,0.15)] hover:shadow-[0_0_25px_rgba(6,182,212,0.3)] text-base">
+                            All modules
                         </Link>
                     </div>
                 </ScrollReveal>
@@ -67,7 +67,7 @@ const LatestInsights = () => {
                                 <div className="p-8 flex-grow flex flex-col relative z-20 -mt-6">
                                     <div className="flex items-center mb-4 bg-black/50 w-fit px-3 py-1.5 rounded-full border border-white/5 backdrop-blur-md">
                                         {insight.icon}
-                                        <span className={`text-xs font-bold uppercase tracking-wider ${insight.sentiment === 'Bearish' ? 'text-red-500' : insight.sentiment === 'Bullish' ? 'text-green-500' : 'text-primary'}`}>
+                                        <span className={`text-xs font-bold uppercase tracking-wider ${insight.sentiment === 'Discipline' ? 'text-red-400' : insight.sentiment === 'Process' ? 'text-green-500' : 'text-primary'}`}>
                                             {insight.sentiment}
                                         </span>
                                     </div>
@@ -86,8 +86,8 @@ const LatestInsights = () => {
 
                 {/* Mobile Button */}
                 <div className="mt-12 md:hidden text-center">
-                    <Link to="/intraday" className="inline-block border border-cyan-500/50 text-primary font-bold py-3 px-8 rounded-full hover:bg-cyan-500 hover:text-black transition-all">
-                        View All Analysis
+                    <Link to="/features" className="inline-block border border-cyan-500/50 text-primary font-bold py-3 px-8 rounded-full hover:bg-cyan-500 hover:text-black transition-all">
+                        All modules
                     </Link>
                 </div>
 

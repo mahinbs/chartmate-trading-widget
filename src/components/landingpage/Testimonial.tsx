@@ -6,32 +6,32 @@ import { ScrollReveal } from '../ui/ScrollReveal';
 
 const testimonials = [
     {
-        quote: "I was skeptical about AI tools—most are just hype. But our ai probability software's risk management actually kept me out of bad trades during the last correction. It's not magic, but it keeps me disciplined.",
+        quote: "They translated my rule set into something I could actually run and monitor. Backtests matched what I expected—no mystery box, just my logic with better tooling.",
         author: "Lachlan Ross",
         role: "Swing Trader, Melbourne"
     },
     {
-        quote: "The probability heatmaps align well with my own technicals. It doesn't replace my analysis, but having that second opinion on entry zones gives me the confidence to size up.",
+        quote: "Options and equities in one dashboard matter for how I work. Having paper mode before flipping live saved me from dumb execution mistakes.",
         author: "Omar Al-Fayed",
-        role: "Forex Specialist, Dubai"
+        role: "Multi-asset Trader, Dubai"
     },
     {
-        quote: "Impressed by the data integrity. I've backtested their signals against my own historical data and the correlation is significant. reliable infrastructure for serious work.",
+        quote: "We needed engineering help, not another indicator pack. The team wired broker connectivity and gave us a clear path from backtest to deployment.",
         author: "Klaus Weber",
         role: "Algorithmic Trader, Munich"
     },
     {
-        quote: "As a scalper, milliseconds matter. The latency on the probability updates is effectively zero. It catches momentum shifts before they hit the mainstream news feeds.",
+        quote: "I care about control and auditability. Pausing strategies and seeing orders in one place beats juggling five tabs.",
         author: "James Sterling",
-        role: "Institutional Scalper, London"
+        role: "Active Trader, London"
     },
     {
-        quote: "The automation potential is huge. I use the API to feed probability data directly into my execution bot. It's saved me hours of screen time every day.",
+        quote: "The moat for us was custom integration—our spec went in, a working algo came out. That is not something I could ship solo on a weekend.",
         author: "Wei Chen",
         role: "Quant Developer, Singapore"
     },
     {
-        quote: "Finally, a trading interface that is clean and intuitive. The risk-reward visualization makes it so easy to see if a trade is worth taking at a glance.",
+        quote: "Structured analysis with readable reasons helps me sanity-check ideas before I size up. It complements my process instead of replacing it.",
         author: "Elena Rossi",
         role: "Visual Trader, Toronto"
     }
@@ -69,7 +69,7 @@ const Testimonial = () => {
                 <ScrollReveal>
                     <div className="text-center mb-16">
                         <h2 className="text-4xl md:text-5xl font-bold text-white mb-4 tracking-tight">
-                            Trusted by <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">Smart Traders</span>
+                            Trusted by <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">serious traders</span>
                         </h2>
                     </div>
                 </ScrollReveal>

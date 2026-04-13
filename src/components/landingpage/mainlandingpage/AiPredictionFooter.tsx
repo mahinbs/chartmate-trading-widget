@@ -4,9 +4,8 @@ import logoImg from "@/assets/logo.png";
 import { supabase } from "@/integrations/supabase/client";
 
 const BASE_NAV_ITEMS = [
-  { id: "ai-probability-engine", label: "AI Robot Trade", isRoute: true },
   // { id: "market-picks", label: "Daily Analysis", isRoute: true },
-  { id: "ai-trading-analysis-and-back-testing", label: "AI Trading Analysis and Back Testing", isRoute: true },
+  { id: "ai-trading-analysis-and-back-testing", label: "Analysis & backtesting", isRoute: true },
   { id: "pricing", label: "Software Pricing", isRoute: true },
   { id: "white-label", label: "White Label", isRoute: true },
   { id: "terms", label: "Terms & Conditions", isRoute: true },
