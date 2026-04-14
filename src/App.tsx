@@ -71,6 +71,7 @@ import FeaturesPage from "./pages/FeaturesPage";
 import { MobileSplashScreens } from "./mobile-app/MobileSplashScreens";
 import { MobileAppOverlay } from "./mobile-app/MobileAppOverlay";
 import { useIsMobileApp } from "./mobile-app/isMobileDevice";
+import TrialDashboardPage from "./pages/TrialDashboardPage";
 
 // OpenAlgo ping temporarily disabled in mock-order mode to avoid CORS noise
 
@@ -191,13 +192,17 @@ function WhitelabelAffiliateDeepLinkRedirect() {
 
 function AppChatbots() {
   const { user } = useAuth();
-  const { pathname } = useLocation();
+  const { pathname, hash } = useLocation();
   const [predictionOpen, setPredictionOpen] = useState(false);
 
   const showPredictionChatbot = !!user && isLoggedInAppPath(pathname);
+  const isTrialDemoExperience =
+    pathname === "/1414ghgh" || (pathname === "/" && hash === "#1414ghgh");
   /** Marketing pages: platform bot unless the logged-in app assistant already owns this URL (e.g. /market-picks). */
   const showPlatformChatbot =
-    isPublicMarketingPath(pathname) && !showPredictionChatbot;
+    !isTrialDemoExperience &&
+    isPublicMarketingPath(pathname) &&
+    !showPredictionChatbot;
 
   return (
     <>
@@ -223,6 +228,14 @@ function MobileSplashGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function RootRoute() {
+  const { hash } = useLocation();
+  if (hash === "#1414ghgh") {
+    return <TrialDashboardPage />;
+  }
+  return <LandingPageNew />;
+}
+
 const App = () => (
   <HelmetProvider>
     <QueryClientProvider client={queryClient}>
@@ -235,7 +248,8 @@ const App = () => (
           <MobileSplashGuard>
           <div className="min-h-screen bg-background text-foreground">
             <Routes>
-              <Route path="/" element={<LandingPageNew />} />
+              <Route path="/" element={<RootRoute />} />
+              <Route path="/1414ghgh" element={<TrialDashboardPage />} />
               <Route path="/classic" element={<MainLandingPage />} />
               <Route path="/rsb-fintech-founder" element={<LandingPage />} />
               <Route path="/dsn-fintech-founder" element={<LandingPage />} />

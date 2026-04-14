@@ -20,6 +20,8 @@ import {
   AlertTriangle, BarChart3 as BarChart3Icon, Brain, CheckCircle2, Clock, Info, Loader2, Search, Send,
 } from "lucide-react";
 import { toast } from "sonner";
+import { ALGO_ROBOT_COPY, emitAlgoRobotEvent } from "@/lib/algoRobotMessaging";
+import { isRobotSoundEnabled, trackRobotMetric } from "@/lib/algoRobotExperience";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -321,6 +323,11 @@ export default function PlaceOrderPanel({
     if (!order.quantity || parseInt(order.quantity) < 1) { toast.error("Enter a valid quantity"); return; }
     setAiLoading(true);
     setAiAnalysis(null);
+    emitAlgoRobotEvent(
+      "Signal detected",
+      `Validating ${order.symbol.toUpperCase()} with your configured execution logic.`,
+      "info",
+    );
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const res = await supabase.functions.invoke("analyze-trade", {
@@ -339,9 +346,19 @@ export default function PlaceOrderPanel({
       } else {
         setAiAnalysis("No AI analysis available for this symbol. You may proceed.");
       }
+      emitAlgoRobotEvent(
+        "Risk validation complete",
+        "Strategy conditions and risk checks are ready for your confirmation.",
+        "success",
+      );
       setShowConfirm(true);
     } catch {
       setAiAnalysis("AI analysis unavailable. You may still place the order.");
+      emitAlgoRobotEvent(
+        "Validation unavailable",
+        "Proceed manually only if your strategy setup and risk limits are verified.",
+        "warning",
+      );
       setShowConfirm(true);
     } finally {
       setAiLoading(false);
@@ -356,6 +373,11 @@ export default function PlaceOrderPanel({
       toast.error("Enter trigger price"); return;
     }
     setPlacing(true);
+    emitAlgoRobotEvent(
+      "Sending order to broker",
+      `Submitting ${order.action} ${order.symbol.toUpperCase()} via ${brokerLabel}.`,
+      "info",
+    );
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const res = await supabase.functions.invoke("openalgo-place-order", {
@@ -374,6 +396,11 @@ export default function PlaceOrderPanel({
       const result = res.data as any;
       if (res.error || result?.error) {
         toast.error(result?.error ?? res.error?.message ?? "Order failed");
+        emitAlgoRobotEvent(
+          "Order rejected",
+          result?.error ?? res.error?.message ?? "Broker rejected the request.",
+          "error",
+        );
       } else {
         const oid = result?.orderid ?? result?.broker_order_id ?? "placed";
         setOrderSuccess({
@@ -389,6 +416,20 @@ export default function PlaceOrderPanel({
           `${order.action} ${order.symbol} placed — #${String(oid).slice(-8)}`,
           { duration: 6000 }
         );
+        emitAlgoRobotEvent(
+          "Position active",
+          `Order confirmed by broker (#${String(oid).slice(-8)}). Monitoring now.`,
+          "success",
+        );
+        if (isRobotSoundEnabled()) {
+          try {
+            const audio = new Audio("data:audio/wav;base64,UklGRjwAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YRgAAAAA/////wAAAP///wAA");
+            void audio.play();
+          } catch {
+            // ignore autoplay restrictions
+          }
+        }
+        void trackRobotMetric("live_order_confirmed");
         setTimeout(onOrderPlaced, 1500);
       }
     } catch (e: any) {
@@ -668,6 +709,7 @@ export default function PlaceOrderPanel({
               ? "⚠ Real money — order executes instantly on broker"
               : "⚠ AMO — queued, executes at next market open"}
           </p>
+          <p className="text-[10px] text-center text-zinc-600">{ALGO_ROBOT_COPY.legalSafeHint}</p>
         </div>
       )}
     </div>

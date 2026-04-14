@@ -35,6 +35,74 @@ export const stripHtml = (html: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
+export const cleanBlogContentHtml = (html: string) => {
+  if (!html) return "";
+
+  let cleaned = html;
+
+  // Remove JSON-LD script blocks accidentally pasted into article body.
+  cleaned = cleaned
+    .replace(/&lt;script[^>]*application\/ld\+json[^]*?&lt;\/script&gt;/gi, "")
+    .replace(/<script[^>]*application\/ld\+json[^]*?<\/script>/gi, "")
+    .replace(/&lt;meta[^&]*&gt;/gi, "")
+    .replace(/<meta[^>]*>/gi, "");
+
+  // Remove common conversion noise from DOCX imports.
+  cleaned = cleaned.replace(/<p>\s*xml\s*<\/p>/gi, "");
+
+  // Remove embedded/screenshot images from imported docs (often logos/screenshots).
+  cleaned = cleaned
+    .replace(/<img[^>]*src=["']data:image\/[^"']+["'][^>]*>/gi, "")
+    .replace(/<img[^>]*(?:logo|screenshot|perplexity)[^>]*>/gi, "");
+
+  // Remove citation markers like [1], [2][3] for cleaner reading flow.
+  cleaned = cleaned.replace(/(?:\[\d+\]){1,}/g, "");
+
+  // Remove empty footnote anchors/superscripts left by docs conversion.
+  cleaned = cleaned
+    .replace(/<a[^>]*href=["']#fn\d+["'][^>]*>\s*<sup>\s*<\/sup>\s*<\/a>/gi, "")
+    .replace(/<a[^>]*id=["']fnref[^"']*["'][^>]*>\s*<\/a>/gi, "");
+
+  // Remove lines that are only raw URLs or bullets/stars; sources are rendered in a dedicated section.
+  cleaned = cleaned
+    .replace(/<p>\s*[*]+\s*<\/p>/gi, "")
+    .replace(/<p>\s*(?:[-*]\s*)?https?:\/\/[^<\s]+\/?\s*<\/p>/gi, "")
+    .replace(/<li>\s*(?:[-*]\s*)?https?:\/\/[^<\s]+\/?\s*<\/li>/gi, "");
+
+  // Convert paragraph-level strong titles into semantic headings for better spacing and readability.
+  cleaned = cleaned.replace(
+    /<p>\s*(?:<a[^>]*><\/a>\s*)?<strong>([^<]{3,120})<\/strong>\s*<\/p>/gi,
+    (_match, headingText: string) => {
+      const text = (headingText || "").trim();
+      if (!text) return "";
+      if (text.endsWith("?")) return `<h3>${text}</h3>`;
+      if (/^(key takeaways|sources|faq|manual trading vs|what is|algo trading india)/i.test(text)) return `<h2>${text}</h2>`;
+      return `<h3>${text}</h3>`;
+    },
+  );
+
+  // Make tables visibly tabular with explicit classes.
+  cleaned = cleaned
+    .replace(/<table>/gi, '<table class="ts-blog-table">')
+    .replace(/<tr>/gi, '<tr class="ts-blog-tr">')
+    .replace(/<th>/gi, '<th class="ts-blog-th">')
+    .replace(/<td>/gi, '<td class="ts-blog-td">');
+
+  // Linkify remaining bare URLs in paragraphs.
+  cleaned = cleaned.replace(
+    /(^|[\s>])(https?:\/\/[^\s<]+)/g,
+    '$1<a href="$2" target="_blank" rel="noreferrer">$2</a>',
+  );
+
+  // Collapse empty paragraph/list artifacts after cleanup.
+  cleaned = cleaned
+    .replace(/<p>\s*<\/p>/gi, "")
+    .replace(/<li>\s*<\/li>/gi, "")
+    .replace(/\n{3,}/g, "\n\n");
+
+  return cleaned.trim();
+};
+
 export const truncateToExactLength = (text: string, target = 155) => {
   const normalized = normalizeText(text);
   if (!normalized) return "";

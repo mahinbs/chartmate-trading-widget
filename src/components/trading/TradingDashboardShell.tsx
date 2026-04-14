@@ -8,6 +8,8 @@ import {
   BROKER_SESSION_UPDATED_EVENT,
   dispatchOpenBrokerSync,
 } from "@/services/openalgoIntegrationService";
+import { ALGO_ROBOT_COPY, emitAlgoRobotEvent } from "@/lib/algoRobotMessaging";
+import { trackRobotMetric } from "@/lib/algoRobotExperience";
 import { EntryPointNotificationsHeaderButton } from "@/components/EntryPointNotificationsBell";
 import { ScheduledDigestClientTrigger } from "@/components/ScheduledDigestClientTrigger";
 import { DashboardShellLayout } from "../layout/DashboardShellLayout";
@@ -215,7 +217,15 @@ export function TradingDashboardShell({ broker, children, pageTitle, hideHeader 
               ) : (
                 <button
                   type="button"
-                  onClick={() => dispatchOpenBrokerSync()}
+                  onClick={() => {
+                    dispatchOpenBrokerSync();
+                    emitAlgoRobotEvent(
+                      "Broker reconnect requested",
+                      "Reconnect flow opened. Live execution resumes after session sync.",
+                      "warning",
+                    );
+                    void trackRobotMetric("broker_reconnect_click");
+                  }}
                   className="flex items-center gap-1.5 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/30 px-3 py-1.5 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer"
                 >
                   <Link2Off className="h-3 w-3 shrink-0" />
@@ -228,6 +238,12 @@ export function TradingDashboardShell({ broker, children, pageTitle, hideHeader 
         </header>}
 
         <main className="container mx-auto px-4 py-5">
+          {!hideHeader && (
+            <div className="mb-3 rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2">
+              <p className="text-xs text-zinc-200">{ALGO_ROBOT_COPY.controlLine}</p>
+              <p className="text-[11px] text-zinc-500">{ALGO_ROBOT_COPY.legalSafeHint}</p>
+            </div>
+          )}
           {!hideHeader && <div className="mb-5">
             <BrokerSyncSection broker={broker} />
           </div>}

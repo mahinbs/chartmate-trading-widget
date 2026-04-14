@@ -54,6 +54,7 @@ import {
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
+import { emitAlgoRobotEvent } from "@/lib/algoRobotMessaging";
 
 // ── All 30 OpenAlgo brokers ───────────────────────────────────────────────────
 
@@ -363,6 +364,11 @@ export default function BrokerSyncSection({ broker: brokerProp, compact = false 
   // ── Zerodha OAuth ─────────────────────────────────────────────────────────
   const handleZerodhaOAuth = useCallback(async () => {
     setOauthLoading(true);
+    emitAlgoRobotEvent(
+      "Broker authentication started",
+      "Opening secure broker login to refresh your execution session.",
+      "info",
+    );
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) {
@@ -433,6 +439,11 @@ export default function BrokerSyncSection({ broker: brokerProp, compact = false 
       toast.success(d.openalgo_synced
         ? `${brokerInfo.label} synced! Live orders will route through ChartMate.`
         : ("Token saved. " + (d.openalgo_note ?? "")));
+      emitAlgoRobotEvent(
+        "Broker session active",
+        `${brokerInfo.label} token synced. Execution engine can place orders.`,
+        "success",
+      );
       setManualToken("");
       setShowPaste(false);
       await load();
@@ -452,6 +463,11 @@ export default function BrokerSyncSection({ broker: brokerProp, compact = false 
       const { error } = await updateOpenalgoApiKey(openalgoKey.trim());
       if (error) { toast.error("Failed to save: " + error); return; }
       toast.success("OpenAlgo API key saved! Options data will now load automatically.");
+      emitAlgoRobotEvent(
+        "Execution credentials ready",
+        "API key saved. Live data and strategy execution checks are enabled.",
+        "success",
+      );
       setOpenalgoKey("");
       setShowKeyInput(false);
       await load();
