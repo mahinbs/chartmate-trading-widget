@@ -478,8 +478,13 @@ export async function tryExecutePendingRow(
     const resolvedQtyPaper = Number.isFinite(rowQtyPaper) && rowQtyPaper > 0
       ? rowQtyPaper
       : (Number.isFinite(pcQtyPaper) && pcQtyPaper > 0 ? pcQtyPaper : 1);
-    const sharesIntPaper = Math.max(1, Math.round(resolvedQtyPaper));
-    const investmentAmountPaper = Math.round((entryPxPaper > 0 ? entryPxPaper * sharesIntPaper : 0) * 100) / 100;
+    const isCryptoPaper = resolvedExchangePaper === "CRYPTO"
+      || String(row.symbol ?? "").toUpperCase().includes("-USD")
+      || String(row.symbol ?? "").toUpperCase().includes("-USDT");
+    const sharesPaper = isCryptoPaper
+      ? Number(resolvedQtyPaper.toFixed(8))
+      : Math.max(1, Math.round(resolvedQtyPaper));
+    const investmentAmountPaper = Math.round((entryPxPaper > 0 ? entryPxPaper * sharesPaper : 0) * 100) / 100;
     const paperBrokerOrderId = `PAPER-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
 
     const { error: insertErr } = await supabase
@@ -491,7 +496,7 @@ export async function tryExecutePendingRow(
         status: "active",
         entry_price: entryPxPaper > 0 ? entryPxPaper : 0.0001,
         reference_entry_price: entryPxPaper > 0 ? entryPxPaper : 0.0001,
-        shares: sharesIntPaper,
+        shares: sharesPaper,
         investment_amount: investmentAmountPaper > 0 ? investmentAmountPaper : 0.01,
         exchange: resolvedExchangePaper,
         product: resolvedProductPaper,
@@ -550,6 +555,10 @@ export async function tryExecutePendingRow(
   const resolvedQty = Number.isFinite(rowQty) && rowQty > 0
     ? rowQty
     : (Number.isFinite(pcQty) && pcQty > 0 ? pcQty : 1);
+  const isCryptoLive = resolvedExchange === "CRYPTO";
+  const finalOrderQty = isCryptoLive
+    ? Number(resolvedQty.toFixed(8))
+    : Math.max(1, Math.round(resolvedQty));
   const resolvedPriceType = String(
     (positionConfig.orderType === "LIMIT" ? "LIMIT" : (positionConfig.orderType === "STOP" || positionConfig.orderType === "STOP_LIMIT") ? "SL" : "MARKET"),
   ).toUpperCase();
@@ -562,7 +571,7 @@ export async function tryExecutePendingRow(
     action: resolvedAction,
     product: resolvedProduct,
     pricetype: resolvedPriceType,
-    quantity: String(Number.isFinite(resolvedQty) && resolvedQty > 0 ? resolvedQty : 1),
+    quantity: String(Number.isFinite(finalOrderQty) && finalOrderQty > 0 ? finalOrderQty : 1),
     price: resolvedPriceType === "MARKET" ? "0" : "0",
     trigger_price: "0",
     disclosed_quantity: "0",
@@ -591,8 +600,8 @@ export async function tryExecutePendingRow(
   const takeProfitPrice = (presetLevels?.takeProfitPrice != null && Number.isFinite(presetLevels.takeProfitPrice))
     ? presetLevels.takeProfitPrice
     : (isSell ? entryPx * (1 - tpPct / 100) : entryPx * (1 + tpPct / 100));
-  const sharesInt = Math.max(1, Math.round(Number.isFinite(resolvedQty) && resolvedQty > 0 ? resolvedQty : 1));
-  const investmentAmount = Math.round((entryPx > 0 ? entryPx * sharesInt : 0) * 100) / 100;
+  const sharesNum = Math.max(1, Number.isFinite(finalOrderQty) && finalOrderQty > 0 ? finalOrderQty : 1);
+  const investmentAmount = Math.round((entryPx > 0 ? entryPx * sharesNum : 0) * 100) / 100;
 
   const readyPayload: ReadyToFirePayload = {
     pending_row_id: row.id,
@@ -604,7 +613,7 @@ export async function tryExecutePendingRow(
       status: "active",
       entry_price: entryPx > 0 ? entryPx : 0.0001,
       reference_entry_price: entryPx > 0 ? entryPx : 0.0001,
-      shares: sharesInt,
+      shares: sharesNum,
       investment_amount: investmentAmount > 0 ? investmentAmount : 0.01,
       exchange: resolvedExchange,
       product: resolvedProduct,

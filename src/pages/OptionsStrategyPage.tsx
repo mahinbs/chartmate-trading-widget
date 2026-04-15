@@ -648,14 +648,27 @@ export function OptionsStrategiesWorkspace({ embedded = false }: { embedded?: bo
                         </Button>
 
                         {s.is_active ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="text-xs h-7 px-2 border-amber-500/40 text-amber-400 hover:bg-amber-500/10"
-                            onClick={() => handlePause(s)}
-                          >
-                            <Pause className="h-3 w-3 mr-1" />Pause
-                          </Button>
+                          <>
+                            {s.is_paper_only && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-xs h-7 px-2 border-blue-500/40 text-blue-400 hover:bg-blue-500/10"
+                                onClick={() => openActivate(s, "paper")}
+                                title="Edit paper sizing/symbol before next execution"
+                              >
+                                <FlaskConical className="h-3 w-3 mr-1" />Edit Paper Setup
+                              </Button>
+                            )}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-xs h-7 px-2 border-amber-500/40 text-amber-400 hover:bg-amber-500/10"
+                              onClick={() => handlePause(s)}
+                            >
+                              <Pause className="h-3 w-3 mr-1" />Pause
+                            </Button>
+                          </>
                         ) : (
                           <>
                             <Button
