@@ -29,6 +29,38 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey, x-client-info",
 };
 
+async function fetchOpenAlgoExpiryWithRetry(
+  url: string,
+  payload: Record<string, string>,
+): Promise<Response> {
+  const timeouts = [15000, 35000];
+  let lastError: unknown = null;
+
+  for (let i = 0; i < timeouts.length; i += 1) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(timeouts[i]),
+      });
+      return res;
+    } catch (err) {
+      lastError = err;
+      const msg = String(err ?? "");
+      const isTimeout =
+        msg.includes("Signal timed out") ||
+        msg.includes("TimeoutError") ||
+        msg.toLowerCase().includes("timed out");
+      if (!isTimeout || i === timeouts.length - 1) {
+        throw err;
+      }
+    }
+  }
+
+  throw lastError ?? new Error("OpenAlgo expiry request failed");
+}
+
 function daysBetween(from: Date, to: Date): number {
   return Math.ceil((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
 }
@@ -93,16 +125,11 @@ Deno.serve(async (req) => {
     const exchange: string = (body.exchange ?? "NFO").toUpperCase();
     const instrumenttype: string = body.instrumenttype ?? "OPTIDX";
 
-    const expiryRes = await fetch(`${OPENALGO_URL}/api/v1/expiry`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        apikey: openalgoApiKey.trim(),
-        symbol,
-        exchange,
-        instrumenttype,
-      }),
-      signal: AbortSignal.timeout(12000),
+    const expiryRes = await fetchOpenAlgoExpiryWithRetry(`${OPENALGO_URL}/api/v1/expiry`, {
+      apikey: openalgoApiKey.trim(),
+      symbol,
+      exchange,
+      instrumenttype,
     });
 
     if (!expiryRes.ok) {

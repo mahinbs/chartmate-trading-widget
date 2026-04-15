@@ -302,7 +302,10 @@ export function OptionsStrategiesWorkspace({ embedded = false }: { embedded?: bo
           setPrefetchedExpiries((prev) => ({ ...prev, [symbol]: data.expiries }));
         })
         .catch(() => {
-          prefetchedRef.current.delete(key); // allow retry on next render
+          // Avoid retry storm when broker/edge is temporarily slow.
+          window.setTimeout(() => {
+            prefetchedRef.current.delete(key);
+          }, 15000);
         });
     }
   }, [brokerConnected, strategies]);

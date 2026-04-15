@@ -31,6 +31,38 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey, x-client-info",
 };
 
+async function fetchOpenAlgoChainWithRetry(
+  url: string,
+  payload: Record<string, string>,
+): Promise<Response> {
+  const timeouts = [18000, 40000];
+  let lastError: unknown = null;
+
+  for (let i = 0; i < timeouts.length; i += 1) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(timeouts[i]),
+      });
+      return res;
+    } catch (err) {
+      lastError = err;
+      const msg = String(err ?? "");
+      const isTimeout =
+        msg.includes("Signal timed out") ||
+        msg.includes("TimeoutError") ||
+        msg.toLowerCase().includes("timed out");
+      if (!isTimeout || i === timeouts.length - 1) {
+        throw err;
+      }
+    }
+  }
+
+  throw lastError ?? new Error("OpenAlgo optionchain request failed");
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -90,12 +122,10 @@ Deno.serve(async (req) => {
     };
     if (expiryDate) chainPayload.expiry = expiryDate;
 
-    const chainRes = await fetch(`${OPENALGO_URL}/api/v1/optionchain`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(chainPayload),
-      signal: AbortSignal.timeout(15000),
-    });
+    const chainRes = await fetchOpenAlgoChainWithRetry(
+      `${OPENALGO_URL}/api/v1/optionchain`,
+      chainPayload,
+    );
 
     if (!chainRes.ok) {
       const errText = await chainRes.text().catch(() => "unknown");
