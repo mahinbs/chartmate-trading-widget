@@ -1488,7 +1488,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
 
             const { data: histRows } = await (supabase as any)
               .from("openalgo_order_history")
-              .select("order_status,status,quantity,filled_quantity,average_price,price,symbol,order_timestamp,strategy_name,rejection_reason")
+              .select("status,quantity,filled_quantity,average_price,price,symbol,order_timestamp,strategy_name,rejection_reason")
               .eq("user_id", uid)
               .order("order_timestamp", { ascending: false })
               .limit(500);
