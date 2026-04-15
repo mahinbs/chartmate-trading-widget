@@ -72,6 +72,7 @@ import { MobileSplashScreens } from "./mobile-app/MobileSplashScreens";
 import { MobileAppOverlay } from "./mobile-app/MobileAppOverlay";
 import { useIsMobileApp } from "./mobile-app/isMobileDevice";
 import TrialDashboardPage from "./pages/TrialDashboardPage";
+import SignupWebinarLandingPage from "./pages/SignupWebinarLandingPage";
 
 // OpenAlgo ping temporarily disabled in mock-order mode to avoid CORS noise
 
@@ -95,6 +96,7 @@ function isPublicMarketingPath(pathname: string): boolean {
     "/affiliate-partner",
     "/dashboard",
     "/market-picks",
+    "/start-2-day-access",
   ]);
   if (exact.has(pathname)) return true;
   if (pathname === "/blogs" || pathname.startsWith("/blogs/")) return true;
@@ -197,7 +199,9 @@ function AppChatbots() {
 
   const showPredictionChatbot = !!user && isLoggedInAppPath(pathname);
   const isTrialDemoExperience =
-    pathname === "/1414ghgh" || (pathname === "/" && hash === "#1414ghgh");
+    pathname === "/1414ghgh" ||
+    pathname.startsWith("/demo/") ||
+    (pathname === "/" && hash === "#1414ghgh");
   /** Marketing pages: platform bot unless the logged-in app assistant already owns this URL (e.g. /market-picks). */
   const showPlatformChatbot =
     !isTrialDemoExperience &&
@@ -250,6 +254,8 @@ const App = () => (
             <Routes>
               <Route path="/" element={<RootRoute />} />
               <Route path="/1414ghgh" element={<TrialDashboardPage />} />
+              <Route path="/demo/:brokerSlug" element={<TrialDashboardPage />} />
+              <Route path="/start-2-day-access" element={<SignupWebinarLandingPage />} />
               <Route path="/classic" element={<MainLandingPage />} />
               <Route path="/rsb-fintech-founder" element={<LandingPage />} />
               <Route path="/dsn-fintech-founder" element={<LandingPage />} />

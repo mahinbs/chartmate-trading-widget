@@ -120,7 +120,11 @@ const genOrder = () => {
 };
 
 // ─── Main Dashboard Component ───
-export default function TrialMockDashboard() {
+type TrialMockDashboardProps = {
+  brokerSlug?: string;
+};
+
+export default function TrialMockDashboard({ brokerSlug: _brokerSlug }: TrialMockDashboardProps) {
   const [time, setTime] = useState("");
   const [uptimeSec, setUptimeSec] = useState(72 * 3600 + 14 * 60 + 38);
   const [killActive, setKillActive] = useState(false);

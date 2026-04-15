@@ -1,34 +1,35 @@
 import "./trial-demo.css";
+import type { TrialOptionsPosition, TrialOptionsStrategy } from "@/lib/trial-data";
 
-const STRATEGIES = [
-  {
-    id: "opt-1",
-    name: "NIFTY ORB Breakout",
-    style: "ORB Buying",
-    strike: "ATM+1",
-    expiry: "Weekly",
-    sl: "30%",
-    tp: "50%",
-    status: "Paper",
-  },
-  {
-    id: "opt-2",
-    name: "BANKNIFTY Strangle",
-    style: "Short Vol",
-    strike: "±300",
-    expiry: "Weekly",
-    sl: "2x premium",
-    tp: "45%",
-    status: "Live",
-  },
-];
+type Props = {
+  supportsOptions: boolean;
+  optionsStrategies: TrialOptionsStrategy[];
+  optionsPositions: TrialOptionsPosition[];
+};
 
-const OPEN_POSITIONS = [
-  { symbol: "NIFTY 23650 CE", entry: 142.2, current: 156.6, pnlPct: 10.1, dte: "2d" },
-  { symbol: "BANKNIFTY 49800 PE", entry: 228.4, current: 211.5, pnlPct: -7.4, dte: "Today" },
-];
+export function OptionsDemoPane({
+  supportsOptions,
+  optionsStrategies,
+  optionsPositions,
+}: Props) {
+  if (!supportsOptions) {
+    return (
+      <div className="card">
+        <div className="card-header">
+          <div className="card-title">
+            <span className="card-title-icon">O</span>
+            Options Surface
+          </div>
+          <span className="card-badge badge-yellow">Not supported</span>
+        </div>
+        <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>
+          This broker profile is focused on spot/CFD/FX instruments. Options ladder,
+          chain and open options positions are intentionally unavailable for this venue.
+        </p>
+      </div>
+    );
+  }
 
-export function OptionsDemoPane() {
   return (
     <div className="trial-options-grid">
       <div className="card">
@@ -40,20 +41,22 @@ export function OptionsDemoPane() {
           <span className="card-badge badge-blue">Demo</span>
         </div>
         <div className="trial-options-list">
-          {STRATEGIES.map((s) => (
+          {optionsStrategies.map((s) => (
             <div key={s.id} className="trial-options-item">
               <div className="trial-options-head">
                 <strong>{s.name}</strong>
-                <span className={`trial-options-status ${s.status === "Live" ? "is-live" : "is-paper"}`}>
-                  {s.status}
+                <span
+                  className={`trial-options-status ${s.status === "live" ? "is-live" : "is-paper"}`}
+                >
+                  {s.status.toUpperCase()}
                 </span>
               </div>
               <div className="trial-options-meta">
                 {s.style} · Strike {s.strike} · {s.expiry}
               </div>
               <div className="trial-options-metrics">
-                <span>SL {s.sl}</span>
-                <span>TP {s.tp}</span>
+                <span>SL {s.stopLoss}</span>
+                <span>TP {s.takeProfit}</span>
                 <button type="button" className="trial-options-mini-btn">
                   View Option Chain
                 </button>
@@ -72,7 +75,7 @@ export function OptionsDemoPane() {
           <span className="card-badge badge-green">Live-like</span>
         </div>
         <div className="trial-options-list">
-          {OPEN_POSITIONS.map((p) => (
+          {optionsPositions.map((p) => (
             <div key={p.symbol} className="trial-options-item">
               <div className="trial-options-head">
                 <strong>{p.symbol}</strong>
@@ -85,7 +88,7 @@ export function OptionsDemoPane() {
                 Entry {p.entry.toFixed(2)} · Current {p.current.toFixed(2)}
               </div>
               <div className="trial-options-metrics">
-                <span>DTE {p.dte}</span>
+                <span>DTE {p.dteLabel}</span>
                 <button type="button" className="trial-options-mini-btn">
                   Exit Position
                 </button>
