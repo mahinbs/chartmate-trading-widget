@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Download, RefreshCw, Mail, Search, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -53,6 +54,29 @@ interface FunnelKpis {
   trialTotal: number;
 }
 
+type UserSignupStage = "signed_up" | "trial_active" | "webinar_registered" | "paid_user";
+
+interface UserSignupTrackingRow {
+  user_id: string;
+  name: string;
+  email: string | null;
+  whatsapp: string | null;
+  source: string | null;
+  created_at: string;
+  stage: UserSignupStage;
+  utm_source?: string | null;
+  utm_medium?: string | null;
+  utm_campaign?: string | null;
+  affiliate_id?: string | null;
+  referral_code?: string | null;
+  trial_start_at?: string | null;
+  trial_end_at?: string | null;
+  webinar_batch_code?: string | null;
+  paid_at?: string | null;
+  paid_plan_id?: string | null;
+  last_activity_at?: string | null;
+}
+
 export default function AdminContactsPage() {
   const [rows, setRows] = useState<ContactRow[]>([]);
   const [webinarBatches, setWebinarBatches] = useState<WebinarBatchRow[]>([]);
@@ -60,6 +84,10 @@ export default function AdminContactsPage() {
   const [loading, setLoading] = useState(true);
   const [savingBatchIds, setSavingBatchIds] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState("");
+  const [userSignupSearch, setUserSignupSearch] = useState("");
+  const [userSignupSourceSearch, setUserSignupSourceSearch] = useState("");
+  const [userSignupStageFilter, setUserSignupStageFilter] = useState<UserSignupStage | "all">("all");
+  const [userSignups, setUserSignups] = useState<UserSignupTrackingRow[]>([]);
   const [kpis, setKpis] = useState<FunnelKpis>({
     landingViews: 0,
     signupStarts: 0,
@@ -162,6 +190,20 @@ export default function AdminContactsPage() {
         trialActive: trialActiveRes.count ?? 0,
         trialTotal: trialTotalRes.count ?? 0,
       });
+
+      // --- User Signups (admin reporting) ---
+      const { data: signupTrackingRes } = await (supabase as any)
+        .from("user_signup_tracking")
+        .select(
+          "user_id,name,email,whatsapp,source,created_at,stage," +
+            "trial_start_at,trial_end_at,webinar_batch_code," +
+            "paid_plan_id,paid_at,last_activity_at," +
+            "utm_source,utm_medium,utm_campaign,affiliate_id,referral_code",
+        )
+        .order("created_at", { ascending: false })
+        .limit(500);
+
+      setUserSignups((signupTrackingRes ?? []) as UserSignupTrackingRow[]);
     } catch (e: any) {
       toast.error(e?.message ?? "Failed to load submissions");
     } finally {
@@ -180,6 +222,20 @@ export default function AdminContactsPage() {
       r.phone.includes(q) ||
       (r.affiliate_code ?? "").toLowerCase().includes(q)
     );
+  });
+
+  const filteredUserSignups = userSignups.filter((r) => {
+    const q = userSignupSearch.trim().toLowerCase();
+    const sourceQ = userSignupSourceSearch.trim().toLowerCase();
+    const stageOk = userSignupStageFilter === "all" || r.stage === userSignupStageFilter;
+    const sourceOk = !sourceQ || (r.source ?? "").toLowerCase().includes(sourceQ);
+    const searchOk =
+      !q ||
+      r.name.toLowerCase().includes(q) ||
+      (r.email ?? "").toLowerCase().includes(q) ||
+      (r.whatsapp ?? "").toLowerCase().includes(q) ||
+      (r.source ?? "").toLowerCase().includes(q);
+    return stageOk && sourceOk && searchOk;
   });
 
   const updateBatchLocal = (id: string, patch: Partial<WebinarBatchRow>) => {
@@ -240,6 +296,66 @@ export default function AdminContactsPage() {
     const a = document.createElement("a");
     a.href = url;
     a.download = `webinar-registrations-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportUserSignupsCsv = () => {
+    if (!filteredUserSignups.length) {
+      toast.error("No user signups to export.");
+      return;
+    }
+
+    const headers = [
+      "name",
+      "email",
+      "whatsapp",
+      "stage",
+      "source",
+      "utm_source",
+      "utm_medium",
+      "utm_campaign",
+      "affiliate_id",
+      "referral_code",
+      "webinar_batch_code",
+      "trial_start_at",
+      "trial_end_at",
+      "paid_plan_id",
+      "paid_at",
+      "last_activity_at",
+      "signup_created_at",
+    ];
+
+    const rowsCsv = filteredUserSignups.map((row) =>
+      [
+        row.name ?? "",
+        row.email ?? "",
+        row.whatsapp ?? "",
+        row.stage ?? "",
+        row.source ?? "",
+        row.utm_source ?? "",
+        row.utm_medium ?? "",
+        row.utm_campaign ?? "",
+        row.affiliate_id ?? "",
+        row.referral_code ?? "",
+        row.webinar_batch_code ?? "",
+        row.trial_start_at ?? "",
+        row.trial_end_at ?? "",
+        row.paid_plan_id ?? "",
+        row.paid_at ?? "",
+        row.last_activity_at ?? "",
+        row.created_at ?? "",
+      ]
+        .map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`)
+        .join(","),
+    );
+
+    const csv = [headers.join(","), ...rowsCsv].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `user-signups-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -316,6 +432,153 @@ export default function AdminContactsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="glass-panel">
+        <CardHeader>
+          <CardTitle className="text-white">Reconciliation Checks</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <p className="text-sm text-zinc-400">
+            `signup_complete`: {kpis.signupCompletes} vs tracking rows: {userSignups.length} (delta{" "}
+            {kpis.signupCompletes - userSignups.length})
+          </p>
+          <p className="text-sm text-zinc-400">
+            `batch_select`: {kpis.batchSelects} vs users with `webinar_batch_code`:{" "}
+            {userSignups.filter((u) => Boolean(u.webinar_batch_code)).length}
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card className="glass-panel">
+        <CardHeader>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <CardTitle className="text-white flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              User Signups ({userSignups.length})
+            </CardTitle>
+            <Button
+              variant="outline"
+              onClick={exportUserSignupsCsv}
+              className="border-white/10 hover:bg-white/5"
+              disabled={loading}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Export CSV
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex gap-2 flex-wrap">
+            <Input
+              placeholder="Search name/email/whatsapp/source..."
+              value={userSignupSearch}
+              onChange={(e) => setUserSignupSearch(e.target.value)}
+              className="bg-white/5 border-white/10 text-white placeholder:text-muted-foreground"
+            />
+            <Input
+              placeholder="Source contains..."
+              value={userSignupSourceSearch}
+              onChange={(e) => setUserSignupSourceSearch(e.target.value)}
+              className="bg-white/5 border-white/10 text-white placeholder:text-muted-foreground"
+            />
+            <Select
+              value={userSignupStageFilter}
+              onValueChange={(v) => setUserSignupStageFilter(v as UserSignupStage | "all")}
+            >
+              <SelectTrigger className="bg-white/5 border-white/10 text-white w-[190px]">
+                <SelectValue placeholder="Stage" />
+              </SelectTrigger>
+              <SelectContent className="bg-zinc-950 border-white/10 text-white">
+                <SelectItem value="all">All stages</SelectItem>
+                <SelectItem value="signed_up">signed_up</SelectItem>
+                <SelectItem value="trial_active">trial_active</SelectItem>
+                <SelectItem value="webinar_registered">webinar_registered</SelectItem>
+                <SelectItem value="paid_user">paid_user</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <Table>
+            <TableHeader>
+              <TableRow className="border-white/10 hover:bg-transparent">
+                <TableHead className="text-muted-foreground">Name</TableHead>
+                <TableHead className="text-muted-foreground">Email</TableHead>
+                <TableHead className="text-muted-foreground">Whatsapp</TableHead>
+                <TableHead className="text-muted-foreground">Stage</TableHead>
+                <TableHead className="text-muted-foreground">Source</TableHead>
+                <TableHead className="text-muted-foreground">UTM Source</TableHead>
+                <TableHead className="text-muted-foreground">UTM Medium</TableHead>
+                <TableHead className="text-muted-foreground">UTM Campaign</TableHead>
+                <TableHead className="text-muted-foreground">Affiliate ID</TableHead>
+                <TableHead className="text-muted-foreground">Referral Code</TableHead>
+                <TableHead className="text-muted-foreground">Trial Start</TableHead>
+                <TableHead className="text-muted-foreground">Trial End</TableHead>
+                <TableHead className="text-muted-foreground">Webinar Batch</TableHead>
+                <TableHead className="text-muted-foreground">Paid Plan</TableHead>
+                <TableHead className="text-muted-foreground">Paid At</TableHead>
+                <TableHead className="text-muted-foreground">Last Activity</TableHead>
+                <TableHead className="text-muted-foreground">Signup Date</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredUserSignups.map((r) => {
+                const badgeClass =
+                  r.stage === "paid_user"
+                    ? "border-teal-500/40 text-teal-400"
+                    : r.stage === "trial_active"
+                      ? "border-emerald-500/40 text-emerald-300"
+                      : r.stage === "webinar_registered"
+                        ? "border-purple-500/40 text-purple-300"
+                        : "border-white/15 text-zinc-400";
+                return (
+                  <TableRow key={r.user_id} className="border-white/5 hover:bg-white/5 align-top">
+                    <TableCell className="font-medium text-zinc-300 whitespace-nowrap">{r.name}</TableCell>
+                    <TableCell className="text-zinc-400 text-sm">{r.email ?? "—"}</TableCell>
+                    <TableCell className="text-zinc-400 text-sm whitespace-nowrap">{r.whatsapp ?? "—"}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={`border ${badgeClass} text-xs`}>
+                        {r.stage}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-zinc-500 text-xs">{r.source ?? "—"}</TableCell>
+                    <TableCell className="text-zinc-500 text-xs">{r.utm_source ?? "—"}</TableCell>
+                    <TableCell className="text-zinc-500 text-xs">{r.utm_medium ?? "—"}</TableCell>
+                    <TableCell className="text-zinc-500 text-xs">{r.utm_campaign ?? "—"}</TableCell>
+                    <TableCell className="text-zinc-500 text-xs whitespace-nowrap">{r.affiliate_id ?? "—"}</TableCell>
+                    <TableCell className="text-zinc-500 text-xs whitespace-nowrap">{r.referral_code ?? "—"}</TableCell>
+                    <TableCell className="text-zinc-500 text-xs whitespace-nowrap">
+                      {r.trial_start_at ? new Date(r.trial_start_at).toLocaleDateString() : "—"}
+                    </TableCell>
+                    <TableCell className="text-zinc-500 text-xs whitespace-nowrap">
+                      {r.trial_end_at ? new Date(r.trial_end_at).toLocaleDateString() : "—"}
+                    </TableCell>
+                    <TableCell className="text-zinc-500 text-xs whitespace-nowrap">{r.webinar_batch_code ?? "—"}</TableCell>
+                    <TableCell className="text-zinc-500 text-xs">
+                      {r.paid_plan_id ?? (r.stage === "paid_user" ? "paid_user" : "—")}
+                    </TableCell>
+                    <TableCell className="text-zinc-500 text-xs whitespace-nowrap">
+                      {r.paid_at ? new Date(r.paid_at).toLocaleDateString() : "—"}
+                    </TableCell>
+                    <TableCell className="text-zinc-500 text-xs whitespace-nowrap">
+                      {r.last_activity_at ? new Date(r.last_activity_at).toLocaleString() : "—"}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-xs whitespace-nowrap">
+                      {new Date(r.created_at).toLocaleString()}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {filteredUserSignups.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={17} className="text-muted-foreground text-sm py-8 text-center">
+                    No user signups found.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
       <Card className="glass-panel">
         <CardHeader>

@@ -9,7 +9,13 @@ export type FunnelEventName =
   | "email_sent"
   | "webinar_attend"
   | "demo_booked"
-  | "plan_purchased";
+  | "plan_purchased"
+  | "ra_marketplace_view"
+  | "ra_card_click"
+  | "ra_profile_view"
+  | "strategy_cta_click"
+  | "strategy_checkout_start"
+  | "strategy_purchase_intent";
 
 function getOrCreateAnonId(): string {
   const key = "funnel_anon_id_v1";

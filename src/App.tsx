@@ -73,6 +73,9 @@ import { MobileAppOverlay } from "./mobile-app/MobileAppOverlay";
 import { useIsMobileApp } from "./mobile-app/isMobileDevice";
 import TrialDashboardPage from "./pages/TrialDashboardPage";
 import SignupWebinarLandingPage from "./pages/SignupWebinarLandingPage";
+import RaMarketplacePage from "./pages/RaMarketplacePage";
+import RaProfilePage from "./pages/RaProfilePage";
+import RaStrategyCheckoutPage from "./pages/RaStrategyCheckoutPage";
 
 // OpenAlgo ping temporarily disabled in mock-order mode to avoid CORS noise
 
@@ -97,9 +100,12 @@ function isPublicMarketingPath(pathname: string): boolean {
     "/dashboard",
     "/market-picks",
     "/start-2-day-access",
+    "/sebi-ra-marketplace",
   ]);
   if (exact.has(pathname)) return true;
   if (pathname === "/blogs" || pathname.startsWith("/blogs/")) return true;
+  if (/^\/ra\/[^/]+$/.test(pathname)) return true;
+  if (/^\/ra\/[^/]+\/strategy\/[^/]+$/.test(pathname)) return true;
   if (/^\/wl\/[^/]+$/.test(pathname)) return true;
   return false;
 }
@@ -256,6 +262,9 @@ const App = () => (
               <Route path="/1414ghgh" element={<TrialDashboardPage />} />
               <Route path="/demo/:brokerSlug" element={<TrialDashboardPage />} />
               <Route path="/start-2-day-access" element={<SignupWebinarLandingPage />} />
+              <Route path="/sebi-ra-marketplace" element={<RaMarketplacePage />} />
+              <Route path="/ra/:slug" element={<RaProfilePage />} />
+              <Route path="/ra/:slug/strategy/:strategyId" element={<RaStrategyCheckoutPage />} />
               <Route path="/classic" element={<MainLandingPage />} />
               <Route path="/rsb-fintech-founder" element={<LandingPage />} />
               <Route path="/dsn-fintech-founder" element={<LandingPage />} />

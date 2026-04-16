@@ -62,8 +62,8 @@ export const WEBINAR_BATCH_DEFINITIONS: WebinarBatchDefinition[] = [
 ];
 
 export const DEFAULT_TRIAL_LIMITS = {
-  dailyCredits: 100,
-  backtestsPerDay: 2,
-  aiAnalysisPerDay: 5,
-  scansPerDay: 15,
+  backtestsPerDay: 10,
+  paperTradesPerDay: 10,
+  aiAnalysisPerDay: 10,
+  strategyCreationsPerDay: 1,
 };
