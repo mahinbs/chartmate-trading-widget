@@ -72,6 +72,11 @@ import FeaturesPage from "./pages/FeaturesPage";
 import { MobileSplashScreens } from "./mobile-app/MobileSplashScreens";
 import { MobileAppOverlay } from "./mobile-app/MobileAppOverlay";
 import { useIsMobileApp } from "./mobile-app/isMobileDevice";
+import TrialDashboardPage from "./pages/TrialDashboardPage";
+import SignupWebinarLandingPage from "./pages/SignupWebinarLandingPage";
+import RaMarketplacePage from "./pages/RaMarketplacePage";
+import RaProfilePage from "./pages/RaProfilePage";
+import RaStrategyCheckoutPage from "./pages/RaStrategyCheckoutPage";
 
 // OpenAlgo ping temporarily disabled in mock-order mode to avoid CORS noise
 
@@ -95,9 +100,13 @@ function isPublicMarketingPath(pathname: string): boolean {
     "/affiliate-partner",
     "/dashboard",
     "/market-picks",
+    "/start-2-day-access",
+    "/sebi-ra-marketplace",
   ]);
   if (exact.has(pathname)) return true;
   if (pathname === "/blogs" || pathname.startsWith("/blogs/")) return true;
+  if (/^\/ra\/[^/]+$/.test(pathname)) return true;
+  if (/^\/ra\/[^/]+\/strategy\/[^/]+$/.test(pathname)) return true;
   if (/^\/wl\/[^/]+$/.test(pathname)) return true;
   return false;
 }
@@ -192,13 +201,19 @@ function WhitelabelAffiliateDeepLinkRedirect() {
 
 function AppChatbots() {
   const { user } = useAuth();
-  const { pathname } = useLocation();
+  const { pathname, hash } = useLocation();
   const [predictionOpen, setPredictionOpen] = useState(false);
 
   const showPredictionChatbot = !!user && isLoggedInAppPath(pathname);
+  const isTrialDemoExperience =
+    pathname === "/1414ghgh" ||
+    pathname.startsWith("/demo/") ||
+    (pathname === "/" && hash === "#1414ghgh");
   /** Marketing pages: platform bot unless the logged-in app assistant already owns this URL (e.g. /market-picks). */
   const showPlatformChatbot =
-    isPublicMarketingPath(pathname) && !showPredictionChatbot;
+    !isTrialDemoExperience &&
+    isPublicMarketingPath(pathname) &&
+    !showPredictionChatbot;
 
   return (
     <>
@@ -224,6 +239,14 @@ function MobileSplashGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function RootRoute() {
+  const { hash } = useLocation();
+  if (hash === "#1414ghgh") {
+    return <TrialDashboardPage />;
+  }
+  return <LandingPageNew />;
+}
+
 const App = () => (
   <HelmetProvider>
     <QueryClientProvider client={queryClient}>
@@ -237,7 +260,13 @@ const App = () => (
           <MobileSplashGuard>
           <div className="min-h-screen bg-background text-foreground">
             <Routes>
-              <Route path="/" element={<LandingPageNew />} />
+              <Route path="/" element={<RootRoute />} />
+              <Route path="/1414ghgh" element={<TrialDashboardPage />} />
+              <Route path="/demo/:brokerSlug" element={<TrialDashboardPage />} />
+              <Route path="/start-2-day-access" element={<SignupWebinarLandingPage />} />
+              <Route path="/sebi-ra-marketplace" element={<RaMarketplacePage />} />
+              <Route path="/ra/:slug" element={<RaProfilePage />} />
+              <Route path="/ra/:slug/strategy/:strategyId" element={<RaStrategyCheckoutPage />} />
               <Route path="/classic" element={<MainLandingPage />} />
               <Route path="/rsb-fintech-founder" element={<LandingPage />} />
               <Route path="/dsn-fintech-founder" element={<LandingPage />} />

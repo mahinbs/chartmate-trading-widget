@@ -43,6 +43,16 @@ import AlgoStrategyBuilder from "@/components/trading/AlgoStrategyBuilder";
 import { TradingDashboardAccessGate } from "@/components/trading/TradingDashboardAccessGate";
 import { TradingDashboardShell } from "@/components/trading/TradingDashboardShell";
 import { OptionsStrategiesWorkspace } from "@/pages/OptionsStrategyPage";
+import { EngineBootSequence, ExecutionEventFeed } from "@/components/trading/AlgoRobotExperienceLayer";
+import { ALGO_ROBOT_COPY } from "@/lib/algoRobotMessaging";
+import {
+  getRobotExperimentVariant,
+  isRobotExperienceEnabled,
+  prefersReducedMotion,
+  setReducedMotionPreference,
+  setRobotExperienceEnabled,
+  trackRobotMetric,
+} from "@/lib/algoRobotExperience";
 import { useSubscription } from "@/hooks/useSubscription";
 import {
   getAlgoStrategyLimits,
@@ -933,6 +943,23 @@ function LiveDashboard({ broker }: { broker: string }) {
   const navigate = useNavigate();
   const [portfolioKey] = useState(0);
   const [activeTab, setActiveTab] = useState<"portfolio" | "options">("portfolio");
+  const [robotEnabled, setRobotEnabledState] = useState<boolean>(() => isRobotExperienceEnabled());
+  const [reduceMotion, setReduceMotion] = useState<boolean>(() => prefersReducedMotion());
+  const [entryReady, setEntryReady] = useState<boolean>(() => reduceMotion);
+
+  useEffect(() => {
+    void trackRobotMetric("dashboard_engaged");
+  }, []);
+
+  useEffect(() => {
+    if (!robotEnabled || reduceMotion) {
+      setEntryReady(true);
+      return;
+    }
+    setEntryReady(false);
+    const id = window.setTimeout(() => setEntryReady(true), 420);
+    return () => window.clearTimeout(id);
+  }, [robotEnabled, reduceMotion]);
 
   useEffect(() => {
     const qp = new URLSearchParams(location.search);
@@ -967,18 +994,53 @@ function LiveDashboard({ broker }: { broker: string }) {
 
   const setTab = (v: "portfolio" | "options") => {
     setActiveTab(v);
+    void trackRobotMetric("dashboard_engaged");
     navigate(`/trading-dashboard?tab=${v}`, { replace: true });
+  };
+
+  const onToggleRobot = (checked: boolean) => {
+    setRobotExperienceEnabled(checked);
+    setRobotEnabledState(checked);
+    void trackRobotMetric("dashboard_engaged");
+  };
+
+  const onToggleMotion = (checked: boolean) => {
+    // checked=true => allow motion; our preference stores reduced motion boolean.
+    const reduce = !checked;
+    setReducedMotionPreference(reduce);
+    setReduceMotion(reduce);
   };
 
   return (
     <TradingDashboardShell broker={broker}>
-      <div className="grid grid-cols-1 gap-5 items-start">
+      <EngineBootSequence enabled={robotEnabled} reduceMotion={reduceMotion} />
+      <div className={`grid grid-cols-1 gap-5 items-start transition-all duration-500 ${entryReady ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"}`}>
         <div className="min-w-0">
           <Tabs
             value={activeTab}
             onValueChange={(v) => setTab(v as "portfolio" | "options")}
             className="w-full"
           >
+            <div className="mb-2 rounded-lg border border-zinc-800 bg-zinc-900/50 p-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div>
+                <p className="text-xs text-zinc-200">{ALGO_ROBOT_COPY.controlLine}</p>
+                <p className="text-[11px] text-zinc-500">{ALGO_ROBOT_COPY.legalSafeHint}</p>
+              </div>
+              <div className="flex items-center gap-4 text-xs">
+                <span className="text-zinc-600">
+                  Variant: {getRobotExperimentVariant(robotEnabled)}
+                </span>
+                <label className="flex items-center gap-2 text-zinc-400">
+                  Robot mode
+                  <Switch checked={robotEnabled} onCheckedChange={onToggleRobot} />
+                </label>
+                <label className="flex items-center gap-2 text-zinc-400">
+                  Motion
+                  <Switch checked={!reduceMotion} onCheckedChange={onToggleMotion} />
+                </label>
+              </div>
+            </div>
+            <ExecutionEventFeed enabled={robotEnabled} />
             <p className="text-[11px] text-zinc-500 mb-2">
               Same algo hub for cash and F&amp;O — option symbols and premiums are streamed from the live market via
               OpenAlgo when connected; paper-only strategies use saved rules without live broker fills.

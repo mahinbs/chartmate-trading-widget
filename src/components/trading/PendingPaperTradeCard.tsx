@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useState, type MouseEvent } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -52,6 +55,7 @@ interface Props {
   row: PendingPaperTradeRow;
   onCancelled?: () => void;
 }
+type FiatCurrency = "INR" | "USD";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -201,11 +205,156 @@ export function PendingPaperTradeCard({ row, onCancelled }: Props) {
   const [liveError, setLiveError] = useState<string | null>(null);
   const [liveAt, setLiveAt] = useState<string | null>(null);
   const [autoExpired, setAutoExpired] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editQuantity, setEditQuantity] = useState(String(row.quantity));
+  const [editAmount, setEditAmount] = useState("");
+  const [editCurrency, setEditCurrency] = useState<FiatCurrency>(
+    String(row.exchange).toUpperCase() === "NSE" || String(row.exchange).toUpperCase() === "BSE"
+      ? "INR"
+      : "USD",
+  );
+  const [editPrice, setEditPrice] = useState<number | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const [usdPerInr, setUsdPerInr] = useState<number | null>(null);
 
   const isScheduled = row.status === "scheduled";
   const isPending = row.status === "pending";
   const watching = isPending || isScheduled;
   const yahooSymbol = toYahooChartSymbol(row.symbol, row.exchange);
+  const isCrypto = String(row.exchange).toUpperCase() === "CRYPTO" || row.symbol.toUpperCase().includes("-USD");
+  const assetCurrency: FiatCurrency =
+    String(row.exchange).toUpperCase() === "NSE" || String(row.exchange).toUpperCase() === "BSE"
+      ? "INR"
+      : "USD";
+
+  const convertBetweenInrUsd = useCallback(
+    (amount: number, from: FiatCurrency, to: FiatCurrency) => {
+      if (!Number.isFinite(amount) || from === to) return amount;
+      if (!usdPerInr || usdPerInr <= 0) return amount;
+      if (from === "INR" && to === "USD") return amount * usdPerInr;
+      if (from === "USD" && to === "INR") return amount / usdPerInr;
+      return amount;
+    },
+    [usdPerInr],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("https://open.er-api.com/v6/latest/INR");
+        if (!res.ok) return;
+        const json = await res.json();
+        const rate = Number(json?.rates?.USD);
+        if (!cancelled && Number.isFinite(rate) && rate > 0) setUsdPerInr(rate);
+      } catch {
+        // non-fatal
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const resolveLatestPrice = useCallback(async (symbol: string) => {
+    const { data, error } = await supabase.functions.invoke("get-chart-data", {
+      body: { symbol, interval: "1d", range: "1mo" },
+    });
+    if (error) throw new Error(error.message);
+    const metaPrice = Number((data as any)?.meta?.regularMarketPrice);
+    if (Number.isFinite(metaPrice) && metaPrice > 0) return metaPrice;
+    const candles = Array.isArray((data as any)?.candles) ? (data as any).candles : [];
+    const lastClose = Number(candles[candles.length - 1]?.close);
+    if (Number.isFinite(lastClose) && lastClose > 0) return lastClose;
+    throw new Error("Could not fetch latest price.");
+  }, []);
+
+  useEffect(() => {
+    if (!editOpen) return;
+    setEditQuantity(String(row.quantity));
+    setEditCurrency(assetCurrency);
+    const quoteSymbol =
+      row.exchange === "NSE"
+        ? `${row.symbol}.NS`
+        : row.exchange === "BSE"
+          ? `${row.symbol}.BO`
+          : row.symbol;
+    let cancelled = false;
+    (async () => {
+      try {
+        const px = await resolveLatestPrice(quoteSymbol);
+        if (cancelled) return;
+        setEditPrice(px);
+        const qty = Number(row.quantity);
+        if (Number.isFinite(qty) && qty > 0) {
+          const amountAsset = qty * px;
+          const amountDisplay = convertBetweenInrUsd(amountAsset, assetCurrency, assetCurrency);
+          setEditAmount(amountDisplay.toFixed(2));
+        }
+      } catch {
+        if (!cancelled) setEditPrice(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [editOpen, row.quantity, row.symbol, row.exchange, resolveLatestPrice, convertBetweenInrUsd, assetCurrency]);
+
+  const handleEditQuantityChange = (value: string) => {
+    if (!isCrypto) {
+      const wholePart = (value ?? "").split(/[.,]/)[0] ?? "";
+      setEditQuantity(wholePart.replace(/[^\d]/g, ""));
+      return;
+    }
+    setEditQuantity(value);
+  };
+
+  useEffect(() => {
+    const qty = Number(editQuantity);
+    if (!Number.isFinite(qty) || qty <= 0 || editPrice == null) return;
+    const amountAsset = qty * editPrice;
+    const amountDisplay = convertBetweenInrUsd(amountAsset, assetCurrency, editCurrency);
+    setEditAmount(amountDisplay.toFixed(2));
+  }, [editQuantity, editPrice, editCurrency, convertBetweenInrUsd, assetCurrency]);
+
+  const handleEditAmountChange = (value: string) => {
+    setEditAmount(value);
+    const amountDisplay = Number(value);
+    if (!Number.isFinite(amountDisplay) || amountDisplay <= 0 || editPrice == null || editPrice <= 0) return;
+    const amountAsset = convertBetweenInrUsd(amountDisplay, editCurrency, assetCurrency);
+    const rawQty = amountAsset / editPrice;
+    const nextQty = isCrypto ? Number(rawQty.toFixed(6)) : Math.max(1, Math.floor(rawQty));
+    setEditQuantity(String(nextQty));
+  };
+
+  const handleSaveEdit = useCallback(async () => {
+    const qtyNum = Number(editQuantity);
+    if (!Number.isFinite(qtyNum) || qtyNum <= 0) {
+      toast({ title: "Invalid quantity", description: "Enter a valid quantity.", variant: "destructive" });
+      return;
+    }
+    setEditSaving(true);
+    try {
+      const finalQty = isCrypto ? Number(qtyNum.toFixed(8)) : Math.max(1, Math.floor(qtyNum));
+      const { error } = await (supabase as any)
+        .from("pending_conditional_orders")
+        .update({ quantity: finalQty })
+        .eq("id", row.id)
+        .in("status", ["pending", "scheduled"]);
+      if (error) throw error;
+      toast({ title: "Updated", description: "Pending paper trade sizing updated." });
+      setEditOpen(false);
+      onCancelled?.();
+    } catch (e: unknown) {
+      toast({
+        title: "Update failed",
+        description: e instanceof Error ? e.message : "Could not update pending sizing.",
+        variant: "destructive",
+      });
+    } finally {
+      setEditSaving(false);
+    }
+  }, [editQuantity, isCrypto, row.id, onCancelled, toast]);
 
   // Countdown ticker for scheduled orders
   useEffect(() => {
@@ -378,6 +527,17 @@ export function PendingPaperTradeCard({ row, onCancelled }: Props) {
             </Badge>
           ) : null}
 
+          {watching && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 px-2 text-[10px] border-blue-500/40 text-blue-300"
+              onClick={() => setEditOpen(true)}
+            >
+              Edit
+            </Button>
+          )}
           {watching && (
             <Button
               type="button"
@@ -658,6 +818,68 @@ export function PendingPaperTradeCard({ row, onCancelled }: Props) {
               </div>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit pending paper sizing</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor={`edit-qty-${row.id}`}>Quantity</Label>
+              <Input
+                id={`edit-qty-${row.id}`}
+                type="number"
+                min={isCrypto ? 0.000001 : 1}
+                step={isCrypto ? "0.000001" : 1}
+                value={editQuantity}
+                onChange={(e) => handleEditQuantityChange(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor={`edit-amt-${row.id}`}>Investment amount</Label>
+              <div className="flex items-center gap-2">
+                <div className="inline-flex rounded-md border border-white/10 bg-black/20 p-0.5 shrink-0">
+                  <button
+                    type="button"
+                    className={`px-2 py-1 text-xs rounded ${editCurrency === "INR" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                    onClick={() => setEditCurrency("INR")}
+                  >
+                    ₹ INR
+                  </button>
+                  <button
+                    type="button"
+                    className={`px-2 py-1 text-xs rounded ${editCurrency === "USD" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                    onClick={() => setEditCurrency("USD")}
+                  >
+                    $ USD
+                  </button>
+                </div>
+                <Input
+                  id={`edit-amt-${row.id}`}
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={editAmount}
+                  onChange={(e) => handleEditAmountChange(e.target.value)}
+                />
+              </div>
+            </div>
+            <p className="text-[11px] text-zinc-500">
+              Market currency defaults to {assetCurrency}. Price used for estimate:{" "}
+              {editPrice != null ? `${assetCurrency === "USD" ? "$" : "₹"}${editPrice.toFixed(4)}` : "unavailable"}.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)} disabled={editSaving}>
+              Cancel
+            </Button>
+            <Button onClick={() => void handleSaveEdit()} disabled={editSaving}>
+              {editSaving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : null}
+              Save sizing
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

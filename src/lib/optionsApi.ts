@@ -62,14 +62,17 @@ async function apiFetch<T = unknown>(
   if (!API_BASE) throw new Error("Options API URL not configured (VITE_OPTIONS_API_URL)");
   const token = await getToken();
   const url = `${API_BASE}${path}`;
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 15000);
   const res = await fetch(url, {
     ...options,
+    signal: options.signal ?? controller.signal,
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(options.headers ?? {}),
     },
-  });
+  }).finally(() => window.clearTimeout(timeoutId));
   if (!res.ok) {
     const body = await res.json().catch(() => null) as Record<string, unknown> | null;
     const msg = body
@@ -399,32 +402,36 @@ export async function fetchExpiryDates(params: {
   const instrument = params.instrument ?? instrumentTypeForUnderlying(sym);
 
   if (API_BASE) {
-    const raw = await apiFetch<Record<string, unknown>>("/api/options/expiry", {
-      method: "POST",
-      body: JSON.stringify({
-        symbol: sym,
-        exchange: ex,
-        instrument,
-      }),
-    });
-    // OpenAlgo may return {status:"error", message:"..."} with HTTP 200
-    if (raw?.status === "error" || raw?.status === "failed") {
-      const hint = toErrString(
-        raw.message ?? raw.error_msg ?? raw.error,
-        "OpenAlgo returned an error — check your broker session and OpenAlgo API key"
-      );
-      throw new Error(friendlyBrokerMarketDataError(hint));
+    try {
+      const raw = await apiFetch<Record<string, unknown>>("/api/options/expiry", {
+        method: "POST",
+        body: JSON.stringify({
+          symbol: sym,
+          exchange: ex,
+          instrument,
+        }),
+      });
+      // OpenAlgo may return {status:"error", message:"..."} with HTTP 200
+      if (raw?.status === "error" || raw?.status === "failed") {
+        const hint = toErrString(
+          raw.message ?? raw.error_msg ?? raw.error,
+          "OpenAlgo returned an error — check your broker session and OpenAlgo API key"
+        );
+        throw new Error(friendlyBrokerMarketDataError(hint));
+      }
+      const result = normalizeExpiryPayload(raw, sym, ex);
+      // If OpenAlgo returned no dates, surface it as an explicit error
+      if (result.expiries.length === 0) {
+        throw new Error(
+          friendlyBrokerMarketDataError(
+            "No expiry dates returned from broker. Market may be closed or your OpenAlgo API key / broker session needs refreshing.",
+          ),
+        );
+      }
+      return result;
+    } catch {
+      // FastAPI path failed or timed out — fall back to Supabase Edge route.
     }
-    const result = normalizeExpiryPayload(raw, sym, ex);
-    // If OpenAlgo returned no dates, surface it as an explicit error
-    if (result.expiries.length === 0) {
-      throw new Error(
-        friendlyBrokerMarketDataError(
-          "No expiry dates returned from broker. Market may be closed or your OpenAlgo API key / broker session needs refreshing.",
-        ),
-      );
-    }
-    return result;
   }
 
   const { data, error } = await supabase.functions.invoke<Record<string, unknown>>("fetch-expiry-dates", {

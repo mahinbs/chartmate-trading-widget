@@ -15,8 +15,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { BrokerSyncSection, ALL_BROKERS } from "@/components/trading/BrokerSyncSection";
-import { BrokerPortfolioCard } from "@/components/trading/BrokerPortfolioCard";
+import BrokerSyncSection, { ALL_BROKERS } from "@/components/trading/BrokerSyncSection";
+import BrokerPortfolioCard from "@/components/trading/BrokerPortfolioCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,6 +33,8 @@ import {
 } from "lucide-react";
 import BacktestingSection from "@/components/trading/BacktestingSection";
 import { toast } from "sonner";
+import { WEBINAR_BATCH_DEFINITIONS } from "@/constants/webinarBatches";
+import { trackFunnelEvent } from "@/lib/funnelTracking";
 
 // ── Broker capability map ─────────────────────────────────────────────────────
 // Which asset classes each broker supports. Indian brokers = no crypto/forex.
@@ -114,6 +116,11 @@ export default function AlgoTradingDashboard() {
 
   // Strategy
   const [strategies, setStrategies] = useState<any[]>([]);
+  const [webinarBatches, setWebinarBatches] = useState<Array<{ code: string; name: string }>>([]);
+  const [selectedBatchCode, setSelectedBatchCode] = useState("");
+  const [hasWebinarRegistration, setHasWebinarRegistration] = useState(false);
+  const [webinarLoading, setWebinarLoading] = useState(true);
+  const [webinarSaving, setWebinarSaving] = useState(false);
 
   const cap = BROKER_CAPABILITIES[broker] ?? DEFAULT_CAP;
 
@@ -145,9 +152,94 @@ export default function AlgoTradingDashboard() {
         setBrokerConnected(intg.is_active && !!exp && exp > new Date());
       }
 
+      // Webinar prompt state (for users not yet registered to any batch)
+      const { data: batches } = await (supabase as any)
+        .from("webinar_batches")
+        .select("code,name")
+        .eq("is_active", true)
+        .order("name", { ascending: true });
+      const fallbackBatches = WEBINAR_BATCH_DEFINITIONS.map((batch) => ({
+        code: batch.code,
+        name: batch.name,
+      }));
+      const normalizedBatches = ((batches ?? []) as Array<{ code: string; name: string }>).length
+        ? (batches as Array<{ code: string; name: string }>)
+        : fallbackBatches;
+      setWebinarBatches(normalizedBatches);
+      setSelectedBatchCode(normalizedBatches[0]?.code ?? "");
+
+      const { data: regRow } = await (supabase as any)
+        .from("webinar_registrations")
+        .select("id,batch_code")
+        .eq("user_id", user.id)
+        .neq("status", "cancelled")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      setHasWebinarRegistration(Boolean(regRow?.id));
+      if (regRow?.batch_code) setSelectedBatchCode(regRow.batch_code);
+      setWebinarLoading(false);
+
       setLoading(false);
     })();
   }, [navigate]);
+
+  const handleRegisterWebinarBatch = useCallback(async () => {
+    if (!user?.id || !selectedBatchCode) return;
+    setWebinarSaving(true);
+    try {
+      const fullName =
+        ((user.user_metadata as Record<string, unknown> | undefined)?.full_name as string) ||
+        user.email?.split("@")[0] ||
+        "User";
+      const phone =
+        ((user.user_metadata as Record<string, unknown> | undefined)?.phone as string) || "";
+
+      const { data: regRows, error } = await (supabase as any)
+        .from("webinar_registrations")
+        .upsert(
+          [
+            {
+              user_id: user.id,
+              batch_code: selectedBatchCode,
+              full_name: fullName,
+              email: user.email ?? "",
+              phone,
+              source: "algo_dashboard_banner",
+              consent_email: true,
+              status: "registered",
+            },
+          ],
+          { onConflict: "user_id,batch_code" },
+        )
+        .select("id");
+      if (error) throw error;
+
+      const regId = regRows?.[0]?.id as string | undefined;
+      if (regId) {
+        await supabase.functions.invoke("webinar-email-automation", {
+          body: { action: "registration_confirmation", registrationId: regId },
+        });
+      }
+
+      setHasWebinarRegistration(true);
+      toast.success("Webinar batch reserved. You will get reminder emails.");
+      await trackFunnelEvent(
+        "batch_select",
+        { source_page: "algo_dashboard_banner", batch_code: selectedBatchCode },
+        user.id,
+      );
+      await trackFunnelEvent(
+        "webinar_register",
+        { source_page: "algo_dashboard_banner", batch_code: selectedBatchCode },
+        user.id,
+      );
+    } catch (error: any) {
+      toast.error(error?.message ?? "Could not reserve webinar batch.");
+    } finally {
+      setWebinarSaving(false);
+    }
+  }, [user, selectedBatchCode]);
 
   // ── Quick AI analysis for an order ───────────────────────────────────────
   const runAiAnalysis = useCallback(async () => {
@@ -272,6 +364,43 @@ export default function AlgoTradingDashboard() {
       </div>
 
       <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
+        {!webinarLoading && !hasWebinarRegistration && (
+          <Card className="border-teal-500/30 bg-teal-500/5">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base text-teal-200">
+                Free Live Webinar: Pick Your Weekly Batch
+              </CardTitle>
+              <CardDescription className="text-teal-100/80">
+                3 sessions per week (1 hour each). Reserve a batch to receive join reminders.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid gap-2 sm:grid-cols-3">
+                {webinarBatches.map((batch) => (
+                  <button
+                    key={batch.code}
+                    onClick={() => setSelectedBatchCode(batch.code)}
+                    className={`rounded-md border px-3 py-2 text-left text-sm transition ${
+                      selectedBatchCode === batch.code
+                        ? "border-teal-400 bg-teal-500/20 text-teal-100"
+                        : "border-zinc-700 bg-zinc-900/40 text-zinc-300 hover:border-teal-500/40"
+                    }`}
+                  >
+                    <p className="font-semibold">{batch.name}</p>
+                    <p className="text-xs text-zinc-400">{batch.code.replace("_", " ").toUpperCase()}</p>
+                  </button>
+                ))}
+              </div>
+              <Button
+                className="bg-teal-500 text-black hover:bg-teal-400"
+                onClick={handleRegisterWebinarBatch}
+                disabled={webinarSaving || !selectedBatchCode}
+              >
+                {webinarSaving ? "Reserving..." : "Reserve Webinar Batch"}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
         {/* ── Broker limitation banner ──────────────────────────────────────── */}
         {!cap.crypto && (

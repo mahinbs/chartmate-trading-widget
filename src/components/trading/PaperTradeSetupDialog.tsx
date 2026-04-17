@@ -28,6 +28,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { SymbolSearch, SymbolData } from "@/components/SymbolSearch";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { fetchUsdPerInr } from "@/lib/fx-inr-usd";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -50,6 +51,7 @@ type UserStrategyRow = {
 };
 
 type Step = "strategy" | "instrument" | "schedule";
+type FiatCurrency = "INR" | "USD";
 
 interface Props {
   open: boolean;
@@ -312,6 +314,42 @@ function pendingRowActionFromTradingMode(tradingMode: string | null): "BUY" | "S
   return m === "SHORT" ? "SELL" : "BUY";
 }
 
+function isCryptoInstrument(
+  symbol: string,
+  exchange?: string | null,
+  type?: string | null,
+): boolean {
+  const sym = String(symbol ?? "").toUpperCase();
+  const ex = String(exchange ?? "").toUpperCase();
+  const t = String(type ?? "").toLowerCase();
+  if (t === "crypto" || ex === "CRYPTO") return true;
+  return sym.includes("-USD") || sym.includes("-USDT") || sym.includes("USDT");
+}
+
+function resolveAssetCurrency(
+  symbol: string,
+  exchange?: string | null,
+  type?: string | null,
+): FiatCurrency {
+  const ex = String(exchange ?? "").toUpperCase();
+  if (ex === "NSE" || ex === "BSE") return "INR";
+  if (isCryptoInstrument(symbol, exchange, type)) return "USD";
+  return "USD";
+}
+
+function convertBetweenInrUsd(
+  amount: number,
+  from: FiatCurrency,
+  to: FiatCurrency,
+  usdPerInr: number | null,
+): number {
+  if (!Number.isFinite(amount) || from === to) return amount;
+  if (!usdPerInr || usdPerInr <= 0) return amount;
+  if (from === "INR" && to === "USD") return amount * usdPerInr;
+  if (from === "USD" && to === "INR") return amount / usdPerInr;
+  return amount;
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 const STRATEGY_SELECT =
@@ -342,6 +380,13 @@ export function PaperTradeSetupDialog({
   const [symbolValue, setSymbolValue] = useState("");
   const [symbolData, setSymbolData] = useState<SymbolData | null>(null);
   const [quantity, setQuantity] = useState("1");
+  const [entryPrice, setEntryPrice] = useState<number | null>(null);
+  const [priceLoading, setPriceLoading] = useState(false);
+  const [investmentAmount, setInvestmentAmount] = useState("");
+  const [investmentCurrency, setInvestmentCurrency] = useState<FiatCurrency>("INR");
+  const [usdPerInr, setUsdPerInr] = useState<number | null>(null);
+  const [fxLoading, setFxLoading] = useState(false);
+  const [fxError, setFxError] = useState<string | null>(null);
 
   // Step 3: schedule
   const [scheduleMode, setScheduleMode] = useState<"now" | "later">("now");
@@ -376,6 +421,167 @@ export function PaperTradeSetupDialog({
     [selectedStrategy],
   );
 
+  const activeSymbol = useMemo(
+    () => (symbolData?.full_symbol || symbolValue.trim()).toUpperCase(),
+    [symbolData?.full_symbol, symbolValue],
+  );
+  const isCryptoAsset = useMemo(
+    () => isCryptoInstrument(activeSymbol, symbolData?.exchange, symbolData?.type),
+    [activeSymbol, symbolData?.exchange, symbolData?.type],
+  );
+  const assetCurrency = useMemo(
+    () => resolveAssetCurrency(activeSymbol, symbolData?.exchange, symbolData?.type),
+    [activeSymbol, symbolData?.exchange, symbolData?.type],
+  );
+
+  const parseSizingQuantity = useCallback((raw: string) => {
+    const qty = Number(raw);
+    if (!Number.isFinite(qty) || qty <= 0) return null;
+    if (isCryptoAsset) return Number(qty.toFixed(8));
+    return Math.max(1, Math.floor(qty));
+  }, [isCryptoAsset]);
+
+  const resolveLatestPrice = useCallback(async (symbol: string) => {
+    const { data, error } = await supabase.functions.invoke("get-chart-data", {
+      body: { symbol, interval: "1d", range: "1mo" },
+    });
+    if (error) throw new Error(error.message);
+    const metaPrice = Number((data as any)?.meta?.regularMarketPrice);
+    if (Number.isFinite(metaPrice) && metaPrice > 0) return metaPrice;
+    const candles = Array.isArray((data as any)?.candles) ? (data as any).candles : [];
+    const lastClose = Number(candles[candles.length - 1]?.close);
+    if (Number.isFinite(lastClose) && lastClose > 0) return lastClose;
+    throw new Error("Could not fetch current market price for selected symbol.");
+  }, []);
+
+  const loadFxRate = useCallback(async () => {
+    if (fxLoading) return usdPerInr;
+    setFxLoading(true);
+    setFxError(null);
+    try {
+      const direct = await fetchUsdPerInr();
+      if (direct && direct > 0) {
+        setUsdPerInr(direct);
+        return direct;
+      }
+      const res = await fetch("https://api.exchangerate.host/latest?base=INR&symbols=USD");
+      if (!res.ok) throw new Error("FX provider unavailable");
+      const json = await res.json();
+      const rate = Number(json?.rates?.USD);
+      if (!Number.isFinite(rate) || rate <= 0) throw new Error("Invalid FX quote");
+      setUsdPerInr(rate);
+      return rate;
+    } catch {
+      setFxError("Could not load INR/USD rate right now.");
+      return null;
+    } finally {
+      setFxLoading(false);
+    }
+  }, [fxLoading, usdPerInr]);
+
+  useEffect(() => {
+    if (!open || usdPerInr != null) return;
+    void loadFxRate();
+  }, [open, usdPerInr, loadFxRate]);
+
+  useEffect(() => {
+    const sym = activeSymbol.trim();
+    if (!open || !sym) {
+      setEntryPrice(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        setPriceLoading(true);
+        const px = await resolveLatestPrice(sym);
+        if (cancelled) return;
+        setEntryPrice(px);
+        setInvestmentCurrency(assetCurrency);
+      } catch {
+        if (!cancelled) setEntryPrice(null);
+      } finally {
+        if (!cancelled) setPriceLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, activeSymbol, resolveLatestPrice, assetCurrency]);
+
+  const handleQuantityChange = useCallback((raw: string) => {
+    if (!isCryptoAsset) {
+      const wholePart = (raw ?? "").split(/[.,]/)[0] ?? "";
+      setQuantity(wholePart.replace(/[^\d]/g, ""));
+      return;
+    }
+    setQuantity(raw);
+  }, [isCryptoAsset]);
+
+  useEffect(() => {
+    if (isCryptoAsset) return;
+    const normalized = parseSizingQuantity(quantity);
+    if (normalized == null) {
+      if (quantity !== "") setQuantity("1");
+      return;
+    }
+    const asWhole = String(Math.max(1, Math.floor(normalized)));
+    if (quantity !== asWhole) {
+      setQuantity(asWhole);
+    }
+  }, [isCryptoAsset, quantity, parseSizingQuantity]);
+
+  useEffect(() => {
+    const parsedQty = parseSizingQuantity(quantity);
+    if (entryPrice == null || parsedQty == null || parsedQty <= 0) return;
+    const amountInAsset = entryPrice * parsedQty;
+    const converted = convertBetweenInrUsd(
+      amountInAsset,
+      assetCurrency,
+      investmentCurrency,
+      usdPerInr,
+    );
+    setInvestmentAmount(converted.toFixed(2));
+  }, [quantity, entryPrice, parseSizingQuantity, assetCurrency, investmentCurrency, usdPerInr]);
+
+  const handleInvestmentCurrencyChange = useCallback(async (next: FiatCurrency) => {
+    if (next === investmentCurrency) return;
+    const needsFx = next !== assetCurrency || investmentCurrency !== assetCurrency;
+    let rate = usdPerInr;
+    if (needsFx && (!rate || rate <= 0)) {
+      rate = await loadFxRate();
+    }
+    if (needsFx && (!rate || rate <= 0)) {
+      toast({
+        title: "FX unavailable",
+        description: "Could not convert INR/USD right now. Please try again shortly.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const current = Number(investmentAmount);
+    if (Number.isFinite(current) && current > 0) {
+      const converted = convertBetweenInrUsd(current, investmentCurrency, next, rate ?? usdPerInr);
+      setInvestmentAmount(converted.toFixed(2));
+    }
+    setInvestmentCurrency(next);
+  }, [investmentCurrency, assetCurrency, investmentAmount, usdPerInr, loadFxRate, toast]);
+
+  const handleInvestmentAmountChange = useCallback((raw: string) => {
+    setInvestmentAmount(raw);
+    const amountDisplay = Number(raw);
+    if (!Number.isFinite(amountDisplay) || amountDisplay <= 0 || entryPrice == null || entryPrice <= 0) return;
+    const amountInAsset = convertBetweenInrUsd(
+      amountDisplay,
+      investmentCurrency,
+      assetCurrency,
+      usdPerInr,
+    );
+    const rawQty = amountInAsset / entryPrice;
+    const nextQty = isCryptoAsset ? Number(rawQty.toFixed(6)) : Math.max(1, Math.floor(rawQty));
+    setQuantity(isCryptoAsset ? String(nextQty) : String(Math.max(1, Math.round(nextQty))));
+  }, [entryPrice, investmentCurrency, assetCurrency, usdPerInr, isCryptoAsset]);
+
   // Reset on close
   useEffect(() => {
     if (!open) {
@@ -385,6 +591,11 @@ export function PaperTradeSetupDialog({
       setSymbolValue("");
       setSymbolData(null);
       setQuantity("1");
+      setEntryPrice(null);
+      setPriceLoading(false);
+      setInvestmentAmount("");
+      setInvestmentCurrency("INR");
+      setFxError(null);
       setScheduleMode("now");
       setScheduleDatetime("");
     }
@@ -447,14 +658,14 @@ export function PaperTradeSetupDialog({
         toast({ title: "Symbol required", description: "Search and select a symbol.", variant: "destructive" });
         return;
       }
-      const qty = Number(quantity);
-      if (!Number.isFinite(qty) || qty <= 0) {
+      const qty = parseSizingQuantity(quantity);
+      if (qty == null || qty <= 0) {
         toast({ title: "Invalid quantity", description: "Enter a positive quantity.", variant: "destructive" });
         return;
       }
       setStep("schedule");
     }
-  }, [step, selectedStrategy, symbolData, symbolValue, quantity, toast]);
+  }, [step, selectedStrategy, symbolData, symbolValue, quantity, toast, parseSizingQuantity]);
 
   const goBack = useCallback(() => {
     if (step === "instrument") {
@@ -470,8 +681,8 @@ export function PaperTradeSetupDialog({
   const handleSubmit = useCallback(async () => {
     if (!selectedStrategy) return;
     const sym = symbolData?.full_symbol || symbolValue.trim();
-    const qty = Math.max(1, Math.round(Number(quantity)));
-    if (!sym || !qty) return;
+    const qty = parseSizingQuantity(quantity);
+    if (!sym || qty == null || qty <= 0) return;
 
     const schedMode = quick ? "now" : scheduleMode;
 
@@ -564,6 +775,7 @@ export function PaperTradeSetupDialog({
     symbolData,
     symbolValue,
     quantity,
+    parseSizingQuantity,
     scheduleMode,
     scheduleDatetime,
     quick,
@@ -722,7 +934,12 @@ export function PaperTradeSetupDialog({
               ) : (
                 <SymbolSearch
                   value={symbolValue}
-                  onValueChange={setSymbolValue}
+                  onValueChange={(next) => {
+                    setSymbolValue(next);
+                    if (symbolData && next !== symbolData.full_symbol) {
+                      setSymbolData(null);
+                    }
+                  }}
                   onSelectSymbol={setSymbolData}
                   placeholder="Search symbol (NYSE, LSE, NSE, BSE, crypto, forex)"
                 />
@@ -733,12 +950,101 @@ export function PaperTradeSetupDialog({
               <Input
                 id="pt-qty"
                 type="number"
-                min={1}
-                step={1}
+                min={isCryptoAsset ? 0.000001 : 1}
+                step={isCryptoAsset ? "0.000001" : 1}
                 value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
-                placeholder="e.g. 10"
+                onChange={(e) => handleQuantityChange(e.target.value)}
+                onBlur={() => {
+                  if (isCryptoAsset) return;
+                  const q = parseSizingQuantity(quantity);
+                  setQuantity(String(q == null ? 1 : Math.max(1, Math.floor(q))));
+                }}
+                placeholder={isCryptoAsset ? "e.g. 0.05" : "e.g. 10"}
               />
+              {isCryptoAsset ? (
+                <p className="text-[11px] text-zinc-500">
+                  Fractional quantity is supported for crypto instruments.
+                </p>
+              ) : (
+                <p className="text-[11px] text-zinc-500">
+                  Quantity uses whole units for stocks, forex and indices.
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="pt-investment">Investment amount</Label>
+              <div className="flex items-center gap-2">
+                <div className="inline-flex rounded-md border border-white/10 bg-black/20 p-0.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => void handleInvestmentCurrencyChange("INR")}
+                    disabled={fxLoading}
+                    className={`px-2 py-1 text-xs rounded ${investmentCurrency === "INR" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                  >
+                    ₹ INR
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleInvestmentCurrencyChange("USD")}
+                    disabled={fxLoading}
+                    className={`px-2 py-1 text-xs rounded ${investmentCurrency === "USD" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                  >
+                    $ USD
+                  </button>
+                </div>
+                <Input
+                  id="pt-investment"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={investmentAmount}
+                  onChange={(e) => handleInvestmentAmountChange(e.target.value)}
+                  placeholder={investmentCurrency === "USD" ? "e.g. 500.00 USD" : "e.g. 10000.00 INR"}
+                />
+              </div>
+              <p className="text-[11px] text-zinc-500">
+                Default currency follows instrument market ({assetCurrency}). You can switch manually.
+              </p>
+            </div>
+            <div className="rounded-md border border-white/10 bg-black/20 px-3 py-2 text-xs text-zinc-400 space-y-1">
+              <div className="flex items-center justify-between">
+                <span>Current price</span>
+                <span className="text-zinc-200 font-medium">
+                  {priceLoading
+                    ? "Loading..."
+                    : entryPrice != null
+                      ? `${assetCurrency === "USD" ? "$" : "₹"}${entryPrice.toFixed(4)}`
+                      : "—"}
+                </span>
+              </div>
+              {entryPrice != null && investmentCurrency !== assetCurrency && usdPerInr && usdPerInr > 0 && (
+                <div className="flex items-center justify-between">
+                  <span>Current price ({investmentCurrency})</span>
+                  <span className="text-zinc-200 font-medium">
+                    {investmentCurrency === "USD" ? "$" : "₹"}
+                    {convertBetweenInrUsd(entryPrice, assetCurrency, investmentCurrency, usdPerInr).toFixed(4)}
+                  </span>
+                </div>
+              )}
+              <div className="flex items-center justify-between">
+                <span>Estimated notional</span>
+                <span className="text-zinc-200 font-medium">
+                  {Number(investmentAmount) > 0
+                    ? `${investmentCurrency === "USD" ? "$" : "₹"}${Number(investmentAmount).toFixed(2)}`
+                    : "—"}
+                </span>
+              </div>
+              {fxLoading && (
+                <p className="text-[10px] text-zinc-500">Refreshing INR/USD rate…</p>
+              )}
+              {fxError && (
+                <p className="text-[10px] text-amber-400">{fxError}</p>
+              )}
+              {isCryptoAsset && (
+                <p className="text-[10px] text-zinc-500">
+                  Crypto price is volatile; final executed notional can vary by entry time.
+                </p>
+              )}
             </div>
 
             {selectedStrategy && (
@@ -831,7 +1137,15 @@ export function PaperTradeSetupDialog({
                 </div>
                 <div className="flex items-center justify-between text-zinc-400">
                   <span>Quantity</span>
-                  <span className="text-white font-medium">{quantity}</span>
+                  <span className="text-white font-medium">{parseSizingQuantity(quantity) ?? "—"}</span>
+                </div>
+                <div className="flex items-center justify-between text-zinc-400">
+                  <span>Investment</span>
+                  <span className="text-white font-medium">
+                    {Number(investmentAmount) > 0
+                      ? `${investmentCurrency === "USD" ? "$" : "₹"}${Number(investmentAmount).toFixed(2)}`
+                      : "—"}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between text-zinc-400">
                   <span>Activation</span>
@@ -909,8 +1223,7 @@ export function PaperTradeSetupDialog({
                   submitting ||
                   (isPreset && strategiesLoading && !selectedStrategy) ||
                   !symbolValue.trim() ||
-                  !Number.isFinite(Number(quantity)) ||
-                  Number(quantity) <= 0
+                  parseSizingQuantity(quantity) == null
                 }
                 className="shadow-[0_0_20px_rgba(20,184,166,0.2)]"
               >

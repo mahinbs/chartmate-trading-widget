@@ -31,6 +31,8 @@ import { PRICING_PLANS } from "@/constants/pricing";
 import { premiumPlanCheckoutUrls } from "@/lib/premiumCheckoutUrls";
 import { createCheckoutSession } from "@/services/stripeService";
 import { useIsMobileApp } from "@/mobile-app/isMobileDevice";
+import { DEFAULT_TRIAL_LIMITS, WEBINAR_BATCH_DEFINITIONS } from "@/constants/webinarBatches";
+import { trackFunnelEvent } from "@/lib/funnelTracking";
 
 const VALID_PREMIUM_CHECKOUT_PLANS = new Set(PRICING_PLANS.map((p) => p.id));
 
@@ -100,6 +102,7 @@ function isEmailAlreadyRegisteredAuthError(err: { message?: string; code?: strin
 type AuthPhase =
   | "tabs"
   | "signup-otp"
+  | "signup-success"
   | "forgot-send"
   | "forgot-otp";
 
@@ -136,6 +139,12 @@ const AuthPage = () => {
   const [forgotOtp, setForgotOtp] = useState("");
   const [forgotPassword, setForgotPassword] = useState("");
   const [forgotPasswordConfirm, setForgotPasswordConfirm] = useState("");
+  const [availableBatches, setAvailableBatches] = useState<
+    Array<{ code: string; name: string; timezone: string; tagline?: string }>
+  >([]);
+  const [selectedBatchCode, setSelectedBatchCode] = useState("");
+  const [savingBatch, setSavingBatch] = useState(false);
+  const [authTab, setAuthTab] = useState<"signin" | "signup">("signin");
 
   const [signInData, setSignInData] = useState({ email: "", password: "" });
   const [signUpData, setSignUpData] = useState({
@@ -160,6 +169,7 @@ const AuthPage = () => {
   const emailCooldown = useAuthEmailCooldown();
   const [genericEmailRateLimit, setGenericEmailRateLimit] = useState(false);
   const isMobile = useIsMobileApp();
+  const trialBootstrapDoneRef = useRef(false);
 
   const sendAuthEmailOtp = async (
     action: AuthEmailOtpAction,
@@ -198,8 +208,44 @@ const AuthPage = () => {
   );
 
   useEffect(() => {
+    const requestedTab = searchParams.get("tab");
+    const entry = searchParams.get("entry");
+    if (requestedTab === "signup" || entry === "meta_webinar") {
+      setAuthTab("signup");
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    try {
+      const fullName = localStorage.getItem("signup_prefill_full_name")?.trim() ?? "";
+      const email = localStorage.getItem("signup_prefill_email")?.trim() ?? "";
+      const phoneIsoRaw = localStorage.getItem("signup_prefill_phone_iso")?.trim() ?? "";
+      const phoneNational = localStorage.getItem("signup_prefill_phone_national")?.trim() ?? "";
+
+      if (!fullName && !email && !phoneNational) return;
+
+      const phoneCountryIso: CountryCode | null = /^[A-Z]{2}$/.test(phoneIsoRaw)
+        ? (phoneIsoRaw as CountryCode)
+        : null;
+
+      setSignUpData((prev) => ({
+        ...prev,
+        fullName: fullName || prev.fullName,
+        email: email || prev.email,
+        phoneCountryIso: phoneCountryIso ?? prev.phoneCountryIso,
+        phoneNational: phoneNational || prev.phoneNational,
+      }));
+
+      setAuthTab("signup");
+    } catch {
+      // Ignore storage failures.
+    }
+  }, []);
+
+  useEffect(() => {
     const routeAfterLogin = async () => {
       if (roleLoading || !user) return;
+      if (authPhase === "signup-success") return;
       if ((user as any).user_metadata?.need_password_reset) {
         navigate("/auth/change-password", { replace: true });
         return;
@@ -253,6 +299,108 @@ const AuthPage = () => {
       }
       if (role === "affiliate") navigate("/affiliate/dashboard", { replace: true });
       else if (role === "user") {
+        if (!trialBootstrapDoneRef.current) {
+          trialBootstrapDoneRef.current = true;
+          const nowIso = new Date().toISOString();
+          const endIso = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- migration-backed table
+          const { data: existing } = await (supabase as any)
+            .from("trial_access")
+            .select("id")
+            .eq("user_id", user.id)
+            .maybeSingle();
+
+          if (!existing) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- migration-backed table
+            await (supabase as any).from("trial_access").insert([
+              {
+                user_id: user.id,
+                start_at: nowIso,
+                end_at: endIso,
+                status: "active",
+                daily_credit_limit: 0,
+                backtests_per_day: DEFAULT_TRIAL_LIMITS.backtestsPerDay,
+                ai_analysis_per_day: DEFAULT_TRIAL_LIMITS.aiAnalysisPerDay,
+                scans_per_day: 0,
+                paper_trades_per_day: DEFAULT_TRIAL_LIMITS.paperTradesPerDay,
+                strategy_creations_per_day: DEFAULT_TRIAL_LIMITS.strategyCreationsPerDay,
+                limits_metadata_json: {
+                  live_auto_execution_enabled: false,
+                },
+              },
+            ]);
+          }
+        }
+
+        try {
+          const wasPendingSignup = localStorage.getItem("pending_signup_complete") === "1";
+          if (wasPendingSignup) {
+            localStorage.removeItem("pending_signup_complete");
+
+            const sourcePageRaw = localStorage.getItem("signup_source_page") ?? "unknown";
+            const source =
+              sourcePageRaw === "meta_webinar"
+                ? "2-day access landing page"
+                : sourcePageRaw === "ra_checkout"
+                  ? "RA strategy checkout"
+                  : sourcePageRaw;
+
+            const meta = (user.user_metadata ?? {}) as Record<string, unknown>;
+            const fullName =
+              (meta.full_name as string) ??
+              (meta.fullName as string) ??
+              user.email?.split("@")[0] ??
+              "User";
+            const phone = (meta.phone as string) ?? "";
+
+            const utmSourceRaw = localStorage.getItem("signup_utm_source") ?? "";
+            const utmMediumRaw = localStorage.getItem("signup_utm_medium") ?? "";
+            const utmCampaignRaw = localStorage.getItem("signup_utm_campaign") ?? "";
+
+            const utm_source = utmSourceRaw.trim() ? utmSourceRaw.trim() : null;
+            const utm_medium = utmMediumRaw.trim() ? utmMediumRaw.trim() : null;
+            const utm_campaign = utmCampaignRaw.trim() ? utmCampaignRaw.trim() : null;
+
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- table is migration-backed
+            const { data: profile } = await (supabase as any)
+              .from("user_signup_profiles")
+              .select("affiliate_id, referral_code_at_signup")
+              .eq("user_id", user.id)
+              .maybeSingle();
+
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- migration-backed table
+            await (supabase as any).from("user_signup_tracking").upsert(
+              [
+                {
+                  user_id: user.id,
+                  name: fullName,
+                  email: user.email ?? "",
+                  whatsapp: phone,
+                  source,
+                  stage: "signed_up",
+                  utm_json: {},
+                  utm_source,
+                  utm_medium,
+                  utm_campaign,
+                  affiliate_id: profile?.affiliate_id ?? null,
+                  referral_code: profile?.referral_code_at_signup ?? null,
+                },
+              ],
+              { onConflict: "user_id" },
+            );
+
+            await trackFunnelEvent("signup_complete", {
+              source_page: sourcePageRaw,
+            }, user.id);
+            localStorage.removeItem("signup_source_page");
+            localStorage.removeItem("signup_utm_source");
+            localStorage.removeItem("signup_utm_medium");
+            localStorage.removeItem("signup_utm_campaign");
+          }
+        } catch {
+          // Ignore localStorage failures.
+        }
+
         if (isMobile) {
           navigate("/trading-dashboard?tab=options", { replace: true });
         } else {
@@ -261,7 +409,44 @@ const AuthPage = () => {
       }
     };
     routeAfterLogin();
-  }, [user, role, roleLoading, navigate, searchParams]);
+  }, [user, role, roleLoading, navigate, searchParams, authPhase]);
+
+  useEffect(() => {
+    const loadBatches = async () => {
+      if (authPhase !== "signup-success") return;
+      const preferredBatchCode = localStorage.getItem("signup_prefill_batch_code") ?? "";
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- migration-backed table
+      const { data } = await (supabase as any)
+        .from("webinar_batches")
+        .select("code,name,timezone")
+        .eq("is_active", true)
+        .order("name", { ascending: true });
+      const dbRows = (data ?? []) as Array<{ code: string; name: string; timezone: string }>;
+      const taglineByCode = new Map(
+        WEBINAR_BATCH_DEFINITIONS.map((batch) => [batch.code, batch.tagline] as const),
+      );
+      const rows =
+        dbRows.length > 0
+          ? dbRows.map((row) => ({
+              ...row,
+              tagline: taglineByCode.get(row.code),
+            }))
+          : WEBINAR_BATCH_DEFINITIONS.map((batch) => ({
+              code: batch.code,
+              name: batch.name,
+              timezone: "Asia/Kolkata",
+              tagline: batch.tagline,
+            }));
+
+      setAvailableBatches(rows);
+      if (rows.length > 0) {
+        const preferredExists = rows.some((r) => r.code === preferredBatchCode);
+        setSelectedBatchCode(preferredExists ? preferredBatchCode : rows[0].code);
+      }
+    };
+    void loadBatches();
+  }, [authPhase]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -295,6 +480,7 @@ const AuthPage = () => {
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
+    void trackFunnelEvent("signup_start", { source_page: "auth_page" });
 
     const name = signUpData.fullName.trim();
     if (name.length < 2) {
@@ -472,7 +658,18 @@ const AuthPage = () => {
       }
       if (data.session) {
         toast({ title: "Email verified", description: "You're signed in." });
-        setAuthPhase("tabs");
+        try {
+          localStorage.setItem("pending_signup_complete", "1");
+          const sourcePage = new URLSearchParams(window.location.search).get("entry");
+          if (sourcePage) localStorage.setItem("signup_source_page", sourcePage);
+          localStorage.removeItem("signup_prefill_full_name");
+          localStorage.removeItem("signup_prefill_email");
+          localStorage.removeItem("signup_prefill_phone_iso");
+          localStorage.removeItem("signup_prefill_phone_national");
+        } catch {
+          // Ignore storage failures.
+        }
+        setAuthPhase("signup-success");
         setSignUpOtp("");
         setPendingSignupContext(null);
       }
@@ -644,6 +841,106 @@ const AuthPage = () => {
     setForgotOtp("");
     setForgotPassword("");
     setForgotPasswordConfirm("");
+  };
+
+  const completeSignupWithoutBatch = () => {
+    try {
+      localStorage.removeItem("signup_prefill_batch_code");
+    } catch {
+      // Ignore storage failures.
+    }
+    setAuthPhase("tabs");
+    if (isMobile) navigate("/trading-dashboard?tab=options", { replace: true });
+    else navigate("/home", { replace: true });
+  };
+
+  const handleSelectBatchAfterSignup = async () => {
+    if (!user?.id || !selectedBatchCode) {
+      toast({
+        title: "Choose a batch",
+        description: "Select one webinar batch to continue.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setSavingBatch(true);
+    try {
+      const fullName =
+        ((user.user_metadata as Record<string, unknown> | undefined)?.full_name as string) ||
+        user.email?.split("@")[0] ||
+        "User";
+      const phone =
+        ((user.user_metadata as Record<string, unknown> | undefined)?.phone as string) || "";
+
+      // Avoid ON CONFLICT dependency; some DBs may not have matching unique constraint shape.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- migration-backed table
+      const { data: existingReg, error: existingErr } = await (supabase as any)
+        .from("webinar_registrations")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("batch_code", selectedBatchCode)
+        .maybeSingle();
+      if (existingErr) {
+        throw existingErr;
+      }
+
+      let regId = existingReg?.id as string | undefined;
+      if (!regId) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- migration-backed table
+        const { data: insertRows, error: insertErr } = await (supabase as any)
+          .from("webinar_registrations")
+          .insert([
+            {
+              user_id: user.id,
+              batch_code: selectedBatchCode,
+              full_name: fullName,
+              email: user.email ?? "",
+              phone,
+              source: "signup_onboarding",
+              consent_email: true,
+              status: "registered",
+            },
+          ])
+          .select("id");
+        if (insertErr) {
+          throw insertErr;
+        }
+        regId = insertRows?.[0]?.id as string | undefined;
+      }
+
+      if (regId) {
+        await supabase.functions.invoke("webinar-email-automation", {
+          body: { action: "registration_confirmation", registrationId: regId },
+        });
+      }
+
+      await trackFunnelEvent(
+        "batch_select",
+        { source_page: "auth_signup_success", batch_code: selectedBatchCode },
+        user.id,
+      );
+      await trackFunnelEvent(
+        "webinar_register",
+        { source_page: "auth_signup_success", batch_code: selectedBatchCode },
+        user.id,
+      );
+
+      toast({ title: "Batch reserved", description: "You are enrolled in the selected webinar batch." });
+      try {
+        localStorage.removeItem("signup_prefill_batch_code");
+      } catch {
+        // Ignore storage failures.
+      }
+      completeSignupWithoutBatch();
+    } catch (error: any) {
+      toast({
+        title: "Could not reserve batch",
+        description: error?.message ?? "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingBatch(false);
+    }
   };
 
   if (authPhase === "signup-otp") {
@@ -818,6 +1115,69 @@ const AuthPage = () => {
     );
   }
 
+  if (authPhase === "signup-success") {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted flex items-center justify-center p-4">
+        <Card className="w-full max-w-lg">
+          <CardHeader>
+            <CardTitle className="text-2xl text-center">Welcome to TradingSmart.ai</CardTitle>
+            <CardDescription className="text-center">
+              Your 2-day free trial is active. Pick a live training batch now.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-4 text-sm text-zinc-300">
+              <p>Trial duration: 48 hours</p>
+              <p>Backtests/day: 10</p>
+              <p>Paper trades/day: 10</p>
+              <p>AI analysis/day: 10</p>
+              <p>Strategy creation/day: 1</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Choose webinar batch</Label>
+              <div className="space-y-2">
+                {availableBatches.map((batch) => (
+                  <label
+                    key={batch.code}
+                    className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 ${
+                      selectedBatchCode === batch.code
+                        ? "border-teal-500/50 bg-teal-500/10"
+                        : "border-zinc-700"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      className="accent-teal-500"
+                      name="signup-batch"
+                      checked={selectedBatchCode === batch.code}
+                      onChange={() => setSelectedBatchCode(batch.code)}
+                    />
+                    <div className="text-sm">
+                      <p className="font-medium text-white">{batch.name}</p>
+                      <p className="text-zinc-400">{batch.tagline ?? batch.timezone}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                className="flex-1 bg-teal-500 hover:bg-teal-400 text-black font-bold"
+                disabled={savingBatch || !selectedBatchCode}
+                onClick={handleSelectBatchAfterSignup}
+              >
+                {savingBatch ? "Reserving..." : "Reserve batch and continue"}
+              </Button>
+              <Button variant="outline" className="flex-1" onClick={completeSignupWithoutBatch}>
+                Skip for now
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted flex items-center justify-center p-4">
       <Card className="w-full max-w-lg">
@@ -833,7 +1193,7 @@ const AuthPage = () => {
             mmss={emailCooldown.mmss}
             generic={genericEmailRateLimit && !emailCooldown.active}
           />
-          <Tabs defaultValue="signin" className="w-full">
+          <Tabs value={authTab} onValueChange={(v) => setAuthTab(v as "signin" | "signup")} className="w-full">
             <TabsList className="grid w-full grid-cols-2 mb-4">
               <TabsTrigger value="signin">Sign In</TabsTrigger>
               <TabsTrigger value="signup">Sign Up</TabsTrigger>

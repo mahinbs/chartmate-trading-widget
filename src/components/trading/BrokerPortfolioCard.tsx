@@ -52,6 +52,9 @@ import {
 import YahooChartPanel from "@/components/YahooChartPanel";
 import { runLiveEntryConditionScan, type LiveScanStrategyRow } from "@/lib/strategyLiveScan";
 import { PaperTradeSetupDialog } from "@/components/trading/PaperTradeSetupDialog";
+import { ALGO_ROBOT_COPY, emitAlgoRobotEvent } from "@/lib/algoRobotMessaging";
+import { trackRobotMetric } from "@/lib/algoRobotExperience";
+import { tradeTrackingService, type ActiveTrade } from "@/services/tradeTrackingService";
 
 function firstListedSymbol(symbols: unknown): string {
   if (!Array.isArray(symbols) || symbols.length === 0) return "";
@@ -413,6 +416,30 @@ function isLiveChecking(dep: {
   const last = dep.last_checked_at ? Date.parse(dep.last_checked_at) : NaN;
   if (!Number.isFinite(last)) return false;
   return Date.now() - last <= 30_000;
+}
+
+function relativeSecondsFrom(ts?: string | null, nowMs: number = Date.now()): number | null {
+  if (!ts) return null;
+  const parsed = Date.parse(ts);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(0, Math.round((nowMs - parsed) / 1000));
+}
+
+function strategyMachineState(
+  dep: {
+    status: "pending" | "executed" | "cancelled" | "expired";
+    last_checked_at?: string | null;
+    error_message?: string | null;
+  } | null | undefined,
+  isActive: boolean,
+) {
+  if (!isActive) return { key: "idle", label: ALGO_ROBOT_COPY.strategyStates.idle };
+  if (!dep) return { key: "forming", label: ALGO_ROBOT_COPY.strategyStates.forming };
+  if (dep.status === "executed") return { key: "executed", label: ALGO_ROBOT_COPY.strategyStates.executed };
+  if (dep.status === "pending" && dep.last_checked_at) return { key: "scanning", label: ALGO_ROBOT_COPY.strategyStates.scanning };
+  if (dep.status === "pending") return { key: "awaiting", label: ALGO_ROBOT_COPY.strategyStates.awaiting };
+  if (dep.status === "cancelled") return { key: "validating", label: ALGO_ROBOT_COPY.strategyStates.validating };
+  return { key: "ready", label: ALGO_ROBOT_COPY.strategyStates.ready };
 }
 
 function formatDeployReason(message?: string | null): string {
@@ -780,6 +807,9 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
   const [showOrderModal, setShowOrderModal] = useState(false);
   /** Portfolio sub-tab (positions / orders / strategies / …) — used to deep-link from strategy hints */
   const [portfolioTab, setPortfolioTab] = useState("positions");
+  const [nowMs, setNowMs] = useState(Date.now());
+  const [historyOrders, setHistoryOrders] = useState<any[]>([]);
+  const [completedTrades, setCompletedTrades] = useState<ActiveTrade[]>([]);
 
   // ── Strategy state ─────────────────────────────────────────────────────────
   const [strategies, setStrategies]       = useState<Strategy[]>([]);
@@ -1181,6 +1211,11 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
 
   useEffect(() => { loadStrategies(); }, [loadStrategies]);
 
+  useEffect(() => {
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
   // Real-time subscription on pending_conditional_orders — no polling needed
   useEffect(() => {
     if (portfolioTab !== "strategies" && portfolioTab !== "strat-history") return;
@@ -1228,13 +1263,29 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
         const symName  = sym?.symbol ?? (typeof sym === "string" ? sym : "");
         if (autoId && autoMsg !== "already_pending") {
           toast.success(`⚡ Strategy armed — scanning ${symName || "configured symbol"} for entry conditions`);
+          emitAlgoRobotEvent(
+            "Strategy armed",
+            `Scanning ${symName || "configured symbol"} for strategy condition matches.`,
+            "success",
+          );
+          void trackRobotMetric("strategy_activated");
         } else if (autoMsg === "already_pending") {
           toast.info(`Strategy is active — already scanning ${symName || "symbol"}`);
+          emitAlgoRobotEvent(
+            "Strategy already scanning",
+            `The execution engine is already evaluating ${symName || "configured symbol"}.`,
+            "info",
+          );
         } else if (autoMsg === "no_symbol_configured") {
           toast.warning("Strategy activated — but no symbol is set. Deactivate, then toggle on again to set symbol + quantity.");
         }
       } else {
         toast.info("Strategy deactivated — all pending orders cancelled");
+        emitAlgoRobotEvent(
+          "Strategy paused",
+          "Automation is paused. You can reactivate after updating your strategy settings.",
+          "warning",
+        );
       }
       await loadStrategies();
     } finally { setToggleLoading(null); }
@@ -1326,6 +1377,12 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
         return;
       }
       toast.success(`Strategy "${goLive.strategy.name}" is now live (${sym} x ${qty}). Entry and exit orders are fully automatic.`, { duration: 8000 });
+      emitAlgoRobotEvent(
+        "Execution engine ready",
+        `Strategy "${goLive.strategy.name}" is live for ${sym} (${qty}).`,
+        "success",
+      );
+      void trackRobotMetric("strategy_activated");
       setGoLive(null);
       await loadStrategies();
     } finally {
@@ -1404,6 +1461,8 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
       } else {
         const portfolio = res.data as PortfolioData;
         setData(portfolio);
+        const { data: completed } = await tradeTrackingService.getCompletedTrades(250);
+        setCompletedTrades(Array.isArray(completed) ? completed : []);
 
         // Load recent strategy mapping from audit logs (orderid -> strategy name)
         try {
@@ -1426,6 +1485,14 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
               if (oid && strat && !map[oid]) map[oid] = strat;
             }
             setStrategyByOrderId(map);
+
+            const { data: histRows } = await (supabase as any)
+              .from("openalgo_order_history")
+              .select("status,quantity,filled_quantity,average_price,price,symbol,order_timestamp,strategy_name,rejection_reason")
+              .eq("user_id", uid)
+              .order("order_timestamp", { ascending: false })
+              .limit(500);
+            setHistoryOrders(Array.isArray(histRows) ? histRows : []);
 
             // Load recent auto-exit tracked trades (entry orderid -> status)
             try {
@@ -1611,6 +1678,63 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
     return { buyCnt: buys.length, sellCnt: sells.length, buyVal, sellVal };
   })();
 
+  const closedTrades = completedTrades.filter((t) => typeof t.actualPnl === "number");
+  const winningTrades = closedTrades.filter((t) => Number(t.actualPnl) > 0);
+  const losingTrades = closedTrades.filter((t) => Number(t.actualPnl) < 0);
+  const winRate = closedTrades.length ? (winningTrades.length / closedTrades.length) * 100 : 0;
+  const avgWin = winningTrades.length
+    ? winningTrades.reduce((acc, t) => acc + Number(t.actualPnl ?? 0), 0) / winningTrades.length
+    : 0;
+  const avgLossAbs = losingTrades.length
+    ? Math.abs(losingTrades.reduce((acc, t) => acc + Number(t.actualPnl ?? 0), 0) / losingTrades.length)
+    : 0;
+  const payoffRatio = avgLossAbs > 0 ? avgWin / avgLossAbs : 0;
+  const grossProfit = winningTrades.reduce((acc, t) => acc + Number(t.actualPnl ?? 0), 0);
+  const grossLossAbs = Math.abs(losingTrades.reduce((acc, t) => acc + Number(t.actualPnl ?? 0), 0));
+  const profitFactor = grossLossAbs > 0 ? grossProfit / grossLossAbs : 0;
+
+  const submittedOrders = historyOrders.length;
+  const rejectedOrders = historyOrders.filter((o) =>
+    String(o.order_status ?? o.status ?? "").toLowerCase().includes("reject"),
+  ).length;
+  const fullyFilled = historyOrders.filter((o) => {
+    const q = Number(o.quantity ?? 0);
+    const f = Number(o.filled_quantity ?? 0);
+    return q > 0 && f >= q;
+  }).length;
+  const fillEfficiency = submittedOrders ? (fullyFilled / submittedOrders) * 100 : 0;
+  const rejectionRate = submittedOrders ? (rejectedOrders / submittedOrders) * 100 : 0;
+  const slippageSamples = historyOrders
+    .map((o) => {
+      const expected = Number(o.price ?? 0);
+      const executed = Number(o.average_price ?? 0);
+      if (!Number.isFinite(expected) || !Number.isFinite(executed) || expected <= 0 || executed <= 0) return null;
+      return Math.abs(executed - expected);
+    })
+    .filter((x): x is number => x != null);
+  const slippageProxy = slippageSamples.length
+    ? slippageSamples.reduce((acc, n) => acc + n, 0) / slippageSamples.length
+    : 0;
+
+  const strategyEfficiency = Object.entries(
+    closedTrades.reduce((acc: Record<string, { total: number; wins: number; pnl: number }>, t) => {
+      const k = String(t.strategyType ?? "manual").trim() || "manual";
+      if (!acc[k]) acc[k] = { total: 0, wins: 0, pnl: 0 };
+      acc[k].total += 1;
+      if (Number(t.actualPnl ?? 0) > 0) acc[k].wins += 1;
+      acc[k].pnl += Number(t.actualPnl ?? 0);
+      return acc;
+    }, {}),
+  )
+    .map(([name, row]) => ({
+      name,
+      total: row.total,
+      winRate: row.total ? (row.wins / row.total) * 100 : 0,
+      pnl: row.pnl,
+    }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 6);
+
   return (
     <>
       <Card className="bg-zinc-900 border-zinc-800">
@@ -1789,7 +1913,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
 
           {/* ── Tabs ──────────────────────────────────────────────────── */}
           <Tabs value={portfolioTab} onValueChange={setPortfolioTab} className="w-full">
-            <TabsList className="bg-zinc-800 border border-zinc-700 h-auto w-full grid grid-cols-3 sm:grid-cols-3 lg:grid-cols-6 p-1 gap-1.5">
+            <TabsList className="bg-zinc-800 border border-zinc-700 h-auto w-full grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 p-1 gap-1.5">
               {[
                 { value: "positions",       label: "Positions",  icon: <ArrowUpRight className="h-3 w-3 mr-0.5" />,  count: brokerPositions.length },
                 { value: "holdings",        label: "Holdings",   icon: <Briefcase className="h-3 w-3 mr-0.5" />,     count: data.holdings.length },
@@ -1797,6 +1921,7 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                 { value: "tradebook",       label: "Trades",     icon: <BookOpen className="h-3 w-3 mr-0.5" />,      count: data.tradebook.length },
                 { value: "strategies",      label: "Strategies", icon: <Zap className="h-3 w-3 mr-0.5" />,           count: strategies.length },
                 { value: "strat-history",   label: "Algo Hist.", icon: <LineChart className="h-3 w-3 mr-0.5" />,     count: stratHistory.length },
+                { value: "efficiency",      label: "Efficiency", icon: <BarChart3 className="h-3 w-3 mr-0.5" />,     count: closedTrades.length },
               ].map(tab => (
                 <TabsTrigger key={tab.value} value={tab.value}
                   className="text-xs sm:text-sm h-10 px-2 data-[state=active]:bg-teal-500 data-[state=active]:text-black flex items-center justify-center gap-0.5 transition-all w-full">
@@ -2300,6 +2425,24 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
 
                         {/* Meta badges + live status diagnostic */}
                         <div className="flex items-center gap-1.5 flex-wrap px-3 pb-1.5">
+                          {(() => {
+                            const machine = strategyMachineState(dep, s.is_active);
+                            const sinceSecs = relativeSecondsFrom(dep?.last_checked_at, nowMs);
+                            const machineCls =
+                              machine.key === "executed"
+                                ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
+                                : machine.key === "scanning"
+                                  ? "bg-teal-500/10 text-teal-300 border-teal-500/30"
+                                  : machine.key === "awaiting"
+                                    ? "bg-amber-500/10 text-amber-300 border-amber-500/30"
+                                    : "bg-zinc-800 text-zinc-400 border-zinc-700/30";
+                            return (
+                              <span className={`text-xs px-2 py-0.5 rounded border font-medium flex items-center gap-1 ${machineCls}`}>
+                                <span className={`h-1.5 w-1.5 rounded-full ${machine.key === "scanning" ? "bg-teal-400 animate-pulse" : "bg-zinc-500"}`} />
+                                {machine.label}
+                              </span>
+                            );
+                          })()}
                           <span className={`text-xs px-2 py-0.5 rounded font-bold tracking-tight ${
                             s.is_active ? "bg-purple-500/15 text-purple-300 border border-purple-500/20" : "bg-zinc-800 text-zinc-500 border border-zinc-700/30"
                           }`}>{s.is_active ? "● ACTIVE" : "○ INACTIVE"}</span>
@@ -2313,6 +2456,11 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                                   {new Date(dep.last_checked_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
                                 </span>
                               )}
+                            </span>
+                          )}
+                          {dep?.last_checked_at && (
+                            <span className="text-xs px-2 py-0.5 rounded border border-zinc-700/40 bg-zinc-900 text-zinc-400">
+                              Last scan: {relativeSecondsFrom(dep.last_checked_at, nowMs) ?? 0}s ago
                             </span>
                           )}
                           {dep?.status === "executed" && (
@@ -2469,6 +2617,88 @@ export default function BrokerPortfolioCard({ broker = "" }: { broker?: string }
                   </table>
                 </div>
               )}
+            </TabsContent>
+
+            <TabsContent value="efficiency" className="mt-2 space-y-3">
+              <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-3">
+                <p className="text-sm text-zinc-200 font-semibold">Trade Efficiency Overview</p>
+                <p className="text-xs text-zinc-500 mt-0.5">
+                  Based on closed trades and synced broker order history. Metrics are descriptive, not predictive.
+                </p>
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 mt-3">
+                  {[
+                    { label: "Closed trades", value: String(closedTrades.length), hint: "Sample size for performance metrics." },
+                    { label: "Win rate", value: `${winRate.toFixed(1)}%`, hint: ALGO_ROBOT_COPY.metricMethodology.winRate },
+                    { label: "Payoff ratio", value: payoffRatio > 0 ? payoffRatio.toFixed(2) : "—", hint: ALGO_ROBOT_COPY.metricMethodology.payoff },
+                    { label: "Profit factor", value: profitFactor > 0 ? profitFactor.toFixed(2) : "—", hint: ALGO_ROBOT_COPY.metricMethodology.profitFactor },
+                    { label: "Fill efficiency", value: `${fillEfficiency.toFixed(1)}%`, hint: ALGO_ROBOT_COPY.metricMethodology.fillEfficiency },
+                    { label: "Rejection rate", value: `${rejectionRate.toFixed(1)}%`, hint: ALGO_ROBOT_COPY.metricMethodology.rejectionRate },
+                  ].map((m) => (
+                    <div key={m.label} className="rounded-lg border border-zinc-800 bg-black/30 p-2.5" title={m.hint}>
+                      <p className="text-[11px] text-zinc-500">{m.label}</p>
+                      <p className="text-base font-semibold text-zinc-100 mt-1">{m.value}</p>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[11px] text-zinc-500 mt-2" title={ALGO_ROBOT_COPY.metricMethodology.slippageProxy}>
+                  Avg slippage proxy: {slippageProxy > 0 ? `₹${slippageProxy.toFixed(2)}` : "Not enough fill data"}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-3">
+                  <p className="text-sm text-zinc-200 font-semibold mb-2">Recent closed trades</p>
+                  {closedTrades.length === 0 ? (
+                    <p className="text-xs text-zinc-500">No closed trades yet.</p>
+                  ) : (
+                    <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+                      {closedTrades.slice(0, 8).map((t) => (
+                        <div key={t.id} className="rounded border border-zinc-800 bg-black/30 px-2 py-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs text-zinc-200 font-mono">{t.symbol}</span>
+                            <span className={`text-xs font-semibold ${Number(t.actualPnl ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                              {Number(t.actualPnl ?? 0) >= 0 ? "+" : ""}₹{Number(t.actualPnl ?? 0).toFixed(2)}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-zinc-500">
+                            {String(t.strategyType ?? "manual")} • {String(t.exitReason ?? "closed")}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-3">
+                  <p className="text-sm text-zinc-200 font-semibold mb-2">Per-strategy efficiency</p>
+                  {strategyEfficiency.length === 0 ? (
+                    <p className="text-xs text-zinc-500">No strategy-specific outcomes yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {strategyEfficiency.map((s) => (
+                        <div key={s.name} className="rounded border border-zinc-800 bg-black/30 px-2.5 py-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs text-zinc-200 capitalize">{s.name.replace(/_/g, " ")}</span>
+                            <span className="text-[11px] text-zinc-400">{s.total} trades</span>
+                          </div>
+                          <div className="mt-1.5 h-1.5 rounded bg-zinc-800 overflow-hidden">
+                            <div
+                              className={`h-full ${s.winRate >= 50 ? "bg-emerald-500" : "bg-amber-500"}`}
+                              style={{ width: `${Math.max(4, Math.min(100, s.winRate))}%` }}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between mt-1.5 text-[11px]">
+                            <span className="text-zinc-400">Win rate {s.winRate.toFixed(1)}%</span>
+                            <span className={s.pnl >= 0 ? "text-emerald-400" : "text-red-400"}>
+                              {s.pnl >= 0 ? "+" : ""}₹{s.pnl.toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             </TabsContent>
           </Tabs>
         </CardContent>

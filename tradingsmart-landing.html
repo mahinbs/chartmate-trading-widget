@@ -1,0 +1,1389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TradingSmart.ai — 2-Day Free Access + Live Training</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Sora:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-root: #06060f;
+    --bg-surface: #0d0d1e;
+    --bg-card: #111128;
+    --bg-card-hover: #161635;
+    --border: rgba(255,255,255,0.07);
+    --border-hover: rgba(255,255,255,0.14);
+    --amber: #f59e0b;
+    --amber-dim: rgba(245,158,11,0.12);
+    --amber-glow: rgba(245,158,11,0.25);
+    --cyan: #22d3ee;
+    --cyan-dim: rgba(34,211,238,0.1);
+    --green: #10b981;
+    --green-dim: rgba(16,185,129,0.12);
+    --red: #f43f5e;
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --text-muted: #475569;
+    --font-head: 'Barlow Condensed', sans-serif;
+    --font-body: 'Sora', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg-root);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+
+  /* ── NOISE TEXTURE OVERLAY ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.4;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 5%;
+    height: 60px;
+    background: rgba(6,6,15,0.85);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+  }
+  .logo {
+    font-family: var(--font-head);
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    color: var(--text-primary);
+    text-decoration: none;
+  }
+  .logo span { color: var(--amber); }
+  .header-cta {
+    background: var(--amber);
+    color: #0a0a00;
+    font-family: var(--font-head);
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border: none;
+    padding: 8px 18px;
+    border-radius: 4px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.2s, transform 0.1s;
+  }
+  .header-cta:hover { background: #fbbf24; transform: translateY(-1px); }
+  .header-cta:active { transform: translateY(0); }
+
+  /* ── HERO ── */
+  .hero {
+    position: relative;
+    min-height: calc(100vh - 60px);
+    display: flex;
+    align-items: center;
+    padding: 80px 5% 60px;
+    overflow: hidden;
+  }
+  .hero-bg-grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: radial-gradient(ellipse 80% 70% at 50% 0%, black 40%, transparent 100%);
+  }
+  .hero-glow {
+    position: absolute;
+    top: -120px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 800px;
+    height: 400px;
+    background: radial-gradient(ellipse, rgba(245,158,11,0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .hero-content {
+    position: relative;
+    z-index: 2;
+    max-width: 720px;
+  }
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--amber-dim);
+    border: 1px solid rgba(245,158,11,0.3);
+    border-radius: 100px;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--amber);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 24px;
+  }
+  .hero-badge .dot {
+    width: 6px; height: 6px;
+    background: var(--amber);
+    border-radius: 50%;
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.7); }
+  }
+  .hero-headline {
+    font-family: var(--font-head);
+    font-size: clamp(52px, 9vw, 88px);
+    font-weight: 900;
+    line-height: 0.95;
+    letter-spacing: -0.01em;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+  }
+  .hero-headline em {
+    font-style: normal;
+    color: var(--amber);
+  }
+  .hero-headline .strike {
+    position: relative;
+    color: var(--text-muted);
+  }
+  .hero-headline .strike::after {
+    content: '';
+    position: absolute;
+    left: 0; right: 0;
+    top: 50%;
+    height: 3px;
+    background: var(--red);
+    transform: translateY(-50%);
+  }
+  .hero-sub {
+    font-size: 17px;
+    color: var(--text-secondary);
+    line-height: 1.65;
+    max-width: 540px;
+    margin-bottom: 36px;
+  }
+  .hero-sub strong { color: var(--text-primary); font-weight: 600; }
+
+  .cta-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 40px;
+  }
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--amber);
+    color: #080500;
+    font-family: var(--font-head);
+    font-size: 17px;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 14px 28px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+    box-shadow: 0 0 0 0 var(--amber-glow);
+    animation: cta-breathe 3s ease-in-out infinite;
+  }
+  @keyframes cta-breathe {
+    0%, 100% { box-shadow: 0 0 20px rgba(245,158,11,0.2); }
+    50% { box-shadow: 0 0 36px rgba(245,158,11,0.45); }
+  }
+  .btn-primary:hover { background: #fbbf24; transform: translateY(-2px); }
+  .btn-primary:active { transform: translateY(0); }
+  .btn-primary svg { width: 18px; height: 18px; flex-shrink: 0; }
+
+  .btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: transparent;
+    color: var(--text-primary);
+    font-family: var(--font-head);
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 13px 24px;
+    border-radius: 6px;
+    border: 1px solid var(--border-hover);
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  .btn-secondary:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.25); }
+
+  .hero-trust {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    align-items: center;
+  }
+  .trust-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .trust-item svg { color: var(--green); flex-shrink: 0; }
+
+  /* ── URGENCY STRIP ── */
+  .urgency-strip {
+    background: var(--amber-dim);
+    border-top: 1px solid rgba(245,158,11,0.2);
+    border-bottom: 1px solid rgba(245,158,11,0.2);
+    padding: 14px 5%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 32px;
+    flex-wrap: wrap;
+  }
+  .urgency-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--font-head);
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--amber);
+  }
+  .urgency-item span { color: var(--text-secondary); font-weight: 400; font-family: var(--font-body); font-size: 13px; text-transform: none; letter-spacing: 0; }
+
+  /* ── SECTION COMMON ── */
+  section { padding: 80px 5%; position: relative; }
+  .section-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 12px;
+  }
+  .section-title {
+    font-family: var(--font-head);
+    font-size: clamp(34px, 5vw, 52px);
+    font-weight: 900;
+    text-transform: uppercase;
+    line-height: 1;
+    letter-spacing: 0.01em;
+    margin-bottom: 16px;
+  }
+  .section-sub {
+    font-size: 16px;
+    color: var(--text-secondary);
+    max-width: 520px;
+    margin-bottom: 48px;
+    line-height: 1.7;
+  }
+  .divider {
+    width: 100%;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* ── WHAT YOU GET ── */
+  .access-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    max-width: 900px;
+  }
+  @media (max-width: 640px) {
+    .access-grid { grid-template-columns: 1fr; }
+  }
+  .access-cell {
+    background: var(--bg-card);
+    padding: 28px 32px;
+    transition: background 0.2s;
+  }
+  .access-cell:hover { background: var(--bg-card-hover); }
+  .access-cell .label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+  .access-cell .value {
+    font-family: var(--font-head);
+    font-size: 42px;
+    font-weight: 900;
+    line-height: 1;
+    color: var(--amber);
+    margin-bottom: 4px;
+  }
+  .access-cell .desc {
+    font-size: 14px;
+    color: var(--text-secondary);
+  }
+  .access-cell.disabled .value { color: var(--red); font-size: 18px; margin-top: 4px; }
+  .access-cell.disabled { opacity: 0.7; }
+
+  /* ── FEATURE PILLS ── */
+  .feature-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    max-width: 560px;
+  }
+  .feature-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 18px 24px;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+  }
+  .feature-row:last-child { border-bottom: none; }
+  .feature-row:hover { background: var(--bg-card-hover); }
+  .feature-icon {
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    font-size: 16px;
+  }
+  .feature-icon.amber { background: var(--amber-dim); color: var(--amber); }
+  .feature-icon.cyan { background: var(--cyan-dim); color: var(--cyan); }
+  .feature-icon.green { background: var(--green-dim); color: var(--green); }
+  .feature-text .title { font-weight: 600; font-size: 14px; color: var(--text-primary); }
+  .feature-text .sub { font-size: 13px; color: var(--text-muted); margin-top: 1px; }
+
+  /* ── BATCHES ── */
+  .batch-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    max-width: 860px;
+  }
+  @media (max-width: 720px) {
+    .batch-grid { grid-template-columns: 1fr; }
+  }
+  .batch-card {
+    position: relative;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px 24px;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s, transform 0.15s;
+  }
+  .batch-card:hover { border-color: rgba(245,158,11,0.4); background: var(--bg-card-hover); transform: translateY(-2px); }
+  .batch-card.selected { border-color: var(--amber); background: var(--amber-dim); }
+  .batch-card.selected::before {
+    content: '✓';
+    position: absolute;
+    top: 14px; right: 14px;
+    width: 22px; height: 22px;
+    background: var(--amber);
+    color: #080500;
+    font-size: 12px;
+    font-weight: 800;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    line-height: 22px;
+    text-align: center;
+  }
+  .batch-number {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+  }
+  .batch-days {
+    font-family: var(--font-head);
+    font-size: 22px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+    line-height: 1.1;
+  }
+  .batch-time {
+    font-family: var(--font-mono);
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--amber);
+    margin-bottom: 6px;
+  }
+  .batch-tz {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  /* ── REGISTRATION FORM ── */
+  .form-section {
+    background: var(--bg-surface);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .form-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 44px;
+    max-width: 560px;
+  }
+  @media (max-width: 600px) {
+    .form-card { padding: 28px 22px; }
+  }
+  .form-title {
+    font-family: var(--font-head);
+    font-size: 34px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    margin-bottom: 6px;
+  }
+  .form-subtitle {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin-bottom: 32px;
+  }
+  .form-group { margin-bottom: 20px; }
+  .form-group label {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+  .form-group input,
+  .form-group select {
+    width: 100%;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-hover);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: 15px;
+    padding: 12px 16px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    outline: none;
+    appearance: none;
+  }
+  .form-group input::placeholder { color: var(--text-muted); }
+  .form-group input:focus,
+  .form-group select:focus {
+    border-color: var(--amber);
+    box-shadow: 0 0 0 3px var(--amber-dim);
+  }
+  .form-group select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%2394a3b8' d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 16px;
+    padding-right: 40px;
+    cursor: pointer;
+  }
+  .form-group select option { background: #111128; }
+  .form-consent {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    margin-bottom: 28px;
+  }
+  .form-consent input[type="checkbox"] {
+    width: 16px; height: 16px;
+    margin-top: 2px;
+    flex-shrink: 0;
+    accent-color: var(--amber);
+    cursor: pointer;
+  }
+  .form-consent p {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+  .form-actions { display: flex; flex-direction: column; gap: 12px; }
+  .btn-full {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: var(--amber);
+    color: #080500;
+    font-family: var(--font-head);
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 16px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+  }
+  .btn-full:hover { background: #fbbf24; }
+  .btn-full:active { transform: scale(0.99); }
+  .btn-skip {
+    width: 100%;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 14px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    cursor: pointer;
+    font-family: var(--font-body);
+    transition: border-color 0.2s, color 0.2s;
+  }
+  .btn-skip:hover { color: var(--text-secondary); border-color: var(--border-hover); }
+
+  /* ── HOW IT WORKS ── */
+  .steps {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    max-width: 640px;
+  }
+  .step {
+    display: flex;
+    gap: 24px;
+    padding: 28px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .step:last-child { border-bottom: none; }
+  .step-num {
+    flex-shrink: 0;
+    width: 40px; height: 40px;
+    background: var(--amber-dim);
+    border: 1px solid rgba(245,158,11,0.3);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--amber);
+    margin-top: 2px;
+  }
+  .step-title {
+    font-family: var(--font-head);
+    font-size: 20px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+  }
+  .step-desc { font-size: 14px; color: var(--text-secondary); line-height: 1.65; }
+
+  /* ── FAQ ── */
+  .faq-list { max-width: 680px; }
+  .faq-item {
+    border-bottom: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .faq-q {
+    width: 100%;
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: 15px;
+    font-weight: 500;
+    text-align: left;
+    padding: 22px 0;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    transition: color 0.2s;
+  }
+  .faq-q:hover { color: var(--amber); }
+  .faq-q .icon {
+    flex-shrink: 0;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+    transition: transform 0.3s, background 0.2s;
+    color: var(--text-muted);
+  }
+  .faq-item.open .faq-q .icon { transform: rotate(45deg); background: var(--amber-dim); border-color: rgba(245,158,11,0.3); color: var(--amber); }
+  .faq-a {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.35s ease;
+  }
+  .faq-item.open .faq-a { max-height: 200px; }
+  .faq-a p {
+    padding-bottom: 22px;
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.7;
+  }
+
+  /* ── COMPLIANCE STRIP ── */
+  .compliance {
+    background: var(--bg-surface);
+    border-top: 1px solid var(--border);
+    padding: 28px 5%;
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.7;
+    text-align: center;
+    max-width: 860px;
+    margin: 0 auto;
+  }
+
+  /* ── FOOTER ── */
+  footer {
+    padding: 32px 5%;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  footer p { font-size: 13px; color: var(--text-muted); }
+  .footer-links { display: flex; gap: 20px; }
+  .footer-links a { font-size: 13px; color: var(--text-muted); text-decoration: none; transition: color 0.2s; }
+  .footer-links a:hover { color: var(--text-secondary); }
+
+  /* ── STICKY MOBILE CTA ── */
+  .sticky-cta {
+    display: none;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: 90;
+    background: rgba(6,6,15,0.96);
+    backdrop-filter: blur(16px);
+    border-top: 1px solid var(--border);
+    padding: 14px 20px;
+  }
+  @media (max-width: 768px) {
+    .sticky-cta { display: block; }
+    section { padding: 64px 5%; }
+    .hero { padding: 60px 5% 40px; }
+  }
+
+  /* ── CHATBOT ── */
+  .chat-fab {
+    position: fixed;
+    bottom: 72px;
+    right: 20px;
+    z-index: 200;
+    width: 52px; height: 52px;
+    background: var(--amber);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 24px rgba(245,158,11,0.4);
+    transition: transform 0.2s;
+    border: none;
+  }
+  .chat-fab:hover { transform: scale(1.08); }
+  @media (min-width: 769px) {
+    .chat-fab { bottom: 28px; }
+  }
+  .chat-fab svg { color: #080500; }
+
+  .chat-bubble {
+    position: fixed;
+    bottom: 136px;
+    right: 16px;
+    z-index: 200;
+    width: 320px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.6);
+    display: none;
+    flex-direction: column;
+    max-height: 440px;
+  }
+  @media (min-width: 769px) { .chat-bubble { bottom: 92px; } }
+  .chat-bubble.open { display: flex; }
+  .chat-header {
+    background: var(--bg-surface);
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .chat-avatar {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: var(--amber-dim);
+    border: 1px solid rgba(245,158,11,0.3);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+  }
+  .chat-header-text .name { font-size: 13px; font-weight: 600; }
+  .chat-header-text .status { font-size: 11px; color: var(--green); }
+  .chat-msgs {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: 200px;
+  }
+  .chat-msg {
+    max-width: 85%;
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 10px 14px;
+    border-radius: 10px;
+  }
+  .chat-msg.bot { background: var(--bg-surface); color: var(--text-primary); align-self: flex-start; border-bottom-left-radius: 3px; }
+  .chat-msg.user { background: var(--amber-dim); color: var(--amber); align-self: flex-end; border-bottom-right-radius: 3px; border: 1px solid rgba(245,158,11,0.2); }
+  .chat-chips {
+    padding: 0 16px 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .chat-chip {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-hover);
+    border-radius: 100px;
+    padding: 5px 12px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .chat-chip:hover { border-color: var(--amber); color: var(--amber); }
+  .chat-input-row {
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 8px;
+  }
+  .chat-input {
+    flex: 1;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 13px;
+    padding: 8px 12px;
+    outline: none;
+  }
+  .chat-input::placeholder { color: var(--text-muted); }
+  .chat-input:focus { border-color: var(--amber); }
+  .chat-send {
+    width: 34px; height: 34px;
+    background: var(--amber);
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  .chat-send:hover { background: #fbbf24; }
+  .chat-send svg { color: #080500; }
+
+  /* ── ANIMATIONS ── */
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(24px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .animate-in { animation: fade-up 0.6s ease forwards; }
+  .delay-1 { animation-delay: 0.1s; opacity: 0; }
+  .delay-2 { animation-delay: 0.22s; opacity: 0; }
+  .delay-3 { animation-delay: 0.34s; opacity: 0; }
+  .delay-4 { animation-delay: 0.46s; opacity: 0; }
+  .delay-5 { animation-delay: 0.58s; opacity: 0; }
+
+  /* ── TICKER TAPE ── */
+  .ticker-wrap {
+    overflow: hidden;
+    background: rgba(0,0,0,0.4);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 0;
+  }
+  .ticker {
+    display: flex;
+    gap: 48px;
+    white-space: nowrap;
+    animation: ticker-scroll 30s linear infinite;
+    width: max-content;
+  }
+  @keyframes ticker-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+  .ticker-item {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .ticker-item .sym { color: var(--text-secondary); font-weight: 600; }
+  .ticker-item .up { color: var(--green); }
+  .ticker-item .dn { color: var(--red); }
+
+  /* ── TWO COL LAYOUT HELPER ── */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 48px;
+    align-items: start;
+  }
+  @media (max-width: 860px) {
+    .two-col { grid-template-columns: 1fr; gap: 40px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="header">
+  <a href="#" class="logo">Trading<span>Smart</span>.ai</a>
+  <a href="#register" class="header-cta">Start Free Access →</a>
+</header>
+
+<!-- TICKER -->
+<div class="ticker-wrap" aria-hidden="true">
+  <div class="ticker">
+    <div class="ticker-item"><span class="sym">NIFTY</span> 24,850.30 <span class="up">▲ 0.42%</span></div>
+    <div class="ticker-item"><span class="sym">BANKNIFTY</span> 52,140.80 <span class="up">▲ 0.61%</span></div>
+    <div class="ticker-item"><span class="sym">RELIANCE</span> 2,942.15 <span class="dn">▼ 0.18%</span></div>
+    <div class="ticker-item"><span class="sym">INFY</span> 1,825.90 <span class="up">▲ 1.12%</span></div>
+    <div class="ticker-item"><span class="sym">TCS</span> 4,120.50 <span class="dn">▼ 0.33%</span></div>
+    <div class="ticker-item"><span class="sym">HDFC BANK</span> 1,678.00 <span class="up">▲ 0.85%</span></div>
+    <div class="ticker-item"><span class="sym">GOLD</span> 73,450 <span class="up">▲ 0.22%</span></div>
+    <div class="ticker-item"><span class="sym">CRUDE</span> 6,825 <span class="dn">▼ 1.05%</span></div>
+    <!-- duplicate for seamless loop -->
+    <div class="ticker-item"><span class="sym">NIFTY</span> 24,850.30 <span class="up">▲ 0.42%</span></div>
+    <div class="ticker-item"><span class="sym">BANKNIFTY</span> 52,140.80 <span class="up">▲ 0.61%</span></div>
+    <div class="ticker-item"><span class="sym">RELIANCE</span> 2,942.15 <span class="dn">▼ 0.18%</span></div>
+    <div class="ticker-item"><span class="sym">INFY</span> 1,825.90 <span class="up">▲ 1.12%</span></div>
+    <div class="ticker-item"><span class="sym">TCS</span> 4,120.50 <span class="dn">▼ 0.33%</span></div>
+    <div class="ticker-item"><span class="sym">HDFC BANK</span> 1,678.00 <span class="up">▲ 0.85%</span></div>
+    <div class="ticker-item"><span class="sym">GOLD</span> 73,450 <span class="up">▲ 0.22%</span></div>
+    <div class="ticker-item"><span class="sym">CRUDE</span> 6,825 <span class="dn">▼ 1.05%</span></div>
+  </div>
+</div>
+
+<!-- HERO -->
+<section class="hero" id="hero">
+  <div class="hero-bg-grid"></div>
+  <div class="hero-glow"></div>
+  <div class="hero-content">
+    <div class="hero-badge animate-in delay-1">
+      <span class="dot"></span>
+      Limited Campaign — 48-Hour Free Access
+    </div>
+    <h1 class="hero-headline animate-in delay-2">
+      <span class="strike">Watch.</span><br>
+      <em>Trade Smart.</em><br>
+      Let AI Do It.
+    </h1>
+    <p class="hero-sub animate-in delay-3">
+      Stop guessing and chart-watching manually. TradingSmart.ai gives Indian retail traders
+      <strong>AI-powered signals, strategy backtesting,</strong> and a full algo trading dashboard —
+      free for 48 hours with guided live training.
+    </p>
+    <div class="cta-group animate-in delay-4">
+      <a href="#register" class="btn-primary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+        Start 2-Day Free Access
+      </a>
+      <a href="#batches" class="btn-secondary">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        Reserve Webinar Batch
+      </a>
+    </div>
+    <div class="hero-trust animate-in delay-5">
+      <div class="trust-item">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        No credit card required
+      </div>
+      <div class="trust-item">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        Free webinar included
+      </div>
+      <div class="trust-item">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        Built for Indian markets
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- URGENCY STRIP -->
+<div class="urgency-strip">
+  <div class="urgency-item">
+    ⏱ <span>Access duration</span> 48 Hours
+  </div>
+  <div class="urgency-item">
+    ⚡ <span>Daily credits</span> 100
+  </div>
+  <div class="urgency-item">
+    📊 <span>Backtests/day</span> 2
+  </div>
+  <div class="urgency-item">
+    🤖 <span>AI analysis/day</span> 5
+  </div>
+  <div class="urgency-item">
+    🔍 <span>Signal scans/day</span> 15
+  </div>
+</div>
+
+<!-- WHAT YOU GET -->
+<section id="access">
+  <div class="section-label">Your 2-Day Trial</div>
+  <div class="two-col">
+    <div>
+      <h2 class="section-title">Full Platform.<br>Zero Cost.<br><em style="color:var(--amber)">48 Hours.</em></h2>
+      <p class="section-sub">Every tool on the platform is unlocked. Use your daily credits across backtesting, AI-powered analysis, and real-time signal scanning.</p>
+      <div class="access-grid">
+        <div class="access-cell">
+          <div class="label">Daily Credits</div>
+          <div class="value">100</div>
+          <div class="desc">Reset every day at midnight IST</div>
+        </div>
+        <div class="access-cell">
+          <div class="label">AI Analysis</div>
+          <div class="value">5×</div>
+          <div class="desc">AI-powered market insights per day</div>
+        </div>
+        <div class="access-cell">
+          <div class="label">Backtests</div>
+          <div class="value">2×</div>
+          <div class="desc">Run & validate your strategies</div>
+        </div>
+        <div class="access-cell">
+          <div class="label">Signal Scans</div>
+          <div class="value">15×</div>
+          <div class="desc">Real-time scan across instruments</div>
+        </div>
+        <div class="access-cell disabled" style="grid-column: span 2;">
+          <div class="label">Live Auto-Execution</div>
+          <div class="value">Disabled in trial</div>
+          <div class="desc">Upgrade to a paid plan to enable live algo execution with your broker</div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="feature-list">
+        <div class="feature-row">
+          <div class="feature-icon amber">📈</div>
+          <div class="feature-text">
+            <div class="title">Strategy Backtesting Engine</div>
+            <div class="sub">Test your ideas on historical Indian market data</div>
+          </div>
+        </div>
+        <div class="feature-row">
+          <div class="feature-icon cyan">🤖</div>
+          <div class="feature-text">
+            <div class="title">AI Trade Entry Validation</div>
+            <div class="sub">8-module scoring system on every entry signal</div>
+          </div>
+        </div>
+        <div class="feature-row">
+          <div class="feature-icon green">📡</div>
+          <div class="feature-text">
+            <div class="title">Live Algo Trading Dashboard</div>
+            <div class="sub">Monitor positions, signals, and P&L in one view</div>
+          </div>
+        </div>
+        <div class="feature-row">
+          <div class="feature-icon amber">🔍</div>
+          <div class="feature-text">
+            <div class="title">Signal Scanner</div>
+            <div class="sub">Scan Nifty 500 for setups matching your criteria</div>
+          </div>
+        </div>
+        <div class="feature-row">
+          <div class="feature-icon cyan">🏦</div>
+          <div class="feature-text">
+            <div class="title">Broker-Agnostic Architecture</div>
+            <div class="sub">Works with Zerodha, Upstox, Angel and more via OpenAlgo</div>
+          </div>
+        </div>
+        <div class="feature-row">
+          <div class="feature-icon green">🎓</div>
+          <div class="feature-text">
+            <div class="title">Free Live Webinar</div>
+            <div class="sub">Guided onboarding + Q&A with the team</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- BATCHES -->
+<section id="batches" style="background: var(--bg-surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
+  <div class="section-label">Free Live Training</div>
+  <h2 class="section-title">Pick Your Batch</h2>
+  <p class="section-sub">Choose a weekly training slot. You'll get email confirmation and 3 reminders. The webinar is free and optional — but recommended for getting the most out of your 48-hour access.</p>
+  <div class="batch-grid" id="batchGrid">
+    <div class="batch-card" data-batch="1" onclick="selectBatch(this)">
+      <div class="batch-number">BATCH 01</div>
+      <div class="batch-days">Mon / Wed / Fri</div>
+      <div class="batch-time">3:00 – 4:00 PM</div>
+      <div class="batch-tz">India Standard Time (IST)</div>
+    </div>
+    <div class="batch-card" data-batch="2" onclick="selectBatch(this)">
+      <div class="batch-number">BATCH 02</div>
+      <div class="batch-days">Tue / Thu / Sat</div>
+      <div class="batch-time">3:00 – 4:00 PM</div>
+      <div class="batch-tz">India Standard Time (IST)</div>
+    </div>
+    <div class="batch-card" data-batch="3" onclick="selectBatch(this)">
+      <div class="batch-number">BATCH 03</div>
+      <div class="batch-days">Wed / Fri / Sat</div>
+      <div class="batch-time">2:00 – 3:00 PM</div>
+      <div class="batch-tz">India Standard Time (IST)</div>
+    </div>
+  </div>
+</section>
+
+<!-- REGISTER -->
+<section id="register" class="form-section">
+  <div class="two-col" style="align-items: start;">
+    <div>
+      <div class="section-label">Join Now</div>
+      <h2 class="section-title">Reserve Batch +<br>Start <em style="color:var(--amber)">Free Access</em></h2>
+      <p class="section-sub" style="margin-bottom: 32px;">Fill in your details to reserve your webinar seat and trigger your 48-hour platform access. Takes under 60 seconds.</p>
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">01</div>
+          <div>
+            <div class="step-title">Submit this form</div>
+            <div class="step-desc">Reserve your webinar batch and enter your signup details.</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">02</div>
+          <div>
+            <div class="step-title">Get email confirmation</div>
+            <div class="step-desc">Webinar details + platform access credentials arrive within minutes.</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">03</div>
+          <div>
+            <div class="step-title">48-hour clock starts</div>
+            <div class="step-desc">Full platform access begins immediately. 100 credits reset daily at midnight IST.</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">04</div>
+          <div>
+            <div class="step-title">Attend live training</div>
+            <div class="step-desc">3 reminders via email before your webinar session. Get guided and ask live questions.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-card" id="regForm">
+      <div class="form-title">Reserve My Seat</div>
+      <p class="form-subtitle">Free webinar + 2-day platform access</p>
+
+      <div class="form-group">
+        <label for="fname">Full Name</label>
+        <input type="text" id="fname" placeholder="Your full name" autocomplete="name">
+      </div>
+      <div class="form-group">
+        <label for="femail">Email Address</label>
+        <input type="email" id="femail" placeholder="you@email.com" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label for="fphone">WhatsApp Number</label>
+        <input type="tel" id="fphone" placeholder="+91 98765 43210" autocomplete="tel">
+      </div>
+      <div class="form-group">
+        <label for="fbatch">Choose Your Batch</label>
+        <select id="fbatch">
+          <option value="">— Select a batch —</option>
+          <option value="1">Batch 1 — Mon / Wed / Fri, 3:00–4:00 PM IST</option>
+          <option value="2">Batch 2 — Tue / Thu / Sat, 3:00–4:00 PM IST</option>
+          <option value="3">Batch 3 — Wed / Fri / Sat, 2:00–3:00 PM IST</option>
+        </select>
+      </div>
+      <div class="form-consent">
+        <input type="checkbox" id="fconsent" checked>
+        <p for="fconsent">I agree to receive webinar reminders and product updates via email. Your data is never sold or shared.</p>
+      </div>
+      <div class="form-actions">
+        <button class="btn-full" onclick="submitForm()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          Reserve My Seat + Start Access
+        </button>
+        <button class="btn-skip" onclick="skipToSignup()">Skip webinar — just start 2-day access →</button>
+      </div>
+      <p style="font-size: 12px; color: var(--text-muted); text-align: center; margin-top: 16px;">
+        No credit card · No auto-billing · Access expires after 48 hours
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section id="faq">
+  <div class="section-label">Common Questions</div>
+  <h2 class="section-title" style="margin-bottom: 40px;">FAQ</h2>
+  <div class="faq-list" id="faqList">
+    <div class="faq-item">
+      <button class="faq-q">Is this actually free? No hidden charges? <span class="icon">+</span></button>
+      <div class="faq-a"><p>Yes. The 2-day access and the webinar are completely free. No credit card is required to sign up. At the end of 48 hours your access reduces to a read-only view until you choose a paid plan.</p></div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q">What brokers does TradingSmart.ai support? <span class="icon">+</span></button>
+      <div class="faq-a"><p>The platform is broker-agnostic via OpenAlgo. It currently supports Zerodha, Upstox, Angel Broking, and other major Indian brokers. Binance API and MetaTrader (via MetaAPI) are also supported for crypto and forex.</p></div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q">Can I do live algo trading during the trial? <span class="icon">+</span></button>
+      <div class="faq-a"><p>Live auto-execution is disabled during the free trial. You can use all analysis, backtesting, and scanning features. Paper trading mode is available so you can simulate live execution without real capital at risk.</p></div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q">Do unused daily credits carry forward? <span class="icon">+</span></button>
+      <div class="faq-a"><p>No. Daily credits reset at midnight IST. This keeps access fair for all trial users. Each day you start fresh with 100 credits, 2 backtests, 5 AI analyses, and 15 signal scans.</p></div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q">What happens in the webinar? <span class="icon">+</span></button>
+      <div class="faq-a"><p>It's a 1-hour live session (not a recording) covering platform walkthrough, how to set up your first strategy, live Q&A with the TradingSmart team, and a demo of AI-powered trade entry validation. You can ask questions in real time.</p></div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q">Do I need to know coding to use this? <span class="icon">+</span></button>
+      <div class="faq-a"><p>No coding required. The platform has a visual strategy builder for common patterns. For custom algo logic, Python-based templates are available with documentation. The webinar covers both paths.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- COMPLIANCE -->
+<div style="padding: 0 5% 40px;">
+  <div class="compliance">
+    <strong style="color: var(--text-secondary);">Important Disclosure:</strong> TradingSmart.ai is a technology infrastructure platform. All strategy logic, signals, and trading decisions originate from the user. This platform does not provide investment advice, recommendations, or research services as defined under SEBI (Research Analyst) Regulations 2014. Past performance of any strategy or backtest result does not guarantee future returns. Trading in securities and derivatives carries significant financial risk. Please trade responsibly.
+  </div>
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <p>© 2024 TradingSmart.ai — Technology platform for Indian traders</p>
+  <div class="footer-links">
+    <a href="#">Privacy Policy</a>
+    <a href="#">Terms of Use</a>
+    <a href="#">Contact</a>
+  </div>
+</footer>
+
+<!-- STICKY MOBILE CTA -->
+<div class="sticky-cta" id="stickyCta" style="display:none;">
+  <a href="#register" class="btn-full" style="font-size: 16px;">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+    Start 2-Day Free Access
+  </a>
+</div>
+
+<!-- CHATBOT FAB -->
+<button class="chat-fab" onclick="toggleChat()" aria-label="Open chat">
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+</button>
+
+<!-- CHATBOT BUBBLE -->
+<div class="chat-bubble" id="chatBubble">
+  <div class="chat-header">
+    <div class="chat-avatar">🤖</div>
+    <div class="chat-header-text">
+      <div class="name">TradingSmart Bot</div>
+      <div class="status">● Online</div>
+    </div>
+  </div>
+  <div class="chat-msgs" id="chatMsgs">
+    <div class="chat-msg bot">Hi! I can answer questions about TradingSmart.ai — how it works, what brokers are supported, and what you get in the free trial. What would you like to know?</div>
+  </div>
+  <div class="chat-chips" id="chatChips">
+    <div class="chat-chip" onclick="chatChip('What is TradingSmart?')">What is it?</div>
+    <div class="chat-chip" onclick="chatChip('Is the trial really free?')">Really free?</div>
+    <div class="chat-chip" onclick="chatChip('Which brokers are supported?')">Brokers?</div>
+    <div class="chat-chip" onclick="chatChip('Do I need coding knowledge?')">Need coding?</div>
+    <div class="chat-chip" onclick="chatChip('What happens after 48 hours?')">After trial?</div>
+  </div>
+  <div class="chat-input-row">
+    <input class="chat-input" id="chatInput" type="text" placeholder="Ask a question…" onkeydown="if(event.key==='Enter') sendChat()">
+    <button class="chat-send" onclick="sendChat()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </div>
+</div>
+
+<script>
+  // ── Batch selection
+  let selectedBatch = null;
+  function selectBatch(el) {
+    document.querySelectorAll('.batch-card').forEach(c => c.classList.remove('selected'));
+    el.classList.add('selected');
+    selectedBatch = el.dataset.batch;
+    const sel = document.getElementById('fbatch');
+    if (sel) sel.value = selectedBatch;
+    const reg = document.getElementById('register');
+    if (reg) setTimeout(() => reg.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200);
+  }
+
+  // ── Form submit
+  function submitForm() {
+    const name = document.getElementById('fname').value.trim();
+    const email = document.getElementById('femail').value.trim();
+    const phone = document.getElementById('fphone').value.trim();
+    const batch = document.getElementById('fbatch').value;
+    const consent = document.getElementById('fconsent').checked;
+    if (!name || !email || !batch) {
+      alert('Please fill in your name, email, and choose a batch.');
+      return;
+    }
+    if (!email.includes('@')) { alert('Please enter a valid email address.'); return; }
+    if (!consent) { alert('Please agree to receive webinar communication.'); return; }
+    const btn = document.querySelector('#regForm .btn-full');
+    btn.textContent = '✓ Submitting…';
+    btn.style.background = 'var(--green)';
+    btn.style.color = '#fff';
+    setTimeout(() => {
+      btn.textContent = '✓ Seat Reserved — Check Your Email';
+      btn.disabled = true;
+    }, 1200);
+    console.log('[TradingSmart] Form submitted', { name, email, phone, batch });
+    // TODO: wire to Supabase/backend
+  }
+
+  function skipToSignup() {
+    // TODO: navigate to /signup with UTM params
+    alert('Redirecting to direct signup…');
+  }
+
+  // ── FAQ
+  document.querySelectorAll('.faq-q').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const item = btn.parentElement;
+      const wasOpen = item.classList.contains('open');
+      document.querySelectorAll('.faq-item.open').forEach(i => i.classList.remove('open'));
+      if (!wasOpen) item.classList.add('open');
+    });
+  });
+
+  // ── Sticky CTA (mobile)
+  function handleScroll() {
+    const hero = document.getElementById('hero');
+    const sticky = document.getElementById('stickyCta');
+    if (!hero || !sticky) return;
+    const rect = hero.getBoundingClientRect();
+    if (window.innerWidth <= 768) {
+      sticky.style.display = rect.bottom < 0 ? 'block' : 'none';
+    }
+  }
+  window.addEventListener('scroll', handleScroll, { passive: true });
+  window.addEventListener('resize', handleScroll);
+
+  // ── Chatbot
+  const responses = {
+    default: "Great question! TradingSmart.ai is an AI-powered trading platform built for Indian retail traders. You can backtest strategies, get AI entry validation, and use a live algo dashboard. The 48-hour trial is free — no credit card needed.",
+    'What is TradingSmart?': "TradingSmart.ai is a technology platform that gives Indian traders AI-powered tools: strategy backtesting, AI trade entry scoring (8 modules), signal scanning, and a live algo trading dashboard. It connects to your existing broker via OpenAlgo.",
+    'Is the trial really free?': "Yes, completely free. No credit card, no hidden charges. You get 48 hours of full access with 100 daily credits. At the end of the trial your account switches to read-only view until you pick a plan.",
+    'Which brokers are supported?': "The platform is broker-agnostic. It supports Zerodha, Upstox, Angel Broking, and other major Indian brokers via OpenAlgo. MetaTrader (forex/CFDs) and Binance (crypto) are also supported.",
+    'Do I need coding knowledge?': "No coding needed for most features. There's a visual strategy builder for common setups. For custom logic, Python-based templates with documentation are provided. The free webinar walks you through both approaches.",
+    'What happens after 48 hours?': "Your account switches to a limited read-only view. You can still see your strategies and backtests. To keep trading you'll need to pick one of the paid plans — Starter, Builder, Professional, or Standalone.",
+  };
+
+  function toggleChat() {
+    document.getElementById('chatBubble').classList.toggle('open');
+  }
+  function addMsg(text, type) {
+    const msgs = document.getElementById('chatMsgs');
+    const msg = document.createElement('div');
+    msg.className = 'chat-msg ' + type;
+    msg.textContent = text;
+    msgs.appendChild(msg);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+  function chatChip(q) {
+    addMsg(q, 'user');
+    document.getElementById('chatChips').style.display = 'none';
+    setTimeout(() => addMsg(responses[q] || responses.default, 'bot'), 600);
+  }
+  function sendChat() {
+    const inp = document.getElementById('chatInput');
+    const q = inp.value.trim();
+    if (!q) return;
+    inp.value = '';
+    addMsg(q, 'user');
+    document.getElementById('chatChips').style.display = 'none';
+    const lq = q.toLowerCase();
+    let reply = responses.default;
+    if (lq.includes('free') || lq.includes('cost') || lq.includes('price')) reply = responses['Is the trial really free?'];
+    else if (lq.includes('broker') || lq.includes('zerodha') || lq.includes('upstox')) reply = responses['Which brokers are supported?'];
+    else if (lq.includes('cod') || lq.includes('python') || lq.includes('technical')) reply = responses['Do I need coding knowledge?'];
+    else if (lq.includes('after') || lq.includes('expire') || lq.includes('48')) reply = responses['What happens after 48 hours?'];
+    setTimeout(() => addMsg(reply, 'bot'), 700);
+  }
+
+  // ── Intersection observer for scroll animations (future enhancement)
+  if ('IntersectionObserver' in window) {
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) { e.target.style.opacity = '1'; e.target.style.transform = 'none'; }
+      });
+    }, { threshold: 0.12 });
+    document.querySelectorAll('.batch-card, .access-cell, .feature-row, .step').forEach(el => {
+      el.style.opacity = '0';
+      el.style.transform = 'translateY(20px)';
+      el.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+      obs.observe(el);
+    });
+  }
+</script>
+</body>
+</html>

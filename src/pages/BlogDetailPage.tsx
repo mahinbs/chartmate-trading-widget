@@ -5,7 +5,15 @@ import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Clock } from "lucide-react";
-import { buildFaqSchema, ensureArrayStrings, ensureFaqItems, ensureSourceItems, type FaqItem, type SourceItem } from "@/lib/blogSeo";
+import {
+  buildFaqSchema,
+  cleanBlogContentHtml,
+  ensureArrayStrings,
+  ensureFaqItems,
+  ensureSourceItems,
+  type FaqItem,
+  type SourceItem,
+} from "@/lib/blogSeo";
 
 interface Blog {
   id: string;
@@ -32,10 +40,21 @@ function formatDate(iso?: string | null) {
   return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
 }
 
+function sourceLabel(source: SourceItem) {
+  if (source.title?.trim() && source.title.trim().toLowerCase() !== "source") return source.title.trim();
+  try {
+    const host = new URL(source.url).hostname.replace(/^www\./, "");
+    return host;
+  } catch {
+    return source.url;
+  }
+}
+
 export default function BlogDetailPage() {
   const { slug } = useParams<{ slug: string }>();
   const [blog, setBlog] = useState<Blog | null>(null);
   const [loading, setLoading] = useState(true);
+  const cleanedContentHtml = cleanBlogContentHtml(blog?.content_html || "");
 
   useEffect(() => {
     const load = async () => {
@@ -219,7 +238,7 @@ export default function BlogDetailPage() {
                 prose-h1:text-3xl prose-h1:mt-12 prose-h1:mb-6
                 prose-h2:text-2xl prose-h2:mt-12 prose-h2:mb-4
                 prose-h3:text-xl prose-h3:mt-8 prose-h3:mb-3
-                prose-p:text-zinc-300 prose-p:my-6
+                prose-p:text-zinc-300 prose-p:mt-0 prose-p:mb-8 prose-p:leading-8
                 prose-li:text-zinc-300 prose-li:my-2
                 prose-strong:text-white prose-strong:font-semibold
                 prose-a:text-primary prose-a:no-underline hover:prose-a:underline hover:prose-a:text-primary/80 transition-colors
@@ -227,18 +246,38 @@ export default function BlogDetailPage() {
                 prose-img:rounded-2xl prose-img:border prose-img:border-white/10 prose-img:shadow-xl prose-img:my-10
                 prose-hr:border-white/10 prose-hr:my-12
                 prose-code:text-primary prose-code:bg-primary/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-code:before:content-none prose-code:after:content-none
+                prose-table:w-full prose-table:my-8 prose-table:border-collapse
+                prose-th:border prose-th:border-white/30 prose-th:bg-white/10 prose-th:text-white prose-th:px-4 prose-th:py-2
+                prose-td:border prose-td:border-white/20 prose-td:px-4 prose-td:py-2 prose-td:text-zinc-300
               "
-              dangerouslySetInnerHTML={{ __html: blog.content_html || "" }}
+              dangerouslySetInnerHTML={{ __html: cleanedContentHtml }}
             />
+            <style>{`
+              .ts-blog-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin: 2rem 0;
+                border: 1px solid rgba(255,255,255,0.3);
+              }
+              .ts-blog-th, .ts-blog-td {
+                border: 1px solid rgba(255,255,255,0.22);
+                padding: 10px 12px;
+                vertical-align: top;
+              }
+              .ts-blog-th {
+                background: rgba(255,255,255,0.08);
+                font-weight: 700;
+              }
+            `}</style>
 
             {blog.external_sources.length > 0 && (
               <section className="mt-14">
                 <h2 className="text-2xl font-bold text-white mb-4">Sources</h2>
-                <ul className="space-y-2">
+                <ul className="space-y-2 text-sm">
                   {blog.external_sources.map((source, index) => (
-                    <li key={`${source.url}-${index}`}>
+                    <li key={`${source.url}-${index}`} className="leading-relaxed break-all text-zinc-300">
                       <a href={source.url} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-4">
-                        {source.title || source.url}
+                        {index + 1}. {sourceLabel(source)}
                       </a>
                     </li>
                   ))}

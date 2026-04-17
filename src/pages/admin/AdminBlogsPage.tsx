@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import {
   buildFaqSchema,
+  cleanBlogContentHtml,
   ensureArrayStrings,
   ensureFaqItems,
   ensureSourceItems,
@@ -307,6 +308,7 @@ function parseStructuredText(rawText: string) {
   const keyTakeaways: string[] = [];
   const faqItems: FaqItem[] = [];
   const sources: SourceItem[] = [];
+  const seenUrls = new Set<string>();
 
   let inTakeaways = false;
   let inFaq = false;
@@ -372,13 +374,21 @@ function parseStructuredText(rawText: string) {
     if (inSources) {
       const mdMatch = cleanLine.match(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/i);
       if (mdMatch) {
-        sources.push({ title: mdMatch[1].trim(), url: mdMatch[2].trim() });
+        const url = mdMatch[2].trim();
+        if (!seenUrls.has(url)) {
+          seenUrls.add(url);
+          sources.push({ title: mdMatch[1].trim(), url });
+        }
         return;
       }
       const urlMatch = cleanLine.match(/(https?:\/\/\S+)/i);
       if (urlMatch) {
-        const titlePart = cleanLine.replace(urlMatch[1], "").replace(/^[-*]\s+/, "").replace(/[-:]\s*$/, "").trim();
-        sources.push({ title: titlePart || "Source", url: urlMatch[1].trim() });
+        const url = urlMatch[1].trim();
+        if (!seenUrls.has(url)) {
+          seenUrls.add(url);
+          const titlePart = cleanLine.replace(urlMatch[1], "").replace(/^[-*]\s+/, "").replace(/[-:]\s*$/, "").trim();
+          sources.push({ title: titlePart || "Source", url });
+        }
       }
     }
   });
@@ -393,6 +403,19 @@ function parseStructuredText(rawText: string) {
       primaryKeyword = "algo trading india";
     }
   }
+
+  // Also gather any URLs from the full raw text for cases where references are plain URL lists.
+  const globalUrlMatches = Array.from(normalized.matchAll(/https?:\/\/[^\s<>"')\]]+/gi)).map((match) => match[0].trim());
+  globalUrlMatches.forEach((url) => {
+    if (seenUrls.has(url)) return;
+    seenUrls.add(url);
+    try {
+      const host = new URL(url).hostname.replace(/^www\./, "");
+      sources.push({ title: host, url });
+    } catch {
+      sources.push({ title: "Source", url });
+    }
+  });
 
   return {
     title: title || "",
@@ -825,7 +848,7 @@ export default function AdminBlogsPage() {
       }
       const parsed = parseStructuredText(rawText);
       const mapped = fallbackAutoFill(parsed, rawText);
-      applyImportedDraft(mapped, html);
+      applyImportedDraft(mapped, cleanBlogContentHtml(html));
     } catch (error: unknown) {
       toast.error(getErrorMessage(error, "Failed to parse the draft"));
     } finally {
@@ -838,6 +861,7 @@ export default function AdminBlogsPage() {
       toast.error("Title is required");
       return;
     }
+    const normalizedContent = cleanBlogContentHtml(contentHtml);
     const failures = getFailedCompliance(
       evaluateCompliance({
         title: editing.title,
@@ -846,7 +870,7 @@ export default function AdminBlogsPage() {
         key_takeaways: editing.key_takeaways,
         faq_items: editing.faq_items,
         external_sources: editing.external_sources,
-        content_html: contentHtml,
+        content_html: normalizedContent,
       }),
     );
     if (failures.length > 0) {
@@ -862,7 +886,7 @@ export default function AdminBlogsPage() {
       const payload = {
         ...withoutId,
         slug,
-        content_html: contentHtml,
+        content_html: normalizedContent,
         meta_description: (editing.meta_description || "").slice(0, 155).padEnd(155, " "),
         faq_items: editing.faq_items.filter((item) => item.question.trim() && item.answer.trim()),
         key_takeaways: editing.key_takeaways.filter((item) => item.trim()),
