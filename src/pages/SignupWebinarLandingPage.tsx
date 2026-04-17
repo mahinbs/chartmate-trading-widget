@@ -13,6 +13,7 @@ import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import heroVid from "../assets/landingpage/hero-vid.webm";
+import logoImg from "@/assets/logo.png";
 import {
   AlarmClock,
   ArrowRight,
@@ -350,10 +351,16 @@ export default function SignupWebinarLandingPage() {
       </Helmet>
 
       <header className="sticky top-0 z-50 border-b border-zinc-800 bg-black/80 backdrop-blur-lg">
-        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
-          <p className="font-semibold tracking-wide text-zinc-100">
-            TradingSmart<span className="text-teal-400">.ai</span>
-          </p>
+        <div className="mx-auto flex h-14 w-full max-w-[1400px] items-center justify-between px-4">
+          <div className="flex items-center gap-2">
+            <img src={logoImg} alt="TradingSmart.ai" className="h-7 w-7 object-contain" />
+            <p
+              className="font-semibold tracking-wide text-zinc-100"
+              style={{ fontFamily: "'Google Sans', sans-serif" }}
+            >
+              TradingSmart<span className="text-teal-400">.ai</span>
+            </p>
+          </div>
           <Button
             onClick={handlePrimarySignup}
             size="sm"
@@ -406,12 +413,12 @@ export default function SignupWebinarLandingPage() {
           ))}
         </div>
 
-        <div className="mx-auto max-w-6xl px-4 py-14 md:py-16 relative z-10">
+        <div className="mx-auto w-full max-w-[1400px] px-4 py-14 md:py-16 relative z-10">
           <Badge className="mb-6 border-teal-500/40 bg-teal-500/15 text-teal-300">
             The future of trading execution is here
           </Badge>
           <h1
-            className="max-w-[980px] text-4xl font-black uppercase leading-[0.95] tracking-tight md:text-6xl"
+            className="max-w-[1100px] text-4xl font-black uppercase leading-[0.95] tracking-tight md:text-6xl lg:text-7xl xl:text-8xl"
             style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
           >
             <span className="block" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
@@ -482,7 +489,7 @@ export default function SignupWebinarLandingPage() {
               Free stock market training included
             </div>
           </div>
-          <div className="mt-6 w-full max-w-2xl overflow-hidden rounded-2xl border border-teal-500/20 bg-zinc-950/60 p-1.5 shadow-[0_0_40px_rgba(20,184,166,0.12)]">
+          <div className="mt-6 w-full max-w-3xl xl:max-w-4xl overflow-hidden rounded-2xl border border-teal-500/20 bg-zinc-950/60 p-1.5 shadow-[0_0_40px_rgba(20,184,166,0.12)]">
             <div className="overflow-hidden rounded-xl border border-zinc-800">
               <video
                 autoPlay
@@ -501,10 +508,10 @@ export default function SignupWebinarLandingPage() {
       </section>
 
       <section className="border-b border-zinc-800 bg-zinc-950/30">
-        <div className="mx-auto max-w-6xl px-4 py-12 md:py-16">
+        <div className="mx-auto w-full max-w-[1400px] px-4 py-12 md:py-16">
           <div className="max-w-4xl">
             <h2
-              className="text-4xl font-black uppercase leading-[0.95] tracking-tight md:text-5xl"
+              className="text-4xl font-black uppercase leading-[0.95] tracking-tight md:text-5xl lg:text-6xl"
               style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
             >
               Why Serious Traders Move to{" "}
@@ -580,9 +587,9 @@ export default function SignupWebinarLandingPage() {
       </section>
 
       <section className="border-b border-zinc-800 bg-black">
-        <div className="mx-auto max-w-6xl px-4 py-12 md:py-16">
+        <div className="mx-auto w-full max-w-[1400px] px-4 py-12 md:py-16">
           <h2
-            className="text-4xl font-black uppercase leading-[0.95] tracking-tight md:text-5xl"
+            className="text-4xl font-black uppercase leading-[0.95] tracking-tight md:text-5xl lg:text-6xl"
             style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
           >
             <span
@@ -661,7 +668,7 @@ export default function SignupWebinarLandingPage() {
       </section>
 
       <section className="border-b border-zinc-800 bg-zinc-950/40">
-        <div className="mx-auto grid max-w-6xl gap-3 px-4 py-4 text-xs md:grid-cols-3 md:text-sm">
+        <div className="mx-auto grid w-full max-w-[1400px] gap-3 px-4 py-4 text-xs md:grid-cols-3 md:text-sm">
           <div className="rounded-md border border-zinc-800 bg-zinc-900/40 p-3 font-medium text-zinc-200">
             <span className="text-teal-400">Limited slots:</span> Weekly batches
             run with fixed timings.
@@ -677,12 +684,12 @@ export default function SignupWebinarLandingPage() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-6xl px-4 py-12 md:py-16">
+      <section className="mx-auto w-full max-w-[1400px] px-4 py-12 md:py-16">
         <p className="text-xs font-semibold uppercase tracking-[0.22em] text-teal-300 md:text-sm">
           Your 2-Day Trial
         </p>
         <h2
-          className="mt-4 text-4xl font-black uppercase leading-[0.95] tracking-tight md:text-5xl"
+          className="mt-4 text-4xl font-black uppercase leading-[0.95] tracking-tight md:text-5xl lg:text-6xl"
           style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
         >
           Full Platform.
@@ -731,11 +738,11 @@ export default function SignupWebinarLandingPage() {
       </section>
 
       <section id="batches" className="border-y border-zinc-800 bg-zinc-950/40">
-        <div className="mx-auto max-w-6xl px-4 py-12 md:py-16">
+        <div className="mx-auto w-full max-w-[1400px] px-4 py-12 md:py-16">
           <div className="mb-8 flex items-center gap-2">
             <AlarmClock className="h-6 w-6 text-teal-400" />
             <h2
-              className="text-4xl font-black uppercase leading-[0.95] tracking-tight md:text-5xl"
+              className="text-4xl font-black uppercase leading-[0.95] tracking-tight md:text-5xl lg:text-6xl"
               style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
             >
               <span
@@ -776,14 +783,14 @@ export default function SignupWebinarLandingPage() {
       </section>
 
       <section id="reserve-form" className="border-t border-zinc-800 bg-zinc-950/40">
-        <div className="mx-auto grid max-w-6xl gap-6 px-4 py-12 md:grid-cols-[1.15fr_1fr] md:items-stretch md:py-16">
+        <div className="mx-auto grid w-full max-w-[1400px] gap-6 px-4 py-12 md:grid-cols-[1.15fr_1fr] md:items-stretch md:py-16">
           <div className="flex flex-col gap-6 md:h-full">
             <div className="rounded-2xl border border-zinc-800 bg-zinc-950/40 p-6 md:p-8">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-300">
                 Join now
               </p>
               <h2
-                className="mt-3 text-4xl font-black uppercase leading-[0.95] tracking-tight md:text-5xl"
+                className="mt-3 text-4xl font-black uppercase leading-[0.95] tracking-tight md:text-5xl lg:text-6xl"
                 style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
               >
                 Reserve Batch +<br />
@@ -841,7 +848,7 @@ export default function SignupWebinarLandingPage() {
             </div>
             <div className="flex flex-1 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-950/30 p-6 md:p-8">
               <p
-                className="w-full text-center text-4xl font-black leading-[0.95] tracking-tight text-zinc-100 md:text-6xl"
+                className="w-full text-center text-4xl font-black leading-[0.95] tracking-tight text-zinc-100 md:text-6xl lg:text-7xl"
                 style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
               >
                 Are you ready for the
@@ -859,7 +866,7 @@ export default function SignupWebinarLandingPage() {
             <CardContent className="space-y-5 p-6">
               <div>
                 <h3
-                  className="text-4xl font-black uppercase leading-[0.95] tracking-tight md:text-5xl"
+                  className="text-4xl font-black uppercase leading-[0.95] tracking-tight md:text-5xl lg:text-6xl"
                   style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
                 >
                   <span
@@ -1018,7 +1025,7 @@ export default function SignupWebinarLandingPage() {
       </section>
 
       <section className="border-t border-zinc-800 bg-zinc-950/40">
-        <div className="mx-auto flex max-w-6xl flex-col items-center gap-4 px-4 py-10 text-center">
+        <div className="mx-auto flex w-full max-w-[1400px] flex-col items-center gap-4 px-4 py-10 text-center">
           <h3 className="text-2xl font-bold md:text-3xl [font-family:'Barlow_Condensed',sans-serif]">
             Want your custom algo trade setup?
           </h3>
