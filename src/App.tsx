@@ -47,6 +47,7 @@ import ChangePasswordPage from "./pages/ChangePasswordPage";
 import AffiliateDashboard from "./pages/AffiliateDashboard";
 import { AffiliateRoute } from "./components/AffiliateRoute";
 import { HelmetProvider } from "react-helmet-async";
+import { GlobalSeoHelmet } from "./components/GlobalSeoHelmet";
 import { PlatformChatbot } from "./components/PlatformChatbot";
 import RegisterPage from "./pages/RegisterPage";
 import AffiliatePartnerPage from "./pages/AffiliatePartnerPage";
@@ -230,6 +231,7 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
+          <GlobalSeoHelmet />
           <AffiliateRefCapture />
           <AffiliateIpAttributionSync />
           <MobileSplashGuard>

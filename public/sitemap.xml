@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://www.tradingsmart.ai/</loc><priority>1.0</priority></url>
+  <url><loc>https://www.tradingsmart.ai/classic</loc><priority>0.7</priority></url>
+  <url><loc>https://www.tradingsmart.ai/features</loc><priority>0.9</priority></url>
+  <url><loc>https://www.tradingsmart.ai/pricing</loc><priority>0.9</priority></url>
+  <url><loc>https://www.tradingsmart.ai/blogs</loc><priority>0.8</priority></url>
+  <url><loc>https://www.tradingsmart.ai/contact-us</loc><priority>0.5</priority></url>
+  <url><loc>https://www.tradingsmart.ai/affiliate-partner</loc><priority>0.5</priority></url>
+  <url><loc>https://www.tradingsmart.ai/white-label</loc><priority>0.6</priority></url>
+  <url><loc>https://www.tradingsmart.ai/ai-trading-analysis-and-back-testing</loc><priority>0.85</priority></url>
+  <url><loc>https://www.tradingsmart.ai/dashboard</loc><priority>0.6</priority></url>
+  <url><loc>https://www.tradingsmart.ai/market-picks</loc><priority>0.55</priority></url>
+  <url><loc>https://www.tradingsmart.ai/rsb-fintech-founder</loc><priority>0.4</priority></url>
+  <url><loc>https://www.tradingsmart.ai/dsn-fintech-founder</loc><priority>0.4</priority></url>
+  <url><loc>https://www.tradingsmart.ai/terms</loc><priority>0.3</priority></url>
+  <url><loc>https://www.tradingsmart.ai/privacy-policy</loc><priority>0.3</priority></url>
+  <url><loc>https://www.tradingsmart.ai/risk-disclaimer</loc><priority>0.3</priority></url>
+  <url><loc>https://www.tradingsmart.ai/register</loc><priority>0.5</priority></url>
+  <url><loc>https://www.tradingsmart.ai/auth</loc><priority>0.4</priority></url>
+  <url><loc>https://www.tradingsmart.ai/algo-setup</loc><priority>0.45</priority></url>
+  <url><loc>https://www.tradingsmart.ai/tick-chart</loc><priority>0.35</priority></url>
+</urlset>

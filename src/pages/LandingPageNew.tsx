@@ -342,6 +342,18 @@ const LandingPageNew = () => {
           name="description"
           content="One workspace for AI-assisted analysis, deep backtests, strategies, options, and paper-to-live trading. Every subscriber gets the full platform—our team integrates your custom algo logic into a broker-ready stack."
         />
+        <script type="application/ld+json">
+          {JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "SoftwareApplication",
+            name: "TradingSmart.ai",
+            url: "https://www.tradingsmart.ai",
+            applicationCategory: "FinanceApplication",
+            operatingSystem: "Web",
+            description:
+              "AI-powered trading platform with backtesting, options analysis, paper trading and live trading automation.",
+          })}
+        </script>
       </Helmet>
 
       <AiPredictionHeader />
