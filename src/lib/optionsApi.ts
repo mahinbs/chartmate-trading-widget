@@ -11,6 +11,16 @@ import { supabase } from "@/integrations/supabase/client";
 import { friendlyBrokerMarketDataError } from "@/lib/brokerMarketDataErrors";
 
 const API_BASE = (import.meta.env.VITE_OPTIONS_API_URL as string | undefined)?.replace(/\/$/, "") ?? "";
+const EXPIRY_CACHE_TTL_MS = 90_000;
+
+type ExpiryResponse = {
+  symbol: string;
+  exchange: string;
+  expiries: NormalizedExpiryItem[];
+};
+
+const expiryCache = new Map<string, { expiresAt: number; data: ExpiryResponse }>();
+const expiryInFlight = new Map<string, Promise<ExpiryResponse>>();
 
 /** True when the app should call the hosted FastAPI service for options (full E2E). */
 export function isOptionsApiConfigured(): boolean {
@@ -400,52 +410,83 @@ export async function fetchExpiryDates(params: {
   const sym = params.symbol;
   // Auto-detect instrument type from underlying if not provided
   const instrument = params.instrument ?? instrumentTypeForUnderlying(sym);
+  const cacheKey = `${sym.toUpperCase()}|${ex.toUpperCase()}|${instrument.toUpperCase()}`;
 
-  if (API_BASE) {
-    try {
-      const raw = await apiFetch<Record<string, unknown>>("/api/options/expiry", {
-        method: "POST",
-        body: JSON.stringify({
-          symbol: sym,
-          exchange: ex,
-          instrument,
-        }),
-      });
-      // OpenAlgo may return {status:"error", message:"..."} with HTTP 200
-      if (raw?.status === "error" || raw?.status === "failed") {
-        const hint = toErrString(
-          raw.message ?? raw.error_msg ?? raw.error,
-          "OpenAlgo returned an error — check your broker session and OpenAlgo API key"
-        );
-        throw new Error(friendlyBrokerMarketDataError(hint));
+  const cached = expiryCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.data;
+  }
+
+  const inFlight = expiryInFlight.get(cacheKey);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const resolver = (async (): Promise<ExpiryResponse> => {
+    if (API_BASE) {
+      try {
+        const raw = await apiFetch<Record<string, unknown>>("/api/options/expiry", {
+          method: "POST",
+          body: JSON.stringify({
+            symbol: sym,
+            exchange: ex,
+            instrument,
+          }),
+        });
+        // OpenAlgo may return {status:"error", message:"..."} with HTTP 200
+        if (raw?.status === "error" || raw?.status === "failed") {
+          const hint = toErrString(
+            raw.message ?? raw.error_msg ?? raw.error,
+            "OpenAlgo returned an error — check your broker session and OpenAlgo API key"
+          );
+          throw new Error(friendlyBrokerMarketDataError(hint));
+        }
+        const result = normalizeExpiryPayload(raw, sym, ex);
+        // If OpenAlgo returned no dates, surface it as an explicit error
+        if (result.expiries.length === 0) {
+          throw new Error(
+            friendlyBrokerMarketDataError(
+              "No expiry dates returned from broker. Market may be closed or your OpenAlgo API key / broker session needs refreshing.",
+            ),
+          );
+        }
+        expiryCache.set(cacheKey, {
+          expiresAt: Date.now() + EXPIRY_CACHE_TTL_MS,
+          data: result,
+        });
+        return result;
+      } catch {
+        // FastAPI path failed or timed out — fall back to Supabase Edge route.
       }
-      const result = normalizeExpiryPayload(raw, sym, ex);
-      // If OpenAlgo returned no dates, surface it as an explicit error
-      if (result.expiries.length === 0) {
-        throw new Error(
-          friendlyBrokerMarketDataError(
-            "No expiry dates returned from broker. Market may be closed or your OpenAlgo API key / broker session needs refreshing.",
-          ),
-        );
-      }
-      return result;
-    } catch {
-      // FastAPI path failed or timed out — fall back to Supabase Edge route.
     }
-  }
 
-  const { data, error } = await supabase.functions.invoke<Record<string, unknown>>("fetch-expiry-dates", {
-    body: { symbol: sym, exchange: ex, instrumenttype: instrument },
-  });
-  if (error) throw new Error(friendlyBrokerMarketDataError(error.message ?? "fetch-expiry-dates failed"));
-  if (data && typeof data === "object" && "error" in data && data.error) {
-    throw new Error(friendlyBrokerMarketDataError(String((data as { error: unknown }).error)));
+    const { data, error } = await supabase.functions.invoke<Record<string, unknown>>("fetch-expiry-dates", {
+      body: { symbol: sym, exchange: ex, instrumenttype: instrument },
+    });
+    if (error) throw new Error(friendlyBrokerMarketDataError(error.message ?? "fetch-expiry-dates failed"));
+    if (data && typeof data === "object" && "error" in data && data.error) {
+      throw new Error(friendlyBrokerMarketDataError(String((data as { error: unknown }).error)));
+    }
+    const normalized = data && Array.isArray((data as { expiries?: unknown }).expiries)
+      ? {
+          symbol: (data as { symbol?: string }).symbol ?? sym,
+          exchange: (data as { exchange?: string }).exchange ?? ex,
+          expiries: (data as { expiries: NormalizedExpiryItem[] }).expiries,
+        }
+      : normalizeExpiryPayload(data ?? {}, sym, ex);
+    expiryCache.set(cacheKey, {
+      expiresAt: Date.now() + EXPIRY_CACHE_TTL_MS,
+      data: normalized,
+    });
+    return normalized;
+  })();
+
+  expiryInFlight.set(cacheKey, resolver);
+  try {
+    return await resolver;
+  } finally {
+    expiryInFlight.delete(cacheKey);
   }
-  if (data && Array.isArray((data as { expiries?: unknown }).expiries)) {
-    const exp = (data as { expiries: NormalizedExpiryItem[]; symbol?: string; exchange?: string }).expiries;
-    return { symbol: (data as { symbol?: string }).symbol ?? sym, exchange: (data as { exchange?: string }).exchange ?? ex, expiries: exp };
-  }
-  return normalizeExpiryPayload(data ?? {}, sym, ex);
 }
 
 /**

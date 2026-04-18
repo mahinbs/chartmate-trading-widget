@@ -34,6 +34,7 @@ import AdminAffiliatesPage from "./pages/admin/AdminAffiliatesPage";
 import AdminContactsPage from "./pages/admin/AdminContactsPage";
 import AdminWhitelabelsPage from "./pages/admin/AdminWhitelabelsPage";
 import AdminAlgoRequestsPage from "./pages/admin/AdminAlgoRequestsPage";
+import AdminAlgoAccessRequestsPage from "./pages/admin/AdminAlgoAccessRequestsPage";
 import BlogsPage from "./pages/BlogsPage";
 import BlogDetailPage from "./pages/BlogDetailPage";
 import PublicDashboardPage from "./pages/PublicDashboardPage";
@@ -451,6 +452,7 @@ const App = () => (
                 <Route path="contacts" element={<AdminContactsPage />} />
                 <Route path="whitelabels" element={<AdminWhitelabelsPage />} />
                 <Route path="algo-requests" element={<AdminAlgoRequestsPage />} />
+                <Route path="algo-access-requests" element={<AdminAlgoAccessRequestsPage />} />
               </Route>
               <Route path="/wl/:slug" element={<WhitelabelLoginPage />} />
               <Route path="/wl/:slug/dashboard" element={<WhitelabelDashboardPage />} />
