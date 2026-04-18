@@ -25,6 +25,7 @@ import {
   Play,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useSubscription } from "@/hooks/useSubscription";
 import { SymbolSearch, SymbolData } from "@/components/SymbolSearch";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -364,6 +365,7 @@ export function PaperTradeSetupDialog({
   scannerQuickMode = false,
 }: Props) {
   const { toast } = useToast();
+  const { isPremium, loading: subLoading } = useSubscription();
   const presetId = preselectedStrategyId?.trim() || null;
   const initialSymTrim = initialSymbol?.trim() || null;
   const quick = Boolean(scannerQuickMode && presetId && initialSymTrim);
@@ -706,6 +708,43 @@ export function PaperTradeSetupDialog({
       } = await supabase.auth.getSession();
       if (!session?.user?.id) throw new Error("Not authenticated");
 
+      if (subLoading) {
+        toast({
+          title: "Please wait",
+          description: "Still loading your subscription status.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (!isPremium) {
+        const { data: creditRows, error: credErr } = await (supabase as any).rpc("consume_trial_credit", {
+          p_user_id: session.user.id,
+          p_cost: 10,
+          p_action: "paper_trade_pending",
+        });
+        if (credErr) {
+          toast({
+            title: "Trial credits",
+            description: credErr.message,
+            variant: "destructive",
+          });
+          return;
+        }
+        const crow = Array.isArray(creditRows) ? creditRows[0] : creditRows;
+        if (!crow?.ok) {
+          toast({
+            title: "Out of trial credits",
+            description:
+              crow?.message === "insufficient_credits"
+                ? "Each paper deploy uses 10 credits. Upgrade or try again tomorrow."
+                : "Upgrade for unlimited access.",
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+
       const symUpperCheck = sym.toUpperCase();
       // Derive exchange: prefer position_config override, then symbolData from Yahoo search,
       // then infer from symbol suffix. Default to "NSE" only for unambiguous Indian symbols.
@@ -782,6 +821,8 @@ export function PaperTradeSetupDialog({
     onOpenChange,
     onCreated,
     toast,
+    subLoading,
+    isPremium,
   ]);
 
   // ── Render ──────────────────────────────────────────────────────────────────

@@ -64,6 +64,18 @@ export function TradingDashboardAccessGate({
       const planId = (row?.plan_id as string) ?? null;
 
       if (!subActive) {
+        const { data: trialRow } = await (supabase as any)
+          .from("trial_access")
+          .select("status, end_at")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        const trialEnd = trialRow?.end_at ? new Date(trialRow.end_at).getTime() : 0;
+        const trialActive =
+          trialRow?.status === "active" && trialEnd > Date.now();
+        if (trialActive) {
+          setStatus({ loading: false, provisioned: true, broker: null, redirectTo: null });
+          return;
+        }
         setStatus({ loading: false, provisioned: false, broker: null, redirectTo: "/pricing" });
         return;
       }

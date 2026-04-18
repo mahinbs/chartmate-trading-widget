@@ -7,6 +7,7 @@
  * Body: { strategy_id }
  * Returns: { ai_analysis, backtest_summary }
  */ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { checkAndConsumeTrialCredit } from "../_shared/trial-credit-check.ts";
 // Uses the same GEMINI_API_KEY already configured for predict-movement, suggest-strategy, etc.
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 async function callGemini(prompt) {
@@ -82,6 +83,20 @@ Deno.serve(async (req)=>{
         headers
       });
     }
+
+    const trialCredit = await checkAndConsumeTrialCredit(supabase, user.id, 10, "analyze_strategy");
+    if (!trialCredit.ok) {
+      return new Response(JSON.stringify({
+        error: "Insufficient trial credits. Upgrade for unlimited access.",
+        error_code: "TRIAL_CREDITS_EXHAUSTED",
+        credits_remaining: trialCredit.creditsRemaining ?? 0,
+        reason: trialCredit.reason ?? null,
+      }), {
+        status: 402,
+        headers,
+      });
+    }
+
     const s = strategy;
     // Build the AI prompt
     const symbolList = Array.isArray(s.symbols) ? s.symbols.map((sym)=>`${sym.symbol} (${sym.exchange}, qty: ${sym.quantity}, type: ${sym.product_type})`).join(", ") : "Not specified";

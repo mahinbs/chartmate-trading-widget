@@ -13,6 +13,7 @@ import { trackRobotMetric } from "@/lib/algoRobotExperience";
 import { EntryPointNotificationsHeaderButton } from "@/components/EntryPointNotificationsBell";
 import { ScheduledDigestClientTrigger } from "@/components/ScheduledDigestClientTrigger";
 import { DashboardShellLayout } from "../layout/DashboardShellLayout";
+import { TrialCreditsBanner } from "@/components/TrialCreditsBanner";
 
 // ── Market status (IST) — shared by algo trading pages ─────────────────────────
 
@@ -238,6 +239,7 @@ export function TradingDashboardShell({ broker, children, pageTitle, hideHeader 
         </header>}
 
         <main className="container mx-auto px-4 py-5">
+          {!hideHeader && <TrialCreditsBanner />}
           {!hideHeader && (
             <div className="mb-3 rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2">
               <p className="text-xs text-zinc-200">{ALGO_ROBOT_COPY.controlLine}</p>
