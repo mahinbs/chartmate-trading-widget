@@ -34,6 +34,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { useTradingIntegration } from "@/hooks/useTradingIntegration";
 import { TradingIntegrationModal } from "@/components/trading/TradingIntegrationModal";
 import { useSubscription } from "@/hooks/useSubscription";
+import { useTrialAccess } from "@/hooks/useTrialAccess";
+import { TrialCreditsBanner } from "@/components/TrialCreditsBanner";
 import { isAnalysisExceptionEmail } from "@/lib/manualSubscriptionBypass";
 import YahooChartPanel from "@/components/YahooChartPanel";
 import { DashboardShellLayout } from "@/components/layout/DashboardShellLayout";
@@ -57,6 +59,7 @@ export default function HomePage() {
   const { user } = useAuth();
   const { save, refresh } = useTradingIntegration();
   const { hasAlgoAccess, hasAnalysisAccess, manualFullAccessBypass } = useSubscription();
+  const { isOnTrial } = useTrialAccess();
   const [showBrokerModal, setShowBrokerModal] = useState(false);
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [activeStock, setActiveStock] = useState<{
@@ -72,11 +75,13 @@ export default function HomePage() {
   const isAlgoProvisioned =
     manualFullAccessBypass ||
     (hasAlgoAccess && (algoStatus === "provisioned" || algoStatus === "active"));
-  const algoEntryPath = !hasAlgoAccess
-    ? "/pricing?feature=algo"
-    : isAlgoProvisioned
+  const algoEntryPath = hasAlgoAccess
+    ? isAlgoProvisioned
       ? "/trading-dashboard"
-      : "/algo-setup";
+      : "/algo-setup"
+    : isOnTrial
+      ? "/strategies"
+      : "/pricing?feature=algo";
 
   const canSeePredictPast = isAnalysisExceptionEmail(user?.email);
 
@@ -286,6 +291,7 @@ export default function HomePage() {
                 Dashboard
               </h1>
             </header>
+            <TrialCreditsBanner />
             {/* USER WATCHLIST (customizable) */}
             <div className="space-y-4">
               <div className="flex items-center gap-2 flex-wrap pb-1">
@@ -414,11 +420,13 @@ export default function HomePage() {
                   to={algoEntryPath}
                   className="shrink-0 w-full md:w-auto flex justify-center bg-primary text-primary-foreground px-8 h-[52px] items-center rounded-xl font-semibold hover:bg-primary/90 transition-all shadow-[0_4px_16px_-4px_var(--primary)] group-hover:shadow-[0_8px_24px_-6px_var(--primary)] text-base glass-button-premium border-white/20"
                 >
-                  {!hasAlgoAccess
-                    ? "Upgrade to Unlock →"
-                    : isAlgoProvisioned
+                  {hasAlgoAccess
+                    ? isAlgoProvisioned
                       ? "Open Live Dashboard →"
-                      : "Complete Algo Setup →"}
+                      : "Complete Algo Setup →"
+                    : isOnTrial
+                      ? "Open trial strategies →"
+                      : "Upgrade to Unlock →"}
                 </Link>
               </div>
             </div>
@@ -449,7 +457,7 @@ export default function HomePage() {
               )}
               <Link
                 to={
-                  hasAnalysisAccess
+                  hasAnalysisAccess || isOnTrial
                     ? "/active-trades?tab=performance"
                     : "/pricing?feature=analysis"
                 }
@@ -457,7 +465,7 @@ export default function HomePage() {
               >
                 <div
                   className={`glass-card-premium p-6 transition-all h-full flex flex-col justify-center shadow-md shadow-background/10 relative overflow-hidden ${
-                    hasAnalysisAccess
+                    hasAnalysisAccess || isOnTrial
                       ? "hover:border-primary/30 group-hover:bg-white/10"
                       : "opacity-80 border-dashed border-muted-foreground/25"
                   }`}
@@ -470,7 +478,7 @@ export default function HomePage() {
                     <div>
                       <p className="font-bold text-foreground text-[17px] tracking-tight">
                         Paper Trade Performance
-                        {!hasAnalysisAccess && (
+                        {!hasAnalysisAccess && !isOnTrial && (
                           <span className="ml-2 text-xs font-normal text-muted-foreground">
                             (Probability / Pro)
                           </span>

@@ -1,9 +1,10 @@
-import { ReactNode } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useUserRole } from '@/hooks/useUserRole';
 import { useMyTenantMembership } from '@/hooks/useWhitelabel';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ensureTrialAccessForUser } from '@/lib/ensureTrialAccessForUser';
 
 interface ProtectedRouteProps {
   children: ReactNode;
@@ -15,8 +16,25 @@ export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   const { membership, loading: membershipLoading } = useMyTenantMembership(user?.id);
   const location = useLocation();
   const isChangePasswordPage = location.pathname === '/auth/change-password';
+  const [trialBootstrapDone, setTrialBootstrapDone] = useState(false);
 
-  if (authLoading || roleLoading || (role === 'admin' && membershipLoading)) {
+  useEffect(() => {
+    if (authLoading || roleLoading || !user?.id) return;
+    if (role !== 'user') {
+      setTrialBootstrapDone(true);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      await ensureTrialAccessForUser(user.id);
+      if (!cancelled) setTrialBootstrapDone(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, roleLoading, user?.id, role]);
+
+  if (authLoading || roleLoading || (role === 'admin' && membershipLoading) || (role === 'user' && !trialBootstrapDone)) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="space-y-4 w-full max-w-md">

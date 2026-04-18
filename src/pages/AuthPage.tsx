@@ -31,7 +31,8 @@ import { PRICING_PLANS } from "@/constants/pricing";
 import { premiumPlanCheckoutUrls } from "@/lib/premiumCheckoutUrls";
 import { createCheckoutSession } from "@/services/stripeService";
 import { useIsMobileApp } from "@/mobile-app/isMobileDevice";
-import { DEFAULT_TRIAL_LIMITS, WEBINAR_BATCH_DEFINITIONS } from "@/constants/webinarBatches";
+import { WEBINAR_BATCH_DEFINITIONS } from "@/constants/webinarBatches";
+import { ensureTrialAccessForUser } from "@/lib/ensureTrialAccessForUser";
 import { trackFunnelEvent } from "@/lib/funnelTracking";
 
 const VALID_PREMIUM_CHECKOUT_PLANS = new Set(PRICING_PLANS.map((p) => p.id));
@@ -301,51 +302,7 @@ const AuthPage = () => {
       else if (role === "user") {
         if (!trialBootstrapDoneRef.current) {
           trialBootstrapDoneRef.current = true;
-          const nowIso = new Date().toISOString();
-          const endIso = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- migration-backed table
-          const { data: existing } = await (supabase as any)
-            .from("trial_access")
-            .select("id")
-            .eq("user_id", user.id)
-            .maybeSingle();
-
-          if (!existing) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- migration-backed table
-            const { error: trialInsErr } = await (supabase as any).from("trial_access").insert([
-              {
-                user_id: user.id,
-                start_at: nowIso,
-                end_at: endIso,
-                status: "active",
-                daily_credit_limit: DEFAULT_TRIAL_LIMITS.dailyCreditLimit,
-                backtests_per_day: DEFAULT_TRIAL_LIMITS.backtestsPerDay,
-                ai_analysis_per_day: DEFAULT_TRIAL_LIMITS.aiAnalysisPerDay,
-                scans_per_day: 0,
-                paper_trades_per_day: DEFAULT_TRIAL_LIMITS.paperTradesPerDay,
-                strategy_creations_per_day: DEFAULT_TRIAL_LIMITS.strategyCreationsPerDay,
-                limits_metadata_json: {
-                  live_auto_execution_enabled: false,
-                },
-              },
-            ]);
-            if (trialInsErr) console.warn("trial_access insert:", trialInsErr.message);
-          }
-          const { data: trialLive } = await (supabase as any)
-            .from("trial_access")
-            .select("status, end_at")
-            .eq("user_id", user.id)
-            .maybeSingle();
-          if (
-            trialLive?.status === "active" &&
-            trialLive.end_at &&
-            new Date(trialLive.end_at).getTime() > Date.now()
-          ) {
-            const { error: seedErr } = await (supabase as any).rpc("seed_trial_strategies_for_user", {
-              p_user_id: user.id,
-            });
-            if (seedErr) console.warn("seed_trial_strategies_for_user:", seedErr.message);
-          }
+          await ensureTrialAccessForUser(user.id);
         }
 
         try {

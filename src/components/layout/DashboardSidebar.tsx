@@ -29,6 +29,7 @@ import { DashboardMobileDrawer } from "./DashboardMobileDrawer";
 import { cn } from "@/lib/utils";
 import { useSignupProfile } from "@/hooks/useSignupProfile";
 import { useUserRole } from "@/hooks/useUserRole";
+import { useTrialAccess } from "@/hooks/useTrialAccess";
 
 export interface DashboardSidebarProps {
   className?: string;
@@ -39,6 +40,7 @@ function useDashboardNavLinks(): DashboardNavLink[] {
   const { isAdmin } = useAdmin();
   const { isAffiliate } = useUserRole();
   const { hasAlgoAccess } = useSubscription();
+  const { isOnTrial } = useTrialAccess();
   const { user } = useAuth();
   /** New Analysis + Past Analyses — exception list only (not all Pro / Probability users). */
   const canSeePredictPastTabs = isAnalysisExceptionEmail(user?.email);
@@ -109,6 +111,13 @@ function useDashboardNavLinks(): DashboardNavLink[] {
           iconColor: "text-primary opacity-80",
         });
       }
+    } else if (isOnTrial) {
+      next.push({
+        to: "/strategies",
+        label: "My Strategies",
+        icon: Bot,
+        iconColor: "text-primary opacity-80",
+      });
     } else {
       next.push({
         to: "/pricing?feature=algo",
@@ -149,7 +158,7 @@ function useDashboardNavLinks(): DashboardNavLink[] {
     }
 
     return next;
-  }, [isAdmin, hasAlgoAccess, canUseAlgoTools, canSeePredictPastTabs, isAffiliate]);
+  }, [isAdmin, hasAlgoAccess, canUseAlgoTools, canSeePredictPastTabs, isAffiliate, isOnTrial]);
 }
 
 export function DashboardSidebar({
@@ -303,6 +312,7 @@ export function DashboardSidebar({
           {pathname === "/trading-dashboard" && "Live Trading Dashboard"}
           {pathname === "/ai-trading-analysis" && "Analysis"}
           {pathname === "/backtest" && "Backtesting"}
+          {pathname === "/strategies" && "Strategies"}
           {pathname === "/subscription" && "Subscription & billing"}
         </span>
       </div>
