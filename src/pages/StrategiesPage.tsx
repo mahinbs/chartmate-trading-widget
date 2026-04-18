@@ -4,8 +4,6 @@ import { useAuth } from "@/hooks/useAuth";
 import { isAnalysisExceptionEmail } from "@/lib/manualSubscriptionBypass";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -15,21 +13,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -68,6 +51,9 @@ import {
   UNLIMITED_CUSTOM_STRATEGIES,
 } from "@/lib/algoStrategyLimits";
 import { PaperTradeSetupDialog } from "@/components/trading/PaperTradeSetupDialog";
+import AlgoStrategyBuilder from "@/components/trading/AlgoStrategyBuilder";
+import { useTrialAccess } from "@/hooks/useTrialAccess";
+import { planAllowsAlgo } from "@/lib/subscriptionEntitlements";
 
 interface StrategySymbol {
   symbol:       string;
@@ -121,16 +107,34 @@ interface UserStrategy {
   backtest_summary:     BacktestSummary | null;
   is_active:            boolean;
   created_at:           string;
+  trial_seed?:          boolean;
 }
 
-const TRADING_MODES = [
-  { value: "LONG",  label: "Long Only (Buy)" },
-  { value: "SHORT", label: "Short Only (Sell)" },
-  { value: "BOTH",  label: "Both (Long & Short)" },
-];
+const TRIAL_MAX_CUSTOM_STRATEGIES = 2;
 
-const EXCHANGES = ["NSE", "BSE", "NFO", "BFO", "MCX"];
-const PRODUCT_TYPES = ["CNC", "MIS", "NRML"];
+function normalizeStrategySymbols(raw: unknown): StrategySymbol[] {
+  if (!Array.isArray(raw)) return [];
+  const out: StrategySymbol[] = [];
+  for (const x of raw) {
+    if (typeof x === "string") {
+      const sym = x.trim().toUpperCase();
+      if (sym) out.push({ symbol: sym, exchange: "NSE", quantity: 1, product_type: "CNC" });
+      continue;
+    }
+    if (x && typeof x === "object") {
+      const o = x as Record<string, unknown>;
+      const sym = String(o.symbol ?? "").trim().toUpperCase();
+      if (!sym) continue;
+      out.push({
+        symbol: sym,
+        exchange: String(o.exchange ?? "NSE").toUpperCase(),
+        quantity: Math.max(1, Number(o.quantity ?? 1) || 1),
+        product_type: String(o.product_type ?? "CNC").toUpperCase(),
+      });
+    }
+  }
+  return out;
+}
 
 const RECOMMENDATION_CONFIG: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
   strong_buy:       { label: "Strong Buy",       color: "text-green-400 bg-green-500/10 border-green-500/30",  icon: <TrendingUp className="h-3 w-3" /> },
@@ -140,26 +144,11 @@ const RECOMMENDATION_CONFIG: Record<string, { label: string; color: string; icon
   not_recommended:  { label: "Not Recommended",  color: "text-red-400 bg-red-500/10 border-red-500/30",       icon: <TrendingDown className="h-3 w-3" /> },
 };
 
-const EMPTY_SYMBOL: StrategySymbol = { symbol: "", exchange: "NSE", quantity: 1, product_type: "CNC" };
-
-const EMPTY_FORM = {
-  name:               "",
-  description:        "",
-  trading_mode:       "LONG",
-  is_intraday:        true,
-  start_time:         "09:15",
-  end_time:           "15:15",
-  squareoff_time:     "15:15",
-  risk_per_trade_pct: "1",
-  stop_loss_pct:      "2",
-  take_profit_pct:    "4",
-  symbols:            [{ ...EMPTY_SYMBOL }] as StrategySymbol[],
-};
-
 export default function StrategiesPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { subscription } = useSubscription();
+  const { isOnTrial } = useTrialAccess();
   const canOpenPredictFlow = isAnalysisExceptionEmail(user?.email);
   const [strategies, setStrategies]     = useState<UserStrategy[]>([]);
   const [loading, setLoading]           = useState(true);
@@ -168,18 +157,32 @@ export default function StrategiesPage() {
   const [toggling, setToggling]         = useState<Record<string, boolean>>({});
   const [deleting, setDeleting]         = useState<string | null>(null);
   const [showCreate, setShowCreate]     = useState(false);
-  const [creating, setCreating]         = useState(false);
-  const [form, setForm]                 = useState({ ...EMPTY_FORM });
   const [paperTradeStrategyId, setPaperTradeStrategyId] = useState<string | null>(null);
   const [seedingPresets, setSeedingPresets] = useState(false);
 
   const stratLimits = getAlgoStrategyLimits(subscription?.plan_id);
   const canDeleteStrategies = stratLimits?.allowDeleteStrategies ?? false;
-  const atStrategyCap = isAtCustomStrategyCap(strategies.length, stratLimits);
+  const hasAlgoAccess = planAllowsAlgo(subscription?.plan_id);
+  const customNonSeedCount = strategies.filter((s) => !s.trial_seed).length;
+  const canCreateStrategies = hasAlgoAccess || isOnTrial;
+  const atStrategyCap =
+    hasAlgoAccess && stratLimits
+      ? isAtCustomStrategyCap(strategies.length, stratLimits)
+      : isOnTrial && customNonSeedCount >= TRIAL_MAX_CUSTOM_STRATEGIES;
 
   const openCreateDialog = () => {
-    if (atStrategyCap && stratLimits) {
-      toast.error(strategyCapToastMessage(stratLimits));
+    if (!canCreateStrategies) {
+      toast.error("Start or renew a free trial, or subscribe, to create strategies.");
+      return;
+    }
+    if (atStrategyCap) {
+      if (hasAlgoAccess && stratLimits) {
+        toast.error(strategyCapToastMessage(stratLimits));
+      } else {
+        toast.error(
+          `Your trial allows up to ${TRIAL_MAX_CUSTOM_STRATEGIES} custom strategies (pre-built templates are separate). Upgrade to add more.`
+        );
+      }
       return;
     }
     setShowCreate(true);
@@ -195,8 +198,14 @@ export default function StrategiesPage() {
         body: { action: "list" },
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
-      const data = (res.data as { strategies?: UserStrategy[] } | null)?.strategies ?? [];
-      setStrategies(data);
+      const raw = (res.data as { strategies?: Record<string, unknown>[] } | null)?.strategies ?? [];
+      setStrategies(
+        raw.map((s) => ({
+          ...(s as unknown as UserStrategy),
+          trial_seed: Boolean(s.trial_seed),
+          symbols: normalizeStrategySymbols(s.symbols),
+        }))
+      );
     } catch (e: any) {
       toast.error("Failed to load strategies: " + (e.message ?? "unknown"));
     } finally {
@@ -228,7 +237,13 @@ export default function StrategiesPage() {
         toast.info("Algo Guide presets already loaded");
       }
       if (Array.isArray(result?.strategies)) {
-        setStrategies(result.strategies);
+        setStrategies(
+          result.strategies.map((s) => ({
+            ...(s as unknown as UserStrategy),
+            trial_seed: Boolean((s as { trial_seed?: boolean }).trial_seed),
+            symbols: normalizeStrategySymbols((s as { symbols?: unknown }).symbols),
+          }))
+        );
       } else {
         await load();
       }
@@ -238,56 +253,6 @@ export default function StrategiesPage() {
       setSeedingPresets(false);
     }
   }, [load, navigate]);
-
-  const handleCreate = async () => {
-    if (!form.name.trim()) { toast.error("Strategy name is required"); return; }
-    if (atStrategyCap) {
-      toast.error("Strategy limit reached for your plan.");
-      return;
-    }
-
-    setCreating(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await supabase.functions.invoke("manage-strategy", {
-        body: {
-          action:             "create",
-          name:               form.name.trim(),
-          description:        form.description.trim(),
-          trading_mode:       form.trading_mode,
-          is_intraday:        form.is_intraday,
-          start_time:         form.start_time,
-          end_time:           form.end_time,
-          squareoff_time:     form.squareoff_time,
-          risk_per_trade_pct: parseFloat(form.risk_per_trade_pct) || 1,
-          stop_loss_pct:      parseFloat(form.stop_loss_pct) || 2,
-          take_profit_pct:    parseFloat(form.take_profit_pct) || 4,
-          symbols:            form.symbols.filter((s) => s.symbol.trim()),
-        },
-        headers: { Authorization: `Bearer ${session?.access_token}` },
-      });
-
-      const result = res.data as { strategy?: UserStrategy; error?: string } | null;
-      if (res.error || result?.error) {
-        toast.error(result?.error ?? res.error?.message ?? "Failed to create strategy");
-        return;
-      }
-
-      toast.success(`Strategy "${form.name}" created!`);
-      setShowCreate(false);
-      setForm({ ...EMPTY_FORM, symbols: [{ ...EMPTY_SYMBOL }] });
-      await load();
-
-      // Trigger AI analysis immediately
-      if (result?.strategy?.id) {
-        setTimeout(() => handleAnalyze(result!.strategy!.id), 500);
-      }
-    } catch (e: any) {
-      toast.error("Error: " + (e.message ?? "unknown"));
-    } finally {
-      setCreating(false);
-    }
-  };
 
   const handleAnalyze = async (strategyId: string) => {
     setAnalyzing((prev) => ({ ...prev, [strategyId]: true }));
@@ -313,14 +278,21 @@ export default function StrategiesPage() {
     }
   };
 
+  const trialNoLive = !hasAlgoAccess && isOnTrial;
+
   const handleToggle = async (strategyId: string) => {
     setToggling((prev) => ({ ...prev, [strategyId]: true }));
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      await supabase.functions.invoke("manage-strategy", {
+      const res = await supabase.functions.invoke("manage-strategy", {
         body: { action: "toggle", strategy_id: strategyId },
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
+      const body = res.data as { error?: string } | null;
+      if (res.error || body?.error) {
+        toast.error(body?.error ?? res.error?.message ?? "Failed to update strategy");
+        return;
+      }
       await load();
     } finally {
       setToggling((prev) => ({ ...prev, [strategyId]: false }));
@@ -334,7 +306,11 @@ export default function StrategiesPage() {
         body: { action: "delete", strategy_id: strategyId },
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
-      if (res.error) { toast.error("Delete failed"); return; }
+      const delBody = res.data as { error?: string } | null;
+      if (res.error || delBody?.error) {
+        toast.error(delBody?.error ?? res.error?.message ?? "Delete failed");
+        return;
+      }
       toast.success("Strategy deleted");
       setDeleting(null);
       await load();
@@ -342,16 +318,6 @@ export default function StrategiesPage() {
       toast.error("Delete error: " + (e.message ?? "unknown"));
     }
   };
-
-  const addSymbolRow = () => setForm((f) => ({ ...f, symbols: [...f.symbols, { ...EMPTY_SYMBOL }] }));
-  const removeSymbolRow = (i: number) =>
-    setForm((f) => ({ ...f, symbols: f.symbols.filter((_, idx) => idx !== i) }));
-  const updateSymbol = (i: number, field: keyof StrategySymbol, val: string | number) =>
-    setForm((f) => {
-      const symbols = [...f.symbols];
-      symbols[i] = { ...symbols[i], [field]: val };
-      return { ...f, symbols };
-    });
 
   const getRiskColor = (score: number) =>
     score <= 3 ? "text-green-400" : score <= 6 ? "text-amber-400" : "text-red-400";
@@ -369,7 +335,13 @@ export default function StrategiesPage() {
             </h1>
             <p className="text-zinc-400 text-sm mt-0.5">
               Create trading strategies — our AI analyzes and backtests each one.
-              {stratLimits ? (
+              {!hasAlgoAccess && isOnTrial ? (
+                <span className="block text-zinc-500 text-xs mt-1">
+                  Free trial: up to {TRIAL_MAX_CUSTOM_STRATEGIES} custom strategies (plus pre-built templates). Use{" "}
+                  <span className="text-zinc-400">Analyze</span>, <span className="text-zinc-400">Backtest</span>, and{" "}
+                  <span className="text-zinc-400">Paper Trade</span> only — live activation requires a paid algo plan.
+                </span>
+              ) : stratLimits ? (
                 <span className="block text-zinc-500 text-xs mt-1">
                   Your plan:{" "}
                   {stratLimits.maxCustomStrategies === UNLIMITED_CUSTOM_STRATEGIES
@@ -398,7 +370,7 @@ export default function StrategiesPage() {
             <Button
               size="sm"
               onClick={openCreateDialog}
-              disabled={atStrategyCap}
+              disabled={!canCreateStrategies || atStrategyCap}
               className="bg-teal-500 hover:bg-teal-400 text-black font-bold"
             >
               <Plus className="h-4 w-4 mr-1.5" />
@@ -424,32 +396,34 @@ export default function StrategiesPage() {
               </div>
               <Button
                 onClick={openCreateDialog}
-                disabled={atStrategyCap}
+                disabled={!canCreateStrategies || atStrategyCap}
                 className="bg-teal-500 hover:bg-teal-400 text-black font-bold"
               >
                 <Plus className="h-4 w-4 mr-1.5" />
                 Create Strategy
               </Button>
-              <div className="flex flex-col items-center gap-2 mt-2">
-                <Button
-                  onClick={handleSeedPresets}
-                  disabled={seedingPresets}
-                  variant="outline"
-                  className="border-teal-700/50 text-teal-300 hover:bg-teal-500/10"
-                >
-                  {seedingPresets ? (
-                    <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-                  ) : (
-                    <Zap className="h-4 w-4 mr-1.5" />
-                  )}
-                  Load 7 Algo Guide Presets
-                </Button>
-                <p className="text-zinc-500 text-xs max-w-md text-center">
-                  EMA 20/50, ORB, Supertrend, VWAP Bounce, RSI Divergence,
-                  Liquidity Sweep + BOS, and SMC Multi-Timeframe — all from the
-                  Algo Trading Guide. Loaded as paused; activate after connecting a broker.
-                </p>
-              </div>
+              {hasAlgoAccess ? (
+                <div className="flex flex-col items-center gap-2 mt-2">
+                  <Button
+                    onClick={handleSeedPresets}
+                    disabled={seedingPresets}
+                    variant="outline"
+                    className="border-teal-700/50 text-teal-300 hover:bg-teal-500/10"
+                  >
+                    {seedingPresets ? (
+                      <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                    ) : (
+                      <Zap className="h-4 w-4 mr-1.5" />
+                    )}
+                    Load 7 Algo Guide Presets
+                  </Button>
+                  <p className="text-zinc-500 text-xs max-w-md text-center">
+                    EMA 20/50, ORB, Supertrend, VWAP Bounce, RSI Divergence,
+                    Liquidity Sweep + BOS, and SMC Multi-Timeframe — all from the
+                    Algo Trading Guide. Loaded as paused; activate after connecting a broker.
+                  </p>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
         ) : (
@@ -474,6 +448,11 @@ export default function StrategiesPage() {
                           <Badge className="text-[10px] bg-zinc-800 text-zinc-300 border-zinc-700">
                             {s.is_intraday ? "Intraday" : "Positional"}
                           </Badge>
+                          {s.trial_seed ? (
+                            <Badge className="text-[10px] bg-violet-500/10 text-violet-300 border-violet-500/30">
+                              Trial template
+                            </Badge>
+                          ) : null}
                           {rec && (
                             <Badge className={`text-[10px] border flex items-center gap-1 ${rec.color}`}>
                               {rec.icon}
@@ -510,7 +489,12 @@ export default function StrategiesPage() {
                         <Switch
                           checked={s.is_active}
                           onCheckedChange={() => handleToggle(s.id)}
-                          disabled={!!toggling[s.id]}
+                          disabled={!!toggling[s.id] || trialNoLive}
+                          title={
+                            trialNoLive
+                              ? "Live activation is not available on the free trial. Use Paper Trade, Backtest, and AI analysis."
+                              : undefined
+                          }
                           className="data-[state=checked]:bg-teal-500"
                         />
                         <Button
@@ -529,7 +513,8 @@ export default function StrategiesPage() {
                             {s.ai_analysis ? "Re-analyze" : "Analyze"}
                           </span>
                         </Button>
-                        {canDeleteStrategies ? (
+                        {(canDeleteStrategies || (isOnTrial && !hasAlgoAccess)) &&
+                        !(isOnTrial && !hasAlgoAccess && s.trial_seed) ? (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -720,247 +705,15 @@ export default function StrategiesPage() {
         )}
       </div>
 
-      {/* Create Strategy Dialog */}
-      <Dialog open={showCreate} onOpenChange={(o) => !creating && setShowCreate(o)}>
-        <DialogContent className="bg-zinc-900 border-zinc-800 text-white max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Plus className="h-4 w-4 text-teal-400" />
-              Create New Strategy
-            </DialogTitle>
-            <DialogDescription className="text-zinc-400 text-sm">
-              Define your strategy. AI will analyze and backtest it automatically after creation.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-2">
-            {/* Name + Description */}
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label className="text-zinc-300 text-sm">Strategy Name <span className="text-red-400">*</span></Label>
-                <Input
-                  value={form.name}
-                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  placeholder="e.g. Momentum Breakout"
-                  className="bg-zinc-800 border-zinc-700 text-white"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-zinc-300 text-sm">Trading Mode</Label>
-                <Select value={form.trading_mode} onValueChange={(v) => setForm((f) => ({ ...f, trading_mode: v }))}>
-                  <SelectTrigger className="bg-zinc-800 border-zinc-700 text-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-zinc-800 border-zinc-700 text-white">
-                    {TRADING_MODES.map((m) => (
-                      <SelectItem key={m.value} value={m.value} className="focus:bg-zinc-700">
-                        {m.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-zinc-300 text-sm">Description (optional)</Label>
-              <Input
-                value={form.description}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                placeholder="Brief description of your strategy logic"
-                className="bg-zinc-800 border-zinc-700 text-white"
-              />
-            </div>
-
-            {/* Type + Times */}
-            <div className="flex items-center gap-3">
-              <Switch
-                checked={form.is_intraday}
-                onCheckedChange={(v) => setForm((f) => ({ ...f, is_intraday: v }))}
-                className="data-[state=checked]:bg-teal-500"
-              />
-              <span className="text-sm text-zinc-300">
-                {form.is_intraday ? "Intraday (same-day square-off)" : "Positional (multi-day)"}
-              </span>
-            </div>
-
-            {form.is_intraday && (
-              <div className="grid grid-cols-3 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-zinc-400 text-xs">Start Time</Label>
-                  <Input
-                    value={form.start_time}
-                    onChange={(e) => setForm((f) => ({ ...f, start_time: e.target.value }))}
-                    placeholder="09:15"
-                    className="bg-zinc-800 border-zinc-700 text-white text-sm"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-zinc-400 text-xs">End Time</Label>
-                  <Input
-                    value={form.end_time}
-                    onChange={(e) => setForm((f) => ({ ...f, end_time: e.target.value }))}
-                    placeholder="15:15"
-                    className="bg-zinc-800 border-zinc-700 text-white text-sm"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-zinc-400 text-xs">Square-off</Label>
-                  <Input
-                    value={form.squareoff_time}
-                    onChange={(e) => setForm((f) => ({ ...f, squareoff_time: e.target.value }))}
-                    placeholder="15:15"
-                    className="bg-zinc-800 border-zinc-700 text-white text-sm"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Risk */}
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-zinc-300 text-xs">Risk/Trade (%)</Label>
-                <Input
-                  type="number"
-                  value={form.risk_per_trade_pct}
-                  onChange={(e) => setForm((f) => ({ ...f, risk_per_trade_pct: e.target.value }))}
-                  min={0.1} max={10} step={0.1}
-                  className="bg-zinc-800 border-zinc-700 text-white text-sm"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-zinc-300 text-xs">Stop Loss (%)</Label>
-                <Input
-                  type="number"
-                  value={form.stop_loss_pct}
-                  onChange={(e) => setForm((f) => ({ ...f, stop_loss_pct: e.target.value }))}
-                  min={0.1} max={20} step={0.1}
-                  className="bg-zinc-800 border-zinc-700 text-white text-sm"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-zinc-300 text-xs">Take Profit (%)</Label>
-                <Input
-                  type="number"
-                  value={form.take_profit_pct}
-                  onChange={(e) => setForm((f) => ({ ...f, take_profit_pct: e.target.value }))}
-                  min={0.1} max={50} step={0.1}
-                  className="bg-zinc-800 border-zinc-700 text-white text-sm"
-                />
-              </div>
-            </div>
-
-            {/* R:R preview */}
-            {parseFloat(form.stop_loss_pct) > 0 && (
-              <div className="text-xs text-zinc-500">
-                R:R ratio:{" "}
-                <span className={`font-bold ${parseFloat(form.take_profit_pct) / parseFloat(form.stop_loss_pct) >= 2 ? "text-green-400" : "text-amber-400"}`}>
-                  {(parseFloat(form.take_profit_pct) / parseFloat(form.stop_loss_pct)).toFixed(1)}:1
-                </span>
-                {parseFloat(form.take_profit_pct) / parseFloat(form.stop_loss_pct) < 2 && (
-                  <span className="text-amber-400 ml-2">⚠ Aim for ≥2:1 for best results</span>
-                )}
-              </div>
-            )}
-
-            <Separator className="bg-zinc-800" />
-
-            {/* Symbols */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <Label className="text-zinc-300 text-sm">Trading Symbols</Label>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={addSymbolRow}
-                  className="text-teal-400 hover:text-teal-300 text-xs"
-                >
-                  <Plus className="h-3.5 w-3.5 mr-1" /> Add Symbol
-                </Button>
-              </div>
-              <div className="space-y-2">
-                {form.symbols.map((sym, i) => (
-                  <div key={i} className="grid grid-cols-[1fr_100px_70px_90px_32px] gap-2 items-center">
-                    <Input
-                      value={sym.symbol}
-                      onChange={(e) => updateSymbol(i, "symbol", e.target.value.toUpperCase())}
-                      placeholder="RELIANCE"
-                      className="bg-zinc-800 border-zinc-700 text-white text-sm font-mono"
-                    />
-                    <Select
-                      value={sym.exchange}
-                      onValueChange={(v) => updateSymbol(i, "exchange", v)}
-                    >
-                      <SelectTrigger className="bg-zinc-800 border-zinc-700 text-white text-xs h-9">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="bg-zinc-800 border-zinc-700 text-white">
-                        {EXCHANGES.map((ex) => (
-                          <SelectItem key={ex} value={ex} className="focus:bg-zinc-700 text-xs">{ex}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Input
-                      type="number"
-                      value={sym.quantity}
-                      onChange={(e) => updateSymbol(i, "quantity", parseInt(e.target.value) || 1)}
-                      min={1}
-                      placeholder="Qty"
-                      className="bg-zinc-800 border-zinc-700 text-white text-sm text-center"
-                    />
-                    <Select
-                      value={sym.product_type}
-                      onValueChange={(v) => updateSymbol(i, "product_type", v)}
-                    >
-                      <SelectTrigger className="bg-zinc-800 border-zinc-700 text-white text-xs h-9">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="bg-zinc-800 border-zinc-700 text-white">
-                        {PRODUCT_TYPES.map((pt) => (
-                          <SelectItem key={pt} value={pt} className="focus:bg-zinc-700 text-xs">{pt}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => removeSymbolRow(i)}
-                      disabled={form.symbols.length === 1}
-                      className="text-zinc-500 hover:text-red-400 h-8 w-8"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowCreate(false)}
-              disabled={creating}
-              className="border-zinc-700"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleCreate}
-              disabled={creating}
-              className="bg-teal-500 hover:bg-teal-400 text-black font-bold"
-            >
-              {creating ? (
-                <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Creating…</>
-              ) : (
-                <><Zap className="h-4 w-4 mr-2" />Create & Analyze</>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AlgoStrategyBuilder
+        open={showCreate}
+        onOpenChange={setShowCreate}
+        existing={null}
+        researchOnlyMode={!hasAlgoAccess && isOnTrial}
+        onSaved={() => {
+          void load();
+        }}
+      />
 
       {/* Delete confirmation */}
       <AlertDialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)}>

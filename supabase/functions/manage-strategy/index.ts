@@ -49,6 +49,15 @@ async function activePlanIdForUser(supabase, userId) {
   if (graceEndMs != null && graceEndMs < Date.now()) return null;
   return data.plan_id ?? null;
 }
+/** Max user-created (non–trial_seed) strategies while on free trial without paid algo. */
+const TRIAL_MAX_CUSTOM_STRATEGIES = 2;
+async function hasActiveTrialAccess(supabase, userId) {
+  const { data } = await supabase.from("trial_access").select("status, end_at").eq("user_id", userId).maybeSingle();
+  if (!data || String(data.status ?? "") !== "active") return false;
+  const endRaw = data.end_at;
+  if (!endRaw) return false;
+  return new Date(String(endRaw)).getTime() > Date.now();
+}
 Deno.serve(async (req)=>{
   if (req.method === "OPTIONS") return new Response(null, {
     status: 200,
@@ -98,6 +107,16 @@ Deno.serve(async (req)=>{
     // Templates land as is_active=false (paused); the user must connect a
     // broker and toggle active before any of them fires.
     if (action === "seed_guide_presets") {
+      const seedPlanId = await activePlanIdForUser(supabase, user.id);
+      if (!seedPlanId || !planAllowsAlgo(seedPlanId)) {
+        return new Response(JSON.stringify({
+          error: "Algo Guide presets require a paid plan with live algo tools. Trial accounts already include pre-built template strategies.",
+          error_code: "SEED_PRESETS_REQUIRES_PLAN"
+        }), {
+          status: 403,
+          headers
+        });
+      }
       const { data: rpcCount, error: rpcErr } = await supabase.rpc(
         "seed_algo_guide_presets_for_user",
         { p_user_id: user.id }
@@ -172,59 +191,87 @@ Deno.serve(async (req)=>{
         });
       }
       const subPlanId = await activePlanIdForUser(supabase, user.id);
-      if (!subPlanId || !planAllowsAlgo(subPlanId)) {
-        return new Response(JSON.stringify({
-          error: "An active subscription with live trading (OpenAlgo) access is required to create strategies.",
-          error_code: "NO_ALGO_PLAN"
-        }), {
-          status: 403,
-          headers
-        });
-      }
-      const limits = getAlgoStrategyLimits(subPlanId);
-      if (!limits) {
-        return new Response(JSON.stringify({
-          error: "This plan does not support custom strategies.",
-          error_code: "PLAN_NO_STRATEGIES"
-        }), {
-          status: 403,
-          headers
-        });
-      }
-      const { count: stratCount, error: countErr } = await supabase.from("user_strategies").select("id", {
-        count: "exact",
-        head: true
-      }).eq("user_id", user.id);
-      if (countErr) {
-        return new Response(JSON.stringify({
-          error: "Could not verify strategy limit"
-        }), {
-          status: 500,
-          headers
-        });
-      }
-      if (
-        limits.maxCustomStrategies !== UNLIMITED_CUSTOM_STRATEGIES &&
-        (stratCount ?? 0) >= limits.maxCustomStrategies
-      ) {
-        const n = limits.maxCustomStrategies;
-        return new Response(JSON.stringify({
-          error: `Your plan allows up to ${n} custom strateg${n === 1 ? "y" : "ies"}. Upgrade in billing to add more.`,
-          error_code: "STRATEGY_LIMIT"
-        }), {
-          status: 403,
-          headers
-        });
+      const paidAlgo = Boolean(subPlanId && planAllowsAlgo(subPlanId));
+      let isTrialCreation = false;
+      if (paidAlgo) {
+        const limits = getAlgoStrategyLimits(subPlanId);
+        if (!limits) {
+          return new Response(JSON.stringify({
+            error: "This plan does not support custom strategies.",
+            error_code: "PLAN_NO_STRATEGIES"
+          }), {
+            status: 403,
+            headers
+          });
+        }
+        const { count: stratCount, error: countErr } = await supabase.from("user_strategies").select("id", {
+          count: "exact",
+          head: true
+        }).eq("user_id", user.id);
+        if (countErr) {
+          return new Response(JSON.stringify({
+            error: "Could not verify strategy limit"
+          }), {
+            status: 500,
+            headers
+          });
+        }
+        if (
+          limits.maxCustomStrategies !== UNLIMITED_CUSTOM_STRATEGIES &&
+          (stratCount ?? 0) >= limits.maxCustomStrategies
+        ) {
+          const n = limits.maxCustomStrategies;
+          return new Response(JSON.stringify({
+            error: `Your plan allows up to ${n} custom strateg${n === 1 ? "y" : "ies"}. Upgrade in billing to add more.`,
+            error_code: "STRATEGY_LIMIT"
+          }), {
+            status: 403,
+            headers
+          });
+        }
+      } else {
+        const trialOk = await hasActiveTrialAccess(supabase, user.id);
+        if (!trialOk) {
+          return new Response(JSON.stringify({
+            error: "An active subscription with live trading (OpenAlgo) access is required to create strategies.",
+            error_code: "NO_ALGO_PLAN"
+          }), {
+            status: 403,
+            headers
+          });
+        }
+        const { count: customCount, error: customErr } = await supabase.from("user_strategies").select("id", {
+          count: "exact",
+          head: true
+        }).eq("user_id", user.id).eq("trial_seed", false);
+        if (customErr) {
+          return new Response(JSON.stringify({
+            error: "Could not verify trial strategy limit"
+          }), {
+            status: 500,
+            headers
+          });
+        }
+        if ((customCount ?? 0) >= TRIAL_MAX_CUSTOM_STRATEGIES) {
+          return new Response(JSON.stringify({
+            error: `Your free trial includes up to ${TRIAL_MAX_CUSTOM_STRATEGIES} custom strategies (plus the pre-built templates). Upgrade to add more.`,
+            error_code: "TRIAL_STRATEGY_LIMIT"
+          }), {
+            status: 403,
+            headers
+          });
+        }
+        isTrialCreation = true;
       }
       // Get user's OpenAlgo username from integration table
       const { data: integration } = await supabase.from("user_trading_integration").select("openalgo_username, openalgo_api_key").eq("user_id", user.id).eq("is_active", true).maybeSingle();
       const openalgoUsername = String(integration?.openalgo_username ?? "").trim();
       const openalgoApiKeyCreate = String(integration?.openalgo_api_key ?? "").trim();
       const hasActiveBroker = Boolean(openalgoUsername) || Boolean(openalgoApiKeyCreate);
-      // Create strategy in OpenAlgo (if configured)
+      // Create strategy in OpenAlgo (paid path only; trial stays research / paper only)
       let openalgoStrategyId = null;
       let openalgoWebhookId = null;
-      if (OPENALGO_URL && OPENALGO_APP_KEY && openalgoUsername.length > 0) {
+      if (!isTrialCreation && OPENALGO_URL && OPENALGO_APP_KEY && openalgoUsername.length > 0) {
         const res = await fetch(`${OPENALGO_URL}/api/v1/platform/create-strategy`, {
           method: "POST",
           headers: {
@@ -267,7 +314,8 @@ Deno.serve(async (req)=>{
         take_profit_pct: tpPct,
         symbols,
         paper_strategy_type: paperStrategyType,
-        is_active: hasActiveBroker,
+        is_active: isTrialCreation ? false : hasActiveBroker,
+        trial_seed: false,
         market_type: marketType,
         entry_conditions: entryConditions,
         exit_conditions: exitConditions,
@@ -408,6 +456,27 @@ Deno.serve(async (req)=>{
       const { data: current } = await supabase.from("user_strategies").select("is_active").eq("id", strategyId).eq("user_id", user.id).maybeSingle();
       const enabling = !current?.is_active;
       if (enabling) {
+        const subPlanToggle = await activePlanIdForUser(supabase, user.id);
+        const paidAlgoToggle = Boolean(subPlanToggle && planAllowsAlgo(subPlanToggle));
+        if (!paidAlgoToggle) {
+          const trialActive = await hasActiveTrialAccess(supabase, user.id);
+          if (trialActive) {
+            return new Response(JSON.stringify({
+              error: "Trial accounts use Backtest, AI analysis, and Paper Trade only. Upgrade to activate live strategy execution with your broker.",
+              error_code: "TRIAL_NO_LIVE_ACTIVATE"
+            }), {
+              status: 403,
+              headers
+            });
+          }
+          return new Response(JSON.stringify({
+            error: "An active subscription with live trading access is required to activate strategies.",
+            error_code: "NO_SUBSCRIPTION"
+          }), {
+            status: 403,
+            headers
+          });
+        }
         const { data: integration } = await supabase.from("user_trading_integration").select("openalgo_username, openalgo_api_key").eq("user_id", user.id).eq("is_active", true).maybeSingle();
         const openalgoUsername = String(integration?.openalgo_username ?? "").trim();
         const openalgoApiKey = String(integration?.openalgo_api_key ?? "").trim();
@@ -570,13 +639,27 @@ Deno.serve(async (req)=>{
       const delPlanId = await activePlanIdForUser(supabase, user.id);
       const delLimits = delPlanId ? getAlgoStrategyLimits(delPlanId) : null;
       if (!delLimits?.allowDeleteStrategies) {
-        return new Response(JSON.stringify({
-          error: "Your plan does not include deleting strategies. You can edit existing strategies, or upgrade to Pro to create and remove strategies freely.",
-          error_code: "DELETE_NOT_ALLOWED"
-        }), {
-          status: 403,
-          headers
-        });
+        const trialOkDel = await hasActiveTrialAccess(supabase, user.id);
+        if (trialOkDel) {
+          const { data: rowMeta } = await supabase.from("user_strategies").select("trial_seed").eq("id", strategyId).eq("user_id", user.id).maybeSingle();
+          if (rowMeta?.trial_seed === true) {
+            return new Response(JSON.stringify({
+              error: "Pre-built trial template strategies cannot be deleted. You can delete strategies you created yourself (up to the trial limit).",
+              error_code: "DELETE_TRIAL_SEED_NOT_ALLOWED"
+            }), {
+              status: 403,
+              headers
+            });
+          }
+        } else {
+          return new Response(JSON.stringify({
+            error: "Your plan does not include deleting strategies. You can edit existing strategies, or upgrade to Pro to create and remove strategies freely.",
+            error_code: "DELETE_NOT_ALLOWED"
+          }), {
+            status: 403,
+            headers
+          });
+        }
       }
       // Get OpenAlgo strategy_id first
       const { data: existing } = await supabase.from("user_strategies").select("openalgo_strategy_id").eq("id", strategyId).eq("user_id", user.id).maybeSingle();

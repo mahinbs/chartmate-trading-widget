@@ -79,6 +79,8 @@ type Props = {
   onOpenChange: (v: boolean) => void;
   existing?: BuilderStrategy | null;
   onSaved: () => void;
+  /** When true, shows a note that this build is for backtest / AI / paper only (no live deploy). */
+  researchOnlyMode?: boolean;
 };
 
 type StrategyType  = "indicator_based" | "time_based" | "hybrid";
@@ -967,7 +969,13 @@ function ConditionBuilder({
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
-export default function AlgoStrategyBuilder({ open, onOpenChange, existing, onSaved }: Props) {
+export default function AlgoStrategyBuilder({
+  open,
+  onOpenChange,
+  existing,
+  onSaved,
+  researchOnlyMode = false,
+}: Props) {
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<BuilderForm>(DEFAULT_FORM);
@@ -1130,6 +1138,11 @@ export default function AlgoStrategyBuilder({ open, onOpenChange, existing, onSa
             <DialogDescription className="text-sm text-zinc-500 mt-0.5">
               Build indicator or time-based logic with risk controls and execution settings.
             </DialogDescription>
+            {researchOnlyMode && (
+              <p className="mt-2 text-xs font-medium text-amber-200/95 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+                Trial / research mode: save runs backtests, AI analysis, and paper trading only. Live broker execution is disabled until you upgrade.
+              </p>
+            )}
             {isLiveLocked && (
               <p className="mt-2 text-xs font-medium text-amber-200/95 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
                 This strategy is <span className="font-bold">live</span> (active). Deactivate it in your portfolio first, then you can edit rules and risk settings.
