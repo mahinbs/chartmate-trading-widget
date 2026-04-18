@@ -77,3 +77,9 @@ verify_jwt = false
 
 [functions.stream-conditional-tick]
 verify_jwt = false
+
+[functions.submit-algo-access-request]
+verify_jwt = false
+
+[functions.get-algo-access-requests]
+verify_jwt = false
