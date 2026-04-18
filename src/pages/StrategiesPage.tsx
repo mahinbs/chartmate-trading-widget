@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { isAnalysisExceptionEmail } from "@/lib/manualSubscriptionBypass";
 import { supabase } from "@/integrations/supabase/client";
@@ -34,6 +34,7 @@ import {
   ChevronRight,
   ChevronUp,
   FlaskConical,
+  ArrowLeft,
   Loader2,
   Plus,
   RefreshCw,
@@ -54,6 +55,7 @@ import { PaperTradeSetupDialog } from "@/components/trading/PaperTradeSetupDialo
 import AlgoStrategyBuilder from "@/components/trading/AlgoStrategyBuilder";
 import { useTrialAccess } from "@/hooks/useTrialAccess";
 import { planAllowsAlgo } from "@/lib/subscriptionEntitlements";
+import { DashboardShellLayout } from "@/components/layout/DashboardShellLayout";
 
 interface StrategySymbol {
   symbol:       string;
@@ -323,8 +325,15 @@ export default function StrategiesPage() {
     score <= 3 ? "text-green-400" : score <= 6 ? "text-amber-400" : "text-red-400";
 
   return (
+    <DashboardShellLayout>
     <div className="min-h-screen bg-zinc-950 text-white pb-16">
       <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
+        <Button variant="ghost" size="sm" className="-ml-2 text-zinc-400 hover:text-white mb-1" asChild>
+          <Link to="/home" className="inline-flex items-center gap-1.5">
+            <ArrowLeft className="h-4 w-4" />
+            Back to dashboard
+          </Link>
+        </Button>
 
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -337,9 +346,10 @@ export default function StrategiesPage() {
               Create trading strategies — our AI analyzes and backtests each one.
               {!hasAlgoAccess && isOnTrial ? (
                 <span className="block text-zinc-500 text-xs mt-1">
-                  Free trial: up to {TRIAL_MAX_CUSTOM_STRATEGIES} custom strategies (plus pre-built templates). Use{" "}
-                  <span className="text-zinc-400">Analyze</span>, <span className="text-zinc-400">Backtest</span>, and{" "}
-                  <span className="text-zinc-400">Paper Trade</span> only — live activation requires a paid algo plan.
+                  Free trial: up to {TRIAL_MAX_CUSTOM_STRATEGIES} custom strategies (plus pre-built templates).{" "}
+                  <span className="text-zinc-300">Paper Trade</span> from this page; use{" "}
+                  <span className="text-zinc-400">Backtesting</span> and{" "}
+                  <span className="text-zinc-400">AI Trading Analysis</span> in the sidebar for research (trial credits apply). Live activation requires a paid algo plan.
                 </span>
               ) : stratLimits ? (
                 <span className="block text-zinc-500 text-xs mt-1">
@@ -486,33 +496,32 @@ export default function StrategiesPage() {
                           <FlaskConical className="h-3.5 w-3.5 sm:mr-1" />
                           <span className="hidden sm:inline">Paper Trade</span>
                         </Button>
-                        <Switch
-                          checked={s.is_active}
-                          onCheckedChange={() => handleToggle(s.id)}
-                          disabled={!!toggling[s.id] || trialNoLive}
-                          title={
-                            trialNoLive
-                              ? "Live activation is not available on the free trial. Use Paper Trade, Backtest, and AI analysis."
-                              : undefined
-                          }
-                          className="data-[state=checked]:bg-teal-500"
-                        />
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleAnalyze(s.id)}
-                          disabled={!!analyzing[s.id]}
-                          className="border-zinc-700 hover:bg-zinc-800 text-xs"
-                        >
-                          {analyzing[s.id] ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Bot className="h-3.5 w-3.5" />
-                          )}
-                          <span className="ml-1 hidden sm:inline">
-                            {s.ai_analysis ? "Re-analyze" : "Analyze"}
-                          </span>
-                        </Button>
+                        {!trialNoLive ? (
+                          <>
+                            <Switch
+                              checked={s.is_active}
+                              onCheckedChange={() => handleToggle(s.id)}
+                              disabled={!!toggling[s.id]}
+                              className="data-[state=checked]:bg-teal-500"
+                            />
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleAnalyze(s.id)}
+                              disabled={!!analyzing[s.id]}
+                              className="border-zinc-700 hover:bg-zinc-800 text-xs"
+                            >
+                              {analyzing[s.id] ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Bot className="h-3.5 w-3.5" />
+                              )}
+                              <span className="ml-1 hidden sm:inline">
+                                {s.ai_analysis ? "Re-analyze" : "Analyze"}
+                              </span>
+                            </Button>
+                          </>
+                        ) : null}
                         {(canDeleteStrategies || (isOnTrial && !hasAlgoAccess)) &&
                         !(isOnTrial && !hasAlgoAccess && s.trial_seed) ? (
                           <Button
@@ -571,7 +580,7 @@ export default function StrategiesPage() {
                       )}
 
                       {/* AI Analysis */}
-                      {analyzing[s.id] ? (
+                      {analyzing[s.id] && !trialNoLive ? (
                         <div className="flex items-center gap-3 py-4 text-teal-400">
                           <Loader2 className="h-5 w-5 animate-spin" />
                           <span className="text-sm">AI is analyzing your strategy…</span>
@@ -668,6 +677,10 @@ export default function StrategiesPage() {
                             </div>
                           )}
                         </div>
+                      ) : trialNoLive ? (
+                        <p className="text-zinc-500 text-sm text-center py-4">
+                          On the free trial, run AI and backtests from the sidebar. This panel shows saved results when present.
+                        </p>
                       ) : (
                         <div className="flex flex-col items-center py-6 gap-3 text-center">
                           <Bot className="h-8 w-8 text-zinc-600" />
@@ -748,5 +761,6 @@ export default function StrategiesPage() {
         }}
       />
     </div>
+    </DashboardShellLayout>
   );
 }

@@ -26,6 +26,8 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useSubscription } from "@/hooks/useSubscription";
+import { useTrialAccess } from "@/hooks/useTrialAccess";
+import { trialCreditsPerActionLine } from "@/constants/trialCredits";
 import { SymbolSearch, SymbolData } from "@/components/SymbolSearch";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -366,6 +368,7 @@ export function PaperTradeSetupDialog({
 }: Props) {
   const { toast } = useToast();
   const { isPremium, loading: subLoading } = useSubscription();
+  const { isOnTrial } = useTrialAccess();
   const presetId = preselectedStrategyId?.trim() || null;
   const initialSymTrim = initialSymbol?.trim() || null;
   const quick = Boolean(scannerQuickMode && presetId && initialSymTrim);
@@ -838,6 +841,13 @@ export function PaperTradeSetupDialog({
           <DialogDescription>
             Entry and exit will happen automatically when your strategy conditions are met in real-time.
           </DialogDescription>
+          {!isPremium && isOnTrial ? (
+            <Alert className="mt-3 border-teal-500/30 bg-teal-950/30">
+              <AlertDescription className="text-xs text-teal-100/90">
+                {trialCreditsPerActionLine()} Starting or scheduling this paper deploy charges credits when you confirm.
+              </AlertDescription>
+            </Alert>
+          ) : null}
         </DialogHeader>
 
         {/* Step progress — hidden until preset strategy row is loaded */}

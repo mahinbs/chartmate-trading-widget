@@ -35,7 +35,6 @@ import { useTradingIntegration } from "@/hooks/useTradingIntegration";
 import { TradingIntegrationModal } from "@/components/trading/TradingIntegrationModal";
 import { useSubscription } from "@/hooks/useSubscription";
 import { useTrialAccess } from "@/hooks/useTrialAccess";
-import { TrialCreditsBanner } from "@/components/TrialCreditsBanner";
 import { isAnalysisExceptionEmail } from "@/lib/manualSubscriptionBypass";
 import YahooChartPanel from "@/components/YahooChartPanel";
 import { DashboardShellLayout } from "@/components/layout/DashboardShellLayout";
@@ -291,7 +290,6 @@ export default function HomePage() {
                 Dashboard
               </h1>
             </header>
-            <TrialCreditsBanner />
             {/* USER WATCHLIST (customizable) */}
             <div className="space-y-4">
               <div className="flex items-center gap-2 flex-wrap pb-1">

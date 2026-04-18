@@ -1,7 +1,7 @@
 /**
  * backtest-vectorbt — VectorBT engine on OpenAlgo (Historify → Yahoo Finance).
  */ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { checkAndConsumeTrialCredit } from "../_shared/trial-credit-check.ts";
+import { checkAndConsumeTrialCredit, hasActivePaidAlgoPlan } from "../_shared/trial-credit-check.ts";
 const OPENALGO_URL = (Deno.env.get("OPENALGO_URL") ?? "").replace(/\/$/, "");
 const OPENALGO_APP_KEY = Deno.env.get("OPENALGO_APP_KEY") ?? "";
 const corsHeaders = {
@@ -60,6 +60,12 @@ Deno.serve(async (req)=>{
     const isOptionsOrb = (body.strategy ?? "") === "options_orb";
     let openalgoApiKey: string | null = null;
     if (isOptionsOrb) {
+      if (!(await hasActivePaidAlgoPlan(supabase, user.id))) {
+        return new Response(JSON.stringify({
+          error: "Options ORB backtests require a paid algo plan and broker data. On a free trial, use Strategy or Simple BUY/SELL backtests only.",
+          error_code: "OPTIONS_ORB_REQUIRES_PAID_ALGO",
+        }), { status: 403, headers });
+      }
       const { data: integRow } = await supabase
         .from("user_trading_integration")
         .select("openalgo_api_key")

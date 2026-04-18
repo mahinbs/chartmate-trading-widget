@@ -6,6 +6,11 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { StrategyEntrySignalsPanel } from "@/components/prediction/StrategyEntrySignalsPanel";
 import { useLocation } from "react-router-dom";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useSubscription } from "@/hooks/useSubscription";
+import { useTrialAccess } from "@/hooks/useTrialAccess";
+import { planAllowsAlgo } from "@/lib/subscriptionEntitlements";
+import { trialCreditsPerActionLine } from "@/constants/trialCredits";
 
 type ScannerSearchResult = {
   symbol: string;
@@ -30,6 +35,10 @@ const SCANNER_QUICK_PICKS = [
  */
 export function TradingAiAnalysisPanel() {
   const location = useLocation();
+  const { subscription } = useSubscription();
+  const { isOnTrial } = useTrialAccess();
+  const hasAlgoAccess = planAllowsAlgo(subscription?.plan_id);
+  const showTrialCreditHint = Boolean(isOnTrial && !hasAlgoAccess);
   const [scannerSymbol, setScannerSymbol] = useState("");
   const [scannerInput, setScannerInput] = useState("");
   const [scannerResults, setScannerResults] = useState<ScannerSearchResult[]>([]);
@@ -98,6 +107,13 @@ export function TradingAiAnalysisPanel() {
 
   return (
     <div className="min-w-0 space-y-4">
+      {showTrialCreditHint ? (
+        <Alert className="border-teal-500/30 bg-teal-950/30 text-teal-50">
+          <AlertDescription className="text-xs text-teal-100/90">
+            {trialCreditsPerActionLine()} Runs triggered from this page (e.g. AI on your watchlist) use the same credit pool as backtests and paper deploys.
+          </AlertDescription>
+        </Alert>
+      ) : null}
       <Card className="border-zinc-800 bg-zinc-900/50">
         <CardContent className="p-4 space-y-3 flex flex-col items-center">
           <Label className="text-xs text-zinc-400">Search stock / symbol</Label>

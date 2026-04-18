@@ -49,30 +49,39 @@ export function useTrialAccess() {
   const loading = authLoading || (Boolean(user?.id) && fetching);
 
   const derived = useMemo(() => {
-    if (!row || row.status !== "active") {
+    if (!row) {
       return {
+        hasTrialRecord: false,
         isOnTrial: false,
+        trialExpired: false,
         creditsRemaining: 0,
         creditsPerDay: 0,
         trialEndsAt: null as Date | null,
         daysLeft: 0,
-        isExpired: true,
+        isExpired: false,
       };
     }
     const end = new Date(row.end_at);
     const trialEndsAt = end;
-    const isExpired = end.getTime() <= Date.now();
-    const isOnTrial = !isExpired;
+    const endMs = end.getTime();
+    const statusActive = String(row.status ?? "") === "active";
+    const timeOk = endMs > Date.now();
+    const isOnTrial = statusActive && timeOk;
+    const hasTrialRecord = true;
+    const trialExpired = !isOnTrial;
+    const isExpired = !timeOk;
     const creditsPerDay = Math.max(0, Number(row.daily_credit_limit ?? 0));
     const usedJson = (row.used_credits_json ?? {}) as Record<string, number>;
     const dayKey = todayKeyIst();
     const usedToday = Number(usedJson[dayKey] ?? 0);
-    const creditsRemaining = Math.max(0, creditsPerDay - usedToday);
-    const msLeft = end.getTime() - Date.now();
+    const creditsRemaining = isOnTrial ? Math.max(0, creditsPerDay - usedToday) : 0;
+    const msLeft = endMs - Date.now();
     const daysLeft = msLeft > 0 ? Math.ceil(msLeft / (24 * 60 * 60 * 1000)) : 0;
 
     return {
+      hasTrialRecord,
       isOnTrial,
+      trialExpired,
       creditsRemaining,
       creditsPerDay,
       trialEndsAt,

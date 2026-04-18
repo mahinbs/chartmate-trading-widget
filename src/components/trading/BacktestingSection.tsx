@@ -11,6 +11,10 @@
  *    same strategy 1w / 1m / 3m / 6m / 1y ago
  */
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { useSubscription } from "@/hooks/useSubscription";
+import { useTrialAccess } from "@/hooks/useTrialAccess";
+import { planAllowsAlgo } from "@/lib/subscriptionEntitlements";
+import { TRIAL_CREDITS_PER_ACTION, trialCreditsPerActionLine } from "@/constants/trialCredits";
 import { createPortal } from "react-dom";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
@@ -1553,6 +1557,25 @@ export default function BacktestingSection() {
   const [pdfExporting, setPdfExporting] = useState(false);
   const backtestPdfRef = useRef<HTMLDivElement>(null);
 
+  const { subscription } = useSubscription();
+  const { isOnTrial } = useTrialAccess();
+  const hasAlgoAccess = planAllowsAlgo(subscription?.plan_id);
+  const hideOptionsOrb = Boolean(isOnTrial && !hasAlgoAccess);
+  const showTrialCreditFootnote = Boolean(isOnTrial && !hasAlgoAccess);
+
+  useEffect(() => {
+    if (hideOptionsOrb && mode === "options") setMode("strategy");
+  }, [hideOptionsOrb, mode]);
+
+  const modeTabs = useMemo((): [typeof mode, string][] => {
+    const all: [typeof mode, string][] = [
+      ["strategy", "Strategy"],
+      ["simple", "Simple BUY / SELL"],
+      ["options", "Options ORB"],
+    ];
+    return hideOptionsOrb ? all.filter((x) => x[0] !== "options") : all;
+  }, [hideOptionsOrb]);
+
   const selectedCustom = customStrategies.find(s => s.id === selectedCustomId) ?? null;
   const selectedOptionsStrat =
     mode === "options"
@@ -2275,11 +2298,7 @@ export default function BacktestingSection() {
 
         {/* Mode */}
         <div className="flex flex-wrap gap-2">
-          {([
-            ["strategy", "Strategy"],
-            ["simple", "Simple BUY / SELL"],
-            ["options", "Options ORB"],
-          ] as [typeof mode, string][]).map(([m, label]) => (
+          {modeTabs.map(([m, label]) => (
             <Button key={m} size="sm" variant={mode === m ? "default" : "outline"}
               className={mode === m
                 ? (m === "options" ? "bg-violet-600 hover:bg-violet-500" : "bg-teal-600")
@@ -2767,6 +2786,13 @@ export default function BacktestingSection() {
           </div>
         </div>
         )}
+
+        {showTrialCreditFootnote ? (
+          <p className="text-[11px] text-zinc-500 leading-snug">
+            {trialCreditsPerActionLine()} This run will charge <span className="text-zinc-400 font-medium">{TRIAL_CREDITS_PER_ACTION} credits</span>{" "}
+            when you start it (paid algo subscribers are unlimited).
+          </p>
+        ) : null}
 
         {/* Actions */}
         <div className="flex flex-wrap gap-2">

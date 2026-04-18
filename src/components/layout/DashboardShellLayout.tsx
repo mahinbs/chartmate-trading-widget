@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 import { Outlet } from "react-router-dom";
 import { DashboardSidebar } from "./DashboardSidebar";
+import { TrialCreditsBanner } from "@/components/TrialCreditsBanner";
 import { cn } from "@/lib/utils";
 
 export interface DashboardShellLayoutProps {
@@ -20,6 +21,7 @@ export function DashboardShellLayout({ children, className }: DashboardShellLayo
 
       <main className="flex-1 flex flex-col h-full overflow-hidden bg-background relative z-10 min-w-0">
         <div className="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-8 pb-12 pt-16 lg:pt-4 flex flex-col gap-6 no-scrollbar relative">
+          <TrialCreditsBanner />
           {children}
         </div>
       </main>
