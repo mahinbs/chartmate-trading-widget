@@ -2,6 +2,7 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 import { resolveTradeAccess } from "../_shared/trade-access.ts";
+import { checkAndConsumeTrialCredit } from "../_shared/trial-credit-check.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -160,6 +161,26 @@ serve(async (req) => {
             error_code: "STRATEGY_NOT_ALLOWED",
           }),
           { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+    }
+
+    if (isPaperTrade) {
+      const trialCredit = await checkAndConsumeTrialCredit(
+        supabaseClient as any,
+        user.id,
+        10,
+        "start_trade_session_paper",
+      );
+      if (!trialCredit.ok) {
+        return new Response(
+          JSON.stringify({
+            error: "Insufficient trial credits. Upgrade for unlimited access.",
+            error_code: "TRIAL_CREDITS_EXHAUSTED",
+            credits_remaining: trialCredit.creditsRemaining ?? 0,
+            reason: trialCredit.reason ?? null,
+          }),
+          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
     }

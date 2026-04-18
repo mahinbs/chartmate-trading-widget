@@ -22,6 +22,7 @@
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveTradeAccess } from "../_shared/trade-access.ts";
+import { checkAndConsumeTrialCredit } from "../_shared/trial-credit-check.ts";
 
 const OPENALGO_URL = (Deno.env.get("OPENALGO_URL") ?? "").replace(/\/$/, "");
 
@@ -67,18 +68,9 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers });
     }
 
-    const access = await resolveTradeAccess(supabase, user.id);
-    if (!access.hasAlgoEntitlement) {
-      return new Response(
-        JSON.stringify({ error: "Algo subscription required.", error_code: "NO_SUBSCRIPTION" }),
-        { status: 403, headers },
-      );
-    }
-
-    const openalgoApiKey = access.integration?.openalgo_api_key;
-
-    // Parse body
     const body = await req.json();
+    const is_paper_trade = Boolean(body.is_paper_trade);
+
     const {
       options_strategy_id,
       underlying,
@@ -89,7 +81,6 @@ Deno.serve(async (req) => {
       action,
       quantity,
       product = "MIS",
-      is_paper_trade = false,
       entry_premium: overridePremium,
     } = body;
 
@@ -99,6 +90,36 @@ Deno.serve(async (req) => {
         { status: 422, headers },
       );
     }
+
+    const access = await resolveTradeAccess(supabase, user.id);
+    if (!access.hasAlgoEntitlement) {
+      if (is_paper_trade) {
+        const trialCredit = await checkAndConsumeTrialCredit(
+          supabase,
+          user.id,
+          10,
+          "options_paper_trade",
+        );
+        if (!trialCredit.ok) {
+          return new Response(
+            JSON.stringify({
+              error: "Insufficient trial credits. Upgrade for unlimited access.",
+              error_code: "TRIAL_CREDITS_EXHAUSTED",
+              credits_remaining: trialCredit.creditsRemaining ?? 0,
+              reason: trialCredit.reason ?? null,
+            }),
+            { status: 402, headers },
+          );
+        }
+      } else {
+        return new Response(
+          JSON.stringify({ error: "Algo subscription required.", error_code: "NO_SUBSCRIPTION" }),
+          { status: 403, headers },
+        );
+      }
+    }
+
+    const openalgoApiKey = access.integration?.openalgo_api_key;
 
     const strikeOffsetNum = strikeOffsetToNumber(strike_offset);
 

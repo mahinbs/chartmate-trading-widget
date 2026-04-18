@@ -1,6 +1,7 @@
 /**
  * backtest-vectorbt — VectorBT engine on OpenAlgo (Historify → Yahoo Finance).
  */ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { checkAndConsumeTrialCredit } from "../_shared/trial-credit-check.ts";
 const OPENALGO_URL = (Deno.env.get("OPENALGO_URL") ?? "").replace(/\/$/, "");
 const OPENALGO_APP_KEY = Deno.env.get("OPENALGO_APP_KEY") ?? "";
 const corsHeaders = {
@@ -70,6 +71,20 @@ Deno.serve(async (req)=>{
           error: "Broker not connected. Connect your broker in Broker Sync to run options backtests (5-min intraday data required)."
         }), { status: 200, headers });
       }
+    }
+
+    const trialCredit = await checkAndConsumeTrialCredit(supabase, user.id, 10, "backtest_vectorbt");
+    if (!trialCredit.ok) {
+      return new Response(JSON.stringify({
+        build_id: BUILD_ID,
+        error: "Insufficient trial credits. Upgrade for unlimited access.",
+        error_code: "TRIAL_CREDITS_EXHAUSTED",
+        credits_remaining: trialCredit.creditsRemaining ?? 0,
+        reason: trialCredit.reason ?? null,
+      }), {
+        status: 402,
+        headers,
+      });
     }
 
     const requestBody: Record<string, unknown> = {

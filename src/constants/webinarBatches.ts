@@ -62,6 +62,8 @@ export const WEBINAR_BATCH_DEFINITIONS: WebinarBatchDefinition[] = [
 ];
 
 export const DEFAULT_TRIAL_LIMITS = {
+  /** Daily pool for backtest / AI analysis / paper trade (10 credits each). */
+  dailyCreditLimit: 100,
   backtestsPerDay: 10,
   paperTradesPerDay: 10,
   aiAnalysisPerDay: 10,

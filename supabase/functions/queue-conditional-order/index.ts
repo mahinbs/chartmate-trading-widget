@@ -3,6 +3,7 @@
  * All UI — no scripts. Our backend processes these and fires when conditions match.
  */ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { planAllowsAlgo } from "../_shared/subscription-plans.ts";
+import { checkAndConsumeTrialCredit } from "../_shared/trial-credit-check.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -31,6 +32,7 @@ Deno.serve(async (req)=>{
     }
     const body = await req.json().catch(()=>({}));
     const { strategy_id, symbol, action, quantity } = body;
+    const isPaperTrade = Boolean(body.is_paper_trade);
     if (!strategy_id || !symbol || !action || !quantity) {
       return new Response(JSON.stringify({
         error: "strategy_id, symbol, action and quantity are required"
@@ -43,7 +45,29 @@ Deno.serve(async (req)=>{
     const endMs = sub?.current_period_end ? new Date(sub.current_period_end).getTime() : null;
     const graceOk = endMs == null || endMs + 24 * 60 * 60 * 1000 > Date.now();
     const paid = (sub?.status === "active" || sub?.status === "trialing") && graceOk;
-    if (!paid || !planAllowsAlgo(sub?.plan_id ?? null)) {
+    const algoPlan = paid && planAllowsAlgo(sub?.plan_id ?? null);
+
+    if (isPaperTrade) {
+      if (!algoPlan) {
+        const trialCredit = await checkAndConsumeTrialCredit(
+          supabase,
+          user.id,
+          10,
+          "queue_conditional_paper",
+        );
+        if (!trialCredit.ok) {
+          return new Response(JSON.stringify({
+            error: "Insufficient trial credits. Upgrade for unlimited access.",
+            error_code: "TRIAL_CREDITS_EXHAUSTED",
+            credits_remaining: trialCredit.creditsRemaining ?? 0,
+            reason: trialCredit.reason ?? null,
+          }), {
+            status: 402,
+            headers,
+          });
+        }
+      }
+    } else if (!algoPlan) {
       return new Response(JSON.stringify({
         error: "Active Bot / Pro subscription required",
         error_code: "NO_SUBSCRIPTION"
@@ -90,6 +114,7 @@ Deno.serve(async (req)=>{
       quantity: Number(quantity) || 1,
       product: (body.product ?? "MIS").toUpperCase(),
       paper_strategy_type: body.paper_strategy_type ?? "trend_following",
+      is_paper_trade: isPaperTrade,
       status: "pending",
       expires_at: expiresAt,
       deploy_overrides: deployOverrides

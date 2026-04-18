@@ -312,13 +312,13 @@ const AuthPage = () => {
 
           if (!existing) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any -- migration-backed table
-            await (supabase as any).from("trial_access").insert([
+            const { error: trialInsErr } = await (supabase as any).from("trial_access").insert([
               {
                 user_id: user.id,
                 start_at: nowIso,
                 end_at: endIso,
                 status: "active",
-                daily_credit_limit: 0,
+                daily_credit_limit: DEFAULT_TRIAL_LIMITS.dailyCreditLimit,
                 backtests_per_day: DEFAULT_TRIAL_LIMITS.backtestsPerDay,
                 ai_analysis_per_day: DEFAULT_TRIAL_LIMITS.aiAnalysisPerDay,
                 scans_per_day: 0,
@@ -329,6 +329,22 @@ const AuthPage = () => {
                 },
               },
             ]);
+            if (trialInsErr) console.warn("trial_access insert:", trialInsErr.message);
+          }
+          const { data: trialLive } = await (supabase as any)
+            .from("trial_access")
+            .select("status, end_at")
+            .eq("user_id", user.id)
+            .maybeSingle();
+          if (
+            trialLive?.status === "active" &&
+            trialLive.end_at &&
+            new Date(trialLive.end_at).getTime() > Date.now()
+          ) {
+            const { error: seedErr } = await (supabase as any).rpc("seed_trial_strategies_for_user", {
+              p_user_id: user.id,
+            });
+            if (seedErr) console.warn("seed_trial_strategies_for_user:", seedErr.message);
           }
         }
 
