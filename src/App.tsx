@@ -79,6 +79,7 @@ import SignupWebinarLandingPage from "./pages/SignupWebinarLandingPage";
 import RaMarketplacePage from "./pages/RaMarketplacePage";
 import RaProfilePage from "./pages/RaProfilePage";
 import RaStrategyCheckoutPage from "./pages/RaStrategyCheckoutPage";
+import GlobalLpTsaiPage from "./pages/GlobalLpTsaiPage";
 
 // OpenAlgo ping temporarily disabled in mock-order mode to avoid CORS noise
 
@@ -266,6 +267,7 @@ const App = () => (
               <Route path="/1414ghgh" element={<TrialDashboardPage />} />
               <Route path="/demo/:brokerSlug" element={<TrialDashboardPage />} />
               <Route path="/start-2-day-access" element={<SignupWebinarLandingPage />} />
+              <Route path="/globalLP_TSAI" element={<GlobalLpTsaiPage />} />
               <Route path="/sebi-ra-marketplace" element={<RaMarketplacePage />} />
               <Route path="/ra/:slug" element={<RaProfilePage />} />
               <Route path="/ra/:slug/strategy/:strategyId" element={<RaStrategyCheckoutPage />} />
