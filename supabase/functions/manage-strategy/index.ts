@@ -9,6 +9,7 @@
  *   delete              — delete from Supabase + OpenAlgo
  *   list                — list all strategies for the user
  *   toggle              — toggle is_active
+ *   pause_all           — deactivate all strategies + cancel queued conditional rows
  *   seed_guide_presets  — bulk-load the 7 canonical Algo Trading Guide presets
  *                          (idempotent; rows insert as paused, user activates later)
  */ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -551,7 +552,7 @@ Deno.serve(async (req)=>{
         await supabase.from("pending_conditional_orders").update({
           status: "cancelled",
           error_message: "Strategy deactivated"
-        }).eq("user_id", user.id).eq("strategy_id", strategyId).eq("status", "pending");
+        }).eq("user_id", user.id).eq("strategy_id", strategyId).in("status", ["pending", "scheduled"]);
         return new Response(JSON.stringify({
           strategy: toggledRow
         }), {
@@ -625,6 +626,39 @@ Deno.serve(async (req)=>{
         headers
       });
     }
+    // ── PAUSE ALL (emergency / dashboard kill switch) ─────────────────────
+    if (action === "pause_all") {
+      await supabase.from("pending_conditional_orders").update({
+        status: "cancelled",
+        error_message: "Paused via pause_all (dashboard / kill switch)",
+      }).eq("user_id", user.id).in("status", [
+        "pending",
+        "scheduled",
+      ]);
+      const { data: activeBefore } = await supabase.from("user_strategies").select("id").eq("user_id", user.id).eq("is_active", true);
+      const n = activeBefore?.length ?? 0;
+      if (n > 0) {
+        const { error: pauseErr } = await supabase.from("user_strategies").update({
+          is_active: false,
+          updated_at: new Date().toISOString(),
+        }).eq("user_id", user.id).eq("is_active", true);
+        if (pauseErr) {
+          return new Response(JSON.stringify({
+            error: "Failed to pause strategies: " + pauseErr.message,
+          }), {
+            status: 500,
+            headers,
+          });
+        }
+      }
+      return new Response(JSON.stringify({
+        ok: true,
+        strategies_paused: n,
+      }), {
+        status: 200,
+        headers,
+      });
+    }
     // ── DELETE ────────────────────────────────────────────────────────────
     if (action === "delete") {
       const strategyId = (body.strategy_id ?? "").trim();
@@ -690,7 +724,7 @@ Deno.serve(async (req)=>{
       });
     }
     return new Response(JSON.stringify({
-      error: `Unknown action: ${action}. Use create | update | delete | list | toggle`
+      error: `Unknown action: ${action}. Use create | update | delete | list | toggle | pause_all | seed_guide_presets`
     }), {
       status: 400,
       headers

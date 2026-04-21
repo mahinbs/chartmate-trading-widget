@@ -83,3 +83,17 @@ verify_jwt = false
 
 [functions.get-algo-access-requests]
 verify_jwt = false
+
+# Browser dashboard calls these with POST + Authorization; OPTIONS preflight has no JWT.
+# Auth is enforced inside each function via service client + getUser(access_token).
+[functions.manage-strategy]
+verify_jwt = false
+
+[functions.broker-order-action]
+verify_jwt = false
+
+[functions.submit-strategy-dev-request]
+verify_jwt = false
+
+[functions.admin-strategy-dev-requests]
+verify_jwt = false
