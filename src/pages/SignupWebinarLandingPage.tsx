@@ -802,10 +802,6 @@ export default function SignupWebinarLandingPage() {
                   Free Access
                 </span>
               </h2>
-              <p className="mt-4 max-w-xl text-sm text-zinc-400 md:text-base">
-                Main goal is platform signup. Complete signup first to unlock free stock
-                market training access and batch reminders.
-              </p>
               <div className="mt-7 space-y-5">
                 {[
                   {

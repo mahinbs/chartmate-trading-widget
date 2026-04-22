@@ -87,6 +87,7 @@ import RaProfilePage from "./pages/RaProfilePage";
 import RaStrategyCheckoutPage from "./pages/RaStrategyCheckoutPage";
 import GlobalLpTsaiPage from "./pages/GlobalLpTsaiPage";
 import NewLandingPage from "./pages/LandingPage/NewLandingPage";
+import ProcessPage from "./pages/ProcessPage";
 
 // OpenAlgo ping temporarily disabled in mock-order mode to avoid CORS noise
 
@@ -112,6 +113,7 @@ function isPublicMarketingPath(pathname: string): boolean {
     "/market-picks",
     "/start-2-day-access",
     "/sebi-ra-marketplace",
+    "/process",
   ]);
   if (exact.has(pathname)) return true;
   if (pathname === "/blogs" || pathname.startsWith("/blogs/")) return true;
@@ -288,6 +290,7 @@ const App = () => (
                   element={<SignupWebinarLandingPage />}
                 />
                 <Route path="/globalLP_TSAI" element={<GlobalLpTsaiPage />} />
+                <Route path="/process" element={<ProcessPage />} />
                 <Route
                   path="/sebi-ra-marketplace"
                   element={<RaMarketplacePage />}
