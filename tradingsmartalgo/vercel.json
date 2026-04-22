@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "routes": [
+    { "src": "^/$", "dest": "/landing.html" },
+    { "src": "/login", "dest": "/index.html" },
+    { "src": "/onboarding", "dest": "/onboarding.html" },
+    { "src": "/onboarding.html", "dest": "/onboarding.html" },
+    { "src": "/(.*\\.(html|js|jsx|css|json|ico|png|jpg|svg))", "dest": "/$1" },
+    { "src": "/(.*)", "dest": "/landing.html" }
+  ]
+}
