@@ -1155,7 +1155,7 @@ const AuthPage = () => {
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted flex items-center justify-center p-4">
       <Card className="w-full max-w-lg">
         <CardHeader>
-          <CardTitle className="text-2xl text-center">Market Predictor AI</CardTitle>
+          <CardTitle className="text-2xl text-center">TradingSmart Login</CardTitle>
           <CardDescription className="text-center">
             Sign in to access AI-powered market predictions
           </CardDescription>
@@ -1358,7 +1358,7 @@ const AuthPage = () => {
         </CardContent>
         <CardFooter>
           <p className="text-sm text-muted-foreground text-center w-full">
-            Get access to AI-powered predictions and market analysis tools.
+            Get access to AI-powered market insights and analysis tools.
           </p>
         </CardFooter>
       </Card>

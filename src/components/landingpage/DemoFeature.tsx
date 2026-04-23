@@ -17,7 +17,7 @@ const DemoFeature = () => {
                                         <div className="w-3 h-3 rounded-full bg-yellow-500/80"></div>
                                         <div className="w-3 h-3 rounded-full bg-green-500/80"></div>
                                     </div>
-                                    <div className="text-[10px] text-gray-500 font-mono tracking-widest uppercase">BMS_AI_PREDICTOR_V4.exe</div>
+                                    <div className="text-[10px] text-gray-500 font-mono tracking-widest uppercase">BMS_AI_V4.exe</div>
                                 </div>
                                 <div className="p-8 font-mono text-sm relative z-10">
                                     <div className="flex justify-between mb-8 items-end">

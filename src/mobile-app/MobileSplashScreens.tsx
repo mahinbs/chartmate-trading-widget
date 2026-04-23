@@ -7,13 +7,13 @@ import { Button } from '@/components/ui/button';
 const slides = [
   {
     icon: TrendingUp,
-    title: "Market Predictor AI",
+    title: "Market Insights AI",
     description: "Get real-time trading insights and advanced analytics natively on your mobile."
   },
   {
     icon: Bot,
     title: "AI-Powered Analysis",
-    description: "Leverage cutting-edge AI to predict market movements and stay ahead of the curve."
+    description: "Leverage cutting-edge AI for market analysis and stay ahead of the curve."
   },
   {
     icon: ShieldCheck,
