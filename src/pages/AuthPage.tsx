@@ -1157,7 +1157,7 @@ const AuthPage = () => {
         <CardHeader>
           <CardTitle className="text-2xl text-center">TradingSmart Login</CardTitle>
           <CardDescription className="text-center">
-            Sign in to access AI-powered market predictions
+            Sign in to access AI-powered market insights and analysis tools.
           </CardDescription>
         </CardHeader>
         <CardContent>
