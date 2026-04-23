@@ -14,11 +14,12 @@ export interface DashboardMobileDrawerProps {
   /** Full name from signup profile (single field, not email local-part). */
   profileDisplayName: string;
   onSignOut: () => void;
+  onNavLinkClick?: (to: string) => boolean;
 }
 
 export const DashboardMobileDrawer = forwardRef<HTMLDivElement, DashboardMobileDrawerProps>(
   function DashboardMobileDrawer(
-    { open, onClose, links, userEmail, profileDisplayName, onSignOut },
+    { open, onClose, links, userEmail, profileDisplayName, onSignOut, onNavLinkClick },
     ref,
   ) {
     const { pathname, search } = useLocation();
@@ -64,7 +65,13 @@ export const DashboardMobileDrawer = forwardRef<HTMLDivElement, DashboardMobileD
                       key={link.label}
                       to={link.to}
                       title={link.locked ? "Upgrade to unlock" : undefined}
-                      onClick={onClose}
+                      onClick={(e) => {
+                        const handled = onNavLinkClick?.(link.to) ?? false;
+                        if (handled) {
+                          e.preventDefault();
+                        }
+                        onClose();
+                      }}
                       className={cn(
                         "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-sm font-medium",
                         link.locked && "opacity-75",

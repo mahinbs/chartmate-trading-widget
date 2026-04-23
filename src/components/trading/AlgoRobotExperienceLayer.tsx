@@ -6,9 +6,16 @@ import { trackRobotMetric } from "@/lib/algoRobotExperience";
 interface BootSequenceProps {
   enabled: boolean;
   reduceMotion: boolean;
+  persistOncePerSession?: boolean;
+  onComplete?: () => void;
 }
 
-export function EngineBootSequence({ enabled, reduceMotion }: BootSequenceProps) {
+export function EngineBootSequence({
+  enabled,
+  reduceMotion,
+  persistOncePerSession = true,
+  onComplete,
+}: BootSequenceProps) {
   const [visible, setVisible] = useState(false);
   const [step, setStep] = useState(0);
   const steps = ALGO_ROBOT_COPY.activationSteps;
@@ -16,14 +23,17 @@ export function EngineBootSequence({ enabled, reduceMotion }: BootSequenceProps)
   useEffect(() => {
     if (!enabled) return;
     const onceKey = "chartmate_robot_boot_seen";
-    if (sessionStorage.getItem(onceKey) === "1") return;
+    if (persistOncePerSession && sessionStorage.getItem(onceKey) === "1") return;
     setVisible(true);
     void trackRobotMetric("boot_seen");
 
     if (reduceMotion) {
       const t = window.setTimeout(() => {
-        sessionStorage.setItem(onceKey, "1");
+        if (persistOncePerSession) {
+          sessionStorage.setItem(onceKey, "1");
+        }
         setVisible(false);
+        onComplete?.();
       }, 900);
       return () => window.clearTimeout(t);
     }
@@ -32,14 +42,17 @@ export function EngineBootSequence({ enabled, reduceMotion }: BootSequenceProps)
       setStep((s) => Math.min(s + 1, steps.length - 1));
     }, 520);
     const finish = window.setTimeout(() => {
-      sessionStorage.setItem(onceKey, "1");
+      if (persistOncePerSession) {
+        sessionStorage.setItem(onceKey, "1");
+      }
       setVisible(false);
+      onComplete?.();
     }, 3600);
     return () => {
       window.clearInterval(id);
       window.clearTimeout(finish);
     };
-  }, [enabled, reduceMotion, steps.length]);
+  }, [enabled, reduceMotion, persistOncePerSession, steps.length, onComplete]);
 
   if (!visible) return null;
   const progress = Math.round(((step + 1) / steps.length) * 100);

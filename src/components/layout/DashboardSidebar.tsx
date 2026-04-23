@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 import { useSignupProfile } from "@/hooks/useSignupProfile";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useTrialAccess } from "@/hooks/useTrialAccess";
+import { EngineBootSequence } from "@/components/trading/AlgoRobotExperienceLayer";
 
 export interface DashboardSidebarProps {
   className?: string;
@@ -98,15 +99,15 @@ function useDashboardNavLinks(): DashboardNavLink[] {
     if (hasAlgoAccess) {
       if (canUseAlgoTools) {
         next.push({
-          to: "/trading-dashboard",
-          label: "Algo & Options",
+          to: "https://algo.tradingsmart.in/dashboard",
+          label: "Algo Trading Engine",
           icon: Bot,
           iconColor: "text-primary opacity-80",
         });
       } else {
         next.push({
           to: "/algo-setup",
-          label: "Algo & Options",
+          label: "Algo Trading Engine",
           icon: Bot,
           iconColor: "text-primary opacity-80",
         });
@@ -121,7 +122,7 @@ function useDashboardNavLinks(): DashboardNavLink[] {
     } else {
       next.push({
         to: "/pricing?feature=algo",
-        label: "Algo & Options",
+        label: "Algo Trading Engine",
         icon: Bot,
         iconColor: "text-primary opacity-80",
         locked: true,
@@ -171,6 +172,8 @@ export function DashboardSidebar({
   const { displayName } = useSignupProfile();
   const links = useDashboardNavLinks();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [bootSequenceRun, setBootSequenceRun] = useState(0);
+  const pendingAlgoRedirectRef = useRef<string | null>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
 
   const userEmail = user?.email;
@@ -199,8 +202,40 @@ export function DashboardSidebar({
     }
   };
 
+  const handleNavLinkClick = (to: string): boolean => {
+    let targetUrl: URL;
+    try {
+      targetUrl = new URL(to);
+    } catch {
+      return false;
+    }
+
+    const isAlgoEngineHost = targetUrl.hostname === "algo.tradingsmart.in";
+    if (!isAlgoEngineHost) {
+      return false;
+    }
+
+    pendingAlgoRedirectRef.current = to;
+    setBootSequenceRun((count) => count + 1);
+    return true;
+  };
+
+  const handleBootSequenceComplete = () => {
+    const redirectUrl = pendingAlgoRedirectRef.current;
+    if (!redirectUrl) return;
+    pendingAlgoRedirectRef.current = null;
+    window.location.assign(redirectUrl);
+  };
+
   return (
     <>
+      <EngineBootSequence
+        key={bootSequenceRun}
+        enabled={bootSequenceRun > 0}
+        reduceMotion={false}
+        persistOncePerSession={false}
+        onComplete={handleBootSequenceComplete}
+      />
       <aside
         className={cn(
           "shrink-0 border-r border-sidebar-border bg-sidebar flex-col h-full hidden lg:flex",
@@ -233,6 +268,12 @@ export function DashboardSidebar({
                     key={link.label}
                     to={link.to}
                     title={link.locked ? "Upgrade to unlock" : undefined}
+                    onClick={(e) => {
+                      const handled = handleNavLinkClick(link.to);
+                      if (handled) {
+                        e.preventDefault();
+                      }
+                    }}
                     className={cn(
                       "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors border-l-[3px]",
                       link.locked && "opacity-75",
@@ -322,6 +363,7 @@ export function DashboardSidebar({
         open={isMobileMenuOpen}
         onClose={closeMobileMenu}
         links={links}
+        onNavLinkClick={handleNavLinkClick}
         userEmail={userEmail}
         profileDisplayName={displayName}
         onSignOut={signOut}
