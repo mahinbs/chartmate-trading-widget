@@ -224,8 +224,10 @@ function AppChatbots() {
   const { user } = useAuth();
   const { pathname, hash } = useLocation();
   const [predictionOpen, setPredictionOpen] = useState(false);
+  const hideChatOnAlgoSetup = pathname === "/algo-setup";
 
-  const showPredictionChatbot = !!user && isLoggedInAppPath(pathname);
+  const showPredictionChatbot =
+    !!user && isLoggedInAppPath(pathname) && !hideChatOnAlgoSetup;
   const isTrialDemoExperience =
     pathname === "/1414ghgh" ||
     pathname.startsWith("/demo/") ||

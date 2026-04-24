@@ -97,3 +97,11 @@ verify_jwt = false
 
 [functions.admin-strategy-dev-requests]
 verify_jwt = false
+
+# Browser (localhost + prod) calls POST with Authorization; OPTIONS preflight has no user JWT.
+# Reject/Provision enforce super_admin inside the function.
+[functions.admin-reject-algo]
+verify_jwt = false
+
+[functions.admin-provision-algo]
+verify_jwt = false

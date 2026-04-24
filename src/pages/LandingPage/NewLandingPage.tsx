@@ -1,4 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { TradingSmartPricingMatrix } from "@/components/landingpage/TradingSmartPricingMatrix";
+import { useAuth } from "@/hooks/useAuth";
 import landingPageRaw from "./landing.html?raw";
 
 const bodyMatch    = landingPageRaw.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
@@ -24,6 +27,7 @@ function parseAttr(attrs: string, name: string): string | null {
 
 const NewLandingPage = () => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const { user } = useAuth();
 
   useEffect(() => {
     const head     = document.head;
@@ -143,12 +147,38 @@ const NewLandingPage = () => {
     };
   }, []);
 
+  const [pricingRoot, setPricingRoot] = useState<Element | null>(null);
+
+  // After HTML is injected, find the placeholder and portal the React pricing matrix into it.
+  useEffect(() => {
+    const el = containerRef.current?.querySelector("#ts-pricing-react-root");
+    if (el) setPricingRoot(el);
+  }, []);
+
+  useEffect(() => {
+    const cta = containerRef.current?.querySelector(".nav-cta");
+    if (!cta) return;
+    if (user?.id) {
+      cta.innerHTML = `
+        <a href="/home" class="btn btn-primary" target="_top">Dashboard</a>
+      `;
+      return;
+    }
+    cta.innerHTML = `
+      <a href="/auth" class="btn btn-ghost" target="_top">Sign in</a>
+      <a href="/auth" class="btn btn-primary" target="_top">Get started →</a>
+    `;
+  }, [user?.id]);
+
   return (
-    <div
-      ref={containerRef}
-      className="tradingsmart-landing"
-      dangerouslySetInnerHTML={{ __html: BODY_HTML }}
-    />
+    <>
+      <div
+        ref={containerRef}
+        className="tradingsmart-landing"
+        dangerouslySetInnerHTML={{ __html: BODY_HTML }}
+      />
+      {pricingRoot && createPortal(<TradingSmartPricingMatrix />, pricingRoot)}
+    </>
   );
 };
 

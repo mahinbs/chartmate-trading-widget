@@ -64,21 +64,9 @@ export function TradingDashboardAccessGate({
       const planId = (row?.plan_id as string) ?? null;
 
       if (!subActive) {
-        // Expired 14-day Pro DB trial: do not fall back to the 48h demo; gate + pricing redirect only.
+        // Free / trial (no paid sub): algo trading is locked; subscribe to unlock.
         if (row?.status === "pro_trial") {
           setStatus({ loading: false, provisioned: false, broker: null, redirectTo: "/pricing" });
-          return;
-        }
-        const { data: trialRow } = await (supabase as any)
-          .from("trial_access")
-          .select("status, end_at")
-          .eq("user_id", user.id)
-          .maybeSingle();
-        const trialEnd = trialRow?.end_at ? new Date(trialRow.end_at).getTime() : 0;
-        const trialActive =
-          trialRow?.status === "active" && trialEnd > Date.now();
-        if (trialActive) {
-          setStatus({ loading: false, provisioned: true, broker: null, redirectTo: null });
           return;
         }
         setStatus({ loading: false, provisioned: false, broker: null, redirectTo: "/pricing" });
