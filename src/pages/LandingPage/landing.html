@@ -286,11 +286,19 @@
       backdrop-filter: blur(10px) saturate(140%);
       -webkit-backdrop-filter: blur(10px) saturate(140%);
       background: rgba(6, 9, 18, 0.82);
-      transform: translateZ(0);
-      will-change: transform;
-      contain: layout style;
       border-bottom: 1px solid transparent;
       transition: all 0.3s ease
+    }
+
+    /* Scroll-perf: promote nav to its own layer on desktop only. On mobile
+       this would trap the full-screen menu's fixed-position CTA, so scope
+       behind a min-width to keep the mobile menu layout correct. */
+    @media (min-width: 721px) {
+      .nav {
+        transform: translateZ(0);
+        will-change: transform;
+        contain: layout style;
+      }
     }
 
     .nav.scrolled {
@@ -2368,6 +2376,22 @@
       background: linear-gradient(180deg, rgba(17, 27, 48, 0.7), rgba(10, 15, 28, 0.7));
       border: 1px solid var(--border);
       transition: all 0.3s
+    }
+
+    /* Ghost CTAs inside pricing cards need more contrast than the nav's
+       ghost style — the card background is nearly the same tone as the
+       default border, making the button look non-interactive. */
+    .price-card .btn-ghost {
+      border-color: rgba(20, 184, 166, 0.55);
+      background: rgba(20, 184, 166, 0.06);
+      color: var(--fg-0);
+      padding: 14px 22px;
+    }
+
+    .price-card .btn-ghost:hover {
+      background: rgba(20, 184, 166, 0.16);
+      border-color: var(--cy);
+      color: #fff;
     }
 
     .price-card.popular {
