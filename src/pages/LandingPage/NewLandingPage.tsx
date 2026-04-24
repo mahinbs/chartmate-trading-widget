@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { TradingSmartPricingMatrix } from "@/components/landingpage/TradingSmartPricingMatrix";
 import { useAuth } from "@/hooks/useAuth";
+import { applyInrToEmbeddedLandingPricing } from "@/lib/applyInrToEmbeddedLandingPricing";
 import landingPageRaw from "./landing.html?raw";
 
 const bodyMatch    = landingPageRaw.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
@@ -169,6 +170,11 @@ const NewLandingPage = () => {
       <a href="/auth" class="btn btn-primary" target="_top">Get started →</a>
     `;
   }, [user?.id]);
+
+  useEffect(() => {
+    // landing.html contains static USD markup; patch to INR for Indian users.
+    void applyInrToEmbeddedLandingPricing(containerRef.current);
+  }, []);
 
   return (
     <>

@@ -16,6 +16,10 @@ export function currencyFromQuery(): CurrencyMode | null {
  * India uses IANA zone "Asia/Kolkata" (older: "Asia/Calcutta").
  */
 export function inferIndiaFromClient(): boolean {
+  const offsetMinutes = new Date().getTimezoneOffset();
+  // IST is UTC+5:30 -> getTimezoneOffset() = -330
+  if (offsetMinutes === -330) return true;
+
   if (typeof Intl !== "undefined") {
     try {
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
