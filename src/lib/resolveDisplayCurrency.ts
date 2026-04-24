@@ -78,11 +78,8 @@ export async function resolveCountryCodeFromIp(): Promise<string | null> {
 export async function resolveDisplayCurrency(): Promise<CurrencyMode> {
   const q = currencyFromQuery();
   if (q) return q;
-  const clientIndia = inferIndiaFromClient();
   const cc = await resolveCountryCodeFromIp();
-  if (cc === "IN") return "INR";
-  // Prefer strong client signals for Indian users even if IP geo is wrong (VPN/CDN/proxy cases).
-  if (clientIndia) return "INR";
-  if (cc) return "USD";
+  if (cc) return cc === "IN" ? "INR" : "USD";
+  // Unknown geo: prefer safe global default to avoid mislabeling non-India users as INR.
   return "USD";
 }

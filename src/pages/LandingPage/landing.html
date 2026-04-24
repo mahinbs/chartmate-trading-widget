@@ -4634,36 +4634,9 @@
         return value.toFixed(6).replace(/0+$/, '').replace(/\.$/, '');
       }
 
-      async function loadLiveTickers() {
-        const symbols = symbolConfig.map((item) => item.symbol).join(',');
-        const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols)}`;
-        const resp = await fetch(url, { cache: 'no-store' });
-        if (!resp.ok) throw new Error(`Ticker API failed: ${resp.status}`);
-        const data = await resp.json();
-        const result = (data && data.quoteResponse && Array.isArray(data.quoteResponse.result)) ? data.quoteResponse.result : [];
-        if (!result.length) throw new Error('Ticker API returned no symbols');
-
-        const bySymbol = new Map(result.map((row) => [row.symbol, row]));
-        const tickers = symbolConfig.map((cfg) => {
-          const row = bySymbol.get(cfg.symbol) || {};
-          const price = Number(row.regularMarketPrice);
-          const pct = Number(row.regularMarketChangePercent);
-          const up = Number.isFinite(pct) ? pct >= 0 : true;
-          const pctText = Number.isFinite(pct) ? `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%` : '+0.00%';
-          return {
-            s: cfg.label,
-            p: formatPrice(price),
-            c: pctText,
-            u: up ? 1 : 0
-          };
-        });
-
-        renderTickers(tickers);
-      }
-
       renderTickers(fallbackTickers);
-      loadLiveTickers().catch(() => { });
-      window.setInterval(() => { loadLiveTickers().catch(() => { }); }, 15000);
+      // Keep static fallback tickers on landing.
+      // Browser-side Yahoo quote endpoint is CORS-restricted and causes console errors.
     })();
 
     // ═══ BROKER MARQUEE ═══

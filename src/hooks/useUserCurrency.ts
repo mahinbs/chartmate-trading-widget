@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import {
   type CurrencyMode,
   currencyFromQuery,
-  inferIndiaFromClient,
   resolveDisplayCurrency,
 } from "@/lib/resolveDisplayCurrency";
 
@@ -14,13 +13,12 @@ export type { CurrencyMode };
  */
 export function useUserCurrency(): { currency: CurrencyMode; countryCode: string; loading: boolean } {
   const fromQuery = typeof window !== "undefined" ? currencyFromQuery() : null;
-  const clientIndia = inferIndiaFromClient();
 
   const [currency, setCurrency] = useState<CurrencyMode>(
-    fromQuery ?? (clientIndia ? "INR" : "USD"),
+    fromQuery ?? "USD",
   );
   const [countryCode, setCountryCode] = useState(
-    fromQuery === "INR" ? "IN" : fromQuery === "USD" ? "" : clientIndia ? "IN" : "",
+    fromQuery === "INR" ? "IN" : "",
   );
   const [loading, setLoading] = useState(fromQuery == null);
 
