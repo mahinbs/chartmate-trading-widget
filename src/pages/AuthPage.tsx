@@ -845,7 +845,8 @@ const AuthPage = () => {
       // Ignore storage failures.
     }
     setAuthPhase("tabs");
-    navigate("/schedule-call?new_user=1", { replace: true });
+    if (isMobile) navigate("/trading-dashboard?tab=options", { replace: true });
+    else navigate("/home", { replace: true });
   };
 
   const handleSelectBatchAfterSignup = async () => {
