@@ -3,7 +3,12 @@ import { createPortal } from "react-dom";
 import { TradingSmartPricingMatrix } from "@/components/landingpage/TradingSmartPricingMatrix";
 import { useAuth } from "@/hooks/useAuth";
 import { applyInrToEmbeddedLandingPricing } from "@/lib/applyInrToEmbeddedLandingPricing";
+import { PRICING_PLANS } from "@/constants/pricing";
+import { premiumPlanCheckoutUrls } from "@/lib/premiumCheckoutUrls";
+import { createCheckoutSession } from "@/services/stripeService";
 import landingPageRaw from "./landing.html?raw";
+
+const VALID_PREMIUM_PLANS = new Set(PRICING_PLANS.map((p) => p.id));
 
 const bodyMatch    = landingPageRaw.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
 const headMatch    = landingPageRaw.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
@@ -175,6 +180,45 @@ const NewLandingPage = () => {
     // landing.html contains static USD markup; patch to INR for Indian users.
     void applyInrToEmbeddedLandingPricing(containerRef.current);
   }, []);
+
+  // When a signed-in user clicks a pricing CTA, skip the /auth round-trip
+  // and go straight to Stripe. Without this, the user sees a flash of the
+  // signin page while AuthPage's own post-auth effect races to redirect.
+  useEffect(() => {
+    const root = containerRef.current;
+    if (!root || !user?.id) return;
+
+    const handler = async (e: MouseEvent) => {
+      const target = e.target instanceof Element ? e.target.closest("a[href*=\"subscribe_plan=\"]") : null;
+      if (!(target instanceof HTMLAnchorElement)) return;
+      // Let modified clicks (cmd/ctrl/middle/shift) open normally.
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+
+      const url = new URL(target.href, window.location.origin);
+      const plan = url.searchParams.get("subscribe_plan")?.trim() ?? "";
+      if (!plan || !VALID_PREMIUM_PLANS.has(plan)) return;
+
+      e.preventDefault();
+      const currencyParam = (url.searchParams.get("currency") ?? "").toUpperCase();
+      const currency = currencyParam === "INR" ? "inr" : undefined;
+      const { success_url, cancel_url } = premiumPlanCheckoutUrls(plan);
+      const result = await createCheckoutSession({
+        plan_id: plan,
+        success_url,
+        cancel_url,
+        ...(currency ? { currency } : {}),
+      });
+      if ("url" in result && result.url) {
+        window.location.href = result.url;
+        return;
+      }
+      // Fall back to the auth flow so the toast + retry logic there can surface the error.
+      window.location.href = target.href;
+    };
+
+    root.addEventListener("click", handler);
+    return () => root.removeEventListener("click", handler);
+  }, [user?.id]);
 
   return (
     <>
