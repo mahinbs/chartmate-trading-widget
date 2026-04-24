@@ -13,6 +13,7 @@ import {
   type PublicDashboardAffiliateSeed,
 } from "@/lib/publicDashboardAffiliateStorage";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { WEBINAR_BATCH_DEFINITIONS } from "@/constants/webinarBatches";
 
 const CHART_TYPES = ["area", "line", "bar"] as const;
 type ChartType = (typeof CHART_TYPES)[number];
@@ -25,6 +26,18 @@ interface Subscriber {
   email: string | null;
   payment_id: string | null;
   subscribed_at: string;
+}
+
+interface SlotBookingRow {
+  id: string;
+  full_name: string;
+  email: string;
+  phone: string;
+  batch_code: string;
+  batch_name: string;
+  slot_time: string;
+  created_at: string;
+  status: string;
 }
 
 interface ChartPoint { date: string; value: number }
@@ -202,6 +215,46 @@ function countryFlag(country: string): string {
   return "";
 }
 
+type BatchPatternRow = {
+  weekday?: number;
+  hourIST?: number;
+  minuteIST?: number;
+  durationMinutes?: number;
+};
+
+const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function fmtISTTime(hour: number, minute: number): string {
+  const h12 = ((hour + 11) % 12) + 1;
+  const suffix = hour >= 12 ? "PM" : "AM";
+  return `${h12}:${String(minute).padStart(2, "0")} ${suffix}`;
+}
+
+function deriveSlotTimeFromPattern(pattern: unknown): string | null {
+  if (!Array.isArray(pattern) || pattern.length === 0) return null;
+  const rows = pattern as BatchPatternRow[];
+  const valid = rows.filter(
+    (r) =>
+      Number.isFinite(r.weekday) &&
+      Number.isFinite(r.hourIST) &&
+      Number.isFinite(r.minuteIST) &&
+      Number.isFinite(r.durationMinutes),
+  );
+  if (!valid.length) return null;
+  const first = valid[0];
+  const startHour = Number(first.hourIST);
+  const startMinute = Number(first.minuteIST);
+  const duration = Number(first.durationMinutes);
+  const endMins = startHour * 60 + startMinute + duration;
+  const endHour = Math.floor((endMins % (24 * 60)) / 60);
+  const endMinute = endMins % 60;
+  const days = Array.from(
+    new Set(valid.map((r) => WEEKDAY_SHORT[Number(r.weekday)]).filter(Boolean)),
+  );
+  if (!days.length) return null;
+  return `${days.join(" / ")} - ${fmtISTTime(startHour, startMinute)} to ${fmtISTTime(endHour, endMinute)} IST`;
+}
+
 export default function AdminPublicDashboardPage() {
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [loading, setLoading] = useState(true);
@@ -220,6 +273,8 @@ export default function AdminPublicDashboardPage() {
   const [newSub, setNewSub] = useState({ name: "", country: "", email: "", payment_id: "", subscribed_at: "" });
   const [editingSub, setEditingSub] = useState<Subscriber | null>(null);
   const [editForm, setEditForm] = useState({ name: "", country: "", email: "", payment_id: "", subscribed_at: "" });
+  const [slotBookings, setSlotBookings] = useState<SlotBookingRow[]>([]);
+  const [slotLoading, setSlotLoading] = useState(true);
 
   const [customAffiliates, setCustomAffiliates] = useState<PublicDashboardAffiliateSeed[]>([]);
   const [affLoading, setAffLoading] = useState(true);
@@ -390,6 +445,53 @@ export default function AdminPublicDashboardPage() {
   };
 
   useEffect(() => { loadSubscribers(); }, []);
+
+  const loadSlotBookings = async () => {
+    try {
+      setSlotLoading(true);
+      const [{ data: registrations, error: regErr }, { data: batches, error: batchErr }] = await Promise.all([
+        (supabase as any)
+          .from("webinar_registrations")
+          .select("id,full_name,email,phone,batch_code,created_at,status")
+          .order("created_at", { ascending: false })
+          .limit(20),
+        (supabase as any)
+          .from("webinar_batches")
+          .select("code,name,session_pattern_json"),
+      ]);
+      if (regErr) throw regErr;
+      if (batchErr) throw batchErr;
+      const fallbackSlotByCode = new Map(
+        WEBINAR_BATCH_DEFINITIONS.map((b) => [b.code, b.tagline] as const),
+      );
+      const batchMetaByCode = new Map(
+        (
+          (batches as Array<{ code: string; name: string; session_pattern_json?: unknown }> | null) ?? []
+        ).map((b) => [
+          b.code,
+          {
+            name: b.name,
+            slot:
+              deriveSlotTimeFromPattern(b.session_pattern_json) ??
+              fallbackSlotByCode.get(b.code) ??
+              "Time not set",
+          },
+        ] as const),
+      );
+      const rows = (((registrations as SlotBookingRow[] | null) ?? []).map((r) => ({
+        ...r,
+        batch_name: batchMetaByCode.get(r.batch_code)?.name ?? r.batch_code,
+        slot_time: batchMetaByCode.get(r.batch_code)?.slot ?? fallbackSlotByCode.get(r.batch_code) ?? "Time not set",
+      })));
+      setSlotBookings(rows);
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to load slot bookings");
+    } finally {
+      setSlotLoading(false);
+    }
+  };
+
+  useEffect(() => { loadSlotBookings(); }, []);
 
   const addSubscriber = async () => {
     if (!newSub.name.trim() || !newSub.country.trim()) {
@@ -573,6 +675,76 @@ export default function AdminPublicDashboardPage() {
 
   return (
     <div className="space-y-8">
+      <Card className="glass-panel border-white/10">
+        <CardHeader>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <CardTitle className="text-xl text-white flex items-center gap-2">
+                <Users className="h-5 w-5 text-primary" />
+                Recent Webinar Slot Bookings
+              </CardTitle>
+              <CardDescription className="text-zinc-400 mt-1">
+                Latest users who selected a webinar batch during signup.
+              </CardDescription>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-white/20 text-zinc-300 hover:bg-white/10"
+              onClick={loadSlotBookings}
+              disabled={slotLoading}
+            >
+              {slotLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Refresh"}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {slotLoading ? (
+            <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin mr-2 text-primary" /> Loading slot bookings…
+            </div>
+          ) : slotBookings.length === 0 ? (
+            <div className="text-center py-8 text-sm text-zinc-500 border border-dashed border-white/10 rounded-xl bg-white/[0.02]">
+              No slot bookings found yet.
+            </div>
+          ) : (
+            <div className="rounded-xl border border-white/10 overflow-hidden bg-zinc-950/30">
+              <Table>
+                <TableHeader className="bg-white/5">
+                  <TableRow className="border-white/10 hover:bg-transparent">
+                    <TableHead className="text-zinc-400 font-medium text-xs">User</TableHead>
+                    <TableHead className="text-zinc-400 font-medium text-xs">Email</TableHead>
+                    <TableHead className="text-zinc-400 font-medium text-xs">Phone</TableHead>
+                    <TableHead className="text-zinc-400 font-medium text-xs">Batch</TableHead>
+                    <TableHead className="text-zinc-400 font-medium text-xs">Slot Time</TableHead>
+                    <TableHead className="text-zinc-400 font-medium text-xs">Status</TableHead>
+                    <TableHead className="text-zinc-400 font-medium text-xs">Booked At</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {slotBookings.map((row) => (
+                    <TableRow key={row.id} className="border-white/5 hover:bg-white/5 transition-colors">
+                      <TableCell className="text-sm text-white">{row.full_name}</TableCell>
+                      <TableCell className="text-xs text-zinc-300">{row.email}</TableCell>
+                      <TableCell className="text-xs text-zinc-400">{row.phone}</TableCell>
+                      <TableCell className="text-xs text-zinc-300">
+                        <div>{row.batch_name}</div>
+                        <div className="text-[10px] text-zinc-500">{row.batch_code}</div>
+                      </TableCell>
+                      <TableCell className="text-xs text-zinc-400">{row.slot_time}</TableCell>
+                      <TableCell className="text-xs text-zinc-400">{row.status}</TableCell>
+                      <TableCell className="text-xs text-zinc-400">
+                        {new Date(row.created_at).toLocaleString()}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Metrics List Card */}
       <Card className="glass-panel border-white/10">
         <CardHeader>
