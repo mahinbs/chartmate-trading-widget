@@ -39,6 +39,7 @@ interface WebinarRegistrationRow {
   email: string;
   phone: string;
   batch_code: string;
+  batch_name?: string;
   source: string;
   created_at: string;
   status: string;
@@ -142,7 +143,15 @@ export default function AdminContactsPage() {
       ]);
 
       setWebinarBatches((batches ?? []) as WebinarBatchRow[]);
-      setWebinarRegistrations((registrations ?? []) as WebinarRegistrationRow[]);
+      const batchNameByCode = new Map(
+        ((batches ?? []) as WebinarBatchRow[]).map((b) => [b.code, b.name] as const),
+      );
+      setWebinarRegistrations(
+        ((registrations ?? []) as WebinarRegistrationRow[]).map((row) => ({
+          ...row,
+          batch_name: batchNameByCode.get(row.batch_code) ?? row.batch_code,
+        })),
+      );
 
       const [
         landingViewsRes,
@@ -671,7 +680,10 @@ export default function AdminContactsPage() {
                   <TableCell className="font-medium text-zinc-300 whitespace-nowrap">{r.full_name}</TableCell>
                   <TableCell className="text-zinc-400 text-sm">{r.email}</TableCell>
                   <TableCell className="text-zinc-400 text-sm whitespace-nowrap">{r.phone}</TableCell>
-                  <TableCell className="text-zinc-400 text-xs">{r.batch_code}</TableCell>
+                  <TableCell className="text-zinc-400 text-xs">
+                    <div>{r.batch_name ?? r.batch_code}</div>
+                    <div className="text-[10px] text-zinc-500">{r.batch_code}</div>
+                  </TableCell>
                   <TableCell>
                     <Badge variant="outline" className="border-teal-500/40 text-teal-400 text-xs">
                       {r.status}

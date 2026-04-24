@@ -204,7 +204,7 @@ const AuthPage = () => {
   };
 
   const signUpAge = useMemo(
-    () => computeAgeFromIsoDate(signUpData.dateOfBirth),
+    () => (signUpData.dateOfBirth ? computeAgeFromIsoDate(signUpData.dateOfBirth) : null),
     [signUpData.dateOfBirth],
   );
 
@@ -489,39 +489,32 @@ const AuthPage = () => {
       return;
     }
 
-    if (!signUpData.dateOfBirth) {
-      toast({
-        title: "Date of birth required",
-        description: "Please select your date of birth.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const age = computeAgeFromIsoDate(signUpData.dateOfBirth);
-    if (age == null) {
-      toast({
-        title: "Invalid date of birth",
-        description: "Use a valid calendar date.",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (age < 13) {
-      toast({
-        title: "Age requirement",
-        description: "You must be at least 13 years old to create an account.",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (age > 120) {
-      toast({
-        title: "Invalid date of birth",
-        description: "Please check the year you entered.",
-        variant: "destructive",
-      });
-      return;
+    if (signUpData.dateOfBirth) {
+      const age = computeAgeFromIsoDate(signUpData.dateOfBirth);
+      if (age == null) {
+        toast({
+          title: "Invalid date of birth",
+          description: "Use a valid calendar date.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (age < 13) {
+        toast({
+          title: "Age requirement",
+          description: "You must be at least 13 years old to create an account.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (age > 120) {
+        toast({
+          title: "Invalid date of birth",
+          description: "Please check the year you entered.",
+          variant: "destructive",
+        });
+        return;
+      }
     }
 
     if (signUpData.password !== signUpData.confirmPassword) {
@@ -572,7 +565,7 @@ const AuthPage = () => {
       const { affiliateId, referralCode } = getSessionAffiliateAttribution();
       const profile: PendingSignupContext["profile"] = {
         full_name: name,
-        date_of_birth: signUpData.dateOfBirth,
+        date_of_birth: signUpData.dateOfBirth || "1970-01-01",
         phone: phoneE164,
         country: signUpData.country,
         affiliate_id: affiliateId,
@@ -1267,13 +1260,12 @@ const AuthPage = () => {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="signup-dob" className="text-[10px] font-semibold uppercase tracking-[2.5px] text-slate-400">Date of birth</Label>
+                  <Label htmlFor="signup-dob" className="text-[10px] font-semibold uppercase tracking-[2.5px] text-slate-400">Date of birth (optional)</Label>
                   <Input
                     id="signup-dob"
                     type="date"
                     value={signUpData.dateOfBirth}
                     onChange={(e) => setSignUpData({ ...signUpData, dateOfBirth: e.target.value })}
-                    required
                     className="h-11 border border-cyan-200/10 bg-[#040c1f] text-slate-100 focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-400/20"
                   />
                   {signUpAge != null && (
