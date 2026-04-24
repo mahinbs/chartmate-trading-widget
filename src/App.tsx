@@ -105,6 +105,7 @@ function isPublicMarketingPath(pathname: string): boolean {
     "/rsb-fintech-founder",
     "/dsn-fintech-founder",
     "/contact-us",
+    "/schedule-call",
     "/white-label",
     "/terms",
     "/risk-disclaimer",
@@ -388,6 +389,7 @@ const App = () => (
                   }
                 />
                 <Route path="/contact-us" element={<ContactUsPage />} />
+                <Route path="/schedule-call" element={<ContactUsPage mode="demo" />} />
                 <Route
                   path="/subscription"
                   element={

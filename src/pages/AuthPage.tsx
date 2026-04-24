@@ -246,7 +246,6 @@ const AuthPage = () => {
   useEffect(() => {
     const routeAfterLogin = async () => {
       if (roleLoading || !user) return;
-      if (authPhase === "signup-success") return;
       if ((user as any).user_metadata?.need_password_reset) {
         navigate("/auth/change-password", { replace: true });
         return;
@@ -254,6 +253,12 @@ const AuthPage = () => {
 
       const plan = searchParams.get("subscribe_plan")?.trim() ?? "";
       const proTrialIntent = searchParams.get("pro_trial") === "1";
+      const currencyParam = (searchParams.get("currency") ?? "").toUpperCase();
+      const checkoutCurrency = currencyParam === "INR" ? "inr" : undefined;
+      const hasCheckoutIntent =
+        (proTrialIntent && plan === "professionalPlan") ||
+        (Boolean(plan) && VALID_PREMIUM_CHECKOUT_PLANS.has(plan));
+      if (authPhase === "signup-success" && !hasCheckoutIntent) return;
       if (proTrialIntent && plan === "professionalPlan" && role === "user") {
         if (postAuthCheckoutStartedRef.current) return;
         postAuthCheckoutStartedRef.current = true;
@@ -279,6 +284,7 @@ const AuthPage = () => {
           plan_id: plan,
           success_url,
           cancel_url,
+          ...(checkoutCurrency ? { currency: checkoutCurrency } : {}),
         });
         if ("error" in result) {
           postAuthCheckoutStartedRef.current = false;
@@ -649,6 +655,11 @@ const AuthPage = () => {
       }
       if (data.session) {
         toast({ title: "Email verified", description: "You're signed in." });
+        const plan = searchParams.get("subscribe_plan")?.trim() ?? "";
+        const proTrialIntent = searchParams.get("pro_trial") === "1";
+        const hasCheckoutIntent =
+          (proTrialIntent && plan === "professionalPlan") ||
+          VALID_PREMIUM_CHECKOUT_PLANS.has(plan);
         try {
           localStorage.setItem("pending_signup_complete", "1");
           const sourcePage = new URLSearchParams(window.location.search).get("entry");
@@ -660,7 +671,7 @@ const AuthPage = () => {
         } catch {
           // Ignore storage failures.
         }
-        setAuthPhase("signup-success");
+        setAuthPhase(hasCheckoutIntent ? "tabs" : "signup-success");
         setSignUpOtp("");
         setPendingSignupContext(null);
       }
@@ -841,8 +852,7 @@ const AuthPage = () => {
       // Ignore storage failures.
     }
     setAuthPhase("tabs");
-    if (isMobile) navigate("/trading-dashboard?tab=options", { replace: true });
-    else navigate("/home", { replace: true });
+    navigate("/schedule-call?new_user=1", { replace: true });
   };
 
   const handleSelectBatchAfterSignup = async () => {

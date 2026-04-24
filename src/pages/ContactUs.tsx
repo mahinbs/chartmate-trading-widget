@@ -2,9 +2,11 @@ import React, { useState, useEffect } from "react";
 import { Helmet } from "react-helmet-async";
 import Layout from "../components/landingpage/Layout";
 import { useForm, Controller } from "react-hook-form";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { getSessionAffiliateAttribution } from "@/hooks/useAffiliateRef";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -29,15 +31,27 @@ interface FormData {
   referral_code: string;
 }
 
-const ContactUsPage = () => {
+type ContactUsPageProps = {
+  mode?: "contact" | "demo";
+};
+
+const ContactUsPage = ({ mode = "contact" }: ContactUsPageProps) => {
+  const isDemoMode = mode === "demo";
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { user } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitSuccess, setIsSubmitSuccess] = useState(false);
+  const [showNewUserPrompt, setShowNewUserPrompt] = useState(
+    isDemoMode && searchParams.get("new_user") === "1",
+  );
 
   const {
     register,
     handleSubmit,
     control,
     reset,
+    getValues,
     formState: { errors },
   } = useForm<FormData>({
     defaultValues: {
@@ -45,10 +59,25 @@ const ContactUsPage = () => {
       email: "",
       phone: "",
       message: "",
-      plan: "",
+      plan: isDemoMode ? "professionalPlan" : "",
       referral_code: "",
     },
   });
+
+  useEffect(() => {
+    if (!user) return;
+    const current = getValues();
+    const meta = (user.user_metadata as Record<string, unknown> | undefined) ?? {};
+    const fullName =
+      typeof meta.full_name === "string" && meta.full_name.trim().length > 0
+        ? meta.full_name.trim()
+        : current.name;
+    reset({
+      ...current,
+      name: fullName,
+      email: user.email ?? current.email,
+    });
+  }, [user, reset, getValues]);
 
   const handleFormSubmit = async (data: FormData) => {
     setIsSubmitting(true);
@@ -61,7 +90,8 @@ const ContactUsPage = () => {
         [INSTITUTIONAL_PLAN.id]: "Institutional - Custom",
       };
 
-      const emailBody = `Name : ${data.name}\nEmail : ${data.email}\nPhone : ${data.phone}\nInterested Plan : ${planNames[data.plan] || data.plan}\nMessage : \n ${data.message || ""}`;
+      const enquiryType = isDemoMode ? "Demo call request" : "General enquiry";
+      const emailBody = `Type : ${enquiryType}\nName : ${data.name}\nEmail : ${data.email}\nPhone : ${data.phone}\nInterested Plan : ${planNames[data.plan] || data.plan}\nMessage : \n ${data.message || ""}`;
 
       const { affiliateId } = getSessionAffiliateAttribution();
 
@@ -73,7 +103,7 @@ const ContactUsPage = () => {
             name: data.name,
             email: data.email,
             phone: data.phone,
-            description: `Plan: ${planNames[data.plan] || data.plan}\n${data.message || ""}`,
+            description: `[${enquiryType}] Plan: ${planNames[data.plan] || data.plan}\n${data.message || ""}`,
             ...(affiliateId && { affiliate_id: affiliateId }),
             ...(data.referral_code?.trim() && {
               referral_code: data.referral_code.trim(),
@@ -93,7 +123,7 @@ const ContactUsPage = () => {
           body: JSON.stringify({
             body: emailBody,
             name: "Tradingsmart.AI",
-            subject: `New Enquiry from ${data.name} - ${planNames[data.plan] || data.plan}`,
+              subject: `${isDemoMode ? "New Demo Call Request" : "New Enquiry"} from ${data.name} - ${planNames[data.plan] || data.plan}`,
             to: "partnerships@tradingsmart.ai",
           }),
         },
@@ -247,33 +277,63 @@ const ContactUsPage = () => {
           <ScrollReveal delay={0.2}>
             <div className="text-center mb-12">
               <h1 className="text-4xl md:text-5xl lg:text-7xl font-black tracking-tighter text-white mb-6 font-syne capitalize">
-                Contact <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 via-teal-500 to-sky-500">Us</span>
+                {isDemoMode ? "Book a " : "Contact "}
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 via-teal-500 to-sky-500">
+                  {isDemoMode ? "Demo Call" : "Us"}
+                </span>
               </h1>
               <p className="text-lg md:text-xl text-zinc-400 font-light max-w-2xl mx-auto font-dm-sans">
-                Fill out the form below and our team will get back to you within 24 hours to help you automate your trading strategy.
+                {isDemoMode
+                  ? "Share your details and preferred plan. Our team will schedule your demo call and get back within 24 hours."
+                  : "Fill out the form below and our team will get back to you within 24 hours to help you automate your trading strategy."}
               </p>
             </div>
           </ScrollReveal>
 
           <ScrollReveal delay={0.4}>
             <div className="bg-white/[0.03] backdrop-blur-xl p-8 md:p-14 rounded-[2.5rem] border border-white/[0.06] border-t-teal-500/40 border-t shadow-2xl relative">
-              {isSubmitSuccess ? (
+              {showNewUserPrompt ? (
+                <div className="text-center py-12">
+                  <h3 className="text-3xl font-bold text-white mb-4 font-syne">
+                    Book a Demo Call?
+                  </h3>
+                  <p className="text-zinc-400 max-w-md mx-auto mb-8 text-lg">
+                    You can book a quick onboarding demo now, or skip and continue to your dashboard.
+                  </p>
+                  <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                    <Button
+                      onClick={() => setShowNewUserPrompt(false)}
+                      className="bg-teal-500 hover:bg-teal-400 text-black px-8 h-12 rounded-xl font-bold"
+                    >
+                      Yes, book demo
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => navigate("/home")}
+                      className="px-8 h-12 rounded-xl"
+                    >
+                      Skip for now
+                    </Button>
+                  </div>
+                </div>
+              ) : isSubmitSuccess ? (
                 <div className="text-center py-12">
                   <div className="w-20 h-20 bg-teal-500/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-teal-500/20">
                     <CheckCircle2 className="w-10 h-10 text-teal-500" />
                   </div>
                   <h3 className="text-3xl font-bold text-white mb-4 font-syne">
-                    Registration Sent!
+                    {isDemoMode ? "Demo Request Sent!" : "Registration Sent!"}
                   </h3>
                   <p className="text-zinc-400 max-w-sm mx-auto mb-10 text-lg">
-                    Thank you for your interest. Our partnership team will review
-                    your request and reach out via email within 24 hours.
+                    {isDemoMode
+                      ? "Thanks. Our team will review your request and confirm a suitable demo slot by email."
+                      : "Thank you for your interest. Our partnership team will review your request and reach out via email within 24 hours."}
                   </p>
                   <Button
                     onClick={() => setIsSubmitSuccess(false)}
                     className="bg-zinc-800 hover:bg-zinc-700 text-white px-8 h-14 rounded-xl font-bold text-lg"
                   >
-                    Send Another message
+                    {isDemoMode ? "Send another request" : "Send Another message"}
                   </Button>
                 </div>
               ) : (
@@ -459,10 +519,16 @@ const ContactUsPage = () => {
                       disabled={isSubmitting}
                       className="w-full bg-teal-500 hover:bg-teal-400 text-black font-bold h-16 rounded-xl shadow-[0_0_30px_rgba(20,184,166,0.3)] transition-all disabled:opacity-50 disabled:cursor-not-allowed text-xl"
                     >
-                      {isSubmitting ? "Submitting..." : "Submit Enquiry"}
+                      {isSubmitting
+                        ? "Submitting..."
+                        : isDemoMode
+                          ? "Book Demo Call"
+                          : "Submit Enquiry"}
                     </Button>
                     <p className="text-center text-zinc-500 text-xs mt-4 font-dm-sans">
-                      Our experts will analyze your request and reply within 24 hours.
+                      {isDemoMode
+                        ? "Your request will be visible to our admin team for scheduling."
+                        : "Our experts will analyze your request and reply within 24 hours."}
                     </p>
                   </div>
                 </form>

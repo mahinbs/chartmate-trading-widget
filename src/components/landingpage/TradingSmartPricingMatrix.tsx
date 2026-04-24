@@ -260,7 +260,7 @@ export function TradingSmartPricingMatrix() {
               className="w-full font-ibm-mono text-xs uppercase tracking-wider border-teal-500/40 text-teal-400 hover:bg-teal-500/10"
               onClick={() => void subscribe("starterPlan")}
             >
-              Start Starter
+              Choose Starter
             </Button>
           }
         />
@@ -343,7 +343,7 @@ export function TradingSmartPricingMatrix() {
       </p>
       <p className="mt-2 text-center text-xs text-zinc-500 font-ibm-mono">
         {!user
-          ? "Sign up free for a 14-day Pro trial (no card), or sign in to choose a plan."
+          ? "Sign in or sign up to continue with plan selection."
           : isProPaidStripe
             ? "You have an active Pro subscription — use Subscription in the app to manage billing."
             : "Signed in — select any plan to open secure Stripe checkout."}

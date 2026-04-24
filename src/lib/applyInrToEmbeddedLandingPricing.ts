@@ -51,14 +51,14 @@ export async function applyInrToEmbeddedLandingPricing(root: HTMLElement | null)
       "Integration fee covers broker API setup, strategy deployment, and go-live validation. Monthly maintenance covers hosting, monitoring, and support. All plans include compliance-first execution controls, encrypted API vault, and a 14-day money-back guarantee. Indian customers are billed in INR. Annual billing saves 20%.";
   }
 
-  // Help Stripe checkout: Indian users from embedded CTAs
-  section.querySelectorAll<HTMLAnchorElement>('a[href="/pricing"]').forEach((a) => {
+  // Help Stripe checkout: Indian users from embedded CTA plan links.
+  section.querySelectorAll<HTMLAnchorElement>('a[href^="/auth?subscribe_plan="]').forEach((a) => {
     try {
       const u = new URL(a.href, window.location.origin);
       u.searchParams.set("currency", "INR");
       a.setAttribute("href", u.pathname + u.search);
     } catch {
-      a.href = "/pricing?currency=INR";
+      a.href = "/auth?currency=INR";
     }
   });
 }
