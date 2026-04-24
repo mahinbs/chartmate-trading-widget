@@ -15,6 +15,60 @@ export type AlgoGuidePresetId =
   | "liquidity_sweep_bos"
   | "smc_mtf_confluence";
 
+/** Matches UI `AlgoGuideParams` (subset used by edge detectors). */
+export type AlgoGuideParams = {
+  orbOpenStartMin?: number;
+  orbOpenEndMin?: number;
+  orbBreakoutAfterMin?: number;
+  orbMinRangePct?: number;
+  orbMaxRangePct?: number;
+  orbTpRangeMult?: number;
+  /** VIX gate — ORB: max (default 22) */
+  orbVixMax?: number;
+  orbRequireFiiNetBuying?: boolean;
+  orbBlockMacroEvents?: boolean;
+  orbMacroBlockWindowMin?: number;
+  emaVixMin?: number;
+  emaVixMax?: number;
+  stVixMin?: number;
+  stVixMax?: number;
+  vwapVixMin?: number;
+  lqVixMin?: number;
+  lqVixMax?: number;
+  stPeriod?: number;
+  stMult?: number;
+  stSessionStartMin?: number;
+  stSessionEndMin?: number;
+  stAtrFilterPct?: number;
+  vwapMaxTestsPerDay?: number;
+  vwapLastEntryBeforeMin?: number;
+  vwapVolLookback?: number;
+  vwapSlPctFromVwap?: number;
+  emaFastPeriod?: number;
+  emaSlowPeriod?: number;
+  emaTrendPeriod?: number;
+  emaRsiPeriod?: number;
+  emaRsiLongMin?: number;
+  emaRsiLongMax?: number;
+  emaRsiShortMin?: number;
+  emaRsiShortMax?: number;
+  emaVolMult?: number;
+  emaVolLookback?: number;
+  emaTradeStartMin?: number;
+  emaTradeEndMin?: number;
+  emaTpRiskReward?: number;
+  rsiDivPeriod?: number;
+  rsiDivPivotWidth?: number;
+  rsiDivMinSpan?: number;
+  rsiDivMaxSpan?: number;
+  rsiDivConfirmBars?: number;
+  rsiDivTp2Mult?: number;
+  lqLookback?: number;
+  lqSwingWidth?: number;
+  lqEqualZonePct?: number;
+  lqAtrPeriod?: number;
+};
+
 export function extractAlgoGuidePreset(entryConditions: unknown): AlgoGuidePresetId | null {
   if (!entryConditions || typeof entryConditions !== "object") return null;
   const p = (entryConditions as { algoGuidePreset?: string }).algoGuidePreset;
@@ -158,6 +212,124 @@ export type PresetHit = {
   };
 };
 
+/** EMA seed matches chartmate-strategy-engine `._ema` (first close seeds the series). */
+function emaSeriesEngine(close: number[], _period: number): number[] {
+  const n = close.length;
+  const out: number[] = new Array(n).fill(NaN);
+  if (n < 1) return out;
+  const k = 2 / (_period + 1);
+  let prev = close[0];
+  out[0] = prev;
+  for (let i = 1; i < n; i++) {
+    prev = close[i] * k + prev * (1 - k);
+    out[i] = prev;
+  }
+  return out;
+}
+
+/** Strategy 01 — EMA 20/50 trend crossover (port of engine.py `eval_ema_crossover`) */
+export function detectEmaCrossoverHits(
+  t: number[],
+  h: number[],
+  l: number[],
+  c: number[],
+  v: number[],
+  profile: MarketSessionProfile,
+  params: AlgoGuideParams | undefined,
+): PresetHit[] {
+  const p = params ?? {};
+  const fastN = p.emaFastPeriod ?? 20;
+  const slowN = p.emaSlowPeriod ?? 50;
+  const trendN = p.emaTrendPeriod ?? 200;
+  const rsiP = p.emaRsiPeriod ?? 14;
+  const rLongLo = p.emaRsiLongMin ?? 50;
+  const rLongHi = p.emaRsiLongMax ?? 75;
+  const rShortLo = p.emaRsiShortMin ?? 25;
+  const rShortHi = p.emaRsiShortMax ?? 50;
+  const volMult = p.emaVolMult ?? 1.5;
+  let volLb = p.emaVolLookback ?? 20;
+  volLb = Math.max(2, Math.min(100, volLb));
+  const tradeS = p.emaTradeStartMin ?? 9 * 60 + 30;
+  const tradeE = p.emaTradeEndMin ?? 14 * 60;
+  const tpRr = p.emaTpRiskReward ?? 2.5;
+
+  const n = c.length;
+  const need = Math.max(slowN + 3, fastN + 3, trendN + 3, rsiP + 5, volLb + 3);
+  if (n < need || h.length < n || l.length < n) return [];
+  if (!v.length || v.length !== n) return [];
+
+  const emaF = emaSeriesEngine(c, fastN);
+  const emaS = emaSeriesEngine(c, slowN);
+  const emaTr = emaSeriesEngine(c, trendN);
+  const rsiV = rsiArr(c, rsiP);
+
+  const volAvg = (idx: number): number => {
+    const vals: number[] = [];
+    for (let j = Math.max(0, idx - (volLb - 1)); j < idx; j++) {
+      if (v[j] != null) vals.push(v[j] || 0);
+    }
+    if (!vals.length) return 0;
+    return vals.reduce((a, b) => a + b, 0) / vals.length;
+  };
+
+  const isLiveHit = (hitIdx: number) => hitIdx >= n - 2;
+  const hits: PresetHit[] = [];
+  const _tz = profile.timeZone;
+  for (let i = n - 1; i >= Math.max(1, n - 3); i--) {
+    const tsec = t[i] ?? 0;
+    if (!tsec) continue;
+    const m = barWallClockMinutes(tsec, _tz);
+    if (m != null && !(tradeS <= m && m <= tradeE)) continue;
+    if (!isLiveHit(i)) continue;
+
+    const eFn = emaF[i];
+    const eFp = emaF[i - 1];
+    const eSn = emaS[i];
+    const eSp = emaS[i - 1];
+    const eTr = emaTr[i];
+    const rsiNow = rsiV[i];
+    if ([eFn, eFp, eSn, eSp, rsiNow].some((x) => !Number.isFinite(x))) continue;
+
+    const va = volAvg(i);
+    const volNow = v[i] || 0;
+    const volOk = va > 0 ? volNow >= va * volMult : true;
+
+    if (
+      eFp <= eSp && eFn > eSn && rLongLo < rsiNow && rsiNow < rLongHi && volOk &&
+      (!Number.isFinite(eTr) || c[i] > eTr)
+    ) {
+      const dist = c[i] - l[i];
+      const sl = l[i];
+      const tp = dist > 0 ? round2(c[i] + tpRr * dist) : round2(c[i] * (1 + 0.005 * tpRr));
+      hits.push({
+        i,
+        side: "BUY",
+        meta: { emaSl: sl, emaTp: tp, ema20: eFn, ema50: eSn } as PresetHit["meta"],
+      });
+      return hits;
+    }
+    if (
+      eFp >= eSp && eFn < eSn && rShortLo < rsiNow && rsiNow < rShortHi && volOk &&
+      (!Number.isFinite(eTr) || c[i] < eTr)
+    ) {
+      const dist = h[i] - c[i];
+      const sl = h[i];
+      const tp = dist > 0 ? round2(c[i] - tpRr * dist) : round2(c[i] * (1 - 0.005 * tpRr));
+      hits.push({
+        i,
+        side: "SELL",
+        meta: { emaSl: sl, emaTp: tp, ema20: eFn, ema50: eSn } as PresetHit["meta"],
+      });
+      return hits;
+    }
+  }
+  return hits;
+}
+
+function round2(x: number): number {
+  return Math.round(x * 100) / 100;
+}
+
 /** Toby Crabel ORB: first 15m range in local session, breakout after range ends */
 export function detectOrbHits(
   t: number[],
@@ -165,13 +337,17 @@ export function detectOrbHits(
   h: number[],
   l: number[],
   profile: MarketSessionProfile,
+  params?: AlgoGuideParams,
 ): PresetHit[] {
   const n = c.length;
   const hits: PresetHit[] = [];
   const tz = profile.timeZone;
-  const OPEN_START = profile.orbOpenStartMin;
-  const OPEN_END = profile.orbOpenEndMin;
-  const AFTER_OPEN = profile.orbBreakoutAfterMin;
+  const OPEN_START = params?.orbOpenStartMin ?? profile.orbOpenStartMin;
+  const OPEN_END = params?.orbOpenEndMin ?? profile.orbOpenEndMin;
+  const AFTER_OPEN = params?.orbBreakoutAfterMin ?? profile.orbBreakoutAfterMin;
+  const minPct = params?.orbMinRangePct ?? 0.002;
+  const maxPct = params?.orbMaxRangePct ?? 0.01;
+  const tpMultStore = params?.orbTpRangeMult ?? 1.5;
 
   const byDay = new Map<string, number[]>();
   for (let i = 0; i < n; i++) {
@@ -198,7 +374,7 @@ export function detectOrbHits(
     if (!orbOk || !Number.isFinite(orbH) || !Number.isFinite(orbL)) continue;
     const mid = (orbH + orbL) / 2;
     const rng = orbH - orbL;
-    if (mid <= 0 || rng / mid > 0.01 || rng / mid < 0.002) continue;
+    if (mid <= 0 || rng / mid > maxPct || rng / mid < minPct) continue;
 
     const after = idxs.filter((i) => {
       const m = barWallClockMinutes(t[i], tz);
@@ -219,7 +395,7 @@ export function detectOrbHits(
           i,
           side: "BUY",
           entryBarOffset: 1,
-          meta: { orbH, orbL, breakoutBar: i },
+          meta: { orbH, orbL, breakoutBar: i, orbTpRangeMult: tpMultStore },
         });
         break;
       }
@@ -232,7 +408,7 @@ export function detectOrbHits(
           i,
           side: "SELL",
           entryBarOffset: 1,
-          meta: { orbH, orbL, breakoutBar: i },
+          meta: { orbH, orbL, breakoutBar: i, orbTpRangeMult: tpMultStore },
         });
         break;
       }
@@ -247,20 +423,24 @@ export function detectSupertrendFlipHits(
   c: number[],
   t: number[],
   profile: MarketSessionProfile,
+  params?: AlgoGuideParams,
 ): PresetHit[] {
-  const { trend, line } = supertrendSeries(h, l, c, 7, 3);
-  const atr = atrSeries(h, l, c, 7);
+  const stP = params?.stPeriod ?? 7;
+  const stM = params?.stMult ?? 3;
+  const atrFilt = params?.stAtrFilterPct ?? 0.001;
+  const { trend, line } = supertrendSeries(h, l, c, stP, stM);
+  const atr = atrSeries(h, l, c, stP);
   const n = c.length;
   const hits: PresetHit[] = [];
   const tz = profile.timeZone;
-  const SESSION_END = profile.supertrendSessionEndMin;
-  const SESSION_START = profile.supertrendSessionStartMin;
+  const SESSION_END = params?.stSessionEndMin ?? profile.supertrendSessionEndMin;
+  const SESSION_START = params?.stSessionStartMin ?? profile.supertrendSessionStartMin;
   for (let i = 1; i < n; i++) {
     const m = barWallClockMinutes(t[i], tz);
     if (!profile.supertrend24h && (m == null || m < SESSION_START || m > SESSION_END)) continue;
     if (profile.supertrend24h && m == null) continue;
     const ar = atr[i];
-    if (Number.isFinite(ar) && c[i] > 0 && ar / c[i] < 0.001) continue;
+    if (Number.isFinite(ar) && c[i] > 0 && ar / c[i] < atrFilt) continue;
     if (trend[i] === 1 && trend[i - 1] === -1) {
       hits.push({ i, side: "BUY", meta: { supertrendSl: line[i] } });
     }
@@ -284,13 +464,17 @@ export function detectSupertrendDualTfHits(
   lSlow: number[],
   cSlow: number[],
   profile: MarketSessionProfile,
+  params?: AlgoGuideParams,
 ): PresetHit[] {
   if (tSlow.length < 15 || tFast.length < 15) {
-    return detectSupertrendFlipHits(hFast, lFast, cFast, tFast, profile);
+    return detectSupertrendFlipHits(hFast, lFast, cFast, tFast, profile, params);
   }
-  const { trend: trendSlow } = supertrendSeries(hSlow, lSlow, cSlow, 7, 3);
-  const { trend: trendFast, line: lineFast } = supertrendSeries(hFast, lFast, cFast, 7, 3);
-  const atrFast = atrSeries(hFast, lFast, cFast, 7);
+  const stP = params?.stPeriod ?? 7;
+  const stM = params?.stMult ?? 3;
+  const atrFilt = params?.stAtrFilterPct ?? 0.001;
+  const { trend: trendSlow } = supertrendSeries(hSlow, lSlow, cSlow, stP, stM);
+  const { trend: trendFast, line: lineFast } = supertrendSeries(hFast, lFast, cFast, stP, stM);
+  const atrFast = atrSeries(hFast, lFast, cFast, stP);
   const nF = cFast.length;
   const nS = tSlow.length;
   const slowTrendAtFast: number[] = new Array(nF).fill(0);
@@ -301,15 +485,15 @@ export function detectSupertrendDualTfHits(
   }
   const hits: PresetHit[] = [];
   const tz = profile.timeZone;
-  const SESSION_END = profile.supertrendSessionEndMin;
-  const SESSION_START = profile.supertrendSessionStartMin;
+  const SESSION_END = params?.stSessionEndMin ?? profile.supertrendSessionEndMin;
+  const SESSION_START = params?.stSessionStartMin ?? profile.supertrendSessionStartMin;
   for (let i = 1; i < nF; i++) {
     const m = barWallClockMinutes(tFast[i], tz);
     if (!profile.supertrend24h && (m == null || m < SESSION_START || m > SESSION_END)) continue;
     if (profile.supertrend24h && m == null) continue;
     const st = slowTrendAtFast[i];
     const ar = atrFast[i];
-    if (Number.isFinite(ar) && cFast[i] > 0 && ar / cFast[i] < 0.001) continue;
+    if (Number.isFinite(ar) && cFast[i] > 0 && ar / cFast[i] < atrFilt) continue;
     if (trendFast[i] === 1 && trendFast[i - 1] === -1 && st === 1) {
       hits.push({ i, side: "BUY", meta: { supertrendSl: lineFast[i] } });
     }
@@ -394,21 +578,24 @@ export function detectRsiDivergenceHits(
   c: number[],
   h: number[],
   l: number[],
-  lookback = 50,
-  window = 5,
+  params?: AlgoGuideParams,
 ): PresetHit[] {
+  const lookback = params?.rsiDivMaxSpan ?? 50;
+  const minSpan = params?.rsiDivMinSpan ?? 5;
+  const window = params?.rsiDivPivotWidth ?? 5;
+  const rsiP = params?.rsiDivPeriod ?? 14;
+  const confirmMax = params?.rsiDivConfirmBars ?? 4;
   const n = c.length;
-  const rsi = rsiArr(c, 14);
+  const rsi = rsiArr(c, rsiP);
   const macdH = macdHist(c);
   const hits: PresetHit[] = [];
   const { highs: ph, lows: pl } = findPivots(c, window);
   const { highs: rh, lows: rl } = findPivots(rsi, window);
-  const confirmMax = 4;
 
   for (let k = 1; k < pl.length; k++) {
     const i1 = pl[k - 1];
     const i2 = pl[k];
-    if (i2 - i1 < 5 || i2 - i1 > lookback) continue;
+    if (i2 - i1 < minSpan || i2 - i1 > lookback) continue;
     const r1 = rl.filter((x) => Math.abs(x - i1) <= window);
     const r2 = rl.filter((x) => Math.abs(x - i2) <= window);
     if (!r1.length || !r2.length) continue;
@@ -444,7 +631,7 @@ export function detectRsiDivergenceHits(
   for (let k = 1; k < ph.length; k++) {
     const i1 = ph[k - 1];
     const i2 = ph[k];
-    if (i2 - i1 < 5 || i2 - i1 > lookback) continue;
+    if (i2 - i1 < minSpan || i2 - i1 > lookback) continue;
     const r1 = rh.filter((x) => Math.abs(x - i1) <= window);
     const r2 = rh.filter((x) => Math.abs(x - i2) <= window);
     if (!r1.length || !r2.length) continue;
@@ -488,13 +675,16 @@ export function detectVwapBounceHits(
   c: number[],
   v: number[],
   profile: MarketSessionProfile,
-  o?: number[],
+  o: number[] | undefined,
+  params: AlgoGuideParams | undefined,
 ): PresetHit[] {
   if (!v.length || v.length !== c.length) return [];
   const n = c.length;
   const hits: PresetHit[] = [];
   const tz = profile.timeZone;
-  const vwapCutoff = profile.vwapLastEntryBeforeMin;
+  const vwapCutoff = params?.vwapLastEntryBeforeMin ?? profile.vwapLastEntryBeforeMin;
+  const maxTests = params?.vwapMaxTestsPerDay ?? 2;
+  const volLook = Math.max(2, Math.min(50, params?.vwapVolLookback ?? 10));
 
   const byDay = new Map<string, number[]>();
   for (let i = 0; i < n; i++) {
@@ -533,12 +723,12 @@ export function detectVwapBounceHits(
       touchCount[i] = touches;
     }
 
-    const volSma10 = (endIdx: number): number => {
+    const volSmaN = (endIdx: number): number => {
       const j0 = idxs.indexOf(endIdx);
       if (j0 < 0) return NaN;
       let s = 0;
       let cnt = 0;
-      for (let k = Math.max(0, j0 - 9); k <= j0; k++) {
+      for (let k = Math.max(0, j0 - (volLook - 1)); k <= j0; k++) {
         s += v[idxs[k]] || 0;
         cnt++;
       }
@@ -553,8 +743,8 @@ export function detectVwapBounceHits(
       if (vwapCutoff != null && m >= vwapCutoff) continue;
       const vw = vwap[i];
       if (!Number.isFinite(vw)) continue;
-      if (touchCount[i] > 2) continue;
-      const va = volSma10(prev);
+      if (touchCount[i] > maxTests) continue;
+      const va = volSmaN(prev);
       if (!Number.isFinite(va) || v[i] <= va) continue;
 
       const rangePrev = h[prev] - l[prev];
@@ -628,16 +818,18 @@ export function detectLiquiditySweepBosHits(
   c: number[],
   h: number[],
   l: number[],
-  lookback = 80,
-  swingWindow = 4,
-  sweepPct = 0.001,   // 0.1% beyond zone
-  clusterPct = 0.0015, // 0.15% clustering tolerance for equal highs/lows
+  params?: AlgoGuideParams,
 ): PresetHit[] {
+  const lookback = params?.lqLookback ?? 80;
+  const swingWindow = params?.lqSwingWidth ?? 4;
+  const clusterPct = params?.lqEqualZonePct ?? 0.0015;
+  const sweepPct = 0.001; // 0.1% beyond zone (spec)
   const n = c.length;
   if (n < lookback) return [];
   const hits: PresetHit[] = [];
 
-  const atr7 = atrSeries(h, l, c, 7);
+  const atrPeriod = Math.max(2, Math.min(30, params?.lqAtrPeriod ?? 7));
+  const atr7 = atrSeries(h, l, c, atrPeriod);
 
   for (let cursor = lookback; cursor < n - 1; cursor++) {
     const start = cursor - lookback;

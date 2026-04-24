@@ -13,8 +13,46 @@
  * When exit conditions are met, marks the active_trades row as completed.
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { resolveMarketSessionProfile } from "../_shared/marketSession.ts";
 import { supertrendSeries } from "../_shared/algoGuideDetectors.ts";
+import { resolveMarketSessionProfile } from "../_shared/marketSession.ts";
+import { fetchOpenAlgoHistoryCandles, OPENALGO_URL } from "../_shared/openAlgoMarketData.ts";
+
+/** When paper has no OpenAlgo key — last N days of 5m or 1h from Yahoo. */
+async function yahooIntradayOhlc(
+  yahooSymbol: string,
+  interval: "5m" | "60m",
+  lookbackSec: number,
+): Promise<{ h: number[]; l: number[]; c: number[] } | null> {
+  const period2 = Math.floor(Date.now() / 1000);
+  const period1 = period2 - lookbackSec;
+  try {
+    const url =
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?period1=${period1}&period2=${period2}&interval=${encodeURIComponent(interval)}`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0" },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const r = data?.chart?.result?.[0];
+    if (!r?.timestamp?.length) return null;
+    const q = r.indicators?.quote?.[0];
+    const tRaw = r.timestamp as number[];
+    const h: number[] = [];
+    const l: number[] = [];
+    const c: number[] = [];
+    for (let i = 0; i < tRaw.length; i++) {
+      if (q.close?.[i] == null) continue;
+      c.push(Number(q.close[i]));
+      h.push(Number(q.high?.[i] ?? q.close[i]));
+      l.push(Number(q.low?.[i] ?? q.close[i]));
+    }
+    if (c.length < 5) return null;
+    return { h, l, c };
+  } catch {
+    return null;
+  }
+}
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
 const ENTRY_DIGEST_SECRET = Deno.env.get("ENTRY_DIGEST_SECRET") ?? "";
@@ -39,66 +77,72 @@ function wallClockMinutes(timeZone) {
     return null;
   }
 }
-async function fetchCurrentPrice(symbol, exchange) {
-  try {
-    let yahooSym = symbol.toUpperCase();
-    if ((exchange === "NSE" || exchange === "BSE") && !yahooSym.endsWith(".NS") && !yahooSym.endsWith(".BO")) {
-      yahooSym += exchange === "BSE" ? ".BO" : ".NS";
+/**
+ * Last close: OpenAlgo 5m when a key is set (no Yahoo fallback);
+ * without a key, Yahoo 5m (paper, no broker).
+ */
+async function fetchCurrentPrice(
+  yahooStyleSymbol: string,
+  exchange: string,
+  apiKey: string,
+): Promise<number | null> {
+  if (apiKey && OPENALGO_URL) {
+    try {
+      const endD = new Date().toISOString().slice(0, 10);
+      const startD = new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
+      const sym = yahooStyleSymbol.replace(/\.(NS|BO)$/i, "").toUpperCase();
+      const pack = await fetchOpenAlgoHistoryCandles(
+        apiKey,
+        sym,
+        String(exchange || "NSE").toUpperCase(),
+        "5m",
+        startD,
+        endD,
+        OPENALGO_URL,
+      );
+      if (!pack?.c.length) return null;
+      return pack.c[pack.c.length - 1] ?? null;
+    } catch {
+      return null;
     }
-    const period2 = Math.floor(Date.now() / 1000);
-    const period1 = period2 - 2 * 3600;
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSym)}?period1=${period1}&period2=${period2}&interval=1m`;
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0"
-      },
-      signal: AbortSignal.timeout(10000)
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice;
-    if (price != null && Number.isFinite(Number(price))) return Number(price);
-  } catch  {}
-  return null;
+  }
+  const o = await yahooIntradayOhlc(yahooStyleSymbol, "5m", 2 * 86400);
+  if (!o?.c.length) return null;
+  return o.c[o.c.length - 1] ?? null;
 }
-/** Fetch recent OHLCV bars from Yahoo Finance for trailing stop computation */
+/** Trailing stop: OpenAlgo /history with key; Yahoo intraday if no key. */
 async function fetchOhlcvBars(
   yahooSymbol: string,
+  exchange: string,
+  apiKey: string,
   interval: string,
   bars: number,
 ): Promise<{ h: number[]; l: number[]; c: number[] } | null> {
-  try {
-    const period2 = Math.floor(Date.now() / 1000);
-    const rangeSeconds = interval === "1h" ? bars * 3600 : bars * 300;
-    const period1 = period2 - rangeSeconds * 2; // fetch 2x to ensure we have enough bars
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?period1=${period1}&period2=${period2}&interval=${interval}`;
-    const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0" },
-      signal: AbortSignal.timeout(12000),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const result = data?.chart?.result?.[0];
-    const timestamps = result?.timestamp as number[] | undefined;
-    const quotes = result?.indicators?.quote?.[0];
-    if (!timestamps || !quotes) return null;
-    const h: number[] = [];
-    const l: number[] = [];
-    const c: number[] = [];
-    for (let i = 0; i < timestamps.length; i++) {
-      const hi = Number(quotes.high?.[i]);
-      const lo = Number(quotes.low?.[i]);
-      const cl = Number(quotes.close?.[i]);
-      if (!Number.isFinite(hi) || !Number.isFinite(lo) || !Number.isFinite(cl)) continue;
-      h.push(hi);
-      l.push(lo);
-      c.push(cl);
+  if (apiKey && OPENALGO_URL) {
+    try {
+      const endD = new Date().toISOString().slice(0, 10);
+      const lookbackDays = interval === "1h" || interval === "60m" ? 14 : 4;
+      const startD = new Date(Date.now() - lookbackDays * 86400000).toISOString().slice(0, 10);
+      const oaInt = interval === "1h" || interval === "60m" ? "60m" : "5m";
+      const pack = await fetchOpenAlgoHistoryCandles(
+        apiKey,
+        yahooSymbol.replace(/\.(NS|BO)$/i, "").toUpperCase(),
+        String(exchange || "NSE").toUpperCase(),
+        oaInt,
+        startD,
+        endD,
+        OPENALGO_URL,
+      );
+      if (!pack || pack.c.length < 10) return null;
+      return { h: pack.h, l: pack.l, c: pack.c };
+    } catch {
+      return null;
     }
-    if (c.length < 10) return null;
-    return { h, l, c };
-  } catch {
-    return null;
   }
+  const htf = interval === "1h" || interval === "60m";
+  const o = await yahooIntradayOhlc(yahooSymbol, htf ? "60m" : "5m", htf ? 14 * 86400 : 4 * 86400);
+  if (!o || o.c.length < 10) return null;
+  return o;
 }
 
 /** Simple EMA series */
@@ -124,6 +168,8 @@ function emaArr(close: number[], period: number): number[] {
  */
 async function computeTrailingSlUpdate(
   yahooSymbol: string,
+  exchange: string,
+  apiKey: string,
   preset: string,
   action: string,
   entryPrice: number,
@@ -134,7 +180,7 @@ async function computeTrailingSlUpdate(
 
   if (preset === "supertrend_7_3") {
     // Fetch last 60 bars of 5m data
-    const ohlcv = await fetchOhlcvBars(yahooSymbol, "5m", 60);
+    const ohlcv = await fetchOhlcvBars(yahooSymbol, exchange, apiKey, "5m", 60);
     if (!ohlcv || ohlcv.c.length < 15) return null;
     const { line, trend } = supertrendSeries(ohlcv.h, ohlcv.l, ohlcv.c, 7, 3);
     const latest = line[line.length - 1];
@@ -156,7 +202,7 @@ async function computeTrailingSlUpdate(
     // Only trail once trade is in 2R profit
     if (profit < 2 * initialRisk) return null;
     // Fetch last 30 bars of 1H data to compute EMA(20)
-    const ohlcv = await fetchOhlcvBars(yahooSymbol, "1h", 30);
+    const ohlcv = await fetchOhlcvBars(yahooSymbol, exchange, apiKey, "1h", 30);
     if (!ohlcv || ohlcv.c.length < 20) return null;
     const ema20 = emaArr(ohlcv.c, 20);
     const latestEma = ema20[ema20.length - 1];
@@ -230,6 +276,13 @@ Deno.serve(async (req)=>{
         });
         continue;
       }
+      const { data: oaRow } = await supabase
+        .from("user_trading_integration")
+        .select("openalgo_api_key")
+        .eq("user_id", trade.user_id)
+        .eq("is_active", true)
+        .maybeSingle();
+      const oaKey = String((oaRow as { openalgo_api_key?: string } | null)?.openalgo_api_key ?? "").trim();
       let signalSymbol = String(trade.symbol ?? "").toUpperCase();
       const exUpper = String(trade.exchange ?? "").toUpperCase();
       if (exUpper === "NSE" && !signalSymbol.endsWith(".NS") && !signalSymbol.endsWith(".BO")) {
@@ -281,6 +334,8 @@ Deno.serve(async (req)=>{
             scanHeaders["x-digest-secret"] = ENTRY_DIGEST_SECRET;
             scanHeaders["x-digest-user-id"] = String(trade.user_id);
           }
+          if (oaKey) scanHeaders["x-openalgo-api-key"] = oaKey;
+          scanHeaders["x-pending-is-paper"] = "true";
           try {
             const scanRes = await fetch(`${SUPABASE_URL}/functions/v1/strategy-entry-signals`, {
               method: "POST",
@@ -338,7 +393,11 @@ Deno.serve(async (req)=>{
         : {};
       const activePreset = String(entryCondCfg.algoGuidePreset ?? "");
       if (!shouldExit && (activePreset === "supertrend_7_3" || activePreset === "rsi_divergence")) {
-        const currentPxForTrail = await fetchCurrentPrice(String(trade.symbol), String(trade.exchange ?? "NSE"));
+        const currentPxForTrail = await fetchCurrentPrice(
+          signalSymbol,
+          String(trade.exchange ?? "NSE"),
+          oaKey,
+        );
         const currentSlForTrail = trade.stop_loss_price != null ? Number(trade.stop_loss_price) : null;
         const entryPxForTrail = Number(trade.entry_price);
         if (
@@ -349,6 +408,8 @@ Deno.serve(async (req)=>{
         ) {
           const newSl = await computeTrailingSlUpdate(
             signalSymbol,
+            exUpper,
+            oaKey,
             activePreset,
             String(trade.action ?? "BUY"),
             entryPxForTrail,
@@ -370,7 +431,11 @@ Deno.serve(async (req)=>{
 
       // 6. SL / TP price breach — always check regardless of autoExitEnabled
       if (!shouldExit) {
-        const currentPx = exitPrice ?? (trade.current_price != null ? Number(trade.current_price) : null) ?? await fetchCurrentPrice(String(trade.symbol), String(trade.exchange ?? "NSE"));
+        const currentPx = exitPrice ?? (trade.current_price != null ? Number(trade.current_price) : null) ?? await fetchCurrentPrice(
+          signalSymbol,
+          String(trade.exchange ?? "NSE"),
+          oaKey,
+        );
         if (currentPx != null && Number.isFinite(currentPx)) {
           const isBuy = String(trade.action ?? "BUY").toUpperCase() === "BUY";
           const slPrice = trade.stop_loss_price != null ? Number(trade.stop_loss_price) : null;
@@ -402,7 +467,11 @@ Deno.serve(async (req)=>{
       }
       // Resolve final exit price if still unknown
       if (exitPrice == null || !Number.isFinite(exitPrice)) {
-        exitPrice = await fetchCurrentPrice(String(trade.symbol), String(trade.exchange ?? "NSE")) ?? Number(trade.current_price ?? trade.entry_price);
+        exitPrice = (await fetchCurrentPrice(
+          signalSymbol,
+          String(trade.exchange ?? "NSE"),
+          oaKey,
+        )) ?? Number(trade.current_price ?? trade.entry_price);
       }
       const entryPx = Number(trade.entry_price);
       const shares = Number(trade.shares);

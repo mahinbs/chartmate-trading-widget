@@ -15,7 +15,7 @@ export async function hasActivePaidAlgoPlan(
     .maybeSingle();
   if (!data) return false;
   const st = String((data as { status?: string }).status ?? "");
-  if (st !== "active" && st !== "trialing") return false;
+  if (st !== "active" && st !== "trialing" && st !== "pro_trial") return false;
   const endRaw = (data as { current_period_end?: string | null }).current_period_end;
   const endMs = endRaw ? new Date(endRaw).getTime() : null;
   const graceOk = endMs == null || endMs + 24 * 60 * 60 * 1000 > Date.now();

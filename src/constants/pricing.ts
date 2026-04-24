@@ -11,9 +11,16 @@ export type PricingPlan = {
   recommended?: boolean;
 };
 
-/** Shown under pricing tables. */
+/** Shown under pricing cards. */
 export const PRICING_SETUP_AND_MONTHLY_NOTE =
-  "All plans include one-time setup + recurring monthly maintenance starting after 30 days.";
+  "All plans include one-time integration and recurring monthly maintenance (monthly fees begin after the first 30 days of each subscription).";
+
+/** Inquiry-only top tier; not a Stripe product in this checkout. */
+export const INSTITUTIONAL_PLAN = {
+  id: "institutionalPlan",
+  name: "Institutional",
+  contactOnly: true,
+} as const;
 
 /** New subscribers: setup fee + monthly after 30-day trial on the subscription. Legacy `plan_id`s stay valid in the database. */
 export const PRICING_PLANS: PricingPlan[] = [
@@ -36,8 +43,8 @@ export const PRICING_PLANS: PricingPlan[] = [
   {
     id: "growthPlan",
     name: "Growth",
-    integrationFee: 249,
-    price: 79,
+    integrationFee: 299,
+    price: 99,
     period: "month",
     description:
       "Full platform access with up to three algo strategies, advanced backtesting & analytics, broker/OpenAlgo integration, and priority support.",
@@ -48,24 +55,24 @@ export const PRICING_PLANS: PricingPlan[] = [
       "Broker / OpenAlgo integration",
       "Priority support",
     ],
-    recommended: true,
   },
   {
     id: "professionalPlan",
     name: "Pro",
-    integrationFee: 399,
-    price: 129,
+    integrationFee: 599,
+    price: 199,
     period: "month",
     description:
-      "Full platform access with unlimited algo strategies, advanced analytics & optimization, multi-broker integration, dedicated support, and fast execution setup.",
+      "Full platform access with up to 10 custom algo strategies, advanced analytics & optimization, multi-broker integration, dedicated support, and fast execution setup.",
     features: [
       "Full platform access",
-      "Unlimited algo strategies",
+      "Up to 10 custom algo strategies",
       "Advanced analytics & optimization",
       "Multi-broker integration",
       "Dedicated support",
       "Fast execution setup",
     ],
+    recommended: true,
   },
 ];
 

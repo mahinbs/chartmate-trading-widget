@@ -42,6 +42,92 @@ function isoDateIST(d: Date): string {
   return `${ist.getFullYear()}-${String(ist.getMonth() + 1).padStart(2, "0")}-${String(ist.getDate()).padStart(2, "0")}`;
 }
 
+/** Index / underlying LTP (NIFTY) for strangle roll trigger */
+async function fetchUnderlyingLtp(
+  symbol: string,
+  apiKey: string,
+): Promise<number | null> {
+  if (!OPENALGO_URL || !apiKey) return null;
+  try {
+    const res = await fetch(`${OPENALGO_URL}/api/v1/quotes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apikey: apiKey, symbol, exchange: "NSE_INDEX" }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const ltp = data?.data?.ltp ?? data?.ltp;
+    const n = ltp != null ? Number(ltp) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+function bumpOtmOffset(offset: string | undefined): string {
+  const s = String(offset ?? "ATM").toUpperCase();
+  const otm = /^OTM(\d+)$/.exec(s);
+  if (otm) return `OTM${Number(otm[1]) + 1}`;
+  if (s === "ATM") return "OTM1";
+  const itm = /^ITM(\d+)$/.exec(s);
+  if (itm) return `ITM${Math.max(0, Number(itm[1]) - 1)}`;
+  return "OTM1";
+}
+
+/** Paper strangle: bump short leg offset in DB when spot near strike (no broker call). */
+async function tryStranglePaperRoll(
+  supabase: ReturnType<typeof createClient>,
+  trade: Record<string, unknown>,
+  apiKey: string,
+): Promise<boolean> {
+  const sm = trade.strategy_metadata as Record<string, unknown> | null | undefined;
+  const sg = sm && typeof sm === "object" ? (sm as { strangle?: Record<string, unknown> }).strangle : undefined;
+  if (!sg || typeof sg !== "object") return false;
+
+  const rollPts = Number(sg.roll_trigger_pts ?? 30);
+  const maxAdj = Number(sg.max_adjustments ?? 2);
+  const adj = Number(sg.adjustment_count ?? 0);
+  if (adj >= maxAdj) return false;
+
+  const sc = Number(sg.short_call_strike ?? 0);
+  const spb = Number(sg.short_put_strike ?? 0);
+  if (!Number.isFinite(sc) || !Number.isFinite(spb) || sc <= 0 || spb <= 0) return false;
+
+  const und = String(trade.underlying ?? "NIFTY").trim() || "NIFTY";
+  const spot = await fetchUnderlyingLtp(und, apiKey);
+  if (spot == null || spot <= 0) return false;
+
+  const dCall = Math.abs(spot - sc);
+  const dPut = Math.abs(spot - spb);
+  if (dCall > rollPts && dPut > rollPts) return false;
+
+  const legName = dCall <= dPut ? "short_call" : "short_put";
+  const oldOff = String(
+    legName === "short_call" ? sg.short_call_offset : sg.short_put_offset ?? "ATM",
+  );
+  const newOff = bumpOtmOffset(oldOff);
+
+  if (legName === "short_call") (sg as Record<string, unknown>).short_call_offset = newOff;
+  else (sg as Record<string, unknown>).short_put_offset = newOff;
+  (sg as Record<string, unknown>).adjustment_count = adj + 1;
+  (sm as Record<string, unknown>).strangle = sg;
+
+  const legs = Array.isArray(trade.legs_data) ? trade.legs_data as Record<string, unknown>[] : [];
+  const idx = legs.findIndex((l) => String(l.label) === legName);
+  if (idx >= 0) {
+    legs[idx] = { ...legs[idx], strike_offset: newOff, orderid: `PAPER-ROLL-${String(trade.id).slice(0, 8)}-${adj + 1}` };
+  }
+
+  const tid = String(trade.id);
+  await (supabase as any)
+    .from("active_trades")
+    .update({ strategy_metadata: sm, legs_data: legs.length ? legs : trade.legs_data })
+    .eq("id", tid);
+
+  return true;
+}
+
 /** Fetch current LTP for an options symbol via OpenAlgo /quotes */
 async function fetchOptionLtp(
   symbol: string,
@@ -201,7 +287,7 @@ Deno.serve(async (req) => {
         id, user_id, symbol, exchange, action, shares, status,
         is_paper_trade, options_strategy_id, underlying, option_type,
         expiry_date, strike_offset, entry_premium, peak_premium, options_symbol,
-        broker_order_id, entry_price
+        broker_order_id, entry_price, legs_data, strategy_metadata
       `)
       .in("status", ["active", "monitoring", "exit_zone"])
       .not("options_strategy_id", "is", null);
@@ -244,9 +330,22 @@ Deno.serve(async (req) => {
         const expiryDate: string | null = trade.expiry_date ?? null;
         const isPaper: boolean = Boolean(trade.is_paper_trade);
         const exitRules = strategyMap.get(trade.options_strategy_id as string) ?? {};
+        const apiKey = apiKeyMap.get(trade.user_id as string) ?? "";
+        const symStr = String(trade.symbol ?? trade.options_symbol ?? "");
+
+        if (symStr.toUpperCase().startsWith("STRANGLE-")) {
+          if (isPaper) {
+            const rolled = await tryStranglePaperRoll(supabase, trade as Record<string, unknown>, apiKey);
+            if (rolled) {
+              results.push({ trade_id: tradeId, action: "strangle_roll" });
+              continue;
+            }
+          }
+          results.push({ trade_id: tradeId, action: "skipped", reason: "strangle_multileg" });
+          continue;
+        }
 
         // Get current LTP for the options symbol
-        const apiKey = apiKeyMap.get(trade.user_id as string) ?? "";
         const optionsSymbol: string = trade.options_symbol ?? trade.symbol ?? "";
         let currentLtp: number | null = null;
 

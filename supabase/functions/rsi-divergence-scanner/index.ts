@@ -138,7 +138,7 @@ Deno.serve(async (req) => {
             continue;
           }
 
-          const hits = detectRsiDivergenceHits(ohlcv.c, ohlcv.h, ohlcv.l, 50, 5);
+          const hits = detectRsiDivergenceHits(ohlcv.c, ohlcv.h, ohlcv.l, undefined);
           if (hits.length === 0) {
             strategyResults.push({ symbol, result: "no_hit" });
             continue;

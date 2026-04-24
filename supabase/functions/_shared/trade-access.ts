@@ -50,7 +50,7 @@ export async function resolveTradeAccess(
   const graceEndMs = endMs != null ? endMs + (24 * 60 * 60 * 1000) : null;
   const hasActiveSubscription = Boolean(
     sub &&
-      (sub.status === "active" || sub.status === "trialing") &&
+      (sub.status === "active" || sub.status === "trialing" || sub.status === "pro_trial") &&
       (graceEndMs == null || graceEndMs > Date.now()),
   );
   const planId = (sub?.plan_id as string | null) ?? null;

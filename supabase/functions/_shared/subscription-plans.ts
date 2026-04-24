@@ -10,7 +10,7 @@ const ALGO_ONLY = new Set([
 ]);
 
 const LEGACY_ANALYSIS = new Set(["probIntelligence", "proPlan"]);
-const NEW_MONTHLY = new Set(["starterPlan", "growthPlan", "professionalPlan"]);
+const NEW_MONTHLY = new Set(["starterPlan", "growthPlan", "professionalPlan", "institutionalPlan"]);
 
 /** Bot + Pro only — not Probability ($99) legacy. */
 export function planAllowsAlgo(planId: string | null | undefined): boolean {

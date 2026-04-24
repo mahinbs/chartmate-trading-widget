@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ScrollReveal } from "../components/ui/ScrollReveal";
-import { PRICING_PLANS } from "@/constants/pricing";
+import { INSTITUTIONAL_PLAN, PRICING_PLANS } from "@/constants/pricing";
 import { CheckCircle2 } from "lucide-react";
 
 interface FormData {
@@ -56,8 +56,9 @@ const ContactUsPage = () => {
     try {
       const planNames: Record<string, string> = {
         starterPlan: "Starter Plan - $49/mo",
-        growthPlan: "Growth Plan - $79/mo",
-        professionalPlan: "Pro Plan - $129/mo",
+        growthPlan: "Growth Plan - $99/mo",
+        professionalPlan: "Pro Plan - $199/mo",
+        [INSTITUTIONAL_PLAN.id]: "Institutional - Custom",
       };
 
       const emailBody = `Name : ${data.name}\nEmail : ${data.email}\nPhone : ${data.phone}\nInterested Plan : ${planNames[data.plan] || data.plan}\nMessage : \n ${data.message || ""}`;
@@ -385,6 +386,12 @@ const ContactUsPage = () => {
                                   {plan.name} - ${plan.price}/mo
                                 </SelectItem>
                               ))}
+                              <SelectItem
+                                value={INSTITUTIONAL_PLAN.id}
+                                className="focus:bg-teal-500/20 focus:text-teal-400"
+                              >
+                                {INSTITUTIONAL_PLAN.name} - Custom
+                              </SelectItem>
                             </SelectContent>
                           </Select>
                         )}

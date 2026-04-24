@@ -8,6 +8,7 @@ import {
   Route,
   Navigate,
   useParams,
+  useLocation,
 } from "react-router-dom";
 import { useState, useEffect } from "react";
 import HomePage from "./pages/HomePage";
@@ -71,9 +72,11 @@ import TickChart from "./pages/TickChart";
 import PricingPage from "./pages/PricingPage";
 import { PredictionChatbot } from "./components/PredictionChatbot";
 import { useAuth } from "./hooks/useAuth";
+import { useUserRole } from "./hooks/useUserRole";
+import { useSubscription } from "./hooks/useSubscription";
 import { useAffiliateRef } from "./hooks/useAffiliateRef";
 import { supabase } from "@/integrations/supabase/client";
-import { useLocation } from "react-router-dom";
+import { ProTrialExpiredGate } from "./components/ProTrialExpiredGate";
 import { AlgoToolsDashboardLayout } from "./components/layout/AlgoToolsDashboardLayout";
 // import LandingPageNew from "./pages/LandingPageNew";
 import FeaturesPage from "./pages/FeaturesPage";
@@ -265,6 +268,18 @@ function RootRoute() {
   return <NewLandingPage />;
 }
 
+function ProTrialExpiredOverlay() {
+  const { user, loading: authLoading } = useAuth();
+  const { role, loading: roleLoading } = useUserRole();
+  const { isProTrialExpired, loading: subLoading } = useSubscription();
+  const { pathname } = useLocation();
+  if (authLoading || roleLoading || subLoading) return null;
+  if (!user || role !== "user") return null;
+  if (!isProTrialExpired) return null;
+  if (pathname === "/auth" || pathname.startsWith("/auth/")) return null;
+  return <ProTrialExpiredGate />;
+}
+
 const App = () => (
   <HelmetProvider>
     <QueryClientProvider client={queryClient}>
@@ -275,6 +290,7 @@ const App = () => (
           <GlobalSeoHelmet />
           <AffiliateRefCapture />
           <AffiliateIpAttributionSync />
+          <ProTrialExpiredOverlay />
           <MobileSplashGuard>
             <div className="min-h-screen bg-background text-foreground">
               <Routes>

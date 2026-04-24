@@ -90,7 +90,9 @@ Deno.serve(async (req)=>{
     const { data: sub } = await supabase.from("user_subscriptions").select("status, current_period_end, plan_id").eq("user_id", user.id).maybeSingle();
     const endMs = sub?.current_period_end ? new Date(sub.current_period_end).getTime() : null;
     const graceOk = endMs == null || endMs + 24 * 60 * 60 * 1000 > Date.now();
-    const paid = (sub?.status === "active" || sub?.status === "trialing") && graceOk;
+    const paid =
+      (sub?.status === "active" || sub?.status === "trialing" || sub?.status === "pro_trial") &&
+      graceOk;
     const algoOk = paid && planAllowsAlgo(sub?.plan_id ?? null);
     if (!algoOk) {
       return new Response(JSON.stringify({

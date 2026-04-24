@@ -23,6 +23,7 @@
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
+  detectEmaCrossoverHits,
   detectLiquiditySweepBosHits,
   detectOrbHits,
   detectRsiDivergenceHits,
@@ -31,9 +32,11 @@ import {
   detectSupertrendFlipHits,
   detectVwapBounceHits,
   extractAlgoGuidePreset,
+  type AlgoGuideParams,
   type PresetHit,
   type SmcFeeds,
 } from "../_shared/algoGuideDetectors.ts";
+import { calendarDateInTimeZone, fetchOpenAlgoHistoryCandles, OPENALGO_URL } from "../_shared/openAlgoMarketData.ts";
 import {
   resolveMarketSessionProfile,
   type MarketSessionProfile,
@@ -358,12 +361,21 @@ function computePresetPriceLevels(
   if (preset === "orb") {
     const orbH = Number(meta.orbH);
     const orbL = Number(meta.orbL);
+    const tpM = Number(meta.orbTpRangeMult);
+    const mult = Number.isFinite(tpM) && tpM > 0 ? tpM : 1.5;
     if (!Number.isFinite(orbH) || !Number.isFinite(orbL)) return undefined;
     const range = orbH - orbL;
     return {
       stopLossPrice: isBuy ? orbL : orbH,
-      takeProfitPrice: isBuy ? entryPrice + 2 * range : entryPrice - 2 * range,
+      takeProfitPrice: isBuy ? entryPrice + mult * range : entryPrice - mult * range,
     };
+  }
+
+  if (preset === "ema_crossover") {
+    const sl = Number(meta.emaSl);
+    const tp = Number(meta.emaTp);
+    if (!Number.isFinite(sl) || !Number.isFinite(tp)) return undefined;
+    return { stopLossPrice: sl, takeProfitPrice: tp };
   }
 
   if (preset === "supertrend_7_3") {
@@ -1722,9 +1734,20 @@ function detectCustomEntrySignals(
   const r = rsi(c, 14);
 
   const preset = extractAlgoGuidePreset(entryCfg);
+  const agParams = (entryCfg as { algoGuideParams?: AlgoGuideParams }).algoGuideParams;
   if (preset) {
     let presetHits: PresetHit[] = [];
-    if (preset === "orb") presetHits = detectOrbHits(timestamps, c, h, l, sessionProfile);
+    if (preset === "ema_crossover") {
+      presetHits = detectEmaCrossoverHits(
+        timestamps,
+        h,
+        l,
+        c,
+        vBars && vBars.length === c.length ? vBars : new Array(c.length).fill(0),
+        sessionProfile,
+        agParams,
+      );
+    } else if (preset === "orb") presetHits = detectOrbHits(timestamps, c, h, l, sessionProfile, agParams);
     else if (preset === "supertrend_7_3") {
       if (
         supertrendSlow &&
@@ -1741,18 +1764,19 @@ function detectCustomEntrySignals(
           supertrendSlow.l,
           supertrendSlow.c,
           sessionProfile,
+          agParams,
         );
       } else {
-        presetHits = detectSupertrendFlipHits(h, l, c, timestamps, sessionProfile);
+        presetHits = detectSupertrendFlipHits(h, l, c, timestamps, sessionProfile, agParams);
       }
     } else if (preset === "vwap_bounce") {
       presetHits = vBars && vBars.length === c.length
-        ? detectVwapBounceHits(timestamps, h, l, c, vBars, sessionProfile, oBars)
+        ? detectVwapBounceHits(timestamps, h, l, c, vBars, sessionProfile, oBars, agParams)
         : [];
     } else if (preset === "rsi_divergence") {
-      presetHits = detectRsiDivergenceHits(c, h, l);
+      presetHits = detectRsiDivergenceHits(c, h, l, agParams);
     } else if (preset === "liquidity_sweep_bos") {
-      presetHits = detectLiquiditySweepBosHits(c, h, l);
+      presetHits = detectLiquiditySweepBosHits(c, h, l, agParams);
     } else if (preset === "smc_mtf_confluence") {
       // Use real Yahoo Finance feeds when available (1H→4H bias, 15M zones, 1M entry).
       // Falls back to empty hits (no signal) when feeds are missing.
@@ -1807,13 +1831,26 @@ function detectCustomEntrySignals(
             auditLines.push({ ok: true, label: `Opening range captured: High ${Number.isFinite(orbH) ? orbH.toFixed(2) : "?"} / Low ${Number.isFinite(orbL) ? orbL.toFixed(2) : "?"}` });
             auditLines.push({ ok: true, label: `Breakout direction: ${side} (5m candle closed ${side === "BUY" ? "above Range High" : "below Range Low"})` });
             auditLines.push({ ok: priceLvls?.stopLossPrice != null, label: `SL set at ${side === "BUY" ? "Range Low" : "Range High"}: ${priceLvls?.stopLossPrice?.toFixed(2) ?? "—"}` });
-            auditLines.push({ ok: priceLvls?.takeProfitPrice != null, label: `TP set at 2× range: ${priceLvls?.takeProfitPrice?.toFixed(2) ?? "—"}` });
+            const tpM = Number(hit.meta?.orbTpRangeMult) || 1.5;
+            auditLines.push({ ok: priceLvls?.takeProfitPrice != null, label: `TP set at ${tpM}× range: ${priceLvls?.takeProfitPrice?.toFixed(2) ?? "—"}` });
             if (Number.isFinite(orbH) && Number.isFinite(orbL)) {
               const rng = orbH - orbL;
               const midP = (orbH + orbL) / 2;
               const rngPct = midP > 0 ? (rng / midP * 100).toFixed(2) : "?";
-              auditLines.push({ ok: midP > 0 && rng / midP >= 0.002 && rng / midP <= 0.01, label: `Range width: ${rngPct}% (must be 0.2%–1.0%)` });
+              const minP = agParams?.orbMinRangePct ?? 0.002;
+              const maxP = agParams?.orbMaxRangePct ?? 0.01;
+              auditLines.push({
+                ok: midP > 0 && rng / midP >= minP && rng / midP <= maxP,
+                label: `Range width: ${rngPct}% (allowed ${(minP * 100).toFixed(2)}%–${(maxP * 100).toFixed(2)}%)`,
+              });
             }
+          } else if (preset === "ema_crossover") {
+            const e20 = Number(hit.meta?.ema20);
+            const e50 = Number(hit.meta?.ema50);
+            auditLines.push({ ok: true, label: `EMA fast/slow cross confirmed (20/50) with volume + RSI(14) in guide band` });
+            auditLines.push({ ok: Number.isFinite(e20) && Number.isFinite(e50), label: `EMA20 ${Number.isFinite(e20) ? e20.toFixed(2) : "—"} / EMA50 ${Number.isFinite(e50) ? e50.toFixed(2) : "—"}` });
+            auditLines.push({ ok: priceLvls?.stopLossPrice != null, label: `SL at signal bar low/high: ${priceLvls?.stopLossPrice?.toFixed(2) ?? "—"}` });
+            auditLines.push({ ok: priceLvls?.takeProfitPrice != null, label: `TP (guide RR): ${priceLvls?.takeProfitPrice?.toFixed(2) ?? "—"}` });
           } else if (preset === "supertrend_7_3") {
             const stSl = Number(hit.meta?.supertrendSl);
             auditLines.push({ ok: true, label: `Supertrend(7,3) flipped to ${side === "BUY" ? "GREEN (bullish)" : "RED (bearish)"} on 5m` });
@@ -2953,6 +2990,101 @@ Deno.serve(async (req: Request) => {
         extractAlgoGuidePreset(cs.entryConditions) === "supertrend_7_3" && cs.isIntraday !== false
       );
 
+    const openAlgoApiKey = (req.headers.get("x-openalgo-api-key") ?? "").trim();
+    const customWantsEquityOpenAlgo =
+      isIndian &&
+      !customSelectionDailyOnly &&
+      Boolean(OPENALGO_URL) &&
+      Boolean(openAlgoApiKey) &&
+      customStrategies.some((cs) => {
+        const pr = extractAlgoGuidePreset(cs.entryConditions);
+        return (
+          pr === "ema_crossover" || pr === "orb" || pr === "supertrend_7_3" ||
+          pr === "vwap_bounce" || pr === "rsi_divergence" || pr === "liquidity_sweep_bos"
+        );
+      });
+
+    function mapIntervalToOpenAlgo(iv: string): string {
+      const x = iv.toLowerCase();
+      if (x === "60m" || x === "1h") return "60m";
+      if (x === "30m") return "30m";
+      if (x === "15m") return "15m";
+      if (x === "1m") return "1m";
+      return "5m";
+    }
+
+    const paperPendingHdr = (req.headers.get("x-pending-is-paper") ?? "").trim().toLowerCase();
+    const isLivePendingConditional = paperPendingHdr === "false";
+
+    // Indian equity algo-guide: OpenAlgo when key is present (live + paper with broker use broker data).
+    if (customWantsEquityOpenAlgo) {
+      const anyEma = customStrategies.some((cs) =>
+        extractAlgoGuidePreset(cs.entryConditions) === "ema_crossover"
+      );
+      const oaInterval = anyEma ? "15m" : mapIntervalToOpenAlgo(intradayInterval);
+      const endD = calendarDateInTimeZone("Asia/Kolkata");
+      const startMs = Date.now() - Math.min(90, days) * 86400000;
+      const startD = new Date(startMs).toISOString().slice(0, 10);
+      const brokerSym = yahooSymbol.replace(/\.(NS|BO)$/i, "").toUpperCase();
+      let firstEx = "NSE";
+      for (const cs of customStrategies) {
+        const pc = cs.positionConfig as { exchange?: string } | null | undefined;
+        if (pc?.exchange) {
+          firstEx = String(pc.exchange).toUpperCase();
+          break;
+        }
+      }
+      const pack = await fetchOpenAlgoHistoryCandles(
+        openAlgoApiKey,
+        brokerSym,
+        firstEx,
+        oaInterval,
+        startD,
+        endD,
+        OPENALGO_URL,
+      );
+      if (pack && pack.c.length >= 10) {
+        t = pack.t;
+        c = pack.c;
+        h = pack.h;
+        l = pack.l;
+        o = pack.o.length === pack.c.length ? pack.o : pack.c.slice();
+        v = pack.v.length === pack.c.length ? pack.v : [];
+        usedInterval = oaInterval;
+        dataSource = "openalgo";
+        console.log(`Candles: OpenAlgo ${oaInterval} (${c.length}) ${brokerSym} ${firstEx}`);
+      }
+      if (customWantsEquityOpenAlgo && (!c || !c.length)) {
+        return new Response(
+          JSON.stringify({ error: "OpenAlgo /api/v1/history did not return usable intraday candles (connected broker data required; no Yahoo on this path)." }),
+          { status: 502, headers },
+        );
+      }
+    }
+
+    // Live pending conditional: Indian six-preset strategies require a broker key (no free Yahoo).
+    if (
+      isIndian &&
+      !customSelectionDailyOnly &&
+      isLivePendingConditional &&
+      !openAlgoApiKey &&
+      customStrategies.some((cs) => {
+        const pr = extractAlgoGuidePreset(cs.entryConditions);
+        return (
+          pr === "ema_crossover" || pr === "orb" || pr === "supertrend_7_3" ||
+          pr === "vwap_bounce" || pr === "rsi_divergence" || pr === "liquidity_sweep_bos"
+        );
+      })
+    ) {
+      return new Response(
+        JSON.stringify({
+          error:
+            "Live execution requires a connected broker (OpenAlgo) for Indian equity signals. Use paper trading without a key for Yahoo-based simulation.",
+        }),
+        { status: 502, headers },
+      );
+    }
+
     // ── Multi-source candle pipeline: TwelveData → Yahoo intraday → Yahoo daily → Alpha Vantage ──
     // When all selected customs are daily-only, skip sub-daily fetches so entry/exit match saved strategy mode.
     if (!customSelectionDailyOnly) {
@@ -3029,13 +3161,37 @@ Deno.serve(async (req: Request) => {
     ) {
       try {
         let s15: SupertrendSlowPack | null = null;
-        if (TWELVE_DATA_API_KEY) {
+        if (dataSource === "openalgo" && openAlgoApiKey && OPENALGO_URL) {
+          const endD2 = calendarDateInTimeZone("Asia/Kolkata");
+          const startMs2 = Date.now() - Math.min(90, days) * 86400000;
+          const startD2 = new Date(startMs2).toISOString().slice(0, 10);
+          const brokerSym2 = yahooSymbol.replace(/\.(NS|BO)$/i, "").toUpperCase();
+          let ex2 = "NSE";
+          for (const cs of customStrategies) {
+            const pc = cs.positionConfig as { exchange?: string } | null | undefined;
+            if (pc?.exchange) {
+              ex2 = String(pc.exchange).toUpperCase();
+              break;
+            }
+          }
+          const p15 = await fetchOpenAlgoHistoryCandles(
+            openAlgoApiKey,
+            brokerSym2,
+            ex2,
+            "15m",
+            startD2,
+            endD2,
+            OPENALGO_URL,
+          );
+          if (p15 && p15.c.length >= 15) s15 = { t: p15.t, h: p15.h, l: p15.l, c: p15.c };
+        }
+        if (!s15 && TWELVE_DATA_API_KEY) {
           const td15 = await fetchTwelveDataCandles(yahooSymbol, assetType, "15m", 500);
           if (td15 && td15.c.length >= 15) {
             s15 = { t: td15.t, h: td15.h, l: td15.l, c: td15.c };
           }
         }
-        if (!s15) {
+        if (!s15 && dataSource !== "openalgo") {
           const r15 = await fetchYahooChart({ yahooSymbol, period1: period1Intraday, period2, interval: "15m" });
           if (r15.c.length >= 15) s15 = { t: r15.t, h: r15.h, l: r15.l, c: r15.c };
         }

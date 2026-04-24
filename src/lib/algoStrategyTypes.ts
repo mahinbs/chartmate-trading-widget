@@ -99,6 +99,21 @@ export type AlgoGuideParams = {
   lqSwingWidth?: number;
   lqEqualZonePct?: number;
   lqAtrPeriod?: number;
+  /** VIX gates — per strategy (defaults match former hardcoded pendingConditionalExecution bands) */
+  emaVixMin?: number;
+  emaVixMax?: number;
+  orbVixMax?: number;
+  stVixMin?: number;
+  stVixMax?: number;
+  vwapVixMin?: number;
+  lqVixMin?: number;
+  lqVixMax?: number;
+  /** ORB institutional / macro filters */
+  orbRequireFiiNetBuying?: boolean;
+  orbBlockMacroEvents?: boolean;
+  orbMacroBlockWindowMin?: number;
+  /** Optional: same as engine — first bar after ORB window for breakouts */
+  orbBreakoutAfterMin?: number;
   // SMC MTF (UTC minutes for sessions; disable gate for NSE-only testing)
   smcDisableSessionGate?: boolean;
   smcLondonStartUtcMin?: number;

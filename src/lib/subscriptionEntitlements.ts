@@ -13,7 +13,12 @@ export const ALGO_ONLY_PLAN_IDS = new Set([
 export const LEGACY_ANALYSIS_PLAN_IDS = new Set(["probIntelligence", "proPlan"]);
 
 /** New monthly tiers — full app unlock (analysis + OpenAlgo); strategy quotas differ. */
-export const NEW_MONTHLY_PLAN_IDS = new Set(["starterPlan", "growthPlan", "professionalPlan"]);
+export const NEW_MONTHLY_PLAN_IDS = new Set([
+  "starterPlan",
+  "growthPlan",
+  "professionalPlan",
+  "institutionalPlan",
+]);
 
 /** Live OpenAlgo, broker execution, algo onboarding. */
 export function planAllowsAlgo(planId: string | null | undefined): boolean {

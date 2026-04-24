@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { isManualFullAccessEmail } from "@/lib/manualSubscriptionBypass";
-import { getSubscription, hasActiveSubscription, type UserSubscription } from "@/services/stripeService";
+import {
+  getSubscription,
+  hasActiveSubscription,
+  isProTrialExpiredState,
+  type UserSubscription,
+} from "@/services/stripeService";
 import {
   subscriptionAllowsAlgo,
   subscriptionAllowsAnalysis,
@@ -73,6 +78,9 @@ export function useSubscription() {
     (subscriptionForUi!.status === "past_due" ||
       Boolean(subscriptionForUi!.payment_failed_at));
 
+  const isProTrialExpired =
+    !manualFullAccessBypass && isProTrialExpiredState(subscription);
+
   return {
     subscription: subscriptionForUi,
     loading,
@@ -85,5 +93,6 @@ export function useSubscription() {
     isAutoRenewDisabled,
     isInGracePeriod,
     hasBillingIssue,
+    isProTrialExpired,
   };
 }

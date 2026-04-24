@@ -170,11 +170,37 @@ export async function getSubscription(): Promise<UserSubscription | null> {
 
 export function hasActiveSubscription(sub: UserSubscription | null): boolean {
   if (!sub) return false;
-  if (sub.status !== "active" && sub.status !== "trialing") return false;
-  // Keep OpenAlgo access for a 24h grace window after expiry.
+  if (sub.status !== "active" && sub.status !== "trialing" && sub.status !== "pro_trial") {
+    return false;
+  }
+  // Keep access for a 24h grace window after current_period_end (incl. 14-day Pro DB trial).
   if (sub.current_period_end) {
-    const graceEndMs = new Date(sub.current_period_end).getTime() + (24 * 60 * 60 * 1000);
+    const graceEndMs = new Date(sub.current_period_end).getTime() + 24 * 60 * 60 * 1000;
     if (graceEndMs < Date.now()) return false;
   }
   return true;
+}
+
+/** `pro_trial` row past period + 24h grace — must purchase Pro to continue. */
+export function isProTrialExpiredState(sub: UserSubscription | null): boolean {
+  if (!sub || sub.status !== "pro_trial") return false;
+  if (!sub.current_period_end) return true;
+  const graceEndMs = new Date(sub.current_period_end).getTime() + 24 * 60 * 60 * 1000;
+  return graceEndMs < Date.now();
+}
+
+export async function startProTrial(): Promise<{ success: true } | { error: string }> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    return { error: "Please sign in to continue" };
+  }
+  const res = await supabase.functions.invoke("start-pro-trial", {
+    body: {},
+    headers: { Authorization: `Bearer ${session.access_token}` },
+  });
+  const data = res.data as { success?: boolean; error?: string } | null;
+  const errMsg = data?.error ?? res.error?.message ?? "Could not start trial";
+  if (res.error || data?.error) return { error: errMsg };
+  if (!data?.success) return { error: "Unexpected response" };
+  return { success: true };
 }

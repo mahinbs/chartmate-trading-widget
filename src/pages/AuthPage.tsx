@@ -29,7 +29,7 @@ import {
 } from "@/lib/countryDialCodes";
 import { PRICING_PLANS } from "@/constants/pricing";
 import { premiumPlanCheckoutUrls } from "@/lib/premiumCheckoutUrls";
-import { createCheckoutSession } from "@/services/stripeService";
+import { createCheckoutSession, startProTrial } from "@/services/stripeService";
 import { useIsMobileApp } from "@/mobile-app/isMobileDevice";
 import { WEBINAR_BATCH_DEFINITIONS } from "@/constants/webinarBatches";
 import { ensureTrialAccessForUser } from "@/lib/ensureTrialAccessForUser";
@@ -253,6 +253,24 @@ const AuthPage = () => {
       }
 
       const plan = searchParams.get("subscribe_plan")?.trim() ?? "";
+      const proTrialIntent = searchParams.get("pro_trial") === "1";
+      if (proTrialIntent && plan === "professionalPlan" && role === "user") {
+        if (postAuthCheckoutStartedRef.current) return;
+        postAuthCheckoutStartedRef.current = true;
+        const result = await startProTrial();
+        if ("error" in result) {
+          postAuthCheckoutStartedRef.current = false;
+          toast({
+            title: "Could not start trial",
+            description: result.error,
+            variant: "destructive",
+          });
+          navigate("/pricing", { replace: true });
+          return;
+        }
+        window.location.assign("/home");
+        return;
+      }
       if (plan && VALID_PREMIUM_CHECKOUT_PLANS.has(plan) && role === "user") {
         if (postAuthCheckoutStartedRef.current) return;
         postAuthCheckoutStartedRef.current = true;

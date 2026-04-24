@@ -1,28 +1,108 @@
+import { useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
+import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { PRICING_PLANS, PRICING_SETUP_AND_MONTHLY_NOTE } from "@/constants/pricing";
+import { PRICING_SETUP_AND_MONTHLY_NOTE } from "@/constants/pricing";
 import { premiumPlanCheckoutUrls } from "@/lib/premiumCheckoutUrls";
-import { createCheckoutSession } from "@/services/stripeService";
+import { createCheckoutSession, startProTrial } from "@/services/stripeService";
 import { toast } from "sonner";
+import { InstitutionalInquiryModal } from "@/components/InstitutionalInquiryModal";
 
-function planById(id: string) {
-  const p = PRICING_PLANS.find((x) => x.id === id);
-  if (!p) throw new Error(`Unknown plan ${id}`);
-  return p;
+const STARTER_FEATURES = [
+  "1 live strategy",
+  "1 broker integration",
+  "Live & paper execution 24/7",
+  "Basic P&L analytics",
+  "Standard backtester",
+  "Email support · 24h SLA",
+];
+
+const GROWTH_FEATURES = [
+  "3 live strategies",
+  "3 broker integrations",
+  "Advanced backtester",
+  "Multi-currency dashboards",
+  "Custom alerts & kill-switch",
+  "Priority email · 8h SLA",
+];
+
+const PRO_FEATURES = [
+  "10 live strategies",
+  "Unlimited broker integrations",
+  "Monte Carlo + walk-forward",
+  "Full marketplace access",
+  "Custom strategy builder",
+  "Priority chat · 4h SLA",
+];
+
+const INSTITUTIONAL_FEATURES = [
+  "Unlimited strategies & brokers",
+  "Dedicated infrastructure",
+  "SOC 2 Type II audit logs",
+  "White-label dashboards",
+  "Dedicated account manager",
+  "24/7 phone support",
+];
+
+type CardProps = {
+  title: string;
+  popular?: boolean;
+  integration: number;
+  monthly: number;
+  features: string[];
+  cta: ReactNode;
+};
+
+function PricingCard({ title, popular, integration, monthly, features, cta }: CardProps) {
+  return (
+    <div
+      className={`flex flex-col rounded-2xl border bg-zinc-950/50 p-6 min-w-[260px] max-w-sm flex-1 ${
+        popular ? "border-teal-500/50 shadow-[0_0_40px_rgba(20,184,166,0.12)]" : "border-zinc-800/80"
+      }`}
+    >
+      {popular && (
+        <div className="mb-3 text-center">
+          <span className="font-ibm-mono text-[10px] font-bold uppercase tracking-widest text-teal-400">
+            Most popular
+          </span>
+        </div>
+      )}
+      <h3 className="font-bebas text-3xl text-white text-center">{title}</h3>
+      <div className="mt-4 text-center">
+        <div className="font-ibm-mono text-xs uppercase tracking-wider text-zinc-500">One-time integration</div>
+        <div className="mt-1 font-ibm-mono text-2xl text-white">
+          ${title === "Institutional" ? "Custom" : integration}
+        </div>
+        <div className="mt-2 text-zinc-500 font-ibm-mono text-sm">+</div>
+        <div className="font-ibm-mono text-xs uppercase tracking-wider text-zinc-500">Monthly</div>
+        <div className="mt-1 font-ibm-mono text-2xl text-teal-400">
+          {title === "Institutional" ? "Custom" : `$${monthly}/mo`}
+        </div>
+        <p className="mt-2 text-[10px] text-zinc-500 font-ibm-sans">(after first 30 days)</p>
+      </div>
+      <ul className="mt-6 flex-1 space-y-2.5 text-left text-sm text-zinc-300">
+        {features.map((f) => (
+          <li key={f} className="flex gap-2">
+            <Check className="h-4 w-4 shrink-0 text-teal-500/90 mt-0.5" aria-hidden />
+            <span className="leading-snug">{f}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-8">{cta}</div>
+    </div>
+  );
 }
 
 /**
- * Shared pricing matrix (Starter / Growth / Pro) for marketing pages.
+ * Card-based pricing (Starter / Growth / Pro / Institutional) for marketing pages.
  */
 export function TradingSmartPricingMatrix() {
   const navigate = useNavigate();
   const { user } = useAuth();
-
-  const starter = planById("starterPlan");
-  const growth = planById("growthPlan");
-  const pro = planById("professionalPlan");
+  const [instOpen, setInstOpen] = useState(false);
+  const [proLoading, setProLoading] = useState(false);
 
   const subscribe = async (planId: string) => {
     const {
@@ -45,204 +125,123 @@ export function TradingSmartPricingMatrix() {
     if (result.url) window.location.href = result.url;
   };
 
+  const onStartProTrial = async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session) {
+      navigate(
+        "/auth?subscribe_plan=professionalPlan&pro_trial=1",
+      );
+      return;
+    }
+    setProLoading(true);
+    try {
+      const r = await startProTrial();
+      if ("error" in r) {
+        toast.error(r.error);
+        return;
+      }
+      toast.success("Your 14-day Pro trial has started.");
+      window.location.assign("/home");
+    } finally {
+      setProLoading(false);
+    }
+  };
+
   return (
-    <div className="container mx-auto px-4 max-w-6xl pb-8 relative">
+    <div className="container mx-auto px-4 max-w-7xl pb-8 relative">
       <h2 className="font-bebas text-4xl md:text-5xl lg:text-7xl text-center text-white mb-6 md:mb-10">
         Pricing
       </h2>
 
-      {/* ROI Anchor Banner */}
       <div className="mb-10 rounded-2xl bg-teal-500/[0.06] border border-teal-500/20 px-6 py-5 flex flex-col md:flex-row gap-3 md:items-center md:gap-6">
         <div className="shrink-0 text-teal-400 font-black font-ibm-mono text-sm uppercase tracking-widest">vs. freelancer</div>
         <p className="text-zinc-300 text-sm font-light leading-relaxed">
-          A freelance developer charges{" "}
+          A freelance developer often charges{" "}
           <span className="text-white font-bold">$500–$2,000+</span> for a single algo — with no platform, no backtesting, and no ongoing support.
           Our Starter plan gets your strategy coded, tested, and live for{" "}
-          <span className="text-teal-400 font-bold">${starter.integrationFee} one-time</span>.
+          <span className="text-teal-400 font-bold">$149 one-time</span>.
         </p>
       </div>
 
-      {/* Mobile scroll hint */}
       <p className="md:hidden text-center text-[11px] text-zinc-500 font-ibm-mono mb-4 animate-pulse">
         ← scroll to see all plans →
       </p>
-      <div className="-mx-4 px-4 pt-4 pb-4 overflow-x-auto scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent">
-        <table className="min-w-[720px] w-full text-left font-ibm-sans border-collapse relative z-10">
-          <thead>
-            <tr className="border-b border-zinc-800">
-              <th className="py-6 px-4 font-normal text-zinc-600 underline decoration-zinc-800 underline-offset-4">
-                FEATURES
-              </th>
-
-              <th className="py-6 px-6 text-center w-1/4">
-                <div className="font-bebas text-3xl text-white">{starter.name}</div>
-                <div className="font-ibm-mono text-teal-400 mt-2 text-sm leading-snug">
-                  <div>${starter.integrationFee} one-time</div>
-                  <div className="text-zinc-400">
-                    ${starter.price}/mo <span className="text-zinc-500">(after 30 days)</span>
-                  </div>
-                </div>
-              </th>
-
-              <th className="py-6 px-6 text-center w-1/4 bg-amber-400/[0.03] border-x border-t border-amber-400/20 relative">
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 font-ibm-mono text-[10px] bg-amber-400 text-black px-3 py-1 font-bold">
-                  POPULAR
-                </div>
-                <div className="font-bebas text-3xl text-white">{growth.name}</div>
-                <div className="font-ibm-mono text-amber-400 mt-2 text-sm leading-snug">
-                  <div>${growth.integrationFee} one-time</div>
-                  <div className="text-zinc-400">
-                    ${growth.price}/mo <span className="text-zinc-500">(after 30 days)</span>
-                  </div>
-                </div>
-              </th>
-
-              <th className="py-6 px-6 text-center w-1/4">
-                <div className="font-bebas text-3xl text-white">{pro.name}</div>
-                <div className="font-ibm-mono text-teal-400 mt-2 text-sm leading-snug">
-                  <div>${pro.integrationFee} one-time</div>
-                  <div className="text-zinc-400">
-                    ${pro.price}/mo <span className="text-zinc-500">(after 30 days)</span>
-                  </div>
-                </div>
-              </th>
-            </tr>
-          </thead>
-          <tbody className="text-zinc-300">
-            <tr className="border-b border-zinc-800/50 hover:bg-white/[0.01]">
-              <td className="py-5 px-4 font-light text-zinc-400 text-sm">Platform access</td>
-              <td className="py-5 px-6 text-center font-ibm-mono text-sm text-teal-400">
-                Full access
-                <span className="block text-[10px] text-zinc-500 font-light normal-case mt-0.5">(analysis, backtesting, broker sync, trade tracking)</span>
-              </td>
-              <td className="py-5 px-6 text-center font-ibm-mono text-sm bg-amber-400/[0.03] border-x border-amber-400/20 text-amber-200">
-                Full access
-                <span className="block text-[10px] text-zinc-500 font-light normal-case mt-0.5">(analysis, backtesting, broker sync, trade tracking)</span>
-              </td>
-              <td className="py-5 px-6 text-center font-ibm-mono text-sm text-teal-400">
-                Full access
-                <span className="block text-[10px] text-zinc-500 font-light normal-case mt-0.5">(analysis, backtesting, broker sync, trade tracking)</span>
-              </td>
-            </tr>
-            <tr className="border-b border-zinc-800/50 hover:bg-white/[0.01]">
-              <td className="py-5 px-4 font-light text-zinc-400 text-sm">
-                Full product modules
-                <span className="block text-[10px] text-zinc-600 font-light normal-case mt-1">
-                  Analysis, strategies, options workspace, paper/live hub
-                </span>
-              </td>
-              <td className="py-5 px-6 text-center text-teal-400">✓</td>
-              <td className="py-5 px-6 text-center bg-amber-400/[0.03] border-x border-amber-400/20 text-amber-400">✓</td>
-              <td className="py-5 px-6 text-center text-teal-400">✓</td>
-            </tr>
-            <tr className="border-b border-zinc-800/50 hover:bg-white/[0.01]">
-              <td className="py-5 px-4 font-light text-zinc-400 text-sm">
-                Options strategy workspace
-                <span className="block text-[10px] text-zinc-600 font-light normal-case mt-1">Included for all subscribers</span>
-              </td>
-              <td className="py-5 px-6 text-center text-teal-400">✓</td>
-              <td className="py-5 px-6 text-center bg-amber-400/[0.03] border-x border-amber-400/20 text-amber-400">✓</td>
-              <td className="py-5 px-6 text-center text-teal-400">✓</td>
-            </tr>
-            <tr className="border-b border-zinc-800/50 hover:bg-white/[0.01]">
-              <td className="py-5 px-4 font-light text-zinc-400 text-sm">
-                Paper &amp; live trade tracking
-                <span className="block text-[10px] text-zinc-600 font-light normal-case mt-1">Live requires broker connection</span>
-              </td>
-              <td className="py-5 px-6 text-center text-teal-400">✓</td>
-              <td className="py-5 px-6 text-center bg-amber-400/[0.03] border-x border-amber-400/20 text-amber-400">✓</td>
-              <td className="py-5 px-6 text-center text-teal-400">✓</td>
-            </tr>
-            <tr className="border-b border-zinc-800/50 hover:bg-white/[0.01]">
-              <td className="py-5 px-4 font-light text-zinc-400 text-sm">
-                Custom algo integration
-                <span className="block text-[10px] text-zinc-600 font-light normal-case mt-1">Engineering-led build &amp; deploy — core moat</span>
-              </td>
-              <td className="py-5 px-6 text-center font-ibm-mono text-xs text-teal-400">Included</td>
-              <td className="py-5 px-6 text-center font-ibm-mono text-xs bg-amber-400/[0.03] border-x border-amber-400/20 text-amber-200">
-                Included
-              </td>
-              <td className="py-5 px-6 text-center font-ibm-mono text-xs text-teal-400">Included</td>
-            </tr>
-            <tr className="border-b border-zinc-800/50 hover:bg-white/[0.01]">
-              <td className="py-5 px-4 font-light text-zinc-400 text-sm">Custom algo strategies</td>
-              <td className="py-5 px-6 text-center font-ibm-mono text-sm text-teal-400">
-                1 (edit access)
-              </td>
-              <td className="py-5 px-6 text-center font-ibm-mono text-sm bg-amber-400/[0.03] border-x border-amber-400/20 text-amber-200">
-                Up to 3
-              </td>
-              <td className="py-5 px-6 text-center font-ibm-mono text-sm text-teal-400">Unlimited</td>
-            </tr>
-            <tr className="border-b border-zinc-800/50 hover:bg-white/[0.01]">
-              <td className="py-5 px-4 font-light text-zinc-400 text-sm">Backtesting &amp; analytics</td>
-              <td className="py-5 px-6 text-center font-ibm-mono text-sm text-teal-400">
-                Full depth + AI review
-              </td>
-              <td className="py-5 px-6 text-center font-ibm-mono text-sm bg-amber-400/[0.03] border-x border-amber-400/20 text-amber-200">
-                Full depth + AI review
-              </td>
-              <td className="py-5 px-6 text-center font-ibm-mono text-sm text-teal-400">
-                Full depth + AI review
-              </td>
-            </tr>
-            <tr className="border-b border-zinc-800/50 hover:bg-white/[0.01]">
-              <td className="py-5 px-4 font-light text-zinc-400 text-sm">Broker / OpenAlgo</td>
-              <td className="py-5 px-6 text-center text-teal-400">✓</td>
-              <td className="py-5 px-6 text-center bg-amber-400/[0.03] border-x border-amber-400/20 text-amber-400">
-                ✓
-              </td>
-              <td className="py-5 px-6 text-center font-ibm-mono text-sm text-teal-400">Multi-broker</td>
-            </tr>
-            <tr className="border-b border-zinc-800/50 hover:bg-white/[0.01]">
-              <td className="py-5 px-4 font-light text-zinc-400 text-sm">Support</td>
-              <td className="py-5 px-6 text-center font-ibm-mono text-sm">Basic</td>
-              <td className="py-5 px-6 text-center font-ibm-mono text-sm bg-amber-400/[0.03] border-x border-amber-400/20 text-amber-200">
-                Priority
-              </td>
-              <td className="py-5 px-6 text-center font-ibm-mono text-sm text-teal-400">Dedicated</td>
-            </tr>
-            <tr className="border-b border-zinc-800">
-              <td className="py-6 px-4 align-middle" aria-hidden />
-              <td className="py-6 px-6 text-center align-middle">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full max-w-[200px] mx-auto font-ibm-mono text-xs uppercase tracking-wider border-teal-500/40 text-teal-400 hover:bg-teal-500/10 hover:text-teal-300"
-                  onClick={() => void subscribe("starterPlan")}
-                >
-                  Subscribe
-                </Button>
-              </td>
-              <td className="py-6 px-6 text-center align-middle bg-amber-400/[0.03] border-x border-b border-amber-400/20">
-                <Button
-                  type="button"
-                  className="w-full max-w-[200px] mx-auto font-ibm-mono text-xs uppercase tracking-wider bg-amber-400 text-black hover:bg-amber-300"
-                  onClick={() => void subscribe("growthPlan")}
-                >
-                  Subscribe
-                </Button>
-              </td>
-              <td className="py-6 px-6 text-center align-middle">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full max-w-[200px] mx-auto font-ibm-mono text-xs uppercase tracking-wider border-teal-500/40 text-teal-400 hover:bg-teal-500/10 hover:text-teal-300"
-                  onClick={() => void subscribe("professionalPlan")}
-                >
-                  Subscribe
-                </Button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <div className="flex flex-wrap justify-center gap-6 pb-2">
+        <PricingCard
+          title="Starter"
+          integration={149}
+          monthly={49}
+          features={STARTER_FEATURES}
+          cta={
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full font-ibm-mono text-xs uppercase tracking-wider border-teal-500/40 text-teal-400 hover:bg-teal-500/10"
+              onClick={() => void subscribe("starterPlan")}
+            >
+              Start Starter
+            </Button>
+          }
+        />
+        <PricingCard
+          title="Growth"
+          integration={299}
+          monthly={99}
+          features={GROWTH_FEATURES}
+          cta={
+            <Button
+              type="button"
+              className="w-full font-ibm-mono text-xs uppercase tracking-wider bg-amber-400 text-black hover:bg-amber-300"
+              onClick={() => void subscribe("growthPlan")}
+            >
+              Choose Growth
+            </Button>
+          }
+        />
+        <PricingCard
+          title="Pro"
+          popular
+          integration={599}
+          monthly={199}
+          features={PRO_FEATURES}
+          cta={
+            <Button
+              type="button"
+              disabled={proLoading}
+              className="w-full font-ibm-mono text-xs uppercase tracking-wider bg-teal-500 text-black hover:bg-teal-400"
+              onClick={() => void onStartProTrial()}
+            >
+              {proLoading ? "Starting…" : "Start 14-day trial"}
+            </Button>
+          }
+        />
+        <PricingCard
+          title="Institutional"
+          integration={0}
+          monthly={0}
+          features={INSTITUTIONAL_FEATURES}
+          cta={
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full font-ibm-mono text-xs uppercase tracking-wider border-zinc-600 text-zinc-200 hover:bg-zinc-800"
+              onClick={() => setInstOpen(true)}
+            >
+              Talk to sales
+            </Button>
+          }
+        />
       </div>
 
-      <p className="mt-4 text-center text-[11px] text-zinc-500 font-ibm-mono max-w-2xl mx-auto leading-relaxed">
+      <InstitutionalInquiryModal open={instOpen} onOpenChange={setInstOpen} />
+
+      <p className="mt-6 text-center text-[11px] text-zinc-500 font-ibm-mono max-w-2xl mx-auto leading-relaxed">
         {PRICING_SETUP_AND_MONTHLY_NOTE}
       </p>
       <p className="mt-2 text-center text-xs text-zinc-500 font-ibm-mono">
-        {user ? "Signed in — choose a plan to open secure Stripe checkout." : "Sign in required to subscribe."}
+        {user ? "Signed in — Starter/Growth use Stripe checkout. Pro: 14-day DB trial, no card." : "Sign in to subscribe or start the Pro trial."}
       </p>
     </div>
   );

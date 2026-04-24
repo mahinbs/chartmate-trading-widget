@@ -6,7 +6,8 @@ import {
   evaluateGuideRiskGates,
   parseGuideRiskGates,
 } from "./algoGuideRiskGates.ts";
-import { extractAlgoGuidePreset } from "./algoGuideDetectors.ts";
+import { extractAlgoGuidePreset, type AlgoGuideParams } from "./algoGuideDetectors.ts";
+import { calendarDateInTimeZone, fetchIndiaVixLtp } from "./openAlgoMarketData.ts";
 import {
   resolveMarketSessionProfile,
   wallClockMinutesNowInZone,
@@ -21,25 +22,18 @@ function istWeekday(): number {
   return ist.getDay();
 }
 
-/** Fetch India VIX from Yahoo Finance (cached for 5 min) */
-let _vixCache: { value: number; at: number } | null = null;
-async function fetchIndiaVix(): Promise<number | null> {
-  if (_vixCache && Date.now() - _vixCache.at < 5 * 60 * 1000) return _vixCache.value;
-  try {
-    const url = "https://query1.finance.yahoo.com/v8/finance/chart/%5EINDIAVIX?interval=1d&range=1d";
-    const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0" },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice;
-    if (price != null && Number.isFinite(Number(price))) {
-      _vixCache = { value: Number(price), at: Date.now() };
-      return _vixCache.value;
-    }
-  } catch { /* ignore */ }
-  return null;
+/** India VIX from OpenAlgo /api/v1/quotes (cached 5m per user key) */
+let _vixCache: { key: string; value: number; at: number } | null = null;
+async function fetchIndiaVixFromBroker(apiKey: string, openalgoBase: string): Promise<number | null> {
+  if (!apiKey || !openalgoBase) return null;
+  if (
+    _vixCache && _vixCache.key === apiKey && Date.now() - _vixCache.at < 5 * 60 * 1000
+  ) {
+    return _vixCache.value;
+  }
+  const v = await fetchIndiaVixLtp(apiKey, openalgoBase);
+  if (v != null) _vixCache = { key: apiKey, value: v, at: Date.now() };
+  return v;
 }
 
 export type DeployOverrides = {
@@ -175,7 +169,7 @@ export async function tryExecutePendingRow(
     cooldownSeconds: number;
   },
 ): Promise<TryExecuteResult> {
-  const { supabaseUrl, entryDigestSecret, localFireGuard, cooldownSeconds } = options;
+  const { supabaseUrl, entryDigestSecret, localFireGuard, cooldownSeconds, openalgoUrl: openalgoBase } = options;
 
   // Already handed off to monitor for placement — skip re-evaluation until confirmed.
   if (String(row.error_message ?? "").startsWith("__QUEUED_FOR_MONITOR__")) {
@@ -254,6 +248,19 @@ export async function tryExecutePendingRow(
   }
   const sessionProf = resolveMarketSessionProfile(signalSymbol);
 
+  const { data: integrationEarly } = await supabase
+    .from("user_trading_integration")
+    .select("openalgo_api_key")
+    .eq("user_id", row.user_id)
+    .eq("is_active", true)
+    .maybeSingle();
+  const openalgoApiKey = String(
+    (integrationEarly as { openalgo_api_key?: string } | null)?.openalgo_api_key ?? "",
+  ).trim();
+  const agParams = (entryRaw as { algoGuideParams?: AlgoGuideParams } | null | undefined)
+    ?.algoGuideParams ?? ({} as AlgoGuideParams);
+  const todayIst = calendarDateInTimeZone("Asia/Kolkata");
+
   // 4.2 Opening-range block: no entries before local ORB window ends (IST / US ET / UTC crypto)
   const blockFirst = (entryRaw as Record<string, unknown> | null)?.algoGuideBlockFirstSessionMinutes;
   if (blockFirst) {
@@ -274,25 +281,108 @@ export async function tryExecutePendingRow(
     return "not_matched";
   }
 
-  // 4.1 India VIX filter (Indian equities only — no India VIX for US/crypto/forex)
+  // 4.1 India VIX from OpenAlgo (Indian equities only)
   if (preset && sessionProf.kind === "india_equity") {
-    const vix = await fetchIndiaVix();
+    const vix = openalgoApiKey
+      ? await fetchIndiaVixFromBroker(openalgoApiKey, (openalgoBase || "").replace(/\/$/, ""))
+      : null;
     if (vix != null) {
       let vixBlocked = false;
       let vixRange = "";
-      if ((preset === "supertrend_7_3" || preset === "orb") && (vix < 12 || vix > 25)) {
-        vixBlocked = true;
-        vixRange = "12–25";
-        if (preset === "orb" && vix > 22) { vixBlocked = true; vixRange = "12–22"; }
-      } else if (preset === "vwap_bounce" && vix < 11) {
-        vixBlocked = true;
-        vixRange = ">11";
-      } else if (preset === "liquidity_sweep_bos" && (vix < 12 || vix > 30)) {
-        vixBlocked = true;
-        vixRange = "12–30";
+      if (preset === "ema_crossover") {
+        const vmin = agParams.emaVixMin ?? 12;
+        const vmax = agParams.emaVixMax ?? 25;
+        if (vix < vmin || vix > vmax) {
+          vixBlocked = true;
+          vixRange = `${vmin}–${vmax}`;
+        }
+      } else if (preset === "orb") {
+        const vmax = agParams.orbVixMax ?? 22;
+        if (vix < 12 || vix > vmax) {
+          vixBlocked = true;
+          vixRange = `12–${vmax}`;
+        }
+      } else if (preset === "supertrend_7_3") {
+        const vmin = agParams.stVixMin ?? 12;
+        const vmax = agParams.stVixMax ?? 25;
+        if (vix < vmin || vix > vmax) {
+          vixBlocked = true;
+          vixRange = `${vmin}–${vmax}`;
+        }
+      } else if (preset === "vwap_bounce") {
+        const vmin = agParams.vwapVixMin ?? 11;
+        if (vix < vmin) {
+          vixBlocked = true;
+          vixRange = `≥${vmin}`;
+        }
+      } else if (preset === "liquidity_sweep_bos") {
+        const vmin = agParams.lqVixMin ?? 12;
+        const vmax = agParams.lqVixMax ?? 30;
+        if (vix < vmin || vix > vmax) {
+          vixBlocked = true;
+          vixRange = `${vmin}–${vmax}`;
+        }
+      } else if (preset === "rsi_divergence") {
+        const vmin = agParams.emaVixMin ?? 12;
+        const vmax = agParams.emaVixMax ?? 25;
+        if (vix < vmin || vix > vmax) {
+          vixBlocked = true;
+          vixRange = `${vmin}–${vmax}`;
+        }
       }
       if (vixBlocked) {
-        await setPendingReason(supabase, row.id, `VIX ${vix.toFixed(1)} outside range (${vixRange}) for ${preset}. Waiting.`);
+        await setPendingReason(
+          supabase,
+          row.id,
+          `VIX ${vix.toFixed(1)} outside range (${vixRange}) for ${preset}. Waiting.`,
+        );
+        return "not_matched";
+      }
+    }
+  }
+
+  if (preset === "orb" && (agParams.orbRequireFiiNetBuying !== false) && sessionProf.kind === "india_equity") {
+    const { data: fii } = await supabase
+      .from("fii_dii_daily")
+      .select("fii_net_buy")
+      .eq("trade_date", todayIst)
+      .maybeSingle();
+    if (fii?.fii_net_buy != null && Number(fii.fii_net_buy) < 0) {
+      await setPendingReason(
+        supabase,
+        row.id,
+        `ORB blocked: FII net sell (₹${fii.fii_net_buy} Cr) on ${todayIst}.`,
+      );
+      return "not_matched";
+    }
+  }
+
+  if (preset === "orb" && (agParams.orbBlockMacroEvents !== false) && sessionProf.kind === "india_equity") {
+    const windowMin = agParams.orbMacroBlockWindowMin ?? 30;
+    const { data: mevs } = await supabase
+      .from("macro_events_today")
+      .select("event_time_utc, title, impact")
+      .eq("event_date", todayIst);
+    const nowMs = Date.now();
+    for (const e of mevs ?? []) {
+      const im = String(e.impact ?? "").toLowerCase();
+      if (!im.includes("high")) continue;
+      const tRaw = e.event_time_utc;
+      if (tRaw == null) continue;
+      const ts = String(tRaw);
+      const p = ts.split(/[:.]/);
+      const hh = parseInt(p[0] ?? "0", 10);
+      const mm = parseInt(p[1] ?? "0", 10);
+      if (!Number.isFinite(hh) || !Number.isFinite(mm)) continue;
+      const ev = new Date();
+      ev.setUTCHours(hh, mm, 0, 0);
+      const tEv = ev.getTime();
+      if (nowMs >= tEv - windowMin * 60_000 && nowMs < tEv) {
+        await setPendingReason(
+          supabase,
+          row.id,
+          `ORB blocked: macro high-impact event window (${(e as { title?: string }).title ?? "event"}).`,
+        );
         return "not_matched";
       }
     }
@@ -308,6 +398,10 @@ export async function tryExecutePendingRow(
     checkHeaders["x-digest-secret"] = entryDigestSecret;
     checkHeaders["x-digest-user-id"] = String(row.user_id);
   }
+  if (openalgoApiKey) {
+    checkHeaders["x-openalgo-api-key"] = openalgoApiKey;
+  }
+  checkHeaders["x-pending-is-paper"] = row.is_paper_trade ? "true" : "false";
 
   const chartCfg = merged.chart_config && typeof merged.chart_config === "object"
     ? merged.chart_config as Record<string, unknown>
@@ -530,13 +624,7 @@ export async function tryExecutePendingRow(
     return "fired";
   }
 
-  const { data: integration } = await supabase
-    .from("user_trading_integration")
-    .select("openalgo_api_key")
-    .eq("user_id", row.user_id)
-    .eq("is_active", true)
-    .maybeSingle() as any;
-  const apiKey = integration?.openalgo_api_key ?? "";
+  const apiKey = openalgoApiKey;
   if (!apiKey) {
     await supabase.from("pending_conditional_orders").update({
       status: "cancelled",

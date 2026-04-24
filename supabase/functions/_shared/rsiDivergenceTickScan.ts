@@ -137,7 +137,7 @@ export async function runRsiDivergenceTickScan(
     const ohlcv = await fetchYahoo1hBars(yahooSym, 200);
     if (!ohlcv) continue;
 
-    const hits = detectRsiDivergenceHits(ohlcv.c, ohlcv.h, ohlcv.l, 50, 5);
+    const hits = detectRsiDivergenceHits(ohlcv.c, ohlcv.h, ohlcv.l, undefined);
     if (hits.length === 0) continue;
 
     const latestHit = hits[hits.length - 1];

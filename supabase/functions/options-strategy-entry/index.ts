@@ -100,6 +100,9 @@ function buildExecuteParams(strategy: Record<string, any>, strategyType: Strateg
       min_net_premium: Number(ec.min_net_premium ?? 35),
       profit_target_pct: Number(er.profit_target_pct ?? 45) / 100,
       stop_loss_mult: Number(er.stop_loss_mult ?? 2),
+      iv_rank_min: Number(ec.iv_rank_min ?? 25),
+      adx_max: Number(ec.adx_max ?? 30),
+      macro_block_days: Number(ec.macro_block_days ?? 2),
     };
   }
   if (strategyType === "strangle") {
@@ -112,6 +115,7 @@ function buildExecuteParams(strategy: Record<string, any>, strategyType: Strateg
       max_adjustments: Number(ec.max_adjustments ?? 2),
       profit_target_pct: Number(er.profit_target_pct ?? 50) / 100,
       stop_loss_mult: Number(er.stop_loss_mult ?? 2),
+      vix_3day_spike_pct: Number(ec.vix_3day_spike_pct ?? 15),
     };
   }
   if (strategyType === "bull_put_spread") {
@@ -123,6 +127,9 @@ function buildExecuteParams(strategy: Record<string, any>, strategyType: Strateg
       min_credit_pct_of_width: Number(ec.min_credit_pct_of_width ?? 0.4),
       profit_target_pct: Number(er.profit_target_pct ?? 75) / 100,
       stop_loss_mult: Number(er.stop_loss_mult ?? 2),
+      ema_proximity_pct: Number(ec.ema_proximity_pct ?? 0.005),
+      min_dte: Number(ec.min_dte ?? 7),
+      max_dte: Number(ec.max_dte ?? 14),
     };
   }
   if (strategyType === "jade_lizard") {

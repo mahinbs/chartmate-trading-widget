@@ -43,7 +43,7 @@ async function activePlanIdForUser(supabase, userId) {
   const { data } = await supabase.from("user_subscriptions").select("plan_id, status, current_period_end").eq("user_id", userId).maybeSingle();
   if (!data) return null;
   const st = String(data.status ?? "");
-  if (st !== "active" && st !== "trialing") return null;
+  if (st !== "active" && st !== "trialing" && st !== "pro_trial") return null;
   const endRaw = data.current_period_end;
   const endMs = endRaw ? new Date(endRaw).getTime() : null;
   const graceEndMs = endMs != null ? endMs + 24 * 60 * 60 * 1000 : null;

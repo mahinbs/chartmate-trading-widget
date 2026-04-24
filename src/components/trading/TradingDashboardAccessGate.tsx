@@ -64,6 +64,11 @@ export function TradingDashboardAccessGate({
       const planId = (row?.plan_id as string) ?? null;
 
       if (!subActive) {
+        // Expired 14-day Pro DB trial: do not fall back to the 48h demo; gate + pricing redirect only.
+        if (row?.status === "pro_trial") {
+          setStatus({ loading: false, provisioned: false, broker: null, redirectTo: "/pricing" });
+          return;
+        }
         const { data: trialRow } = await (supabase as any)
           .from("trial_access")
           .select("status, end_at")
