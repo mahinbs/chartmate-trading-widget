@@ -21,7 +21,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { applyAffiliateToUserProfileIfEmpty, getClientIp, resolveAffiliateIdFromVisitorIp } from "../_shared/affiliate-ip-resolution.ts";
 const STRIPE_SECRET = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 const APP_URL = Deno.env.get("APP_URL") ?? "http://localhost:5173";
-const PRICE_IDS = {
+const PRICE_IDS_USD = {
   starterPlan: Deno.env.get("STRIPE_PRICE_STARTER") ?? "",
   growthPlan: Deno.env.get("STRIPE_PRICE_GROWTH") ?? "",
   professionalPlan: Deno.env.get("STRIPE_PRICE_PROFESSIONAL") ?? "",
@@ -29,11 +29,24 @@ const PRICE_IDS = {
   wl_2_years: Deno.env.get("STRIPE_PRICE_WL_2Y") ?? "",
   wl_5_years: Deno.env.get("STRIPE_PRICE_WL_5Y") ?? "",
 };
+const PRICE_IDS_INR = {
+  starterPlan: Deno.env.get("STRIPE_PRICE_STARTER_INR") ?? "",
+  growthPlan: Deno.env.get("STRIPE_PRICE_GROWTH_INR") ?? "",
+  professionalPlan: Deno.env.get("STRIPE_PRICE_PROFESSIONAL_INR") ?? "",
+  wl_1_year: "",
+  wl_2_years: "",
+  wl_5_years: "",
+};
 /** One-time integration fee per premium plan (Stripe one-time Prices). Optional: omit for legacy checkout. */
-const SETUP_PRICE_IDS: Record<string, string> = {
+const SETUP_PRICE_IDS_USD: Record<string, string> = {
   starterPlan: Deno.env.get("STRIPE_PRICE_STARTER_SETUP") ?? "",
   growthPlan: Deno.env.get("STRIPE_PRICE_GROWTH_SETUP") ?? "",
   professionalPlan: Deno.env.get("STRIPE_PRICE_PROFESSIONAL_SETUP") ?? "",
+};
+const SETUP_PRICE_IDS_INR: Record<string, string> = {
+  starterPlan: Deno.env.get("STRIPE_PRICE_STARTER_SETUP_INR") ?? "",
+  growthPlan: Deno.env.get("STRIPE_PRICE_GROWTH_SETUP_INR") ?? "",
+  professionalPlan: Deno.env.get("STRIPE_PRICE_PROFESSIONAL_SETUP_INR") ?? "",
 };
 const PREMIUM_PLAN_IDS = new Set([
   "starterPlan",
@@ -78,15 +91,29 @@ Deno.serve(async (req)=>{
     const body = await req.json().catch(()=>({}));
     const planId = body.plan_id ?? "";
     const type = body.type ?? "premium";
+    const currency = String(body.currency ?? "usd").toLowerCase() === "inr" ? "inr" : "usd";
+    if (currency === "inr" && (type === "whitelabel" || String(planId).startsWith("wl_"))) {
+      return new Response(
+        JSON.stringify({
+          error: "White-label plans are only available in USD. Switch currency to USD or use global pricing in INR.",
+        }),
+        { status: 400, headers },
+      );
+    }
     const successUrl = body.success_url || `${APP_URL}/?checkout=success`;
     const cancelUrl = body.cancel_url || `${APP_URL}/?checkout=cancelled`;
     const wlPayload = body.wl;
-    let priceId = PRICE_IDS[planId] ?? "";
+    const priceMap = currency === "inr" ? PRICE_IDS_INR : PRICE_IDS_USD;
+    const setupMap = currency === "inr" ? SETUP_PRICE_IDS_INR : SETUP_PRICE_IDS_USD;
+    let priceId = priceMap[planId] ?? "";
     if (!priceId && planId === "test_1_rupee") {
       priceId = Deno.env.get("STRIPE_PRICE_TEST_1R") ?? "";
     }
     if (!priceId) {
-      const msg = `Price for plan "${planId}" not configured. Set the matching STRIPE_PRICE_* secret (e.g. STRIPE_PRICE_STARTER for starterPlan).`;
+      const msg =
+        currency === "inr"
+          ? `INR price for plan "${planId}" not configured. Set STRIPE_PRICE_STARTER_INR / STRIPE_PRICE_GROWTH_INR / STRIPE_PRICE_PROFESSIONAL_INR and matching _SETUP_INR secrets in Supabase.`
+          : `Price for plan "${planId}" not configured. Set the matching STRIPE_PRICE_* secret (e.g. STRIPE_PRICE_STARTER for starterPlan).`;
       console.error("create-checkout-session 400:", msg);
       return new Response(JSON.stringify({
         error: msg
@@ -185,9 +212,7 @@ Deno.serve(async (req)=>{
       formBody.append("mode", "subscription");
       formBody.append("payment_method_types[]", "card");
       const setupPriceId =
-        type === "premium" && PREMIUM_PLAN_IDS.has(planId)
-          ? (SETUP_PRICE_IDS[planId] ?? "").trim()
-          : "";
+        type === "premium" && PREMIUM_PLAN_IDS.has(planId) ? (setupMap[planId] ?? "").trim() : "";
       if (setupPriceId) {
         formBody.append("line_items[0][price]", priceId);
         formBody.append("line_items[0][quantity]", "1");

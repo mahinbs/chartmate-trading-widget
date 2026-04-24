@@ -9,6 +9,7 @@ import {
   HelpCircle,
   LayoutDashboard,
   LineChart,
+  ListTree,
   Lock,
   LogOut,
   Menu,
@@ -112,13 +113,6 @@ function useDashboardNavLinks(): DashboardNavLink[] {
           iconColor: "text-primary opacity-80",
         });
       }
-    } else if (isOnTrial) {
-      next.push({
-        to: "/strategies",
-        label: "My Strategies",
-        icon: Bot,
-        iconColor: "text-primary opacity-80",
-      });
     } else {
       next.push({
         to: "/pricing?feature=algo",
@@ -126,7 +120,16 @@ function useDashboardNavLinks(): DashboardNavLink[] {
         icon: Bot,
         iconColor: "text-primary opacity-80",
         locked: true,
+        matchActive: false,
       });
+      if (isOnTrial) {
+        next.push({
+          to: "/strategies",
+          label: "My Strategies",
+          icon: ListTree,
+          iconColor: "text-primary opacity-80",
+        });
+      }
     }
 
     next.push({

@@ -364,10 +364,14 @@ Deno.serve(async (req) => {
         const pendingPlan = subRow?.pending_plan_change;
         if (pendingPlan && subRow?.user_id) {
           const newMeta = getPlanMeta(pendingPlan);
-          const newMonthlyPriceId = resolveMonthlyPriceId(pendingPlan);
+          const stripeSub = await fetchStripeSubscription(subId);
+          const priceCur = (stripeSub?.items?.data?.[0]?.price?.currency ?? "usd").toLowerCase();
+          const newMonthlyPriceId = resolveMonthlyPriceId(
+            pendingPlan,
+            priceCur === "inr" ? "inr" : "usd",
+          );
 
           if (newMeta && newMonthlyPriceId) {
-            const stripeSub = await fetchStripeSubscription(subId);
             const currentItemId = stripeSub?.items?.data?.[0]?.id ?? "";
             if (currentItemId) {
               try {

@@ -3,6 +3,7 @@ import { ALL_BROKERS } from "@/components/trading/BrokerSyncSection";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
   TableBody,
@@ -20,9 +21,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { RefreshCw, Zap, CheckCircle2, Loader2, Search } from "lucide-react";
+import { RefreshCw, Zap, CheckCircle2, Loader2, Search, XCircle, FileText } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+
+/** KYC stored as JSON from 6-step onboarding (id, address, etc.). */
+type KycPayload = {
+  idType?: string;
+  idNumber?: string;
+  address1?: string;
+  address2?: string;
+  city?: string;
+  country?: string;
+} | null;
 
 interface OnboardingRow {
   id: string;
@@ -50,9 +61,13 @@ interface OnboardingRow {
   notes: string | null;
   plan_id: string;
   status: string;
+  rejection_reason?: string | null;
+  rejected_at?: string | null;
   provisioned_at: string | null;
   created_at: string;
   email?: string;
+  kyc_payload?: KycPayload;
+  markets?: string[] | null;
 }
 
 function fmtCapital(amount: number | null, currency: string | null) {
@@ -61,10 +76,17 @@ function fmtCapital(amount: number | null, currency: string | null) {
   return `${sym}${Number(amount).toLocaleString()}`;
 }
 
+function hasValue(v: unknown) {
+  if (v === null || v === undefined) return false;
+  if (typeof v === "string") return v.trim().length > 0;
+  return true;
+}
+
 const STATUS_BADGE: Record<string, { label: string; class: string }> = {
   pending:     { label: "Pending",     class: "bg-amber-500/20 text-amber-400 border-amber-500/40" },
   provisioned: { label: "Provisioned", class: "bg-teal-500/20 text-teal-400 border-teal-500/40" },
   active:      { label: "Active",      class: "bg-green-500/20 text-green-400 border-green-500/40" },
+  rejected:    { label: "Rejected",    class: "bg-rose-500/20 text-rose-400 border-rose-500/40" },
   cancelled:   { label: "Cancelled",   class: "bg-red-500/20 text-red-400 border-red-500/40" },
 };
 
@@ -76,11 +98,14 @@ export default function AdminAlgoRequestsPage() {
   const [rows, setRows] = useState<OnboardingRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "pending" | "provisioned">("pending");
+  const [filter, setFilter] = useState<"all" | "pending" | "provisioned" | "rejected">("pending");
 
   // Provision dialog
   const [selected, setSelected] = useState<OnboardingRow | null>(null);
   const [provisioning, setProvisioning] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [showRejectReasonInput, setShowRejectReasonInput] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -95,24 +120,18 @@ export default function AdminAlgoRequestsPage() {
 
       if (error) throw error;
 
-      // Fetch emails from auth (via admin-users function pattern — use supabase admin)
-      // We'll fetch from user_subscriptions to get at least plan context;
-      // email comes from the session's user metadata or we show user_id
       const userIds = (data ?? []).map((r: any) => r.user_id);
       let emailMap: Record<string, string> = {};
 
       if (userIds.length > 0) {
-        // Get emails via user_roles join on auth isn't possible from frontend;
-        // use contact_submissions as a fallback, then recent_subscribers
-        const { data: subs } = await (supabase as any)
-          .from("user_subscriptions")
-          .select("user_id, plan_id")
+        const { data: profiles } = await (supabase as any)
+          .from("user_signup_profiles")
+          .select("user_id, email")
           .in("user_id", userIds);
-
-        // Try to get emails from contact_submissions (users often contact first)
-        // This is the best available table linking email to user_id via current schema
-        (subs ?? []).forEach((_s: any) => {
-          // email not available from user_subscriptions, placeholder
+        (profiles ?? []).forEach((p: any) => {
+          const uid = String(p.user_id ?? "");
+          const email = String(p.email ?? "").trim();
+          if (uid && email) emailMap[uid] = email;
         });
       }
 
@@ -133,33 +152,76 @@ export default function AdminAlgoRequestsPage() {
 
   const openProvisionDialog = (row: OnboardingRow) => {
     setSelected(row);
+    setRejectReason(row.rejection_reason ?? "");
+    setShowRejectReasonInput(false);
   };
 
-  const handleProvision = async () => {
-    if (!selected) return;
+  const closeDialog = () => {
+    setSelected(null);
+    setShowRejectReasonInput(false);
+  };
 
+  const provisionRow = async (row: OnboardingRow) => {
     setProvisioning(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const res = await supabase.functions.invoke("admin-provision-algo", {
-        body: { onboarding_id: selected.id },
+        body: { onboarding_id: row.id },
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
 
       const result = res.data as { success?: boolean; error?: string; openalgo_username?: string } | null;
       if (res.error || result?.error) {
         toast.error(result?.error ?? res.error?.message ?? "Provisioning failed");
-        return;
+        return false;
       }
 
       const usernameNote = result?.openalgo_username ? ` (OpenAlgo: ${result.openalgo_username})` : "";
-      toast.success(`${selected.full_name} provisioned successfully!${usernameNote}`);
+      toast.success(`${row.full_name} provisioned successfully!${usernameNote}`);
+      await load();
+      return true;
+    } catch (e: any) {
+      toast.error("Error: " + (e.message ?? "unknown"));
+      return false;
+    } finally {
+      setProvisioning(false);
+    }
+  };
+
+  const handleProvision = async () => {
+    if (!selected) return;
+    const ok = await provisionRow(selected);
+    if (ok) setSelected(null);
+  };
+
+  const handleReject = async () => {
+    if (!selected) return;
+    const reason = rejectReason.trim();
+    if (!reason) {
+      toast.error("Please enter a rejection reason");
+      return;
+    }
+    setRejecting(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await supabase.functions.invoke("admin-reject-algo", {
+        body: { onboarding_id: selected.id, reason },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      const result = res.data as { success?: boolean; error?: string } | null;
+      if (res.error || result?.error) {
+        toast.error(result?.error ?? res.error?.message ?? "Reject failed");
+        return;
+      }
+      toast.success(`${selected.full_name} rejected with reason.`);
       setSelected(null);
+      setRejectReason("");
+      setShowRejectReasonInput(false);
       await load();
     } catch (e: any) {
       toast.error("Error: " + (e.message ?? "unknown"));
     } finally {
-      setProvisioning(false);
+      setRejecting(false);
     }
   };
 
@@ -172,7 +234,10 @@ export default function AdminAlgoRequestsPage() {
       r.broker?.toLowerCase().includes(q) ||
       r.broker_client_id?.toLowerCase().includes(q) ||
       r.plan_id?.toLowerCase().includes(q) ||
-      r.user_id?.toLowerCase().includes(q);
+      r.user_id?.toLowerCase().includes(q) ||
+      (r.markets ?? []).some((m) => m.toLowerCase().includes(q)) ||
+      (r.kyc_payload?.idNumber && r.kyc_payload.idNumber.toLowerCase().includes(q)) ||
+      (r.rejection_reason ?? "").toLowerCase().includes(q);
     return matchStatus && matchSearch;
   });
 
@@ -219,7 +284,7 @@ export default function AdminAlgoRequestsPage() {
           />
         </div>
         <div className="flex gap-1">
-          {(["pending", "provisioned", "all"] as const).map((f) => (
+          {(["pending", "provisioned", "rejected", "all"] as const).map((f) => (
             <Button
               key={f}
               size="sm"
@@ -285,6 +350,11 @@ export default function AdminAlgoRequestsPage() {
                     <TableCell className="hidden lg:table-cell">
                       <div className="text-xs text-zinc-400 capitalize">{row.risk_level}</div>
                       <div className="text-xs text-zinc-600 capitalize">{row.strategy_pref ?? "—"}</div>
+                      {row.markets && row.markets.length > 0 && (
+                        <div className="text-[10px] text-zinc-500 mt-0.5 line-clamp-1">
+                          {row.markets.join(" · ")}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge className="text-[10px] bg-zinc-800 text-zinc-300 border-zinc-700">
@@ -307,21 +377,46 @@ export default function AdminAlgoRequestsPage() {
                       {new Date(row.created_at).toLocaleDateString()}
                     </TableCell>
                     <TableCell className="text-right">
-                      {row.status === "pending" ? (
+                      <div className="flex items-center justify-end gap-1.5">
                         <Button
                           size="sm"
+                          variant="outline"
                           onClick={() => openProvisionDialog(row)}
-                          className="bg-teal-600 hover:bg-teal-500 text-white text-xs px-3"
+                          className="border-zinc-700 text-zinc-200 hover:bg-zinc-800 text-xs px-3"
                         >
-                          <Zap className="h-3 w-3 mr-1" />
-                          Provision
+                          <FileText className="h-3 w-3 mr-1" />
+                          View form
                         </Button>
-                      ) : (
-                        <span className="text-xs text-zinc-600 flex items-center justify-end gap-1">
-                          <CheckCircle2 className="h-3 w-3 text-teal-600" />
-                          Done
-                        </span>
-                      )}
+
+                        {(row.status === "pending" || row.status === "rejected") && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openProvisionDialog(row)}
+                            className="border-rose-600 text-rose-300 hover:bg-rose-600/10 text-xs px-3"
+                          >
+                            <XCircle className="h-3 w-3 mr-1" />
+                            Reject
+                          </Button>
+                        )}
+
+                        {row.status === "pending" ? (
+                          <Button
+                            size="sm"
+                            onClick={() => provisionRow(row)}
+                            disabled={provisioning || rejecting}
+                            className="bg-teal-600 hover:bg-teal-500 text-white text-xs px-3"
+                          >
+                            <Zap className="h-3 w-3 mr-1" />
+                            Accept
+                          </Button>
+                        ) : row.status === "provisioned" || row.status === "active" ? (
+                          <span className="text-xs text-zinc-600 flex items-center justify-end gap-1 ml-1">
+                            <CheckCircle2 className="h-3 w-3 text-teal-600" />
+                            Done
+                          </span>
+                        ) : null}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -349,8 +444,8 @@ export default function AdminAlgoRequestsPage() {
       )}
 
       {/* Provision dialog — full form view */}
-      <Dialog open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
-        <DialogContent className="bg-zinc-900 border-zinc-800 text-white max-w-2xl max-h-[90vh] overflow-y-auto">
+      <Dialog open={!!selected} onOpenChange={(open) => !open && closeDialog()}>
+        <DialogContent className="bg-zinc-900 border-zinc-800 text-white max-w-2xl max-h-[90vh] overflow-y-auto pr-1">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg">
               <Zap className="h-5 w-5 text-teal-400" />
@@ -372,10 +467,18 @@ export default function AdminAlgoRequestsPage() {
                     <p className="text-zinc-500 text-xs mb-0.5">Full Name</p>
                     <p className="text-white font-semibold text-sm">{selected.full_name}</p>
                   </div>
-                  <div className="bg-zinc-800 rounded-lg p-3">
-                    <p className="text-zinc-500 text-xs mb-0.5">Phone</p>
-                    <p className="text-white text-sm">{selected.phone ?? <span className="text-zinc-600">—</span>}</p>
-                  </div>
+                  {hasValue(selected.phone) && (
+                    <div className="bg-zinc-800 rounded-lg p-3">
+                      <p className="text-zinc-500 text-xs mb-0.5">Phone</p>
+                      <p className="text-white text-sm">{selected.phone}</p>
+                    </div>
+                  )}
+                  {hasValue(selected.email) && (
+                    <div className="bg-zinc-800 rounded-lg p-3">
+                      <p className="text-zinc-500 text-xs mb-0.5">Email</p>
+                      <p className="text-white text-sm break-all">{selected.email}</p>
+                    </div>
+                  )}
                   <div className="bg-zinc-800 rounded-lg p-3">
                     <p className="text-zinc-500 text-xs mb-0.5">User ID</p>
                     <p className="text-zinc-400 font-mono text-xs break-all">{selected.user_id}</p>
@@ -387,6 +490,58 @@ export default function AdminAlgoRequestsPage() {
                 </div>
               </div>
 
+              {/* ── KYC (6-step form) ─────────────────────────────────────── */}
+              {selected.kyc_payload && Object.keys(selected.kyc_payload).length > 0 && (
+                <div>
+                  <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">KYC</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {selected.kyc_payload.idType && (
+                      <div className="bg-zinc-800 rounded-lg p-3">
+                        <p className="text-zinc-500 text-xs mb-0.5">ID type</p>
+                        <p className="text-white text-sm">{selected.kyc_payload.idType}</p>
+                      </div>
+                    )}
+                    {selected.kyc_payload.idNumber && (
+                      <div className="bg-zinc-800 rounded-lg p-3">
+                        <p className="text-zinc-500 text-xs mb-0.5">ID number</p>
+                        <p className="text-white text-sm font-mono">{selected.kyc_payload.idNumber}</p>
+                      </div>
+                    )}
+                    {selected.kyc_payload.address1 && (
+                      <div className="bg-zinc-800 rounded-lg p-3 col-span-2">
+                        <p className="text-zinc-500 text-xs mb-0.5">Address</p>
+                        <p className="text-white text-sm">
+                          {selected.kyc_payload.address1}
+                          {selected.kyc_payload.address2 ? `, ${selected.kyc_payload.address2}` : ""}
+                        </p>
+                        {([selected.kyc_payload.city, selected.kyc_payload.country].filter(Boolean).length > 0) && (
+                          <p className="text-zinc-500 text-xs mt-1">
+                            {[selected.kyc_payload.city, selected.kyc_payload.country].filter(Boolean).join(", ")}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Markets ────────────────────────────────────────────── */}
+              {selected.markets && selected.markets.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">Markets</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {selected.markets.map((m) => (
+                      <span
+                        key={m}
+                        className="text-[10px] px-2 py-0.5 rounded border border-zinc-600 text-zinc-300 font-ibm-mono"
+                      >
+                        {m}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* ── Broker ────────────────────────────────────────────── */}
               <div>
                 <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">Broker Details</p>
@@ -397,12 +552,12 @@ export default function AdminAlgoRequestsPage() {
                       {BROKER_LABELS[selected.broker] ?? selected.broker}
                     </p>
                   </div>
-                  <div className="bg-zinc-800 rounded-lg p-3">
-                    <p className="text-zinc-500 text-xs mb-0.5">Broker Client ID</p>
-                    <p className="text-white text-sm font-mono">
-                      {selected.broker_client_id ?? <span className="text-zinc-600">Not provided</span>}
-                    </p>
-                  </div>
+                  {hasValue(selected.broker_client_id) && (
+                    <div className="bg-zinc-800 rounded-lg p-3">
+                      <p className="text-zinc-500 text-xs mb-0.5">Broker Client ID</p>
+                      <p className="text-white text-sm font-mono">{selected.broker_client_id}</p>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -410,21 +565,29 @@ export default function AdminAlgoRequestsPage() {
               <div>
                 <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">Capital & Risk</p>
                 <div className="grid grid-cols-3 gap-3">
-                  <div className="bg-zinc-800 rounded-lg p-3">
-                    <p className="text-zinc-500 text-xs mb-0.5">Capital</p>
-                    <p className="text-white font-semibold text-sm">
-                      {fmtCapital(selected.capital_amount, selected.capital_currency)}
-                    </p>
-                    <p className="text-zinc-600 text-[10px]">{selected.capital_currency ?? "INR"}</p>
-                  </div>
-                  <div className="bg-zinc-800 rounded-lg p-3">
-                    <p className="text-zinc-500 text-xs mb-0.5">Risk Level</p>
-                    <p className="text-white font-semibold text-sm capitalize">{selected.risk_level}</p>
-                  </div>
-                  <div className="bg-zinc-800 rounded-lg p-3">
-                    <p className="text-zinc-500 text-xs mb-0.5">Plan</p>
-                    <p className="text-teal-400 font-semibold text-sm">{selected.plan_id}</p>
-                  </div>
+                  {selected.capital_amount != null && (
+                    <div className="bg-zinc-800 rounded-lg p-3">
+                      <p className="text-zinc-500 text-xs mb-0.5">Capital</p>
+                      <p className="text-white font-semibold text-sm">
+                        {fmtCapital(selected.capital_amount, selected.capital_currency)}
+                      </p>
+                      {hasValue(selected.capital_currency) && (
+                        <p className="text-zinc-600 text-[10px]">{selected.capital_currency}</p>
+                      )}
+                    </div>
+                  )}
+                  {hasValue(selected.risk_level) && (
+                    <div className="bg-zinc-800 rounded-lg p-3">
+                      <p className="text-zinc-500 text-xs mb-0.5">Risk Level</p>
+                      <p className="text-white font-semibold text-sm capitalize">{selected.risk_level}</p>
+                    </div>
+                  )}
+                  {hasValue(selected.plan_id) && (
+                    <div className="bg-zinc-800 rounded-lg p-3">
+                      <p className="text-zinc-500 text-xs mb-0.5">Plan</p>
+                      <p className="text-teal-400 font-semibold text-sm">{selected.plan_id}</p>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -432,64 +595,85 @@ export default function AdminAlgoRequestsPage() {
               <div>
                 <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">Trading Profile</p>
                 <div className="grid grid-cols-3 gap-3">
-                  <div className="bg-zinc-800 rounded-lg p-3">
-                    <p className="text-zinc-500 text-xs mb-0.5">Trade Type</p>
-                    <p className="text-white text-sm capitalize">{selected.trade_type ?? <span className="text-zinc-600">—</span>}</p>
-                  </div>
-                  <div className="bg-zinc-800 rounded-lg p-3">
-                    <p className="text-zinc-500 text-xs mb-0.5">Experience</p>
-                    <p className="text-white text-sm capitalize">{selected.trading_experience ?? <span className="text-zinc-600">—</span>}</p>
-                  </div>
-                  <div className="bg-zinc-800 rounded-lg p-3">
-                    <p className="text-zinc-500 text-xs mb-0.5">Timeframe</p>
-                    <p className="text-white text-sm capitalize">{selected.preferred_timeframe ?? <span className="text-zinc-600">—</span>}</p>
-                  </div>
-                  <div className="bg-zinc-800 rounded-lg p-3">
-                    <p className="text-zinc-500 text-xs mb-0.5">Target Profit</p>
-                    <p className="text-white text-sm">{selected.target_profit_pct != null ? `${selected.target_profit_pct}%` : <span className="text-zinc-600">—</span>}</p>
-                  </div>
-                  <div className="bg-zinc-800 rounded-lg p-3">
-                    <p className="text-zinc-500 text-xs mb-0.5">Stop Loss</p>
-                    <p className="text-white text-sm">{selected.stop_loss_pct != null ? `${selected.stop_loss_pct}%` : <span className="text-zinc-600">—</span>}</p>
-                  </div>
-                  <div className="bg-zinc-800 rounded-lg p-3">
-                    <p className="text-zinc-500 text-xs mb-0.5">Max Drawdown</p>
-                    <p className="text-white text-sm">{selected.max_drawdown_pct != null ? `${selected.max_drawdown_pct}%` : <span className="text-zinc-600">—</span>}</p>
-                  </div>
-                  <div className="bg-zinc-800 rounded-lg p-3">
-                    <p className="text-zinc-500 text-xs mb-0.5">Leverage</p>
-                    <p className="text-white text-sm capitalize">
-                      {selected.leverage_preference ?? <span className="text-zinc-600">—</span>}
-                      {selected.custom_leverage ? ` (${selected.custom_leverage})` : ""}
+                  {hasValue(selected.trade_type) && (
+                    <div className="bg-zinc-800 rounded-lg p-3">
+                      <p className="text-zinc-500 text-xs mb-0.5">Trade Type</p>
+                      <p className="text-white text-sm capitalize">{selected.trade_type}</p>
+                    </div>
+                  )}
+                  {hasValue(selected.trading_experience) && (
+                    <div className="bg-zinc-800 rounded-lg p-3">
+                      <p className="text-zinc-500 text-xs mb-0.5">Experience</p>
+                      <p className="text-white text-sm capitalize">{selected.trading_experience}</p>
+                    </div>
+                  )}
+                  {hasValue(selected.preferred_timeframe) && (
+                    <div className="bg-zinc-800 rounded-lg p-3">
+                      <p className="text-zinc-500 text-xs mb-0.5">Timeframe</p>
+                      <p className="text-white text-sm capitalize">{selected.preferred_timeframe}</p>
+                    </div>
+                  )}
+                  {selected.target_profit_pct != null && (
+                    <div className="bg-zinc-800 rounded-lg p-3">
+                      <p className="text-zinc-500 text-xs mb-0.5">Target Profit</p>
+                      <p className="text-white text-sm">{selected.target_profit_pct}%</p>
+                    </div>
+                  )}
+                  {selected.stop_loss_pct != null && (
+                    <div className="bg-zinc-800 rounded-lg p-3">
+                      <p className="text-zinc-500 text-xs mb-0.5">Stop Loss</p>
+                      <p className="text-white text-sm">{selected.stop_loss_pct}%</p>
+                    </div>
+                  )}
+                  {selected.max_drawdown_pct != null && (
+                    <div className="bg-zinc-800 rounded-lg p-3">
+                      <p className="text-zinc-500 text-xs mb-0.5">Max Drawdown</p>
+                      <p className="text-white text-sm">{selected.max_drawdown_pct}%</p>
+                    </div>
+                  )}
+                  {hasValue(selected.leverage_preference) && (
+                    <div className="bg-zinc-800 rounded-lg p-3">
+                      <p className="text-zinc-500 text-xs mb-0.5">Leverage</p>
+                      <p className="text-white text-sm capitalize">
+                        {selected.leverage_preference}
+                        {selected.custom_leverage ? ` (${selected.custom_leverage})` : ""}
+                      </p>
+                    </div>
+                  )}
+                  {hasValue(selected.trading_goal) && (
+                    <div className="bg-zinc-800 rounded-lg p-3">
+                      <p className="text-zinc-500 text-xs mb-0.5">Trading Goal</p>
+                      <p className="text-white text-sm capitalize">{selected.trading_goal}</p>
+                    </div>
+                  )}
+                  {hasValue(selected.trading_frequency) && (
+                    <div className="bg-zinc-800 rounded-lg p-3">
+                      <p className="text-zinc-500 text-xs mb-0.5">Frequency</p>
+                      <p className="text-white text-sm capitalize">{selected.trading_frequency}</p>
+                    </div>
+                  )}
+                </div>
+                {selected.risk_acknowledged === true && (
+                  <div className="mt-2">
+                    <p className="text-xs">
+                      Risk Acknowledgement:{" "}
+                      <span className="text-green-400 font-semibold">Accepted</span>
                     </p>
                   </div>
-                  <div className="bg-zinc-800 rounded-lg p-3">
-                    <p className="text-zinc-500 text-xs mb-0.5">Trading Goal</p>
-                    <p className="text-white text-sm capitalize">{selected.trading_goal ?? <span className="text-zinc-600">—</span>}</p>
-                  </div>
-                  <div className="bg-zinc-800 rounded-lg p-3">
-                    <p className="text-zinc-500 text-xs mb-0.5">Frequency</p>
-                    <p className="text-white text-sm capitalize">{selected.trading_frequency ?? <span className="text-zinc-600">—</span>}</p>
-                  </div>
-                </div>
-                <div className="mt-2">
-                  <p className="text-xs">
-                    Risk Acknowledgement:{" "}
-                    {selected.risk_acknowledged
-                      ? <span className="text-green-400 font-semibold">Accepted</span>
-                      : <span className="text-amber-400">Not recorded</span>}
-                  </p>
-                </div>
+                )}
               </div>
 
               {/* ── Strategy ──────────────────────────────────────────── */}
-              <div>
+              {(hasValue(selected.strategy_pref) || hasValue(selected.custom_strategy)) && (
+                <div>
                 <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">Strategy</p>
                 <div className="bg-zinc-800 rounded-lg p-3">
-                  <p className="text-zinc-500 text-xs mb-0.5">Preferred Strategy</p>
-                  <p className="text-white text-sm capitalize font-medium">
-                    {selected.strategy_pref ?? <span className="text-zinc-600">Not specified</span>}
-                  </p>
+                  {hasValue(selected.strategy_pref) && (
+                    <>
+                      <p className="text-zinc-500 text-xs mb-0.5">Preferred Strategy</p>
+                      <p className="text-white text-sm capitalize font-medium">{selected.strategy_pref}</p>
+                    </>
+                  )}
                   {selected.custom_strategy && (
                     <div className="mt-2 border-t border-zinc-700 pt-2">
                       <p className="text-zinc-500 text-xs mb-1">Custom Strategy Description</p>
@@ -497,7 +681,8 @@ export default function AdminAlgoRequestsPage() {
                     </div>
                   )}
                 </div>
-              </div>
+                </div>
+              )}
 
               {/* ── Notes ─────────────────────────────────────────────── */}
               {selected.notes && (
@@ -505,6 +690,15 @@ export default function AdminAlgoRequestsPage() {
                   <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">User Notes</p>
                   <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-3 text-sm text-zinc-300 leading-relaxed">
                     {selected.notes}
+                  </div>
+                </div>
+              )}
+
+              {selected.rejection_reason && (
+                <div>
+                  <p className="text-[10px] font-semibold text-rose-400 uppercase tracking-widest mb-2">Last rejection reason</p>
+                  <div className="bg-rose-500/5 border border-rose-500/20 rounded-lg p-3 text-sm text-rose-200 leading-relaxed">
+                    {selected.rejection_reason}
                   </div>
                 </div>
               )}
@@ -523,20 +717,54 @@ export default function AdminAlgoRequestsPage() {
                   </div>
                 </div>
               </div>
+
+              {showRejectReasonInput && selected.status !== "provisioned" && selected.status !== "active" && (
+                <div className="border-t border-zinc-800 pt-4">
+                  <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">
+                    Reject reason (shown to user)
+                  </p>
+                  <Textarea
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    className="bg-zinc-800 border-zinc-700 text-white min-h-[110px]"
+                    placeholder="Explain what needs to be corrected before resubmission..."
+                  />
+                </div>
+              )}
             </div>
           )}
 
-          <DialogFooter className="gap-2 pt-2">
+          <DialogFooter className="gap-2 pt-3 border-t border-zinc-800 flex-wrap">
             <Button
               variant="outline"
-              onClick={() => setSelected(null)}
+              onClick={showRejectReasonInput ? () => setShowRejectReasonInput(false) : closeDialog}
               className="border-zinc-700 hover:bg-zinc-800"
             >
-              Cancel
+              {showRejectReasonInput ? "Back" : "Cancel"}
             </Button>
+            {selected?.status !== "provisioned" && selected?.status !== "active" && (
+              <Button
+                variant="outline"
+                onClick={showRejectReasonInput ? handleReject : () => setShowRejectReasonInput(true)}
+                disabled={rejecting || provisioning}
+                className="border-rose-600 text-rose-300 hover:bg-rose-600/10"
+              >
+                {rejecting ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Rejecting...</>
+                ) : (
+                  <><XCircle className="h-4 w-4 mr-2" />{showRejectReasonInput ? "Confirm reject" : "Reject"}</>
+                )}
+              </Button>
+            )}
             <Button
               onClick={handleProvision}
-              disabled={provisioning}
+              disabled={
+                provisioning ||
+                rejecting ||
+                showRejectReasonInput ||
+                selected?.status === "provisioned" ||
+                selected?.status === "active"
+              }
               className="bg-teal-600 hover:bg-teal-500 text-white font-bold"
             >
               {provisioning ? (
