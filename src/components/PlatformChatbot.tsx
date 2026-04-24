@@ -7,6 +7,20 @@ import { supabase } from "@/integrations/supabase/client";
 
 const WHATSAPP_NUMBER = "919632953355";
 const PHONE_NUMBER    = "+91 96329 53355";
+const DEMO_URL        = "/1414ghgh";
+
+function isLikelyIndianVisitor(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    if (tz === "Asia/Kolkata" || tz === "Asia/Calcutta") return true;
+  } catch { /* ignore */ }
+  const langs = [
+    ...(navigator.languages ?? []),
+    navigator.language ?? "",
+  ].map(l => l.toLowerCase());
+  return langs.some(l => l === "hi" || l.startsWith("hi-") || l.endsWith("-in"));
+}
 
 function ChatbotLogo({ className, size = 24 }: { className?: string; size?: number }) {
   const s   = size;
@@ -200,9 +214,13 @@ Reach out for:
   },
 ];
 
-const QUICK_REPLIES = [
+type QuickReply =
+  | { label: string; keywords: string[]; action?: never }
+  | { label: string; action: "open-demo"; keywords?: never };
+
+const QUICK_REPLIES: QuickReply[] = [
   { label: "What is TradingSmart?", keywords: ["what is this platform"] },
-  { label: "Is it real?", keywords: ["is it real"] },
+  { label: "See a live demo", action: "open-demo" },
   { label: "How AI works", keywords: ["ai", "prediction"] },
   { label: "Strategies", keywords: ["strategy"] },
   { label: "Paper Trade", keywords: ["paper trade"] },
@@ -303,8 +321,13 @@ export function PlatformChatbot() {
   const [input, setInput]       = useState("");
   const [typing, setTyping]     = useState(false);
   const [hasNotif, setHasNotif] = useState(true);
+  const [showPhone, setShowPhone] = useState(false);
   const bottomRef               = useRef<HTMLDivElement>(null);
   const inputRef                = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setShowPhone(isLikelyIndianVisitor());
+  }, []);
 
   const WELCOME: Message = {
     id: "welcome",
@@ -361,12 +384,15 @@ export function PlatformChatbot() {
     if (faq) {
       addBotReply((isContactTopic ? "" : pickIntro()) + faq.answer, !!isContactTopic);
     } else {
+      const contactLine = showPhone
+        ? `**Call or WhatsApp:** ${PHONE_NUMBER}`
+        : `**Reach us on WhatsApp** — tap the button below.`;
       addBotReply(
-        `I only answer questions about the TradingSmart platform. For anything else, please reach out — we'll help you properly.\n\n**Call or WhatsApp:** ${PHONE_NUMBER}`,
+        `I only answer questions about the TradingSmart platform. For anything else, please reach out — we'll help you properly.\n\n${contactLine}`,
         true
       );
     }
-  }, [messages]);
+  }, [messages, showPhone]);
 
   return (
     <>
@@ -435,10 +461,12 @@ export function PlatformChatbot() {
                       className="flex items-center justify-center gap-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-semibold py-2 px-3 transition-colors">
                       <MessageSquare className="h-3.5 w-3.5" /> Chat on WhatsApp
                     </a>
-                    <a href={`tel:${PHONE_NUMBER.replace(/\s/g, "")}`}
-                      className="flex items-center justify-center gap-2 rounded-lg border border-border hover:bg-muted text-xs font-medium py-2 px-3 transition-colors">
-                      <Phone className="h-3.5 w-3.5" /> Call {PHONE_NUMBER}
-                    </a>
+                    {showPhone && (
+                      <a href={`tel:${PHONE_NUMBER.replace(/\s/g, "")}`}
+                        className="flex items-center justify-center gap-2 rounded-lg border border-border hover:bg-muted text-xs font-medium py-2 px-3 transition-colors">
+                        <Phone className="h-3.5 w-3.5" /> Call {PHONE_NUMBER}
+                      </a>
+                    )}
                   </div>
                 )}
               </div>
@@ -466,7 +494,15 @@ export function PlatformChatbot() {
             <p className="text-xs text-muted-foreground mb-1.5 font-medium">Quick topics:</p>
             <div className="flex flex-wrap gap-1.5">
               {QUICK_REPLIES.map(qr => (
-                <button key={qr.label} onClick={() => sendMessage(qr.keywords[0])}
+                <button
+                  key={qr.label}
+                  onClick={() => {
+                    if (qr.action === "open-demo") {
+                      window.open(DEMO_URL, "_blank", "noopener,noreferrer");
+                      return;
+                    }
+                    sendMessage(qr.keywords[0]);
+                  }}
                   className="text-xs rounded-full border border-primary/30 bg-primary/5 hover:bg-primary/15 text-primary font-medium px-2.5 py-1 transition-colors">
                   {qr.label}
                 </button>
@@ -491,7 +527,7 @@ export function PlatformChatbot() {
             </button>
           </div>
           <p className="text-center text-[10px] text-muted-foreground mt-1.5">
-            Platform questions only • For urgent help: {PHONE_NUMBER}
+            Platform questions only{showPhone ? ` • For urgent help: ${PHONE_NUMBER}` : ""}
           </p>
         </div>
       </div>

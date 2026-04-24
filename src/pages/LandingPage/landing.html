@@ -121,7 +121,9 @@ img,svg{display:block;max-width:100%}
 .hero-sub{font-size:18px;color:var(--fg-1);max-width:540px;margin-bottom:36px;opacity:0;animation:fadeUp 0.8s ease 1s both}
 @keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
 .hero-sub strong{color:var(--fg-0);font-weight:600}
-.hero-ctas{display:flex;gap:14px;flex-wrap:wrap;opacity:0;animation:fadeUp 0.8s ease 1.2s both;margin-bottom:36px}
+.hero-ctas{display:flex;gap:14px;flex-wrap:wrap;opacity:0;animation:fadeUp 0.8s ease 1.2s both;margin-bottom:14px}
+.hero-talk-link{display:inline-block;font-size:13px;color:var(--fg-2);text-decoration:underline;text-underline-offset:3px;text-decoration-color:rgba(20,184,166,0.45);margin-bottom:36px;opacity:0;animation:fadeUp 0.8s ease 1.4s both;transition:color 0.2s}
+.hero-talk-link:hover{color:var(--cy);text-decoration-color:var(--cy)}
 .hero-trust{display:flex;align-items:center;gap:18px;opacity:0;animation:fadeUp 0.8s ease 1.4s both}
 .trust-text{font-size:14px;color:var(--fg-1);line-height:1.45}
 .trust-stars{color:var(--yl);letter-spacing:2px;font-size:16px}
@@ -187,6 +189,8 @@ img,svg{display:block;max-width:100%}
 .hv-engine-status{display:flex;align-items:center;gap:8px;font-size:9px;color:var(--fg-2);font-family:'JetBrains Mono',monospace}
 .hv-engine-status b{color:var(--fg-0);font-weight:700}
 .hv-engine-kill{width:30px;height:30px;border-radius:50%;border:1px solid rgba(244,63,94,0.45);background:radial-gradient(circle at 35% 30%,rgba(244,63,94,0.35),rgba(122,16,44,0.88));color:#fecdd3;font-family:'Orbitron',sans-serif;font-size:8px;letter-spacing:1px;font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:0 0 18px rgba(244,63,94,0.35),inset 0 -2px 6px rgba(0,0,0,0.5);animation:killBtnPulse 2.4s ease-in-out infinite}
+.hv-example-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border-radius:4px;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.4);color:#fbbf24;font-family:'Orbitron',sans-serif;font-size:8px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;white-space:nowrap}
+.hv-example-badge::before{content:'';width:5px;height:5px;border-radius:50%;background:#fbbf24;box-shadow:0 0 6px rgba(245,158,11,0.7)}
 @keyframes killBtnPulse{0%,100%{box-shadow:0 0 14px rgba(244,63,94,0.26),inset 0 -2px 6px rgba(0,0,0,0.5);transform:scale(1)}50%{box-shadow:0 0 22px rgba(244,63,94,0.45),inset 0 -2px 6px rgba(0,0,0,0.5);transform:scale(1.04)}}
 .hv-engine-stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
 .hv-engine-stat{padding:10px;border-radius:10px;background:rgba(15,23,42,0.55);border:1px solid var(--border)}
@@ -756,8 +760,8 @@ img,svg{display:block;max-width:100%}
         </p>
         <div class="hero-ctas">
           <a href="https://algo.tradingsmart.in/request-access" class="btn btn-primary btn-lg" target="_top">Automate My Strategy →</a>
-          <a href="#pricing" class="btn btn-ghost btn-lg">Book a Free Demo Call</a>
         </div>
+        <a href="#pricing" class="hero-talk-link">Prefer to talk first? Schedule a call.</a>
       </div>
 
       <!-- Hero Visual -->
@@ -785,6 +789,7 @@ img,svg{display:block;max-width:100%}
                 <div class="hv-engine-status">
                   <span>4/4 brokers</span>
                   <b>72h 15m</b>
+                  <span class="hv-example-badge" title="Illustrative figures, not live trading data">Example Data</span>
                   <button class="hv-engine-kill" aria-label="Overall kill switch">STOP</button>
                 </div>
               </div>
@@ -1379,14 +1384,18 @@ img,svg{display:block;max-width:100%}
           </div>
         </div>
       </div>
-      <div class="testimonial">
-        <div class="t-stars">★★★★★</div>
-        <div class="t-quote">"I run a small fund (~$1.1M AUM). Moving to TradingSmart let me deprecate three internal tools and cut infra costs by 60%. Their engineers had our strategy coded and live in about 3 days."</div>
-        <div class="t-author">
-          <div class="t-avatar" style="background:linear-gradient(135deg,#06b6d4,#3b82f6)">GS</div>
-          <div class="t-author-info">
-            <div class="t-author-name">Grant Sterling</div>
-            <div class="t-author-role">Fund Manager · Sydney</div>
+      <div class="testimonial has-portrait">
+        <div class="t-side" aria-hidden="true">
+          <img class="t-side-photo" src="/testimonials/grant.png" alt="">
+        </div>
+        <div class="t-main">
+          <div class="t-stars">★★★★★</div>
+          <div class="t-quote">"I run a small fund (~$1.1M AUM). Moving to TradingSmart let me deprecate three internal tools and cut infra costs by 60%. Their engineers had our strategy coded and live in about 3 days."</div>
+          <div class="t-author">
+            <div class="t-author-info">
+              <div class="t-author-name">Grant Sterling</div>
+              <div class="t-author-role">Fund Manager · Sydney</div>
+            </div>
           </div>
         </div>
       </div>
@@ -1405,14 +1414,18 @@ img,svg{display:block;max-width:100%}
           </div>
         </div>
       </div>
-      <div class="testimonial">
-        <div class="t-stars">★★★★★</div>
-        <div class="t-quote">"Best part? The multi-currency view. I can see my Kraken USD P&L, OANDA GBP, and Eurex EUR all converted to my home currency in real-time. No spreadsheet gymnastics."</div>
-        <div class="t-author">
-          <div class="t-avatar" style="background:linear-gradient(135deg,#fbbf24,#f43f5e)">WC</div>
-          <div class="t-author-info">
-            <div class="t-author-name">Wei Chen</div>
-            <div class="t-author-role">Independent Trader · Dubai</div>
+      <div class="testimonial has-portrait">
+        <div class="t-side" aria-hidden="true">
+          <img class="t-side-photo" src="/testimonials/wei.png" alt="">
+        </div>
+        <div class="t-main">
+          <div class="t-stars">★★★★★</div>
+          <div class="t-quote">"Best part? The multi-currency view. I can see my Kraken USD P&L, OANDA GBP, and Eurex EUR all converted to my home currency in real-time. No spreadsheet gymnastics."</div>
+          <div class="t-author">
+            <div class="t-author-info">
+              <div class="t-author-name">Wei Chen</div>
+              <div class="t-author-role">Independent Trader · Dubai</div>
+            </div>
           </div>
         </div>
       </div>
@@ -1555,8 +1568,8 @@ img,svg{display:block;max-width:100%}
         <p>Join 28,400+ traders running their entire portfolio on TradingSmart.AI. 14-day free trial. No credit card required.</p>
         <div class="cta-ctas">
           <a href="/register" class="btn btn-primary btn-lg" target="_top">Create free account →</a>
-          <a href="#pricing" class="btn btn-ghost btn-lg">Book a demo</a>
         </div>
+        <a href="/schedule-call" class="hero-talk-link">Prefer to talk first? Schedule a call.</a>
       </div>
     </div>
   </div>
