@@ -30,6 +30,7 @@ import TermsOfService from "./pages/TermsOfService";
 import RiskDisclaimer from "./pages/RiskDisclaimer";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import ContactUsPage from "./pages/ContactUs";
+import ScheduleCallThankYouPage from "./pages/ScheduleCallThankYouPage";
 import SubscriptionSettingsPage from "./pages/SubscriptionSettingsPage";
 import ProfilePage from "./pages/ProfilePage";
 import MarketPicksPage from "./pages/MarketPicksPage";
@@ -106,6 +107,7 @@ function isPublicMarketingPath(pathname: string): boolean {
     "/dsn-fintech-founder",
     "/contact-us",
     "/schedule-call",
+    "/thank-you",
     "/white-label",
     "/terms",
     "/risk-disclaimer",
@@ -233,9 +235,12 @@ function AppChatbots() {
     pathname === "/1414ghgh" ||
     pathname.startsWith("/demo/") ||
     (pathname === "/" && hash === "#1414ghgh");
+  /** Landing page has its own conversion focus — skip the floating chatbot there. */
+  const isLandingPage = pathname === "/" && hash !== "#1414ghgh";
   /** Marketing pages: platform bot unless the logged-in app assistant already owns this URL (e.g. /market-picks). */
   const showPlatformChatbot =
     !isTrialDemoExperience &&
+    !isLandingPage &&
     isPublicMarketingPath(pathname) &&
     !showPredictionChatbot;
 
@@ -390,6 +395,7 @@ const App = () => (
                 />
                 <Route path="/contact-us" element={<ContactUsPage />} />
                 <Route path="/schedule-call" element={<ContactUsPage mode="demo" />} />
+                <Route path="/thank-you" element={<ScheduleCallThankYouPage />} />
                 <Route
                   path="/subscription"
                   element={

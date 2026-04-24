@@ -154,6 +154,14 @@ const ContactUsPage = ({ mode = "contact" }: ContactUsPageProps) => {
 
       if (response.ok) {
         reset();
+        if (isDemoMode) {
+          // Dedicated thank-you page for schedule-call submissions.
+          navigate("/thank-you", {
+            state: { source: "schedule-call", name: data.name },
+            replace: true,
+          });
+          return;
+        }
         setIsSubmitSuccess(true);
         toast.success("Enquiry submitted successfully!");
       } else {

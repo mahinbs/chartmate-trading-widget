@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useNavigate } from "react-router-dom";
 import { TradingSmartPricingMatrix } from "@/components/landingpage/TradingSmartPricingMatrix";
 import { useAuth } from "@/hooks/useAuth";
 import { applyInrToEmbeddedLandingPricing } from "@/lib/applyInrToEmbeddedLandingPricing";
@@ -34,6 +35,8 @@ function parseAttr(attrs: string, name: string): string | null {
 const NewLandingPage = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const [transitioning, setTransitioning] = useState<null | "dashboard" | "checkout">(null);
 
   useEffect(() => {
     const head     = document.head;
@@ -166,7 +169,7 @@ const NewLandingPage = () => {
     if (!cta) return;
     if (user?.id) {
       cta.innerHTML = `
-        <a href="/home" class="btn btn-primary" target="_top">Dashboard</a>
+        <a href="/home" class="btn btn-primary" data-dashboard-link="1" target="_top">Dashboard</a>
       `;
       return;
     }
@@ -175,6 +178,44 @@ const NewLandingPage = () => {
       <a href="/auth" class="btn btn-primary" target="_top">Get started →</a>
     `;
   }, [user?.id]);
+
+  // Intercept Dashboard clicks AND any auth-entry clicks (Sign in / Get
+  // started / Create free account / Automate my strategy) when the user is
+  // already signed in, so the navigation stays in-SPA with a branded
+  // loader instead of flashing the /auth page before AuthPage's own
+  // post-auth effect redirects to /home.
+  useEffect(() => {
+    const root = containerRef.current;
+    if (!root || !user?.id) return;
+
+    const handler = (e: MouseEvent) => {
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+      const anchor = e.target instanceof Element ? e.target.closest("a[href]") : null;
+      if (!(anchor instanceof HTMLAnchorElement)) return;
+
+      if (anchor.matches('[data-dashboard-link="1"]')) {
+        e.preventDefault();
+        setTransitioning("dashboard");
+        navigate("/home");
+        return;
+      }
+
+      const url = new URL(anchor.href, window.location.origin);
+      const sameOrigin = url.origin === window.location.origin;
+      const isAuthEntry =
+        sameOrigin && (url.pathname === "/auth" || url.pathname === "/register");
+      // subscribe_plan clicks are handled by the checkout intercept below —
+      // leave them alone so that path creates a Stripe session instead.
+      if (isAuthEntry && !url.searchParams.get("subscribe_plan")) {
+        e.preventDefault();
+        setTransitioning("dashboard");
+        navigate("/home");
+      }
+    };
+
+    root.addEventListener("click", handler);
+    return () => root.removeEventListener("click", handler);
+  }, [user?.id, navigate]);
 
   useEffect(() => {
     // landing.html contains static USD markup; patch to INR for Indian users.
@@ -199,6 +240,7 @@ const NewLandingPage = () => {
       if (!plan || !VALID_PREMIUM_PLANS.has(plan)) return;
 
       e.preventDefault();
+      setTransitioning("checkout");
       const currencyParam = (url.searchParams.get("currency") ?? "").toUpperCase();
       const currency = currencyParam === "INR" ? "inr" : undefined;
       const { success_url, cancel_url } = premiumPlanCheckoutUrls(plan);
@@ -213,6 +255,7 @@ const NewLandingPage = () => {
         return;
       }
       // Fall back to the auth flow so the toast + retry logic there can surface the error.
+      setTransitioning(null);
       window.location.href = target.href;
     };
 
@@ -228,8 +271,101 @@ const NewLandingPage = () => {
         dangerouslySetInnerHTML={{ __html: BODY_HTML }}
       />
       {pricingRoot && createPortal(<TradingSmartPricingMatrix />, pricingRoot)}
+      {transitioning && createPortal(<TransitionLoader variant={transitioning} />, document.body)}
     </>
   );
 };
+
+function TransitionLoader({ variant }: { variant: "dashboard" | "checkout" }) {
+  const label = variant === "dashboard" ? "Loading your dashboard" : "Starting secure checkout";
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      aria-label={label}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 2147483647,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 24,
+        background:
+          "radial-gradient(120% 80% at 50% 0%, rgba(20,184,166,0.18), rgba(14,165,233,0.08) 40%, rgba(6,9,18,0.96) 70%)",
+        backdropFilter: "blur(8px)",
+        WebkitBackdropFilter: "blur(8px)",
+        animation: "tsLoaderFadeIn 220ms ease-out both",
+      }}
+    >
+      <style>{`
+        @keyframes tsLoaderFadeIn { from { opacity: 0 } to { opacity: 1 } }
+        @keyframes tsLoaderSpin { to { transform: rotate(360deg) } }
+        @keyframes tsLoaderPulse { 0%, 100% { opacity: 0.55; transform: scale(0.96) } 50% { opacity: 1; transform: scale(1.04) } }
+      `}</style>
+      <div style={{ position: "relative", width: 88, height: 88 }}>
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: "50%",
+            background: "radial-gradient(circle at 50% 50%, rgba(20,184,166,0.35), transparent 65%)",
+            filter: "blur(12px)",
+            animation: "tsLoaderPulse 1.6s ease-in-out infinite",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: "50%",
+            border: "2px solid rgba(255,255,255,0.08)",
+            borderTopColor: "#14b8a6",
+            borderRightColor: "#0ea5e9",
+            animation: "tsLoaderSpin 0.9s linear infinite",
+          }}
+        />
+        <img
+          src="/logo.png"
+          alt=""
+          style={{
+            position: "absolute",
+            inset: 0,
+            margin: "auto",
+            width: 44,
+            height: 44,
+            objectFit: "contain",
+            filter: "drop-shadow(0 6px 18px rgba(20,184,166,0.45))",
+          }}
+        />
+      </div>
+      <div
+        style={{
+          fontFamily:
+            '"Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+          color: "#f0f6ff",
+          fontSize: 15,
+          fontWeight: 600,
+          letterSpacing: "0.2px",
+          textAlign: "center",
+        }}
+      >
+        {label}
+        <span
+          aria-hidden="true"
+          style={{
+            display: "inline-block",
+            width: "1.5ch",
+            textAlign: "left",
+            color: "#14b8a6",
+          }}
+        >
+          …
+        </span>
+      </div>
+    </div>
+  );
+}
 
 export default NewLandingPage;
