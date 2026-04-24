@@ -20,7 +20,7 @@ import { getSessionAffiliateAttribution } from "@/hooks/useAffiliateRef";
 import { useAuthEmailCooldown } from "@/hooks/useAuthEmailCooldown";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useToast } from "@/hooks/use-toast";
-import { Clock, Loader2 } from "lucide-react";
+import { ArrowLeft, Clock, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { PhoneCountryCodeCombobox } from "@/components/auth/PhoneCountryCodeCombobox";
 import {
@@ -1182,6 +1182,14 @@ const AuthPage = () => {
         <div className="absolute -right-20 top-1/4 h-64 w-64 rounded-full bg-teal-500/10 blur-3xl" />
         <div className="absolute bottom-10 left-1/3 h-56 w-56 rounded-full bg-indigo-500/10 blur-3xl" />
       </div>
+
+      <Link
+        to="/"
+        className="absolute top-5 left-5 z-20 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 backdrop-blur-md transition-colors hover:border-teal-300/40 hover:bg-teal-500/10 hover:text-teal-200"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" />
+        Back to home
+      </Link>
 
       <div className="relative z-10 w-full max-w-lg rounded-2xl border border-cyan-300/20 bg-[linear-gradient(180deg,rgba(17,27,48,0.96),rgba(10,15,28,0.96))] shadow-[0_30px_80px_rgba(0,0,0,0.65)] backdrop-blur-xl px-6 pb-8 pt-6">
         {/* Header */}
