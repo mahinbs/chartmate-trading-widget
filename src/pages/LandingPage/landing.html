@@ -1645,6 +1645,21 @@
       font-size: 11px
     }
 
+    .preview-video-frame {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+      background: rgba(6, 9, 18, 0.72)
+    }
+
+    .preview-video {
+      width: 100%;
+      display: block;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+      background: #030712
+    }
+
     .preview-grid {
       display: grid;
       grid-template-columns: 1fr 1fr 1fr;
@@ -1794,6 +1809,11 @@
     }
 
     /* ═══ HOW IT WORKS ═══ */
+    #how {
+      position: relative;
+      z-index: 6
+    }
+
     .steps {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -2025,8 +2045,11 @@
 
     /* ═══ HUMAN PROOF STRIP ═══ */
     .human-proof {
-      padding: 66px 0 48px;
-      border-bottom: 1px solid rgba(20, 184, 166, 0.08)
+      position: relative;
+      z-index: 2;
+      padding: 126px 0 48px;
+      border-bottom: 1px solid rgba(20, 184, 166, 0.08);
+      overflow: hidden
     }
 
     .human-proof-card {
@@ -3901,13 +3924,13 @@
   <!-- ═══ HOW IT WORKS ═══ -->
   <section class="section" id="how">
     <div class="container">
-      <div class="section-head reveal">
+      <div class="section-head">
         <div class="section-label">How it works</div>
         <h2 class="section-title">Live in <span class="accent">72 hours</span></h2>
         <p class="section-desc">Our engineers hand-code your chosen strategy onto your trading robot, validate it with
           backtests and paper workflows, then take it live. Typical go-live takes ~72 hours end-to-end.</p>
       </div>
-      <div class="steps reveal-stagger">
+      <div class="steps">
         <div class="step">
           <div class="step-num"></div>
           <h3>Connect brokers</h3>
@@ -4197,67 +4220,10 @@
             <div class="preview-url">app.tradingsmart.ai/dashboard</div>
             <div style="width:38px"></div>
           </div>
-          <div class="preview-grid">
-            <div class="preview-stat">
-              <div class="preview-stat-label">Portfolio Value</div>
-              <div class="preview-stat-value">$1,284,392.18</div>
-              <div class="preview-stat-change" style="color:var(--gr)">▲ +2.34% (24h)</div>
-              <div class="preview-bars" id="previewBars1"></div>
-            </div>
-            <div class="preview-stat">
-              <div class="preview-stat-label">Today's P&L</div>
-              <div class="preview-stat-value" style="color:var(--gr)">+$12,847.40</div>
-              <div class="preview-stat-change" style="color:var(--gr)">▲ 47 winning trades</div>
-              <div class="preview-bars" id="previewBars2"></div>
-            </div>
-            <div class="preview-stat">
-              <div class="preview-stat-label">Active Strategies</div>
-              <div class="preview-stat-value">14 / 18</div>
-              <div class="preview-stat-change" style="color:var(--cy)">● 4 in standby</div>
-              <div class="preview-bars" id="previewBars3"></div>
-            </div>
-            <div class="preview-strategies">
-              <h4>Live Strategy Feed <span id="previewTime">● 12 running</span></h4>
-              <div class="preview-strat-list">
-                <div class="preview-strat">
-                  <div class="preview-strat-dot"></div>
-                  <div><span class="preview-strat-name">VWAP Crossover Pro</span> · Interactive Brokers · US Equities
-                  </div>
-                  <svg class="preview-strat-spark" viewBox="0 0 60 20">
-                    <path d="M0,15 L10,12 L20,14 L30,8 L40,10 L50,5 L60,3" fill="none" stroke="#10b981"
-                      stroke-width="1.5" />
-                  </svg>
-                  <div class="preview-strat-pnl">+$2,430</div>
-                </div>
-                <div class="preview-strat">
-                  <div class="preview-strat-dot"></div>
-                  <div><span class="preview-strat-name">BTC Range Trader v2</span> · Binance · CRYPTO</div>
-                  <svg class="preview-strat-spark" viewBox="0 0 60 20">
-                    <path d="M0,12 L10,14 L20,10 L30,11 L40,7 L50,9 L60,4" fill="none" stroke="#10b981"
-                      stroke-width="1.5" />
-                  </svg>
-                  <div class="preview-strat-pnl">+$1,847</div>
-                </div>
-                <div class="preview-strat">
-                  <div class="preview-strat-dot" style="background:var(--yl);box-shadow:0 0 10px var(--yl)"></div>
-                  <div><span class="preview-strat-name">Cable Rider GBP</span> · OANDA · FOREX</div>
-                  <svg class="preview-strat-spark" viewBox="0 0 60 20">
-                    <path d="M0,8 L10,10 L20,6 L30,9 L40,7 L50,10 L60,8" fill="none" stroke="#fbbf24"
-                      stroke-width="1.5" />
-                  </svg>
-                  <div class="preview-strat-pnl" style="color:var(--yl)">+$218</div>
-                </div>
-                <div class="preview-strat">
-                  <div class="preview-strat-dot"></div>
-                  <div><span class="preview-strat-name">DAX Session Scalper</span> · IG Group · EU Futures</div>
-                  <svg class="preview-strat-spark" viewBox="0 0 60 20">
-                    <path d="M0,14 L10,12 L20,13 L30,8 L40,9 L50,5 L60,2" fill="none" stroke="#10b981"
-                      stroke-width="1.5" />
-                  </svg>
-                  <div class="preview-strat-pnl">+€890</div>
-                </div>
-              </div>
-            </div>
+          <div class="preview-video-frame">
+            <video class="preview-video" src="/demo-copy-web.mp4" autoplay muted loop playsinline controls preload="metadata">
+              Your browser does not support the video tag.
+            </video>
           </div>
         </div>
       </div>
