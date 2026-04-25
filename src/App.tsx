@@ -42,7 +42,7 @@ import AdminAffiliatesPage from "./pages/admin/AdminAffiliatesPage";
 import AdminContactsPage from "./pages/admin/AdminContactsPage";
 import AdminWhitelabelsPage from "./pages/admin/AdminWhitelabelsPage";
 import AdminAlgoRequestsPage from "./pages/admin/AdminAlgoRequestsPage";
-import AdminAlgoAccessRequestsPage from "./pages/admin/AdminAlgoAccessRequestsPage";
+import AdminWebinarBookingsPage from "./pages/admin/AdminWebinarBookingsPage";
 import AdminStrategyDevRequestsPage from "./pages/admin/AdminStrategyDevRequestsPage";
 import BlogsPage from "./pages/BlogsPage";
 import BlogDetailPage from "./pages/BlogDetailPage";
@@ -564,8 +564,8 @@ const App = () => (
                     element={<AdminAlgoRequestsPage />}
                   />
                   <Route
-                    path="algo-access-requests"
-                    element={<AdminAlgoAccessRequestsPage />}
+                    path="webinar-bookings"
+                    element={<AdminWebinarBookingsPage />}
                   />
                   <Route
                     path="strategy-dev-requests"
