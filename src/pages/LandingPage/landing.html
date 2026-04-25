@@ -1809,11 +1809,6 @@
     }
 
     /* ═══ HOW IT WORKS ═══ */
-    #how {
-      position: relative;
-      z-index: 6
-    }
-
     .steps {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -2045,9 +2040,7 @@
 
     /* ═══ HUMAN PROOF STRIP ═══ */
     .human-proof {
-      position: relative;
-      z-index: 2;
-      padding: 126px 0 48px;
+      padding: 188px 0 48px;
       border-bottom: 1px solid rgba(20, 184, 166, 0.08);
       overflow: hidden
     }
@@ -3166,7 +3159,7 @@
       }
 
       .human-proof {
-        padding: 40px 0 30px
+        padding: 64px 0 30px
       }
 
       .human-proof-card {
@@ -3745,6 +3738,7 @@
         </p>
         <div class="hero-ctas">
           <a href="/auth?tab=signup&entry=landing" class="btn btn-primary btn-lg" target="_top">Automate My Strategy →</a>
+          <a href="#preview" class="btn btn-ghost btn-lg">Watch Demo</a>
         </div>
         <a href="/schedule-call" class="hero-talk-link" target="_top">Prefer to talk first? Schedule a call.</a>
       </div>
@@ -4221,7 +4215,7 @@
             <div style="width:38px"></div>
           </div>
           <div class="preview-video-frame">
-            <video class="preview-video" src="/demo-copy-web.mp4" autoplay muted loop playsinline controls preload="metadata">
+            <video class="preview-video" src="/demo-copy-web.mp4" playsinline controls preload="metadata">
               Your browser does not support the video tag.
             </video>
           </div>
@@ -4936,22 +4930,39 @@
       const burger = document.querySelector('.burger');
       const navLinks = document.querySelector('.nav-links');
       const navOverlay = document.getElementById('navOverlay');
+      const MOBILE_MENU_MAX_WIDTH = 960;
+
+      function setBodyScrollLocked(locked) {
+        if (locked) {
+          document.body.style.overflow = 'hidden';
+          document.body.style.height = '100vh';
+          return;
+        }
+        document.body.style.overflow = '';
+        document.body.style.height = '';
+      }
 
       if (burger && navLinks) {
         function toggleMenu() {
           const isActive = navLinks.classList.toggle('mobile-active');
           burger.classList.toggle('active');
 
-          if (isActive) {
-            document.body.style.overflow = 'hidden';
-            document.body.style.height = '100vh';
-          } else {
-            document.body.style.overflow = '';
-            document.body.style.height = '';
+          // Only lock document scrolling on actual mobile/tablet layouts.
+          const shouldLockScroll = isActive && window.innerWidth <= MOBILE_MENU_MAX_WIDTH;
+          setBodyScrollLocked(shouldLockScroll);
+        }
+
+        function syncMenuForViewport() {
+          if (window.innerWidth > MOBILE_MENU_MAX_WIDTH) {
+            navLinks.classList.remove('mobile-active');
+            burger.classList.remove('active');
+            setBodyScrollLocked(false);
           }
         }
 
         burger.addEventListener('click', toggleMenu);
+        window.addEventListener('resize', syncMenuForViewport, { passive: true });
+        syncMenuForViewport();
 
         // Close menu when clicking a link
         navLinks.querySelectorAll('a').forEach(link => {
