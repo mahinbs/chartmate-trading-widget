@@ -1,16 +1,21 @@
 /**
  * options-paper-exit-monitor — Supabase Edge Function
  *
- * Polls all open options positions (paper and live) and evaluates exit conditions
- * based on the PREMIUM price (not the underlying price). Called every 1–2 minutes
- * by pg_cron during market hours.
+ * Polls all open options positions (paper and live) and evaluates exit conditions.
+ * Called every 1–2 minutes by pg_cron during market hours.
  *
- * Exit conditions evaluated per trade:
- *   1. SL on premium:       current_ltp < entry_premium * (1 - sl_pct/100)
- *   2. TP on premium:       current_ltp > entry_premium * (1 + tp_pct/100)
- *   3. Trailing SL:         activate after trail_after_pct profit; trail by trail_pct from peak
- *   4. Time-based exit:     IST time >= time_exit_hhmm → hard exit (theta decay guard)
- *   5. Expiry day exit:     today == expiry_date → square off before 3 PM
+ * Exit conditions evaluated per trade (priority order):
+ *   1. Underlying-price-based SL/TP (when strategy_metadata carries those levels):
+ *      a. CE: exit if underlying_ltp <= underlying_sl_price  OR  >= underlying_tp2_price
+ *      b. PE: exit if underlying_ltp >= underlying_sl_price  OR  <= underlying_tp2_price
+ *      c. TP1 hit (1:2 RR): trail SL to entry (breakeven), continue monitoring
+ *   2. Premium-based fallback (sl_pct/tp_pct from options_strategies.exit_rules)
+ *   3. Trailing SL on premium after trail_after_pct gain
+ *   4. Time-based exit: IST time >= time_exit_hhmm
+ *   5. Expiry day exit: today == expiry_date → square off before 3 PM
+ *
+ * Market hours: 09:16 – 23:30 IST (covers both NSE 15:30 and MCX 23:30).
+ * For NSE trades the time_exit rule (default 15:15) fires the exit at the right time.
  *
  * For live trades: places a SELL/MARKET options order via OpenAlgo.
  * For paper trades: updates active_trades row directly (no broker call).
@@ -42,17 +47,18 @@ function isoDateIST(d: Date): string {
   return `${ist.getFullYear()}-${String(ist.getMonth() + 1).padStart(2, "0")}-${String(ist.getDate()).padStart(2, "0")}`;
 }
 
-/** Index / underlying LTP (NIFTY) for strangle roll trigger */
+/** Underlying or index LTP — exchange-aware (NSE_INDEX, MCX, etc.) */
 async function fetchUnderlyingLtp(
   symbol: string,
   apiKey: string,
+  exchange = "NSE_INDEX",
 ): Promise<number | null> {
   if (!OPENALGO_URL || !apiKey) return null;
   try {
     const res = await fetch(`${OPENALGO_URL}/api/v1/quotes`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ apikey: apiKey, symbol, exchange: "NSE_INDEX" }),
+      body: JSON.stringify({ apikey: apiKey, symbol, exchange }),
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) return null;
@@ -269,8 +275,9 @@ Deno.serve(async (req) => {
   const nowHHMM = hhmm(now);
   const todayDateStr = isoDateIST(now);
 
-  // Market hours guard (09:16 – 15:30 IST)
-  if (nowHHMM < "09:16" || nowHHMM > "15:30") {
+  // Market hours guard: 09:16 – 23:30 IST (covers NSE until 15:30 and MCX until 23:30).
+  // NSE trades are handled via their time_exit rule (default 15:15) which fires within this window.
+  if (nowHHMM < "09:16" || nowHHMM > "23:30") {
     return new Response(
       JSON.stringify({ status: "ok", message: "Outside market hours", time_ist: nowHHMM }),
       { status: 200, headers },
@@ -345,7 +352,119 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Get current LTP for the options symbol
+        // ── Underlying-price-based exit (EMA 9-20 and similar) ───────
+        const tradeMetaRaw = trade.strategy_metadata as Record<string, unknown> | null | undefined;
+        const tradeMeta = tradeMetaRaw && typeof tradeMetaRaw === "object" ? tradeMetaRaw : null;
+        const undSlPrice = tradeMeta?.underlying_sl_price != null ? Number(tradeMeta.underlying_sl_price) : null;
+        const undTp2Price = tradeMeta?.underlying_tp2_price != null ? Number(tradeMeta.underlying_tp2_price) : null;
+
+        if (undSlPrice !== null && undTp2Price !== null && apiKey) {
+          const undSym = String(trade.underlying ?? "NIFTY").trim() || "NIFTY";
+          const undExch = String(tradeMeta?.underlying_exchange ?? "NSE_INDEX");
+          const undLtp = await fetchUnderlyingLtp(undSym, apiKey, undExch);
+
+          if (undLtp !== null && undLtp > 0) {
+            const optType = String(trade.option_type ?? "CE").toUpperCase();
+            const undTp1Price = tradeMeta?.underlying_tp1_price != null ? Number(tradeMeta.underlying_tp1_price) : null;
+            const undEntryPrice = tradeMeta?.underlying_entry_price != null ? Number(tradeMeta.underlying_entry_price) : null;
+            let tp1Hit = Boolean(tradeMeta?.tp1_hit ?? false);
+
+            // Check TP1 (1:2 RR) — trail SL to entry instead of closing
+            if (!tp1Hit && undTp1Price !== null) {
+              const tp1Crossed = optType === "CE" ? undLtp >= undTp1Price : undLtp <= undTp1Price;
+              if (tp1Crossed) {
+                const newSl = undEntryPrice ?? undSlPrice;
+                const updatedMeta = { ...tradeMeta, tp1_hit: true, underlying_sl_price: newSl };
+                await (supabase as any)
+                  .from("active_trades")
+                  .update({ strategy_metadata: updatedMeta })
+                  .eq("id", tradeId);
+                tp1Hit = true;
+                console.log(`[exit-monitor] TP1 hit trade=${tradeId} und=${undSym} ltp=${undLtp} sl_trailed_to=${newSl}`);
+                results.push({ trade_id: tradeId, action: "tp1_hit_sl_trailed" });
+                continue;
+              }
+            }
+
+            // Resolve live SL (may have been trailed after TP1)
+            const liveSl = tp1Hit && tradeMeta?.underlying_sl_price != null
+              ? Number(tradeMeta.underlying_sl_price)
+              : undSlPrice;
+
+            // Check full exit on underlying price
+            let undExitReason: string | null = null;
+
+            // Time exit (exchange-aware)
+            const undExchUpper = undExch.toUpperCase();
+            const timeExitHhmm = undExchUpper.includes("MCX") ? "23:00" : "15:15";
+            if (expiryDate === todayDateStr && nowHHMM >= "14:30") {
+              undExitReason = "expiry_day_exit";
+            } else if (nowHHMM >= timeExitHhmm) {
+              undExitReason = "time_exit";
+            } else if (optType === "CE") {
+              if (undLtp <= liveSl) undExitReason = "underlying_stop_loss";
+              else if (undLtp >= undTp2Price) undExitReason = "underlying_take_profit_rr3";
+            } else {
+              if (undLtp >= liveSl) undExitReason = "underlying_stop_loss";
+              else if (undLtp <= undTp2Price) undExitReason = "underlying_take_profit_rr3";
+            }
+
+            if (undExitReason) {
+              // Fetch current option LTP for accurate P&L recording
+              const optionsSymbol: string = trade.options_symbol ?? trade.symbol ?? "";
+              const exchg = String(trade.exchange ?? "NFO");
+              let exitLtp = entryPremium;
+              if (apiKey && optionsSymbol) {
+                const fetched = await fetchOptionLtp(optionsSymbol, exchg, apiKey);
+                if (fetched !== null && fetched > 0) exitLtp = fetched;
+              }
+
+              const pnlPct = entryPremium > 0 ? ((exitLtp - entryPremium) / entryPremium) * 100 : 0;
+              const actualPnl = (exitLtp - entryPremium) * Number(trade.shares ?? 1);
+
+              if (isPaper) {
+                await (supabase as any).from("active_trades").update({
+                  status: "completed",
+                  exit_price: exitLtp,
+                  exit_premium: exitLtp,
+                  exit_time: new Date().toISOString(),
+                  exit_reason: undExitReason,
+                  actual_pnl: actualPnl,
+                  actual_pnl_percentage: pnlPct,
+                }).eq("id", tradeId);
+                results.push({ trade_id: tradeId, action: "paper_exited", reason: undExitReason });
+              } else {
+                if (!apiKey || !optionsSymbol) {
+                  results.push({ trade_id: tradeId, action: "exit_failed", reason: "no_api_key_or_symbol" });
+                  continue;
+                }
+                const exitOrderId = await placeExitOrder(optionsSymbol, exchg, Number(trade.shares ?? 1), apiKey);
+                await (supabase as any).from("active_trades").update({
+                  status: "completed",
+                  exit_price: exitLtp,
+                  exit_premium: exitLtp,
+                  exit_time: new Date().toISOString(),
+                  exit_reason: undExitReason,
+                  actual_pnl: actualPnl,
+                  actual_pnl_percentage: pnlPct,
+                  broker_order_id: exitOrderId ?? trade.broker_order_id,
+                }).eq("id", tradeId);
+                results.push({ trade_id: tradeId, action: "live_exited", reason: undExitReason });
+              }
+              continue; // Skip premium-based check
+            }
+
+            // No underlying exit → keep monitoring (update current price)
+            await (supabase as any)
+              .from("active_trades")
+              .update({ current_price: undLtp })
+              .eq("id", tradeId);
+            results.push({ trade_id: tradeId, action: "monitoring" });
+            continue;
+          }
+        }
+
+        // ── Premium-based exit (fallback for trades without underlying levels) ──
         const optionsSymbol: string = trade.options_symbol ?? trade.symbol ?? "";
         let currentLtp: number | null = null;
 

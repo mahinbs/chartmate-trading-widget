@@ -47,7 +47,7 @@ function isoDateIST(d: Date): string {
   return `${ist.getFullYear()}-${String(ist.getMonth() + 1).padStart(2, "0")}-${String(ist.getDate()).padStart(2, "0")}`;
 }
 
-type StrategyType = "iron_condor" | "strangle" | "bull_put_spread" | "jade_lizard" | "orb_buying";
+type StrategyType = "iron_condor" | "strangle" | "bull_put_spread" | "jade_lizard" | "orb_buying" | "ema_9_20_setup";
 
 function lotUnitsForUnderlying(underlying: string): number {
   const u = String(underlying ?? "").toUpperCase();
@@ -55,6 +55,23 @@ function lotUnitsForUnderlying(underlying: string): number {
   if (u === "FINNIFTY") return 25;
   if (u === "MIDCPNIFTY") return 50;
   return 25;
+}
+
+function resolveLotSizeUnits(strategy: Record<string, any>): number {
+  const state = (strategy.strategy_state ?? {}) as Record<string, unknown>;
+  const deployment = (state.deployment ?? {}) as Record<string, unknown>;
+  const fromDeployment = Number(deployment.lot_units ?? 0);
+  if (Number.isFinite(fromDeployment) && fromDeployment > 0) {
+    return Math.floor(fromDeployment);
+  }
+
+  const rc = (strategy.risk_config ?? {}) as Record<string, unknown>;
+  const fromRiskConfig = Number(rc.lot_units ?? 0);
+  if (Number.isFinite(fromRiskConfig) && fromRiskConfig > 0) {
+    return Math.floor(fromRiskConfig);
+  }
+
+  return lotUnitsForUnderlying(String(strategy.underlying ?? "NIFTY"));
 }
 
 function resolveStrategyType(strategy: Record<string, any>): StrategyType {
@@ -65,7 +82,8 @@ function resolveStrategyType(strategy: Record<string, any>): StrategyType {
     explicit === "strangle" ||
     explicit === "bull_put_spread" ||
     explicit === "jade_lizard" ||
-    explicit === "orb_buying"
+    explicit === "orb_buying" ||
+    explicit === "ema_9_20_setup"
   ) {
     return explicit as StrategyType;
   }
@@ -80,7 +98,7 @@ function buildExecuteParams(strategy: Record<string, any>, strategyType: Strateg
   const rc = (strategy.risk_config ?? {}) as Record<string, unknown>;
   const orb = (strategy.orb_config ?? {}) as Record<string, unknown>;
   const lots = Math.max(1, Number(rc.lot_size ?? 1));
-  const lotSize = lotUnitsForUnderlying(String(strategy.underlying ?? "NIFTY"));
+  const lotSize = resolveLotSizeUnits(strategy);
   const common = {
     underlying: strategy.underlying,
     exchange: "NSE_INDEX",
@@ -143,10 +161,27 @@ function buildExecuteParams(strategy: Record<string, any>, strategyType: Strateg
       stop_loss_mult: Number(er.stop_loss_mult ?? 2),
     };
   }
+  if (strategyType === "ema_9_20_setup") {
+    const exchangeOptions = String(strategy.exchange ?? "NFO").toUpperCase();
+    const exchangeUnderlying = exchangeOptions === "MCX" ? "MCX" : "NSE";
+    return {
+      underlying: strategy.underlying,
+      exchange_underlying: exchangeUnderlying,
+      exchange_options: exchangeOptions,
+      expiry_type: strategy.expiry_type === "monthly" ? "monthly" : "weekly",
+      strike_offset: strategy.strike_selection ?? "ATM",
+      lots,
+      lot_size: lotSize,
+      trade_direction: strategy.trade_direction ?? "both",
+      sl_buffer_points: Number(ec.sl_buffer_points ?? ec.slBuffer ?? 10),
+      tp_rr: Number(ec.tp_rr ?? ec.tpRR ?? 3),
+      tp_partial_rr: Number(ec.tp_partial_rr ?? ec.tpPartialRR ?? 2),
+    };
+  }
   return {
     underlying: strategy.underlying,
-    exchange_underlying: "NSE",
-    exchange_options: "NFO",
+    exchange_underlying: String(strategy.exchange ?? "NFO").toUpperCase() === "MCX" ? "MCX" : "NSE",
+    exchange_options: String(strategy.exchange ?? "NFO").toUpperCase(),
     expiry_type: strategy.expiry_type === "monthly" ? "monthly" : "weekly",
     strike_offset: strategy.strike_selection ?? "ATM",
     lots,
