@@ -17,6 +17,16 @@ import {
 } from "@/services/stripeService";
 import { AlgoOnboardingWizard } from "@/components/algo/AlgoOnboardingWizard";
 
+function normalizeBroker(value: unknown): string | null {
+  const raw = String(value ?? "").trim().toLowerCase().replace(/_/g, " ");
+  if (!raw || raw === "other" || raw === "others") return null;
+  if (raw.includes("fyers") || raw.includes("fayer")) return "fyers";
+  if (raw.includes("upstox")) return "upstox";
+  if (raw.includes("angel")) return "angel";
+  if (raw.includes("zerodha") || raw.includes("kite")) return "zerodha";
+  return null;
+}
+
 export default function AlgoOnboardingPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -101,7 +111,7 @@ export default function AlgoOnboardingPage() {
 
       const { data: existing } = await (supabase as any)
         .from("algo_onboarding")
-        .select("id, status, broker, rejection_reason")
+        .select("id, status, broker, broker_client_id, notes, rejection_reason")
         .eq("user_id", session.user.id)
         .maybeSingle();
 
@@ -113,7 +123,12 @@ export default function AlgoOnboardingPage() {
         }
         setAlreadySubmitted(true);
         setExistingStatus(existing.status ?? null);
-        setExistingBroker(existing.broker ?? null);
+        setExistingBroker(
+          normalizeBroker(existing.broker) ??
+          normalizeBroker(existing.broker_client_id) ??
+          normalizeBroker(existing.notes) ??
+          "zerodha",
+        );
         setRejectionReason((existing.rejection_reason as string | null | undefined) ?? null);
       }
 
