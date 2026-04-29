@@ -66,6 +66,7 @@ function brokerLabelToValue(label: string): string {
     Zerodha: "zerodha",
     Upstox: "upstox",
     "Angel One": "angel",
+    Fyers: "fyers",
     Other: "other",
   };
   return m[label] ?? label.toLowerCase().replace(/\s+/g, "_");
@@ -425,6 +426,7 @@ export function AlgoOnboardingWizard({
                     <select className="form-select" value={form.broker} onChange={(e) => setForm({ ...form, broker: e.target.value })}>
                       <option value="">Select</option>
                       <option>Zerodha</option>
+                      <option>Fyers</option>
                       <option>Upstox</option>
                       <option>Angel One</option>
                       <option>Other</option>

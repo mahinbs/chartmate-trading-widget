@@ -18,6 +18,16 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey, x-client-info"
 };
+
+function normalizeBroker(input: unknown): "zerodha" | "fyers" | "upstox" | "angel" {
+  const raw = String(input ?? "").trim().toLowerCase().replace(/_/g, " ");
+  if (!raw || raw === "other" || raw === "others") return "zerodha";
+  if (raw.includes("fyers") || raw.includes("fayer")) return "fyers";
+  if (raw.includes("upstox")) return "upstox";
+  if (raw.includes("angel")) return "angel";
+  if (raw.includes("zerodha") || raw.includes("kite")) return "zerodha";
+  return "zerodha";
+}
 Deno.serve(async (req)=>{
   if (req.method === "OPTIONS") return new Response(null, {
     status: 204,
@@ -61,7 +71,11 @@ Deno.serve(async (req)=>{
       });
     }
     // ── Fetch onboarding record ───────────────────────────────────────────
-    const { data: onboarding, error: fetchErr } = await supabase.from("algo_onboarding").select("id, user_id, broker, strategy_pref, risk_level, status").eq("id", onboardingId).maybeSingle();
+    const { data: onboarding, error: fetchErr } = await supabase
+      .from("algo_onboarding")
+      .select("id, user_id, broker, broker_client_id, notes, strategy_pref, risk_level, status")
+      .eq("id", onboardingId)
+      .maybeSingle();
     if (fetchErr || !onboarding) {
       return new Response(JSON.stringify({
         error: "Onboarding record not found"
@@ -141,7 +155,7 @@ Deno.serve(async (req)=>{
       integration_type: "openalgo",
       base_url: OPENALGO_URL,
       api_key_encrypted: "",
-      broker: onboarding.broker ?? "zerodha",
+      broker: normalizeBroker(onboarding.broker) || normalizeBroker(onboarding.broker_client_id) || normalizeBroker(onboarding.notes),
       openalgo_api_key: openalgoApiKey,
       strategy_name: onboarding.strategy_pref ?? "ChartMate AI",
       is_active: true,

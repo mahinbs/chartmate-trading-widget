@@ -8,6 +8,16 @@ import { planAllowsAlgo } from "@/lib/subscriptionEntitlements";
 import { isManualFullAccessEmail } from "@/lib/manualSubscriptionBypass";
 import { TradingDashboardLoadingScreen } from "./TradingDashboardShell";
 
+function normalizeBroker(value: unknown): string | null {
+  const raw = String(value ?? "").trim().toLowerCase().replace(/_/g, " ");
+  if (!raw || raw === "other" || raw === "others") return null;
+  if (raw.includes("fyers") || raw.includes("fayer")) return "fyers";
+  if (raw.includes("upstox")) return "upstox";
+  if (raw.includes("angel")) return "angel";
+  if (raw.includes("zerodha") || raw.includes("kite")) return "zerodha";
+  return null;
+}
+
 interface GateState {
   loading: boolean;
   provisioned: boolean;
@@ -102,7 +112,7 @@ export function TradingDashboardAccessGate({
       setStatus({
         loading: false,
         provisioned: !!isProvisioned,
-        broker: integration?.broker ?? null,
+        broker: normalizeBroker(integration?.broker) ?? "zerodha",
         redirectTo: isProvisioned ? null : notReadyRedirect,
       });
     })();
