@@ -78,7 +78,7 @@ import { useAffiliateRef } from "./hooks/useAffiliateRef";
 import { supabase } from "@/integrations/supabase/client";
 import { ProTrialExpiredGate } from "./components/ProTrialExpiredGate";
 import { AlgoToolsDashboardLayout } from "./components/layout/AlgoToolsDashboardLayout";
-// import LandingPageNew from "./pages/LandingPageNew";
+import LandingPageNew from "./pages/LandingPageNew";
 import FeaturesPage from "./pages/FeaturesPage";
 import { MobileSplashScreens } from "./mobile-app/MobileSplashScreens";
 import { MobileAppOverlay } from "./mobile-app/MobileAppOverlay";
@@ -295,7 +295,7 @@ const App = () => (
             <div className="min-h-screen bg-background text-foreground">
               <Routes>
                 <Route path="/" element={<RootRoute />} />
-                {/* <Route path="/landing" element={<NewLandingPage />} /> */}
+                <Route path="/landing" element={<LandingPageNew />} />
                 <Route path="/1414ghgh" element={<TrialDashboardPage />} />
                 <Route
                   path="/demo/:brokerSlug"
