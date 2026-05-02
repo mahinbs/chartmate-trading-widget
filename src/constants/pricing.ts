@@ -76,6 +76,63 @@ export const PRICING_PLANS: PricingPlan[] = [
   },
 ];
 
+/**
+ * Display amounts for India (INR) — must match your Stripe INR Price products.
+ * Adjust when you finalize Stripe INR catalog in the dashboard.
+ */
+export const PRICING_PLANS_INR: PricingPlan[] = [
+  {
+    id: "starterPlan",
+    name: "Starter",
+    integrationFee: 13000,
+    price: 1999,
+    period: "month",
+    description:
+      "Full platform access with one custom algo strategy (edit access), backtesting, broker/OpenAlgo integration, and basic support.",
+    features: [
+      "Full platform access",
+      "1 custom algo strategy (edit access)",
+      "Backtesting & analytics",
+      "Broker / OpenAlgo integration",
+      "Basic support",
+    ],
+  },
+  {
+    id: "growthPlan",
+    name: "Growth",
+    integrationFee: 29000,
+    price: 4999,
+    period: "month",
+    description:
+      "Full platform access with up to three algo strategies, advanced backtesting & analytics, broker/OpenAlgo integration, and priority support.",
+    features: [
+      "Full platform access",
+      "Up to 3 algo strategies",
+      "Advanced backtesting & analytics",
+      "Broker / OpenAlgo integration",
+      "Priority support",
+    ],
+  },
+  {
+    id: "professionalPlan",
+    name: "Pro",
+    integrationFee: 75000,
+    price: 12999,
+    period: "month",
+    description:
+      "Full platform access with up to 10 custom algo strategies, advanced analytics & optimization, multi-broker integration, dedicated support, and fast execution setup.",
+    features: [
+      "Full platform access",
+      "Up to 10 custom algo strategies",
+      "Advanced analytics & optimization",
+      "Multi-broker integration",
+      "Dedicated support",
+      "Fast execution setup",
+    ],
+    recommended: true,
+  },
+];
+
 export const WL_PRICING_PLANS = [
   { id: "wl_1_year", name: "1 Year License", price: 1999, years: 1, stripePriceId: "wl_1_year" },
   { id: "wl_2_years", name: "2 Year License", price: 2499, years: 2, stripePriceId: "wl_2_years", recommended: true },

@@ -283,11 +283,22 @@
       top: 0;
       z-index: 40;
       padding: 16px 0;
-      backdrop-filter: blur(16px) saturate(180%);
-      -webkit-backdrop-filter: blur(16px) saturate(180%);
-      background: rgba(6, 9, 18, 0.75);
+      backdrop-filter: blur(10px) saturate(140%);
+      -webkit-backdrop-filter: blur(10px) saturate(140%);
+      background: rgba(6, 9, 18, 0.82);
       border-bottom: 1px solid transparent;
       transition: all 0.3s ease
+    }
+
+    /* Scroll-perf: promote nav to its own layer on desktop only. On mobile
+       this would trap the full-screen menu's fixed-position CTA, so scope
+       behind a min-width to keep the mobile menu layout correct. */
+    @media (min-width: 721px) {
+      .nav {
+        transform: translateZ(0);
+        will-change: transform;
+        contain: layout style;
+      }
     }
 
     .nav.scrolled {
@@ -511,7 +522,9 @@
 .hero h1 .gradient::after { content: ''; position: absolute; left: 0; right: 0; bottom: -6px; height: 3px; background: linear-gradient(90deg, transparent, var(--cy), var(--pu), transparent); opacity: 0; animation: underlineIn 0.6s ease 1.4s forwards; }
 
 .hero-sub { font-size: 18px; color: var(--fg-1); max-width: 540px; margin-bottom: 36px; opacity: 0; animation: fadeUp 0.8s ease 1s both; }
-.hero-ctas { display: flex; gap: 14px; flex-wrap: wrap; opacity: 0; animation: fadeUp 0.8s ease 1.2s both; margin-bottom: 36px; }
+.hero-ctas { display: flex; gap: 14px; flex-wrap: wrap; opacity: 0; animation: fadeUp 0.8s ease 1.2s both; margin-bottom: 14px; }
+.hero-talk-link { display: inline-block; font-size: 13px; color: var(--fg-2); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgba(20,184,166,0.45); margin-bottom: 36px; opacity: 0; animation: fadeUp 0.8s ease 1.4s both; transition: color 0.2s; }
+.hero-talk-link:hover { color: var(--cy); text-decoration-color: var(--cy); }
 
     .hero-trust {
       display: flex;
@@ -1632,6 +1645,21 @@
       font-size: 11px
     }
 
+    .preview-video-frame {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+      background: rgba(6, 9, 18, 0.72)
+    }
+
+    .preview-video {
+      width: 100%;
+      display: block;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+      background: #030712
+    }
+
     .preview-grid {
       display: grid;
       grid-template-columns: 1fr 1fr 1fr;
@@ -2012,8 +2040,9 @@
 
     /* ═══ HUMAN PROOF STRIP ═══ */
     .human-proof {
-      padding: 66px 0 48px;
-      border-bottom: 1px solid rgba(20, 184, 166, 0.08)
+      padding: 188px 0 48px;
+      border-bottom: 1px solid rgba(20, 184, 166, 0.08);
+      overflow: hidden
     }
 
     .human-proof-card {
@@ -2363,6 +2392,22 @@
       background: linear-gradient(180deg, rgba(17, 27, 48, 0.7), rgba(10, 15, 28, 0.7));
       border: 1px solid var(--border);
       transition: all 0.3s
+    }
+
+    /* Ghost CTAs inside pricing cards need more contrast than the nav's
+       ghost style — the card background is nearly the same tone as the
+       default border, making the button look non-interactive. */
+    .price-card .btn-ghost {
+      border-color: rgba(20, 184, 166, 0.55);
+      background: rgba(20, 184, 166, 0.06);
+      color: var(--fg-0);
+      padding: 14px 22px;
+    }
+
+    .price-card .btn-ghost:hover {
+      background: rgba(20, 184, 166, 0.16);
+      border-color: var(--cy);
+      color: #fff;
     }
 
     .price-card.popular {
@@ -2997,9 +3042,41 @@
         display: none
       }
 
-      /* Hide ALL CTAs in Full-screen Menu */
-      .nav-links.mobile-active+.nav-cta {
-        display: none !important;
+      /* backdrop-filter creates a containing block that traps position:fixed
+         children of .nav. The mobile menu's CTA needs to anchor to the
+         viewport, so we drop the filter on mobile entirely. */
+      .nav {
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+      }
+
+      /* Show CTA buttons inside the full-screen mobile menu */
+      .nav-links.mobile-active + .nav-cta {
+        display: flex !important;
+        flex-direction: column;
+        gap: 12px;
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: max(40px, env(safe-area-inset-bottom, 0px));
+        padding: 0 32px;
+        z-index: 1600;
+        align-items: stretch;
+        opacity: 0;
+        transform: translateY(20px);
+        animation: linkPop 0.4s cubic-bezier(0.16, 1, 0.3, 1) 0.45s forwards;
+      }
+
+      .nav-links.mobile-active + .nav-cta .btn {
+        display: flex;
+        width: 100%;
+        justify-content: center;
+        font-size: 16px;
+        padding: 14px 18px;
+      }
+
+      .nav-links.mobile-active + .nav-cta .btn-ghost {
+        display: flex;
       }
 
       .nav-overlay {
@@ -3082,7 +3159,7 @@
       }
 
       .human-proof {
-        padding: 40px 0 30px
+        padding: 64px 0 30px
       }
 
       .human-proof-card {
@@ -3237,6 +3314,50 @@
       }
     }
     @media (max-width:720px) {
+      html {
+        scroll-behavior: auto;
+      }
+
+      .reveal-stagger > * {
+        opacity: 1;
+        transform: none;
+        transition: none;
+      }
+
+      .reveal-stagger.in > *,
+      .reveal-stagger.in > *:nth-child(1),
+      .reveal-stagger.in > *:nth-child(2),
+      .reveal-stagger.in > *:nth-child(3),
+      .reveal-stagger.in > *:nth-child(4),
+      .reveal-stagger.in > *:nth-child(5),
+      .reveal-stagger.in > *:nth-child(6),
+      .reveal-stagger.in > *:nth-child(7),
+      .reveal-stagger.in > *:nth-child(8) {
+        transition-delay: 0s;
+      }
+
+      .hero {
+        min-height: 100vh;
+        min-height: 100svh;
+        padding: 24px 0 56px;
+        align-items: flex-start;
+      }
+
+      .hero-left {
+        width: 100%;
+      }
+
+      .hero h1 {
+        font-size: clamp(34px, 9vw, 48px);
+        letter-spacing: -1px;
+        margin-bottom: 18px;
+      }
+
+      .hero-sub {
+        font-size: 15px;
+        margin-bottom: 24px;
+      }
+
       .hero-right {
         display: none
       }
@@ -3587,8 +3708,8 @@
         <a href="#faq" class="nav-link">FAQ</a>
       </div>
       <div class="nav-cta">
-        <a href="https://algo.tradingsmart.in/login" class="btn btn-ghost" target="_top">Sign in</a>
-        <a href="https://algo.tradingsmart.in/request-access" class="btn btn-primary" target="_top">Get started →</a>
+        <a href="/auth" class="btn btn-ghost" target="_top">Sign in</a>
+        <a href="/auth?tab=signup&entry=landing" class="btn btn-primary" target="_top">Get started →</a>
       </div>
       <button class="burger" aria-label="Menu"><span></span></button>
     </div>
@@ -3616,9 +3737,10 @@
           Tell us your strategy in plain English. Our engineers code the algorithm, connect it to your broker, and deliver a deployed automated system within 72 hours. Features like AI trading analysis, backtesting, and paper trading included.
         </p>
         <div class="hero-ctas">
-          <a href="https://algo.tradingsmart.in/request-access" class="btn btn-primary btn-lg" target="_top">Automate My Strategy →</a>
-          <a href="#pricing" class="btn btn-ghost btn-lg">Book a Free Demo Call</a>
+          <a href="/auth?tab=signup&entry=landing" class="btn btn-primary btn-lg" target="_top">Automate My Strategy →</a>
+          <a href="#preview" class="btn btn-ghost btn-lg">Watch Demo</a>
         </div>
+        <a href="/schedule-call" class="hero-talk-link" target="_top">Prefer to talk first? Schedule a call.</a>
       </div>
 
       <!-- Hero Visual -->
@@ -3796,13 +3918,13 @@
   <!-- ═══ HOW IT WORKS ═══ -->
   <section class="section" id="how">
     <div class="container">
-      <div class="section-head reveal">
+      <div class="section-head">
         <div class="section-label">How it works</div>
         <h2 class="section-title">Live in <span class="accent">72 hours</span></h2>
         <p class="section-desc">Our engineers hand-code your chosen strategy onto your trading robot, validate it with
           backtests and paper workflows, then take it live. Typical go-live takes ~72 hours end-to-end.</p>
       </div>
-      <div class="steps reveal-stagger">
+      <div class="steps">
         <div class="step">
           <div class="step-num"></div>
           <h3>Connect brokers</h3>
@@ -4092,67 +4214,10 @@
             <div class="preview-url">app.tradingsmart.ai/dashboard</div>
             <div style="width:38px"></div>
           </div>
-          <div class="preview-grid">
-            <div class="preview-stat">
-              <div class="preview-stat-label">Portfolio Value</div>
-              <div class="preview-stat-value">$1,284,392.18</div>
-              <div class="preview-stat-change" style="color:var(--gr)">▲ +2.34% (24h)</div>
-              <div class="preview-bars" id="previewBars1"></div>
-            </div>
-            <div class="preview-stat">
-              <div class="preview-stat-label">Today's P&L</div>
-              <div class="preview-stat-value" style="color:var(--gr)">+$12,847.40</div>
-              <div class="preview-stat-change" style="color:var(--gr)">▲ 47 winning trades</div>
-              <div class="preview-bars" id="previewBars2"></div>
-            </div>
-            <div class="preview-stat">
-              <div class="preview-stat-label">Active Strategies</div>
-              <div class="preview-stat-value">14 / 18</div>
-              <div class="preview-stat-change" style="color:var(--cy)">● 4 in standby</div>
-              <div class="preview-bars" id="previewBars3"></div>
-            </div>
-            <div class="preview-strategies">
-              <h4>Live Strategy Feed <span id="previewTime">● 12 running</span></h4>
-              <div class="preview-strat-list">
-                <div class="preview-strat">
-                  <div class="preview-strat-dot"></div>
-                  <div><span class="preview-strat-name">VWAP Crossover Pro</span> · Interactive Brokers · US Equities
-                  </div>
-                  <svg class="preview-strat-spark" viewBox="0 0 60 20">
-                    <path d="M0,15 L10,12 L20,14 L30,8 L40,10 L50,5 L60,3" fill="none" stroke="#10b981"
-                      stroke-width="1.5" />
-                  </svg>
-                  <div class="preview-strat-pnl">+$2,430</div>
-                </div>
-                <div class="preview-strat">
-                  <div class="preview-strat-dot"></div>
-                  <div><span class="preview-strat-name">BTC Range Trader v2</span> · Binance · CRYPTO</div>
-                  <svg class="preview-strat-spark" viewBox="0 0 60 20">
-                    <path d="M0,12 L10,14 L20,10 L30,11 L40,7 L50,9 L60,4" fill="none" stroke="#10b981"
-                      stroke-width="1.5" />
-                  </svg>
-                  <div class="preview-strat-pnl">+$1,847</div>
-                </div>
-                <div class="preview-strat">
-                  <div class="preview-strat-dot" style="background:var(--yl);box-shadow:0 0 10px var(--yl)"></div>
-                  <div><span class="preview-strat-name">Cable Rider GBP</span> · OANDA · FOREX</div>
-                  <svg class="preview-strat-spark" viewBox="0 0 60 20">
-                    <path d="M0,8 L10,10 L20,6 L30,9 L40,7 L50,10 L60,8" fill="none" stroke="#fbbf24"
-                      stroke-width="1.5" />
-                  </svg>
-                  <div class="preview-strat-pnl" style="color:var(--yl)">+$218</div>
-                </div>
-                <div class="preview-strat">
-                  <div class="preview-strat-dot"></div>
-                  <div><span class="preview-strat-name">DAX Session Scalper</span> · IG Group · EU Futures</div>
-                  <svg class="preview-strat-spark" viewBox="0 0 60 20">
-                    <path d="M0,14 L10,12 L20,13 L30,8 L40,9 L50,5 L60,2" fill="none" stroke="#10b981"
-                      stroke-width="1.5" />
-                  </svg>
-                  <div class="preview-strat-pnl">+€890</div>
-                </div>
-              </div>
-            </div>
+          <div class="preview-video-frame">
+            <video class="preview-video" src="/demo-copy-web.mp4" playsinline controls preload="metadata">
+              Your browser does not support the video tag.
+            </video>
           </div>
         </div>
       </div>
@@ -4292,8 +4357,8 @@
             <li>Standard backtester</li>
             <li>Email support · 24h SLA</li>
           </ul>
-          <a href="https://algo.tradingsmart.in/request-access" class="btn btn-ghost" style="width:100%"
-            target="_top">Start Starter</a>
+          <a href="/auth?subscribe_plan=starterPlan" class="btn btn-ghost" style="width:100%"
+            target="_top">Choose Starter</a>
         </div>
         <div class="price-card">
           <div class="price-name">Growth</div>
@@ -4311,7 +4376,7 @@
             <li>Custom alerts &amp; kill-switch</li>
             <li>Priority email · 8h SLA</li>
           </ul>
-          <a href="https://algo.tradingsmart.in/request-access" class="btn btn-ghost" style="width:100%"
+          <a href="/auth?subscribe_plan=growthPlan" class="btn btn-ghost" style="width:100%"
             target="_top">Choose Growth</a>
         </div>
         <div class="price-card popular">
@@ -4330,8 +4395,8 @@
             <li>Custom strategy builder</li>
             <li>Priority chat · 4h SLA</li>
           </ul>
-          <a href="https://algo.tradingsmart.in/request-access" class="btn btn-primary" style="width:100%"
-            target="_top">Start 14-day trial</a>
+          <a href="/auth?subscribe_plan=professionalPlan" class="btn btn-primary" style="width:100%"
+            target="_top">Choose Pro</a>
         </div>
         <div class="price-card">
           <div class="price-name">Institutional</div>
@@ -4433,8 +4498,8 @@
           <h2>Stop babysitting trades.<br><span style="background:linear-gradient(135deg,var(--cy),var(--pu));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">Start trading smarter.</span></h2>
           <p>Join 28,400+ traders running their entire portfolio on TradingSmart.AI. 14-day free trial. No credit card required.</p>
           <div class="cta-ctas flex-col w-fit mx-auto">
-            <a href="https://algo.tradingsmart.in/request-access" class="btn btn-primary btn-lg" target="_top">Create free account →</a>
-            <a href="#pricing" class="hero-talk-link">Prefer to talk first? Schedule a call.</a>
+            <a href="/auth?tab=signup&entry=landing" class="btn btn-primary btn-lg" target="_top">Create free account →</a>
+            <a href="/schedule-call" class="hero-talk-link" target="_top">Prefer to talk first? Schedule a call.</a>
           </div>
         </div>
       </div>
@@ -4634,36 +4699,9 @@
         return value.toFixed(6).replace(/0+$/, '').replace(/\.$/, '');
       }
 
-      async function loadLiveTickers() {
-        const symbols = symbolConfig.map((item) => item.symbol).join(',');
-        const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols)}`;
-        const resp = await fetch(url, { cache: 'no-store' });
-        if (!resp.ok) throw new Error(`Ticker API failed: ${resp.status}`);
-        const data = await resp.json();
-        const result = (data && data.quoteResponse && Array.isArray(data.quoteResponse.result)) ? data.quoteResponse.result : [];
-        if (!result.length) throw new Error('Ticker API returned no symbols');
-
-        const bySymbol = new Map(result.map((row) => [row.symbol, row]));
-        const tickers = symbolConfig.map((cfg) => {
-          const row = bySymbol.get(cfg.symbol) || {};
-          const price = Number(row.regularMarketPrice);
-          const pct = Number(row.regularMarketChangePercent);
-          const up = Number.isFinite(pct) ? pct >= 0 : true;
-          const pctText = Number.isFinite(pct) ? `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%` : '+0.00%';
-          return {
-            s: cfg.label,
-            p: formatPrice(price),
-            c: pctText,
-            u: up ? 1 : 0
-          };
-        });
-
-        renderTickers(tickers);
-      }
-
       renderTickers(fallbackTickers);
-      loadLiveTickers().catch(() => { });
-      window.setInterval(() => { loadLiveTickers().catch(() => { }); }, 15000);
+      // Keep static fallback tickers on landing.
+      // Browser-side Yahoo quote endpoint is CORS-restricted and causes console errors.
     })();
 
     // ═══ BROKER MARQUEE ═══
@@ -4892,22 +4930,39 @@
       const burger = document.querySelector('.burger');
       const navLinks = document.querySelector('.nav-links');
       const navOverlay = document.getElementById('navOverlay');
+      const MOBILE_MENU_MAX_WIDTH = 960;
+
+      function setBodyScrollLocked(locked) {
+        if (locked) {
+          document.body.style.overflow = 'hidden';
+          document.body.style.height = '100vh';
+          return;
+        }
+        document.body.style.overflow = '';
+        document.body.style.height = '';
+      }
 
       if (burger && navLinks) {
         function toggleMenu() {
           const isActive = navLinks.classList.toggle('mobile-active');
           burger.classList.toggle('active');
 
-          if (isActive) {
-            document.body.style.overflow = 'hidden';
-            document.body.style.height = '100vh';
-          } else {
-            document.body.style.overflow = '';
-            document.body.style.height = '';
+          // Only lock document scrolling on actual mobile/tablet layouts.
+          const shouldLockScroll = isActive && window.innerWidth <= MOBILE_MENU_MAX_WIDTH;
+          setBodyScrollLocked(shouldLockScroll);
+        }
+
+        function syncMenuForViewport() {
+          if (window.innerWidth > MOBILE_MENU_MAX_WIDTH) {
+            navLinks.classList.remove('mobile-active');
+            burger.classList.remove('active');
+            setBodyScrollLocked(false);
           }
         }
 
         burger.addEventListener('click', toggleMenu);
+        window.addEventListener('resize', syncMenuForViewport, { passive: true });
+        syncMenuForViewport();
 
         // Close menu when clicking a link
         navLinks.querySelectorAll('a').forEach(link => {

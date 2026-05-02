@@ -36,6 +36,16 @@ import { toast } from "sonner";
 import { WEBINAR_BATCH_DEFINITIONS } from "@/constants/webinarBatches";
 import { trackFunnelEvent } from "@/lib/funnelTracking";
 
+function normalizeBroker(value: unknown): string | null {
+  const raw = String(value ?? "").trim().toLowerCase().replace(/_/g, " ");
+  if (!raw || raw === "other" || raw === "others") return null;
+  if (raw.includes("fyers") || raw.includes("fayer")) return "fyers";
+  if (raw.includes("upstox")) return "upstox";
+  if (raw.includes("angel")) return "angel";
+  if (raw.includes("zerodha") || raw.includes("kite")) return "zerodha";
+  return null;
+}
+
 // ── Broker capability map ─────────────────────────────────────────────────────
 // Which asset classes each broker supports. Indian brokers = no crypto/forex.
 const BROKER_CAPABILITIES: Record<string, { equities: boolean; fno: boolean; crypto: boolean; forex: boolean; commodities: boolean }> = {
@@ -134,11 +144,16 @@ export default function AlgoTradingDashboard() {
       // Onboarding status
       const { data: ob } = await (supabase as any)
         .from("algo_onboarding")
-        .select("status, broker")
+        .select("status, broker, broker_client_id, notes")
         .eq("user_id", user.id)
         .maybeSingle();
       setOnboardingStatus(ob?.status ?? null);
-      if (ob?.broker) setBroker(ob.broker);
+      setBroker(
+        normalizeBroker(ob?.broker) ??
+        normalizeBroker(ob?.broker_client_id) ??
+        normalizeBroker(ob?.notes) ??
+        "zerodha",
+      );
 
       // Broker session status
       const { data: intg } = await (supabase as any)
@@ -147,7 +162,8 @@ export default function AlgoTradingDashboard() {
         .eq("user_id", user.id)
         .maybeSingle();
       if (intg) {
-        if (intg.broker) setBroker(intg.broker);
+        const normalized = normalizeBroker(intg.broker);
+        if (normalized) setBroker(normalized);
         const exp = intg.token_expires_at ? new Date(intg.token_expires_at) : null;
         setBrokerConnected(intg.is_active && !!exp && exp > new Date());
       }

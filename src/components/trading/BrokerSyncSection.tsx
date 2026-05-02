@@ -95,8 +95,8 @@ export const ALL_BROKERS: Array<{
     label: "Fyers",
     color: "text-green-400",
     portal: "https://api.fyers.in/api/v2/generate-authcode?client_id=",
-    tokenHelp: "Open Fyers API portal → Dashboard → click 'Generate Token' for your app → copy access_token and paste here.",
-    oauthSupported: false,
+    tokenHelp: "Click 'Connect' — you'll be taken to Fyers login and redirected back automatically.",
+    oauthSupported: true,
   },
   {
     value: "dhan",
@@ -338,7 +338,7 @@ export default function BrokerSyncSection({ broker: brokerProp, compact = false 
   const [showKeyInput, setShowKeyInput]     = useState(false);
 
   // resolve broker: prop > integration > user pick > first in list
-  const brokerKey  = (brokerProp ?? selectedBroker ?? integration?.broker ?? "").toLowerCase();
+  const brokerKey  = (brokerProp || selectedBroker || integration?.broker || "").toLowerCase();
   const brokerInfo = BROKER_MAP[brokerKey] ?? DEFAULT_BROKER;
   const fresh   = isTokenFresh(integration);
   const expired = !fresh && !!integration?.api_key_encrypted?.trim();
@@ -361,8 +361,22 @@ export default function BrokerSyncSection({ broker: brokerProp, compact = false 
     return () => window.removeEventListener(BROKER_SESSION_UPDATED_EVENT, onSessionUpdated);
   }, [load]);
 
-  // ── Zerodha OAuth ─────────────────────────────────────────────────────────
-  const handleZerodhaOAuth = useCallback(async () => {
+  // ── OAuth brokers (Zerodha / Fyers / Upstox) ─────────────────────────────
+  const handleBrokerOAuth = useCallback(async () => {
+    if (!brokerKey) {
+      toast.error("Please select your broker first");
+      return;
+    }
+    const endpointMap: Record<string, string> = {
+      zerodha: "get-zerodha-login-url",
+      fyers: "get-fyers-login-url",
+    };
+    const edgeFn = endpointMap[brokerKey];
+    if (!edgeFn) {
+      toast.error("OAuth is not configured for this broker.");
+      return;
+    }
+
     setOauthLoading(true);
     emitAlgoRobotEvent(
       "Broker authentication started",
@@ -375,7 +389,7 @@ export default function BrokerSyncSection({ broker: brokerProp, compact = false 
         toast.error("Sign in required to connect your broker.");
         return;
       }
-      const res = await supabase.functions.invoke("get-zerodha-login-url", {
+      const res = await supabase.functions.invoke(edgeFn, {
         body: { return_url: `${window.location.origin}/broker-callback` },
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
@@ -388,18 +402,18 @@ export default function BrokerSyncSection({ broker: brokerProp, compact = false 
         window.location.href = d.url;
         return;
       }
-      toast.error("No login URL returned. Check get-zerodha-login-url edge function.");
+      toast.error(`No login URL returned. Check ${edgeFn} edge function.`);
     } catch (e: unknown) {
       toast.error("Error: " + ((e as Error).message ?? "unknown"));
     } finally {
       setOauthLoading(false);
     }
-  }, []);
+  }, [brokerKey]);
 
   const brokerKeyRef = useRef(brokerKey);
   brokerKeyRef.current = brokerKey;
-  const zerodhaOAuthRef = useRef(handleZerodhaOAuth);
-  zerodhaOAuthRef.current = handleZerodhaOAuth;
+  const brokerOAuthRef = useRef(handleBrokerOAuth);
+  brokerOAuthRef.current = handleBrokerOAuth;
 
   useEffect(() => {
     const onOpenSync = () => {
@@ -411,7 +425,7 @@ export default function BrokerSyncSection({ broker: brokerProp, compact = false 
       }
       const info = BROKER_MAP[key] ?? DEFAULT_BROKER;
       if (info.oauthSupported) {
-        void zerodhaOAuthRef.current();
+        void brokerOAuthRef.current();
       } else {
         setShowPaste(true);
       }
@@ -591,7 +605,7 @@ export default function BrokerSyncSection({ broker: brokerProp, compact = false 
 
           <div className="flex items-center gap-2 w-full sm:w-auto">
             {brokerInfo.oauthSupported ? (
-              <Button type="button" onClick={handleZerodhaOAuth} disabled={oauthLoading} size="sm" className="h-9 px-4 bg-orange-500 hover:bg-orange-400 text-white font-bold w-full sm:w-auto">
+              <Button type="button" onClick={handleBrokerOAuth} disabled={oauthLoading} size="sm" className="h-9 px-4 bg-orange-500 hover:bg-orange-400 text-white font-bold w-full sm:w-auto">
                 {oauthLoading ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Zap className="h-3.5 w-3.5 mr-1.5" />}
                 {fresh ? "Re-sync" : "Connect"}
               </Button>

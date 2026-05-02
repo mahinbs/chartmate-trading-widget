@@ -50,7 +50,7 @@ export function TrialCreditsBanner() {
       <div className="flex items-start gap-2 min-w-0">
         <Sparkles className="h-5 w-5 text-teal-400 shrink-0 mt-0.5" />
         <div className="min-w-0">
-          <p className="text-sm font-medium text-teal-50">2-day free trial</p>
+          <p className="text-sm font-medium text-teal-50">14-day free trial</p>
           <p className="text-xs text-teal-200/90 mt-0.5">
             <span className="font-semibold tabular-nums">{creditsRemaining}</span> /{" "}
             <span className="tabular-nums">{creditsPerDay}</span> credits left today ·{" "}

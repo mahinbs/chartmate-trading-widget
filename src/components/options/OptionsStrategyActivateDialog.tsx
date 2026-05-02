@@ -40,6 +40,7 @@ import type { OptionsStrategy } from "@/pages/OptionsStrategyPage";
 import {
   fetchExpiryDates,
   fetchLtp,
+  fetchOptionSymbolLotSize,
   fetchOptionChain,
   getIstDateKey,
   instrumentTypeForUnderlying,
@@ -104,10 +105,11 @@ export function OptionsStrategyActivateDialog({
 
   const isPaper = mode === "paper";
 
-  const lotUnits = useMemo(
+  const lotUnitsDefault = useMemo(
     () => (strategy ? lotUnitsForUnderlying(strategy.underlying) : 75),
     [strategy],
   );
+  const [lotUnits, setLotUnits] = useState<number>(lotUnitsDefault);
   const assetCurrency = useMemo<FiatCurrency>(() => {
     const ex = String(strategy?.exchange ?? "").toUpperCase();
     return ex === "NSE" || ex === "BSE" ? "INR" : "USD";
@@ -126,8 +128,13 @@ export function OptionsStrategyActivateDialog({
     setLtpLoading(false);
     setInvestmentAmount("");
     setInvestmentCurrency("INR");
+    setLotUnits(strategy ? lotUnitsForUnderlying(strategy.underlying) : 75);
     if (ltpTimerRef.current) { clearInterval(ltpTimerRef.current); ltpTimerRef.current = null; }
-  }, []);
+  }, [strategy]);
+
+  useEffect(() => {
+    setLotUnits(lotUnitsDefault);
+  }, [lotUnitsDefault]);
 
   useEffect(() => {
     if (!open || usdPerInr != null) return;
@@ -308,6 +315,25 @@ export function OptionsStrategyActivateDialog({
     })();
     return () => { cancelled = true; };
   }, [open, strategy, expiryIso]);
+
+  // Resolve contract lot size from selected symbol metadata.
+  useEffect(() => {
+    if (!open || !strategy) return;
+    if (!symbol) {
+      setLotUnits(lotUnitsDefault);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const resolved = await fetchOptionSymbolLotSize(symbol, strategy.exchange);
+      if (!cancelled && resolved && resolved > 0) {
+        setLotUnits(resolved);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, symbol, strategy, lotUnitsDefault]);
 
   useEffect(() => {
     if (!rows.length) { setSymbol(""); return; }
@@ -537,7 +563,7 @@ export function OptionsStrategyActivateDialog({
                     {ltp != null ? `${assetCurrency === "USD" ? "$" : "₹"}${ltp.toFixed(2)}` : "—"}
                   </span>
                   {ltp == null && !ltpLoading && (
-                    <span className="text-[10px] text-muted-foreground">(market closed)</span>
+                    <span className="text-[10px] text-muted-foreground">(LTP unavailable)</span>
                   )}
                 </div>
                 <span className="text-[11px] text-muted-foreground pb-0.5">per unit</span>

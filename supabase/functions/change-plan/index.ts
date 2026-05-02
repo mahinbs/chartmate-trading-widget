@@ -26,7 +26,13 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getPlanMeta, planTier, resolveMonthlyPriceId } from "../_shared/plan-catalog.ts";
+import {
+  getPlanMeta,
+  planIntegrationAmount,
+  planMonthlyAmount,
+  planTier,
+  resolveMonthlyPriceId,
+} from "../_shared/plan-catalog.ts";
 
 const STRIPE_SECRET = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 const corsHeaders = {
@@ -159,36 +165,55 @@ Deno.serve(async (req) => {
     }
 
     // ── UPGRADE ─────────────────────────────────────────────────────────────
-    const newMonthlyPriceId = resolveMonthlyPriceId(newPlanId);
+    const stripeSub = await stripeGet(`/subscriptions/${encodeURIComponent(stripeSubId)}`);
+    const subCur: "usd" | "inr" =
+      (stripeSub?.items?.data?.[0]?.price?.currency ?? "usd").toLowerCase() === "inr"
+        ? "inr"
+        : "usd";
+
+    const newMonthlyPriceId = resolveMonthlyPriceId(newPlanId, subCur);
     if (!newMonthlyPriceId) {
       return new Response(
-        JSON.stringify({ error: `Monthly Stripe price not configured for ${newPlanId}.` }),
+        JSON.stringify({
+          error:
+            subCur === "inr"
+              ? `Monthly Stripe INR price not configured for ${newPlanId}. Set STRIPE_PRICE_${String(
+                  newPlanId,
+                )
+                  .replace("Plan", "")
+                  .toUpperCase()}_INR in Supabase.`
+              : `Monthly Stripe price not configured for ${newPlanId}. Set STRIPE_PRICE_STARTER/ GROWTH / PROFESSIONAL.`,
+        }),
         { status: 503, headers },
       );
     }
 
-    // 1. Integration fee delta
-    const integrationDeltaCents = Math.max(
+    // 1. Integration fee delta (DB `integration_fee_paid` is in same major units as the subscription currency)
+    const newIntegFull = planIntegrationAmount(newMeta, subCur);
+    const integrationDeltaMinor = Math.max(
       0,
-      Math.round((newMeta.integrationFee - integrationFeePaid) * 100),
+      Math.round((newIntegFull - integrationFeePaid) * 100),
     );
 
     // 2. Monthly proration for remaining days in current period
     const now = new Date();
     const msRemaining = Math.max(0, periodEnd.getTime() - now.getTime());
     const daysRemaining = msRemaining / (1000 * 60 * 60 * 24);
-    const oldMonthly = currentMeta?.monthlyPrice ?? 0;
-    const monthlyDeltaPerDay = (newMeta.monthlyPrice - oldMonthly) / 30;
-    const proratedCents = Math.max(0, Math.round(monthlyDeltaPerDay * daysRemaining * 100));
+    const oldMonthly = currentMeta ? planMonthlyAmount(currentMeta, subCur) : 0;
+    const newMonthly = planMonthlyAmount(newMeta, subCur);
+    const monthlyDeltaPerDay = (newMonthly - oldMonthly) / 30;
+    const proratedMinor = Math.max(0, Math.round(monthlyDeltaPerDay * daysRemaining * 100));
 
-    const totalChargeCents = integrationDeltaCents + proratedCents;
+    const totalChargeMinor = integrationDeltaMinor + proratedMinor;
+    const currencyCode = subCur;
+    const sym = subCur === "inr" ? "₹" : "$";
 
     // 3. Add Invoice Items to the customer so they appear on a single invoice
-    if (integrationDeltaCents > 0) {
+    if (integrationDeltaMinor > 0) {
       const integItem = new URLSearchParams();
       integItem.append("customer", customerId);
-      integItem.append("amount", String(integrationDeltaCents));
-      integItem.append("currency", "usd");
+      integItem.append("amount", String(integrationDeltaMinor));
+      integItem.append("currency", currencyCode);
       integItem.append(
         "description",
         `Integration fee upgrade: ${currentMeta?.name ?? currentPlanId} → ${newMeta.name} (delta)`,
@@ -197,11 +222,11 @@ Deno.serve(async (req) => {
       await stripePost("/invoiceitems", integItem);
     }
 
-    if (proratedCents > 0) {
+    if (proratedMinor > 0) {
       const proItem = new URLSearchParams();
       proItem.append("customer", customerId);
-      proItem.append("amount", String(proratedCents));
-      proItem.append("currency", "usd");
+      proItem.append("amount", String(proratedMinor));
+      proItem.append("currency", currencyCode);
       proItem.append(
         "description",
         `Monthly proration: ${currentMeta?.name ?? currentPlanId} → ${newMeta.name} (${daysRemaining.toFixed(1)} days remaining)`,
@@ -211,7 +236,7 @@ Deno.serve(async (req) => {
     }
 
     // 4. Finalize an immediate invoice to charge the delta(s)
-    if (totalChargeCents > 0) {
+    if (totalChargeMinor > 0) {
       const invForm = new URLSearchParams();
       invForm.append("customer", customerId);
       invForm.append("subscription", stripeSubId);
@@ -225,7 +250,6 @@ Deno.serve(async (req) => {
     }
 
     // 5. Switch the Stripe subscription to the new monthly price
-    const stripeSub = await stripeGet(`/subscriptions/${stripeSubId}`);
     const currentItemId: string = stripeSub?.items?.data?.[0]?.id ?? "";
     if (!currentItemId) {
       return new Response(
@@ -242,7 +266,7 @@ Deno.serve(async (req) => {
     await stripePost(`/subscriptions/${stripeSubId}`, updateForm);
 
     // 6. Update DB: new plan, bump integration_fee_paid, clear any pending downgrade
-    const newIntegrationFeePaid = integrationFeePaid + integrationDeltaCents / 100;
+    const newIntegrationFeePaid = integrationFeePaid + integrationDeltaMinor / 100;
     await supabase
       .from("user_subscriptions")
       .update({
@@ -254,14 +278,26 @@ Deno.serve(async (req) => {
       })
       .eq("user_id", user.id);
 
+    const amountLabel = (minor: number) =>
+      subCur === "inr"
+        ? `₹${(minor / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : `$${(minor / 100).toFixed(2)}`;
+
     return new Response(
       JSON.stringify({
         ok: true,
         action: "upgraded",
-        message: `Upgraded to ${newMeta.name}. Charged $${(totalChargeCents / 100).toFixed(2)} today (integration delta + proration). Monthly billing continues at $${newMeta.monthlyPrice}/mo.`,
-        integration_delta_usd: (integrationDeltaCents / 100).toFixed(2),
-        proration_usd: (proratedCents / 100).toFixed(2),
-        total_charged_usd: (totalChargeCents / 100).toFixed(2),
+        message: `Upgraded to ${newMeta.name}. Charged ${amountLabel(totalChargeMinor)} today (integration delta + proration). Monthly billing continues at ${sym}${newMonthly.toFixed(subCur === "inr" ? 0 : 2)}/mo.`,
+        integration_delta: (integrationDeltaMinor / 100).toFixed(2),
+        proration: (proratedMinor / 100).toFixed(2),
+        total_charged: (totalChargeMinor / 100).toFixed(2),
+        /** @deprecated use integration_delta */
+        integration_delta_usd: (integrationDeltaMinor / 100).toFixed(2),
+        /** @deprecated use proration */
+        proration_usd: (proratedMinor / 100).toFixed(2),
+        /** @deprecated use total_charged */
+        total_charged_usd: (totalChargeMinor / 100).toFixed(2),
+        currency: subCur,
         new_plan_id: newPlanId,
       }),
       { status: 200, headers },

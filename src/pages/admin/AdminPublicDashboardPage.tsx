@@ -354,7 +354,7 @@ export default function AdminPublicDashboardPage() {
   const loadMetrics = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from("public_dashboard_metrics")
         .select("*")
         .order("sort_order", { ascending: true });
@@ -471,7 +471,7 @@ export default function AdminPublicDashboardPage() {
         { key: "users", label: "Active Users", value: "1200", unit: "", description: "Number of users currently using the platform.", sort_order: 3, chart_type: "bar" },
         { key: "accuracy", label: "Signal Accuracy", value: "94", unit: "%", description: "Backtested hit-rate on AI trading signals.", sort_order: 4, chart_type: "area" },
       ];
-      const { error } = await supabase.from("public_dashboard_metrics").insert(defaults as any[]);
+      const { error } = await (supabase as any).from("public_dashboard_metrics").insert(defaults as any[]);
       if (error) throw error;
       toast.success("Default metrics created");
       loadMetrics();
@@ -525,7 +525,7 @@ export default function AdminPublicDashboardPage() {
         chart_type: m.chart_type || "area",
         chart_data: Array.isArray(m.chart_data) ? m.chart_data : null,
       }));
-      const { error } = await supabase.from("public_dashboard_metrics").upsert(updates as any[], { onConflict: "id" });
+      const { error } = await (supabase as any).from("public_dashboard_metrics").upsert(updates as any[], { onConflict: "id" });
       if (error) throw error;
       toast.success("Dashboard metrics saved");
       loadMetrics();
@@ -549,7 +549,7 @@ export default function AdminPublicDashboardPage() {
         chart_type: newMetric.chart_type || "area",
         chart_data: null,
       };
-      const { data, error } = await supabase.from("public_dashboard_metrics").insert(payload as any).select("*").single();
+      const { data, error } = await (supabase as any).from("public_dashboard_metrics").insert(payload as any).select("*").single();
       if (error) throw error;
       setMetrics((prev) => [...prev, { ...(data as any), chart_data: null }]);
       setNewMetric({ key: "", label: "", value: "", unit: "", description: "", chart_type: "area" });
@@ -562,7 +562,7 @@ export default function AdminPublicDashboardPage() {
   const deleteMetric = async (id: string) => {
     if (!confirm("Delete this metric?")) return;
     try {
-      const { error } = await supabase.from("public_dashboard_metrics").delete().eq("id", id);
+      const { error } = await (supabase as any).from("public_dashboard_metrics").delete().eq("id", id);
       if (error) throw error;
       setMetrics((prev) => prev.filter((m) => m.id !== id));
       toast.success("Metric deleted");

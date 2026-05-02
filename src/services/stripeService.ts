@@ -25,6 +25,8 @@ export async function createCheckoutSession(params: {
   success_url?: string;
   cancel_url?: string;
   wl?: { brand_name?: string; slug?: string; token?: string };
+  /** Pass "inr" for Indian Stripe prices (STRIPE_PRICE_*_INR secrets). */
+  currency?: "inr" | "usd";
 }): Promise<{ url: string } | { error: string }> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) {
@@ -38,6 +40,7 @@ export async function createCheckoutSession(params: {
       success_url: params.success_url,
       cancel_url: params.cancel_url,
       wl: params.wl,
+      currency: params.currency ?? "usd",
     },
     headers: { Authorization: `Bearer ${session.access_token}` },
   });

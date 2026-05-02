@@ -20,7 +20,7 @@ import { getSessionAffiliateAttribution } from "@/hooks/useAffiliateRef";
 import { useAuthEmailCooldown } from "@/hooks/useAuthEmailCooldown";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useToast } from "@/hooks/use-toast";
-import { Clock, Loader2 } from "lucide-react";
+import { ArrowLeft, Clock, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { PhoneCountryCodeCombobox } from "@/components/auth/PhoneCountryCodeCombobox";
 import {
@@ -204,7 +204,7 @@ const AuthPage = () => {
   };
 
   const signUpAge = useMemo(
-    () => computeAgeFromIsoDate(signUpData.dateOfBirth),
+    () => (signUpData.dateOfBirth ? computeAgeFromIsoDate(signUpData.dateOfBirth) : null),
     [signUpData.dateOfBirth],
   );
 
@@ -246,7 +246,6 @@ const AuthPage = () => {
   useEffect(() => {
     const routeAfterLogin = async () => {
       if (roleLoading || !user) return;
-      if (authPhase === "signup-success") return;
       if ((user as any).user_metadata?.need_password_reset) {
         navigate("/auth/change-password", { replace: true });
         return;
@@ -254,6 +253,12 @@ const AuthPage = () => {
 
       const plan = searchParams.get("subscribe_plan")?.trim() ?? "";
       const proTrialIntent = searchParams.get("pro_trial") === "1";
+      const currencyParam = (searchParams.get("currency") ?? "").toUpperCase();
+      const checkoutCurrency = currencyParam === "INR" ? "inr" : undefined;
+      const hasCheckoutIntent =
+        (proTrialIntent && plan === "professionalPlan") ||
+        (Boolean(plan) && VALID_PREMIUM_CHECKOUT_PLANS.has(plan));
+      if (authPhase === "signup-success" && !hasCheckoutIntent) return;
       if (proTrialIntent && plan === "professionalPlan" && role === "user") {
         if (postAuthCheckoutStartedRef.current) return;
         postAuthCheckoutStartedRef.current = true;
@@ -279,6 +284,7 @@ const AuthPage = () => {
           plan_id: plan,
           success_url,
           cancel_url,
+          ...(checkoutCurrency ? { currency: checkoutCurrency } : {}),
         });
         if ("error" in result) {
           postAuthCheckoutStartedRef.current = false;
@@ -483,39 +489,32 @@ const AuthPage = () => {
       return;
     }
 
-    if (!signUpData.dateOfBirth) {
-      toast({
-        title: "Date of birth required",
-        description: "Please select your date of birth.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const age = computeAgeFromIsoDate(signUpData.dateOfBirth);
-    if (age == null) {
-      toast({
-        title: "Invalid date of birth",
-        description: "Use a valid calendar date.",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (age < 13) {
-      toast({
-        title: "Age requirement",
-        description: "You must be at least 13 years old to create an account.",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (age > 120) {
-      toast({
-        title: "Invalid date of birth",
-        description: "Please check the year you entered.",
-        variant: "destructive",
-      });
-      return;
+    if (signUpData.dateOfBirth) {
+      const age = computeAgeFromIsoDate(signUpData.dateOfBirth);
+      if (age == null) {
+        toast({
+          title: "Invalid date of birth",
+          description: "Use a valid calendar date.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (age < 13) {
+        toast({
+          title: "Age requirement",
+          description: "You must be at least 13 years old to create an account.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (age > 120) {
+        toast({
+          title: "Invalid date of birth",
+          description: "Please check the year you entered.",
+          variant: "destructive",
+        });
+        return;
+      }
     }
 
     if (signUpData.password !== signUpData.confirmPassword) {
@@ -566,7 +565,7 @@ const AuthPage = () => {
       const { affiliateId, referralCode } = getSessionAffiliateAttribution();
       const profile: PendingSignupContext["profile"] = {
         full_name: name,
-        date_of_birth: signUpData.dateOfBirth,
+        date_of_birth: signUpData.dateOfBirth || "1970-01-01",
         phone: phoneE164,
         country: signUpData.country,
         affiliate_id: affiliateId,
@@ -649,6 +648,11 @@ const AuthPage = () => {
       }
       if (data.session) {
         toast({ title: "Email verified", description: "You're signed in." });
+        const plan = searchParams.get("subscribe_plan")?.trim() ?? "";
+        const proTrialIntent = searchParams.get("pro_trial") === "1";
+        const hasCheckoutIntent =
+          (proTrialIntent && plan === "professionalPlan") ||
+          VALID_PREMIUM_CHECKOUT_PLANS.has(plan);
         try {
           localStorage.setItem("pending_signup_complete", "1");
           const sourcePage = new URLSearchParams(window.location.search).get("entry");
@@ -660,7 +664,7 @@ const AuthPage = () => {
         } catch {
           // Ignore storage failures.
         }
-        setAuthPhase("signup-success");
+        setAuthPhase(hasCheckoutIntent ? "tabs" : "signup-success");
         setSignUpOtp("");
         setPendingSignupContext(null);
       }
@@ -1113,12 +1117,12 @@ const AuthPage = () => {
           <CardHeader>
             <CardTitle className="text-2xl text-center">Welcome to TradingSmart.ai</CardTitle>
             <CardDescription className="text-center">
-              Your 2-day free trial is active. Pick a live training batch now.
+              Your 14-day free trial is active. Pick a live training batch now.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-4 text-sm text-zinc-300">
-              <p>Trial duration: 48 hours</p>
+              <p>Trial duration: 14 days</p>
               <p>Backtests/day: 10</p>
               <p>Paper trades/day: 10</p>
               <p>AI analysis/day: 10</p>
@@ -1170,58 +1174,75 @@ const AuthPage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted flex items-center justify-center p-4">
-      <Card className="w-full max-w-lg">
-        <CardHeader>
-          <CardTitle className="text-2xl text-center">TradingSmart Login</CardTitle>
-          <CardDescription className="text-center">
-            Sign in to access AI-powered market insights and analysis tools.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+    <div className="relative min-h-screen overflow-hidden bg-[#020817] flex items-center justify-center p-4">
+      {/* Background orbs */}
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(56,189,248,0.08),transparent_35%),radial-gradient(circle_at_85%_25%,rgba(45,212,191,0.08),transparent_30%),radial-gradient(circle_at_55%_90%,rgba(99,102,241,0.08),transparent_35%)]" />
+        <div className="absolute -left-20 top-14 h-64 w-64 rounded-full bg-cyan-400/10 blur-3xl" />
+        <div className="absolute -right-20 top-1/4 h-64 w-64 rounded-full bg-teal-500/10 blur-3xl" />
+        <div className="absolute bottom-10 left-1/3 h-56 w-56 rounded-full bg-indigo-500/10 blur-3xl" />
+      </div>
+
+      <Link
+        to="/"
+        className="absolute top-5 left-5 z-20 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 backdrop-blur-md transition-colors hover:border-teal-300/40 hover:bg-teal-500/10 hover:text-teal-200"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" />
+        Back to home
+      </Link>
+
+      <div className="relative z-10 w-full max-w-lg rounded-2xl border border-cyan-300/20 bg-[linear-gradient(180deg,rgba(17,27,48,0.96),rgba(10,15,28,0.96))] shadow-[0_30px_80px_rgba(0,0,0,0.65)] backdrop-blur-xl px-6 pb-8 pt-6">
+        {/* Header */}
+        <div className="mb-6 text-center">
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-100">TradingSmart Login</h1>
+          <p className="mt-1.5 text-xs text-slate-400">Sign in to access AI-powered market insights and analysis tools.</p>
+        </div>
+
           <EmailCooldownBanner
             showTimer={emailCooldown.active}
             mmss={emailCooldown.mmss}
             generic={genericEmailRateLimit && !emailCooldown.active}
           />
           <Tabs value={authTab} onValueChange={(v) => setAuthTab(v as "signin" | "signup")} className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-4">
-              <TabsTrigger value="signin">Sign In</TabsTrigger>
-              <TabsTrigger value="signup">Sign Up</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-2 mb-6 bg-white/5 border border-white/10">
+              <TabsTrigger value="signin" className="data-[state=active]:bg-teal-500/20 data-[state=active]:text-teal-300 text-slate-400">Sign In</TabsTrigger>
+              <TabsTrigger value="signup" className="data-[state=active]:bg-teal-500/20 data-[state=active]:text-teal-300 text-slate-400">Sign Up</TabsTrigger>
             </TabsList>
 
             <TabsContent value="signin">
               <form onSubmit={handleSignIn} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="signin-email">Email</Label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="signin-email" className="text-[10px] font-semibold uppercase tracking-[2.5px] text-slate-400">Email</Label>
                   <Input
                     id="signin-email"
                     type="email"
-                    placeholder="Enter your email"
+                    placeholder="you@example.com"
                     value={signInData.email}
                     onChange={(e) => setSignInData({ ...signInData, email: e.target.value })}
                     required
+                    className="h-11 border border-cyan-200/10 bg-[#040c1f] text-slate-100 placeholder:text-slate-500 focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-400/20"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="signin-password">Password</Label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="signin-password" className="text-[10px] font-semibold uppercase tracking-[2.5px] text-slate-400">Password</Label>
                   <Input
                     id="signin-password"
                     type="password"
-                    placeholder="Enter your password"
+                    placeholder="••••••••••••"
                     value={signInData.password}
                     onChange={(e) => setSignInData({ ...signInData, password: e.target.value })}
                     required
+                    className="h-11 border border-cyan-200/10 bg-[#040c1f] text-slate-100 placeholder:text-slate-500 focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-400/20"
                   />
                 </div>
-                <Button type="submit" className="w-full" disabled={isLoading}>
+                <Button type="submit" className="mt-1 h-11 w-full bg-gradient-to-r from-teal-400 to-blue-500 text-[11px] font-semibold uppercase tracking-[2.2px] text-white shadow-[0_12px_30px_rgba(37,99,235,0.35)] hover:brightness-110" disabled={isLoading}>
                   {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Sign In
                 </Button>
                 <Button
                   type="button"
                   variant="link"
-                  className="w-full text-sm text-muted-foreground"
+                  className="w-full text-[11px] text-cyan-300/90 hover:text-cyan-200"
                   onClick={() => {
                     setForgotEmail(signInData.email);
                     setAuthPhase("forgot-send");
@@ -1234,8 +1255,8 @@ const AuthPage = () => {
 
             <TabsContent value="signup">
               <form onSubmit={handleSignUp} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="signup-name">Full name</Label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="signup-name" className="text-[10px] font-semibold uppercase tracking-[2.5px] text-slate-400">Full name</Label>
                   <Input
                     id="signup-name"
                     type="text"
@@ -1244,29 +1265,30 @@ const AuthPage = () => {
                     value={signUpData.fullName}
                     onChange={(e) => setSignUpData({ ...signUpData, fullName: e.target.value })}
                     required
+                    className="h-11 border border-cyan-200/10 bg-[#040c1f] text-slate-100 placeholder:text-slate-500 focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-400/20"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="signup-dob">Date of birth</Label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="signup-dob" className="text-[10px] font-semibold uppercase tracking-[2.5px] text-slate-400">Date of birth (optional)</Label>
                   <Input
                     id="signup-dob"
                     type="date"
                     value={signUpData.dateOfBirth}
                     onChange={(e) => setSignUpData({ ...signUpData, dateOfBirth: e.target.value })}
-                    required
+                    className="h-11 border border-cyan-200/10 bg-[#040c1f] text-slate-100 focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-400/20"
                   />
                   {signUpAge != null && (
-                    <p className="text-xs text-muted-foreground">
-                      Age: <span className="font-medium text-foreground">{signUpAge}</span> years
+                    <p className="text-xs text-slate-400">
+                      Age: <span className="font-medium text-slate-200">{signUpAge}</span> years
                       (stored at signup)
                     </p>
                   )}
                 </div>
-                <div className="space-y-2">
-                  <Label>Phone (optional)</Label>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] font-semibold uppercase tracking-[2.5px] text-slate-400">Phone (optional)</Label>
                   <div className="flex flex-row gap-2 sm:gap-3 items-end">
                     <div className="space-y-1.5 w-[5.25rem] sm:w-24 shrink-0">
-                      <span className="text-xs text-muted-foreground">Code</span>
+                      <span className="text-[10px] text-slate-500">Code</span>
                       <PhoneCountryCodeCombobox
                         id="signup-phone-code"
                         value={signUpData.phoneCountryIso}
@@ -1279,14 +1301,14 @@ const AuthPage = () => {
                       />
                     </div>
                     <div className="space-y-1.5 flex-1 min-w-0">
-                      <span className="text-xs text-muted-foreground">Phone number</span>
+                      <span className="text-[10px] text-slate-500">Phone number</span>
                       <Input
                         id="signup-phone-national"
                         type="tel"
                         inputMode="numeric"
                         autoComplete="tel-national"
                         placeholder="National number (digits only)"
-                        className="h-10 w-full"
+                        className="h-10 w-full border border-cyan-200/10 bg-[#040c1f] text-slate-100 placeholder:text-slate-500 focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-400/20"
                         value={signUpData.phoneNational}
                         onChange={(e) =>
                           setSignUpData({ ...signUpData, phoneNational: e.target.value })
@@ -1295,8 +1317,8 @@ const AuthPage = () => {
                     </div>
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="signup-country">Country / region (optional)</Label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="signup-country" className="text-[10px] font-semibold uppercase tracking-[2.5px] text-slate-400">Country / region (optional)</Label>
                   <Input
                     id="signup-country"
                     type="text"
@@ -1304,33 +1326,36 @@ const AuthPage = () => {
                     placeholder="e.g. United States"
                     value={signUpData.country}
                     onChange={(e) => setSignUpData({ ...signUpData, country: e.target.value })}
+                    className="h-11 border border-cyan-200/10 bg-[#040c1f] text-slate-100 placeholder:text-slate-500 focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-400/20"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="signup-email">Email</Label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="signup-email" className="text-[10px] font-semibold uppercase tracking-[2.5px] text-slate-400">Email</Label>
                   <Input
                     id="signup-email"
                     type="email"
-                    placeholder="Enter your email"
+                    placeholder="you@example.com"
                     value={signUpData.email}
                     onChange={(e) => setSignUpData({ ...signUpData, email: e.target.value })}
                     required
+                    className="h-11 border border-cyan-200/10 bg-[#040c1f] text-slate-100 placeholder:text-slate-500 focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-400/20"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="signup-password">Password</Label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="signup-password" className="text-[10px] font-semibold uppercase tracking-[2.5px] text-slate-400">Password</Label>
                   <Input
                     id="signup-password"
                     type="password"
-                    placeholder="Create a password (min. 6 characters)"
+                    placeholder="Min. 6 characters"
                     value={signUpData.password}
                     onChange={(e) => setSignUpData({ ...signUpData, password: e.target.value })}
                     required
                     minLength={6}
+                    className="h-11 border border-cyan-200/10 bg-[#040c1f] text-slate-100 placeholder:text-slate-500 focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-400/20"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="signup-confirm">Confirm password</Label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="signup-confirm" className="text-[10px] font-semibold uppercase tracking-[2.5px] text-slate-400">Confirm password</Label>
                   <Input
                     id="signup-confirm"
                     type="password"
@@ -1340,46 +1365,45 @@ const AuthPage = () => {
                       setSignUpData({ ...signUpData, confirmPassword: e.target.value })
                     }
                     required
+                    className="h-11 border border-cyan-200/10 bg-[#040c1f] text-slate-100 placeholder:text-slate-500 focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-400/20"
                   />
                 </div>
                 <div className="flex items-start space-x-3 pt-2">
                   <Checkbox
                     id="techProviderAcknowledgeAuth"
-                    className="mt-1 flex-shrink-0"
+                    className="mt-1 flex-shrink-0 border-cyan-300/30"
                     checked={signUpData.techProviderAcknowledge}
                     onCheckedChange={(checked) => setSignUpData({ ...signUpData, techProviderAcknowledge: checked === true })}
                     required
                   />
-                  <Label htmlFor="techProviderAcknowledgeAuth" className="text-sm text-foreground font-normal leading-tight cursor-pointer">
+                  <Label htmlFor="techProviderAcknowledgeAuth" className="text-xs text-slate-400 font-normal leading-tight cursor-pointer">
                     I understand that this platform is only a technology provider and does not offer any investment advice or trading strategies.
                   </Label>
                 </div>
                 <div className="flex items-start space-x-3 pt-2">
                   <Checkbox
                     id="termsAcknowledgeAuth"
-                    className="mt-1 flex-shrink-0"
+                    className="mt-1 flex-shrink-0 border-cyan-300/30"
                     checked={signUpData.termsAcknowledge}
                     onCheckedChange={(checked) => setSignUpData({ ...signUpData, termsAcknowledge: checked === true })}
                     required
                   />
-                  <Label htmlFor="termsAcknowledgeAuth" className="text-sm text-foreground font-normal leading-tight cursor-pointer">
-                    I agree to the <Link to="/terms" className="text-teal-500 hover:underline">Terms & Conditions</Link>
+                  <Label htmlFor="termsAcknowledgeAuth" className="text-xs text-slate-400 font-normal leading-tight cursor-pointer">
+                    I agree to the <Link to="/terms" className="text-teal-400 hover:underline">Terms & Conditions</Link>
                   </Label>
                 </div>
-                <Button type="submit" className="w-full mt-4" disabled={isLoading || emailCooldown.active}>
+                <Button type="submit" className="mt-1 h-11 w-full bg-gradient-to-r from-teal-400 to-blue-500 text-[11px] font-semibold uppercase tracking-[2.2px] text-white shadow-[0_12px_30px_rgba(37,99,235,0.35)] hover:brightness-110" disabled={isLoading || emailCooldown.active}>
                   {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  {emailCooldown.active ? `Wait ${emailCooldown.mmss}` : "Sign Up"}
+                  {emailCooldown.active ? `Wait ${emailCooldown.mmss}` : "Create Account"}
                 </Button>
               </form>
             </TabsContent>
           </Tabs>
-        </CardContent>
-        <CardFooter>
-          <p className="text-sm text-muted-foreground text-center w-full">
-            Get access to AI-powered market insights and analysis tools.
+          <div className="mt-4 h-px w-full bg-gradient-to-r from-transparent via-white/15 to-transparent" />
+          <p className="mt-3 text-center text-[10px] uppercase tracking-[2.5px] text-slate-500">
+            Secure · Encrypted · Tech platform only
           </p>
-        </CardFooter>
-      </Card>
+      </div>
     </div>
   );
 };

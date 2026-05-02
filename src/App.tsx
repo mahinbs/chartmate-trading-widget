@@ -30,6 +30,7 @@ import TermsOfService from "./pages/TermsOfService";
 import RiskDisclaimer from "./pages/RiskDisclaimer";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import ContactUsPage from "./pages/ContactUs";
+import ScheduleCallThankYouPage from "./pages/ScheduleCallThankYouPage";
 import SubscriptionSettingsPage from "./pages/SubscriptionSettingsPage";
 import ProfilePage from "./pages/ProfilePage";
 import MarketPicksPage from "./pages/MarketPicksPage";
@@ -41,7 +42,7 @@ import AdminAffiliatesPage from "./pages/admin/AdminAffiliatesPage";
 import AdminContactsPage from "./pages/admin/AdminContactsPage";
 import AdminWhitelabelsPage from "./pages/admin/AdminWhitelabelsPage";
 import AdminAlgoRequestsPage from "./pages/admin/AdminAlgoRequestsPage";
-import AdminAlgoAccessRequestsPage from "./pages/admin/AdminAlgoAccessRequestsPage";
+import AdminWebinarBookingsPage from "./pages/admin/AdminWebinarBookingsPage";
 import AdminStrategyDevRequestsPage from "./pages/admin/AdminStrategyDevRequestsPage";
 import BlogsPage from "./pages/BlogsPage";
 import BlogDetailPage from "./pages/BlogDetailPage";
@@ -105,6 +106,8 @@ function isPublicMarketingPath(pathname: string): boolean {
     "/rsb-fintech-founder",
     "/dsn-fintech-founder",
     "/contact-us",
+    "/schedule-call",
+    "/thank-you",
     "/white-label",
     "/terms",
     "/risk-disclaimer",
@@ -224,15 +227,20 @@ function AppChatbots() {
   const { user } = useAuth();
   const { pathname, hash } = useLocation();
   const [predictionOpen, setPredictionOpen] = useState(false);
+  const hideChatOnAlgoSetup = pathname === "/algo-setup";
 
-  const showPredictionChatbot = !!user && isLoggedInAppPath(pathname);
+  const showPredictionChatbot =
+    !!user && isLoggedInAppPath(pathname) && !hideChatOnAlgoSetup;
   const isTrialDemoExperience =
     pathname === "/1414ghgh" ||
     pathname.startsWith("/demo/") ||
     (pathname === "/" && hash === "#1414ghgh");
+  /** Landing page has its own conversion focus — skip the floating chatbot there. */
+  const isLandingPage = pathname === "/" && hash !== "#1414ghgh";
   /** Marketing pages: platform bot unless the logged-in app assistant already owns this URL (e.g. /market-picks). */
   const showPlatformChatbot =
     !isTrialDemoExperience &&
+    !isLandingPage &&
     isPublicMarketingPath(pathname) &&
     !showPredictionChatbot;
 
@@ -386,6 +394,8 @@ const App = () => (
                   }
                 />
                 <Route path="/contact-us" element={<ContactUsPage />} />
+                <Route path="/schedule-call" element={<ContactUsPage mode="demo" />} />
+                <Route path="/thank-you" element={<ScheduleCallThankYouPage />} />
                 <Route
                   path="/subscription"
                   element={
@@ -554,8 +564,8 @@ const App = () => (
                     element={<AdminAlgoRequestsPage />}
                   />
                   <Route
-                    path="algo-access-requests"
-                    element={<AdminAlgoAccessRequestsPage />}
+                    path="webinar-bookings"
+                    element={<AdminWebinarBookingsPage />}
                   />
                   <Route
                     path="strategy-dev-requests"

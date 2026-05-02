@@ -7,7 +7,7 @@ import { DEFAULT_TRIAL_LIMITS } from "@/constants/webinarBatches";
  */
 export async function ensureTrialAccessForUser(userId: string): Promise<void> {
   const nowIso = new Date().toISOString();
-  const endIso = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+  const endIso = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
 
   const { data: existing } = await (supabase as any)
     .from("trial_access")
