@@ -46,6 +46,31 @@ const defaultForm = {
   is_active: true
 };
 
+const getErrorMessage = async (error: any, fallback: string) => {
+  const message = typeof error?.message === "string" ? error.message : "";
+  const isFunctionHttpError = message.includes("non-2xx status code");
+  const responseContext = error?.context;
+
+  if (isFunctionHttpError && responseContext && typeof responseContext.clone === "function") {
+    try {
+      const payload = await responseContext.clone().json();
+      if (typeof payload?.error === "string" && payload.error.trim()) return payload.error;
+    } catch {
+      // Ignore JSON parse failures and try plain text below.
+    }
+
+    try {
+      const text = await responseContext.clone().text();
+      if (text.trim()) return text;
+    } catch {
+      // Ignore and use the default fallback.
+    }
+  }
+
+  if (message.trim()) return message;
+  return fallback;
+};
+
 export default function AdminAffiliatesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const detailAffiliateId = searchParams.get("view");
@@ -237,7 +262,7 @@ export default function AdminAffiliatesPage() {
       }
       load();
     } catch (e: any) {
-      toast.error(e?.message ?? "Save failed");
+      toast.error(await getErrorMessage(e, "Save failed"));
     } finally {
       setSaving(false);
     }
@@ -271,7 +296,7 @@ export default function AdminAffiliatesPage() {
       });
       toast.success("Temporary password generated. Share it with the affiliate.");
     } catch (e: any) {
-      toast.error(e?.message ?? "Failed to reset password");
+      toast.error(await getErrorMessage(e, "Failed to reset password"));
     }
   };
 

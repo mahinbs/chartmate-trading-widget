@@ -196,6 +196,13 @@ function isIntradayInterval(interval: string): boolean {
   return v === "1m" || v === "2m" || v === "5m" || v === "15m" || v === "30m" || v === "60m" || v === "1h";
 }
 
+function normalizeYahooSymbol(rawSymbol: string): string {
+  const clean = String(rawSymbol || "").trim().toUpperCase();
+  if (!clean) return "RELIANCE.NS";
+  if (clean.startsWith("CRUDEOIL")) return "CL=F";
+  return clean;
+}
+
 /* ─── Chart colours ────────────────────────────────────────────────────── */
 const CHART_BG      = "#0a0a0f";
 const GRID_COLOR    = "rgba(255,255,255,0.04)";
@@ -237,9 +244,26 @@ export default function YahooChartPanel({
   const [liveChange, setLiveChange]   = useState<number | null>(null);
   const [livePct, setLivePct]         = useState<number | null>(null);
   const [wsStatus, setWsStatus]       = useState<"connecting" | "live" | "off">("off");
+  const [lastDataTs, setLastDataTs]   = useState<number>(0);
+  const [clockTs, setClockTs]         = useState<number>(Date.now());
   const [crosshairVal, setCrosshairVal] = useState<{
     price?: number; open?: number; high?: number; low?: number; vol?: number;
   } | null>(null);
+  const yahooSymbol = normalizeYahooSymbol(symbol);
+  const hasFreshData = lastDataTs > 0 && (clockTs - lastDataTs) <= 25_000;
+  const feedStatus: "connecting" | "live" | "polling" | "off" =
+    wsStatus === "live"
+      ? "live"
+      : wsStatus === "connecting"
+      ? "connecting"
+      : hasFreshData
+      ? "polling"
+      : "off";
+
+  useEffect(() => {
+    const id = window.setInterval(() => setClockTs(Date.now()), 5_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   /* ── build / rebuild Lightweight Chart ─────────────────────────────── */
   const buildChart = useCallback(() => {
@@ -398,9 +422,11 @@ export default function YahooChartPanel({
       onCandlesLoaded?.(candles);
       setMeta(data?.meta ?? null);
       applyCandles(candles);
-      if (!livePrice && data?.meta?.regularMarketPrice) {
-        setLivePrice(data.meta.regularMarketPrice);
-        onLivePrice?.(data.meta.regularMarketPrice);
+      setLastDataTs(Date.now());
+      const mkt = toFiniteNumber(data?.meta?.regularMarketPrice);
+      if (mkt != null && mkt > 0) {
+        setLivePrice(mkt);
+        onLivePrice?.(mkt);
       }
     } catch (e: any) {
       setError(e?.message || "Failed to load chart data");
@@ -430,6 +456,7 @@ export default function YahooChartPanel({
         const pNum = toFiniteNumber(msg.price);
         if (pNum != null && pNum > 0) {
           const p = pNum;
+          setLastDataTs(Date.now());
           setLivePrice(p);
           onLivePrice?.(p);
           const ch = toFiniteNumber(msg.change);
@@ -508,9 +535,9 @@ export default function YahooChartPanel({
     if (!symbol) return;
     setLivePrice(null); setLiveChange(null); setLivePct(null);
     buildChart();
-    fetchData(symbol, activeRange);
+    fetchData(yahooSymbol, activeRange);
     // Connect WebSocket for truly real-time price streaming
-    connectWS(symbol);
+    connectWS(yahooSymbol);
 
     return () => {
       if (wsRef.current)    { wsRef.current.close(1000, "symbol-change"); wsRef.current = null; }
@@ -518,7 +545,14 @@ export default function YahooChartPanel({
     };
   }, [symbol, activeRange]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // No periodic polling here. Price movement is stream-driven by Yahoo WebSocket.
+  // Keep candles moving even when Yahoo WS goes temporarily offline for some symbols.
+  useEffect(() => {
+    if (!symbol) return;
+    const id = window.setInterval(() => {
+      void fetchData(yahooSymbol, activeRange, true);
+    }, 15_000);
+    return () => window.clearInterval(id);
+  }, [symbol, yahooSymbol, activeRange, fetchData]);
 
   /* ── cleanup on unmount ─────────────────────────────────────────────── */
   useEffect(() => {
@@ -578,11 +612,19 @@ export default function YahooChartPanel({
           )}
           {/* Live indicator */}
           <span className={`flex items-center gap-1 text-[10px] font-medium ${
-            wsStatus === "live" ? "text-emerald-400" : wsStatus === "connecting" ? "text-yellow-400" : "text-zinc-600"
+            feedStatus === "live"
+              ? "text-emerald-400"
+              : feedStatus === "polling"
+              ? "text-cyan-400"
+              : feedStatus === "connecting"
+              ? "text-yellow-400"
+              : "text-zinc-600"
           }`}>
-            {wsStatus === "live"
+            {feedStatus === "live"
               ? <><span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />Live</>
-              : wsStatus === "connecting"
+              : feedStatus === "polling"
+              ? <><span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse" />Live (polling)</>
+              : feedStatus === "connecting"
               ? <><span className="h-1.5 w-1.5 rounded-full bg-yellow-400 animate-pulse" />Connecting…</>
               : <><WifiOff className="h-3 w-3" />Offline</>
             }
@@ -600,11 +642,11 @@ export default function YahooChartPanel({
             </button>
           ))}
           <div className="w-px h-4 bg-white/10 mx-0.5" />
-          <button onClick={() => { fetchData(symbol, activeRange); connectWS(symbol); }}
+          <button onClick={() => { fetchData(yahooSymbol, activeRange); connectWS(yahooSymbol); }}
             title="Refresh" className="p-1 rounded text-zinc-600 hover:text-zinc-300 transition-colors">
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
           </button>
-          <a href={`https://finance.yahoo.com/chart/${encodeURIComponent(symbol)}`}
+          <a href={`https://finance.yahoo.com/chart/${encodeURIComponent(yahooSymbol)}`}
             target="_blank" rel="noopener noreferrer" title="Open on Yahoo Finance"
             className="p-1 rounded text-zinc-600 hover:text-zinc-300 transition-colors">
             <ExternalLink className="h-3.5 w-3.5" />
@@ -631,16 +673,16 @@ export default function YahooChartPanel({
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-[#0a0a0f]/80 z-10 gap-2">
             <Loader2 className="h-5 w-5 animate-spin text-primary" />
-            <span className="text-sm text-zinc-400">Loading {symbol}…</span>
+            <span className="text-sm text-zinc-400">Loading {yahooSymbol}…</span>
           </div>
         )}
 
         {!loading && error && (
           <div className="absolute inset-0 flex flex-col items-center justify-center z-10 gap-3 px-6 text-center">
             <p className="text-sm text-zinc-500">{error}</p>
-            <a href={`https://finance.yahoo.com/chart/${encodeURIComponent(symbol)}`}
+            <a href={`https://finance.yahoo.com/chart/${encodeURIComponent(yahooSymbol)}`}
               target="_blank" rel="noopener noreferrer" className="text-xs text-primary underline">
-              Open {symbol} on Yahoo Finance ↗
+              Open {yahooSymbol} on Yahoo Finance ↗
             </a>
           </div>
         )}
@@ -650,8 +692,10 @@ export default function YahooChartPanel({
       <div className="px-3 py-1 border-t border-white/5 text-[10px] text-zinc-600 flex items-center justify-between">
         <span>Data: Yahoo Finance</span>
         <span className="flex items-center gap-1">
-          {wsStatus === "live"
+          {feedStatus === "live"
             ? <><Wifi className="h-3 w-3 text-emerald-500" /> Streaming</>
+            : feedStatus === "polling"
+            ? <><Wifi className="h-3 w-3 text-cyan-400" /> Polling</>
             : "Scroll to zoom · Drag to pan"
           }
         </span>

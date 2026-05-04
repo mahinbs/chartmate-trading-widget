@@ -369,19 +369,62 @@ Deno.serve(async (req) => {
             const undEntryPrice = tradeMeta?.underlying_entry_price != null ? Number(tradeMeta.underlying_entry_price) : null;
             let tp1Hit = Boolean(tradeMeta?.tp1_hit ?? false);
 
-            // Check TP1 (1:2 RR) — trail SL to entry instead of closing
+            // Check TP1 (1:2 RR) — sell 50% of position, trail SL to entry for remainder
             if (!tp1Hit && undTp1Price !== null) {
               const tp1Crossed = optType === "CE" ? undLtp >= undTp1Price : undLtp <= undTp1Price;
               if (tp1Crossed) {
+                const totalQty = Number(trade.shares ?? 1);
+                const partialQty = Math.max(1, Math.floor(totalQty / 2));
+                const remainingQty = totalQty - partialQty;
                 const newSl = undEntryPrice ?? undSlPrice;
-                const updatedMeta = { ...tradeMeta, tp1_hit: true, underlying_sl_price: newSl };
-                await (supabase as any)
-                  .from("active_trades")
-                  .update({ strategy_metadata: updatedMeta })
-                  .eq("id", tradeId);
+
+                // Fetch option LTP for recording partial exit price
+                const optSym: string = trade.options_symbol ?? trade.symbol ?? "";
+                const optExchg = String(trade.exchange ?? "NFO");
+                let optLtpTp1 = entryPremium;
+                if (apiKey && optSym) {
+                  const fetched = await fetchOptionLtp(optSym, optExchg, apiKey);
+                  if (fetched !== null && fetched > 0) optLtpTp1 = fetched;
+                }
+
+                // Place partial SELL order (live trades only)
+                if (!isPaper && apiKey && optSym) {
+                  await placeExitOrder(optSym, optExchg, partialQty, apiKey);
+                }
+
+                const updatedMeta = {
+                  ...tradeMeta,
+                  tp1_hit: true,
+                  underlying_sl_price: newSl,
+                  partial_qty_sold: partialQty,
+                  partial_exit_ltp: optLtpTp1,
+                };
+
+                if (remainingQty <= 0) {
+                  // Only 1 lot — fully exit at TP1
+                  const pnlPct = entryPremium > 0 ? ((optLtpTp1 - entryPremium) / entryPremium) * 100 : 0;
+                  const actualPnl = (optLtpTp1 - entryPremium) * totalQty;
+                  await (supabase as any).from("active_trades").update({
+                    status: "completed",
+                    exit_price: optLtpTp1,
+                    exit_premium: optLtpTp1,
+                    exit_time: new Date().toISOString(),
+                    exit_reason: "underlying_take_profit_rr1_2",
+                    actual_pnl: actualPnl,
+                    actual_pnl_percentage: pnlPct,
+                    strategy_metadata: updatedMeta,
+                  }).eq("id", tradeId);
+                  results.push({ trade_id: tradeId, action: isPaper ? "paper_exited" : "live_exited", reason: "underlying_take_profit_rr1_2" });
+                } else {
+                  // Update shares to remaining, trail SL
+                  await (supabase as any).from("active_trades").update({
+                    shares: remainingQty,
+                    strategy_metadata: updatedMeta,
+                  }).eq("id", tradeId);
+                  console.log(`[exit-monitor] TP1 hit trade=${tradeId} und=${undSym} ltp=${undLtp} partial_sold=${partialQty} remaining=${remainingQty} new_sl=${newSl}`);
+                  results.push({ trade_id: tradeId, action: "tp1_partial_sold_sl_trailed", reason: `partial=${partialQty} remaining=${remainingQty}` });
+                }
                 tp1Hit = true;
-                console.log(`[exit-monitor] TP1 hit trade=${tradeId} und=${undSym} ltp=${undLtp} sl_trailed_to=${newSl}`);
-                results.push({ trade_id: tradeId, action: "tp1_hit_sl_trailed" });
                 continue;
               }
             }
