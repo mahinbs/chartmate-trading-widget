@@ -68,9 +68,15 @@ serve(async (req)=>{
     const emailTrim = typeof email === "string" ? email.trim() : "";
     const phoneTrim = typeof phone === "string" ? phone.trim() : "";
 
-    if (!codeTrim || !nameTrim || !emailTrim) {
+    const missingFields = [
+      !codeTrim ? "code" : null,
+      !nameTrim ? "name" : null,
+      !emailTrim ? "email" : null
+    ].filter(Boolean);
+
+    if (missingFields.length > 0) {
       return new Response(JSON.stringify({
-        error: "code, name and email are required"
+        error: `Required fields missing: ${missingFields.join(", ")}`
       }), {
         status: 400,
         headers: {
@@ -113,8 +119,17 @@ serve(async (req)=>{
     });
 
     if (createError) {
+      const createMessage = createError.message || "Failed to create auth user";
+      const normalizedCreateError = createMessage.toLowerCase();
+      const userFacingError = normalizedCreateError.includes("already") && normalizedCreateError.includes("registered") ? "Email is already registered. Use a different email or reset that affiliate's password." : createMessage;
+
+      console.error("admin-create-affiliate createUser failed", {
+        email: emailTrim,
+        message: createMessage
+      });
+
       return new Response(JSON.stringify({
-        error: createError.message
+        error: userFacingError
       }), {
         status: 400,
         headers: {

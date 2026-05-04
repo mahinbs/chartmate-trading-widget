@@ -2,7 +2,7 @@
  * options-strategy-entry — Supabase Edge Function
  *
  * Evaluates all active options strategies and fires entries when conditions are met.
- * Called by pg_cron every 1 minute during market hours (09:16 – 15:14 IST).
+ * Called by pg_cron every 1 minute during market hours.
  *
  * Entry logic per strategy:
  *   1. Skip if: outside execution_days, before start_time, after end_time
@@ -92,6 +92,22 @@ function resolveStrategyType(strategy: Record<string, any>): StrategyType {
   return "orb_buying";
 }
 
+function resolveUnderlying(strategy: Record<string, any>): string {
+  const raw = String(
+    strategy.underlying ??
+    strategy.symbol ??
+    strategy.instrument_symbol ??
+    "",
+  ).trim().toUpperCase();
+  if (raw) return raw.split(",")[0]?.trim() || "NIFTY";
+  const name = String(strategy.name ?? "").toUpperCase();
+  if (name.includes("CRUDE")) return "CRUDEOIL";
+  if (name.includes("BANKNIFTY")) return "BANKNIFTY";
+  if (name.includes("FINNIFTY")) return "FINNIFTY";
+  if (name.includes("NIFTY")) return "NIFTY";
+  return "NIFTY";
+}
+
 function buildExecuteParams(strategy: Record<string, any>, strategyType: StrategyType): Record<string, unknown> {
   const ec = (strategy.entry_conditions ?? {}) as Record<string, unknown>;
   const er = (strategy.exit_rules ?? {}) as Record<string, unknown>;
@@ -164,11 +180,15 @@ function buildExecuteParams(strategy: Record<string, any>, strategyType: Strateg
   if (strategyType === "ema_9_20_setup") {
     const exchangeOptions = String(strategy.exchange ?? "NFO").toUpperCase();
     const exchangeUnderlying = exchangeOptions === "MCX" ? "MCX" : "NSE";
+    const state = (strategy.strategy_state ?? {}) as Record<string, unknown>;
+    const deployment = (state.deployment ?? {}) as Record<string, unknown>;
+    const deploymentExpiry = String(deployment.expiry_iso ?? "").trim();
     return {
       underlying: strategy.underlying,
       exchange_underlying: exchangeUnderlying,
       exchange_options: exchangeOptions,
       expiry_type: strategy.expiry_type === "monthly" ? "monthly" : "weekly",
+      expiry_date: deploymentExpiry || undefined,
       strike_offset: strategy.strike_selection ?? "ATM",
       lots,
       lot_size: lotSize,
@@ -200,6 +220,91 @@ function buildExecuteParams(strategy: Record<string, any>, strategyType: Strateg
     time_exit_hhmm: String(er.time_exit_hhmm ?? "15:15"),
     max_reentry_count: Number(er.max_reentry_count ?? 1),
   };
+}
+
+async function emitConditionEvent(
+  supabase: ReturnType<typeof createClient>,
+  args: {
+    strategyId: string;
+    symbol: string;
+    strategyType: StrategyType;
+    executed: boolean;
+    reason: string;
+    signal?: Record<string, unknown> | null;
+  },
+) {
+  const sig = (args.signal ?? {}) as Record<string, unknown>;
+  const rawConds = Array.isArray(sig.diagnostics) ? sig.diagnostics : [];
+  const reasonText = String(args.reason ?? "");
+  const conditions = rawConds.map((r) => {
+    const row = (r ?? {}) as Record<string, unknown>;
+    return {
+      name: String(row.name ?? "condition"),
+      lhs: row.lhs ?? null,
+      op: String(row.op ?? "="),
+      rhs: row.rhs ?? null,
+      matched: Boolean(row.matched),
+    };
+  });
+  if (
+    args.strategyType === "ema_9_20_setup" &&
+    /not enough 5m candles/i.test(reasonText) &&
+    conditions.length <= 1
+  ) {
+    const extra = [
+      "Bull: EMA9 above EMA20",
+      "Bull: EMA20 rising (slope proxy)",
+      "Bull: signal candle touches EMA20 zone",
+      "Bull: entry pattern (hammer/power/engulf)",
+      "Bull: confirmation close above EMA9",
+      "Bull: next open above EMA9",
+      "Bull: confirmation high breakout",
+      "Bear: EMA9 below EMA20",
+      "Bear: EMA20 falling (slope proxy)",
+      "Bear: signal candle rejects EMA20 zone",
+      "Bear: entry pattern (pin/power/engulf)",
+      "Bear: confirmation close below EMA9",
+      "Bear: next open below EMA9",
+      "Bear: confirmation low breakdown",
+    ];
+    for (const name of extra) {
+      conditions.push({
+        name,
+        lhs: "waiting_for_history",
+        op: "=",
+        rhs: "ready",
+        matched: false,
+      });
+    }
+  }
+  const totalCount = conditions.length;
+  const readyCount = conditions.filter((c) => c.matched).length;
+  const allMatched = totalCount > 0 ? readyCount === totalCount : Boolean(args.executed);
+
+  const fallbackConditions = totalCount > 0 ? conditions : [{
+    name: "Signal evaluation",
+    lhs: args.executed ? "triggered" : "not_triggered",
+    op: "=",
+    rhs: "triggered",
+    matched: Boolean(args.executed),
+  }];
+
+  await (supabase as any).from("strategy_condition_events").insert({
+    strategy_id: args.strategyId,
+    symbol: String(args.symbol || "").toUpperCase(),
+    matched: Boolean(args.executed),
+    all_matched: allMatched,
+    ready_count: totalCount > 0 ? readyCount : (args.executed ? 1 : 0),
+    total_count: totalCount > 0 ? totalCount : 1,
+    conditions: fallbackConditions,
+    reasons: {
+      strategy_type: args.strategyType,
+      executed: args.executed,
+      reason: args.reason,
+      signal_reason: String(sig.reason ?? ""),
+    },
+    at: new Date().toISOString(),
+  });
 }
 
 // ── Main handler ─────────────────────────────────────────────────────────
@@ -246,22 +351,62 @@ Deno.serve(async (req) => {
     for (const strategy of strategies) {
       const sid = strategy.id as string;
       try {
+        const strategyType = resolveStrategyType(strategy);
+        const underlyingSym = resolveUnderlying(strategy);
+        const strategyForExec = { ...strategy, underlying: underlyingSym };
         const exitRules = strategy.exit_rules ?? {};
         const entryConditions = strategy.entry_conditions ?? {};
         const strategyState = strategy.strategy_state ?? {};
 
         // ── Day/time guard ─────────────────────────────────────────────
+        const ex = String(strategy.exchange ?? "NFO").toUpperCase();
+        const isCommodity = ex === "MCX" || ex === "NCDEX";
+        const defaultStart = isCommodity ? "09:00" : "09:30";
+        const defaultEnd = isCommodity ? "23:00" : "15:15";
+        const rawStart = String(strategy.start_time ?? "").trim();
+        const rawEnd = String(strategy.end_time ?? "").trim();
+        let startTime = rawStart || defaultStart;
+        let endTime = rawEnd || defaultEnd;
+        // Legacy rows were created with NSE defaults. Auto-upgrade those windows for MCX/NCDEX.
+        if (isCommodity) {
+          if (!rawStart || rawStart === "09:30") startTime = "09:00";
+          if (!rawEnd || rawEnd === "15:15" || rawEnd === "15:30") endTime = "23:00";
+        }
         const execDays: string[] = strategy.execution_days ?? ["Mon","Tue","Wed","Thu","Fri"];
         if (!execDays.includes(todayDay)) {
           results.push({ strategy_id: sid, result: "skipped:wrong_day" });
+          await emitConditionEvent(supabase, {
+            strategyId: sid,
+            symbol: underlyingSym,
+            strategyType,
+            executed: false,
+            reason: "skipped:wrong_day",
+            signal: null,
+          }).catch(() => null);
           continue;
         }
-        if (nowHHMM < (strategy.start_time ?? "09:30")) {
+        if (nowHHMM < startTime) {
           results.push({ strategy_id: sid, result: "skipped:before_start" });
+          await emitConditionEvent(supabase, {
+            strategyId: sid,
+            symbol: underlyingSym,
+            strategyType,
+            executed: false,
+            reason: "skipped:before_start",
+            signal: null,
+          }).catch(() => null);
           continue;
         }
-        if (nowHHMM > (strategy.end_time ?? "15:15")) {
+        if (nowHHMM > endTime) {
           results.push({ strategy_id: sid, result: "skipped:after_end" });
+          await emitConditionEvent(supabase, {
+            strategyId: sid,
+            symbol: underlyingSym,
+            strategyType,
+            executed: false,
+            reason: "skipped:after_end",
+            signal: null,
+          }).catch(() => null);
           continue;
         }
 
@@ -271,6 +416,14 @@ Deno.serve(async (req) => {
           const reentryCount = strategyState.reentry_count ?? 0;
           if (reentryCount >= maxReentry) {
             results.push({ strategy_id: sid, result: "skipped:daily_limit_reached" });
+            await emitConditionEvent(supabase, {
+              strategyId: sid,
+              symbol: underlyingSym,
+              strategyType,
+              executed: false,
+              reason: "skipped:daily_limit_reached",
+              signal: null,
+            }).catch(() => null);
             continue;
           }
         }
@@ -279,7 +432,7 @@ Deno.serve(async (req) => {
         if (entryConditions.expiry_day_guard) {
           const { data: expiries } = await supabase.functions.invoke("fetch-expiry-dates", {
             body: {
-              symbol: strategy.underlying,
+              symbol: underlyingSym,
               exchange: strategy.exchange,
               instrumenttype: strategy.instrument_type ?? "OPTIDX",
             },
@@ -287,6 +440,14 @@ Deno.serve(async (req) => {
           const nearestExpiry = expiries?.expiries?.[0]?.date;
           if (nearestExpiry === todayDateStr) {
             results.push({ strategy_id: sid, result: "skipped:expiry_day" });
+            await emitConditionEvent(supabase, {
+              strategyId: sid,
+              symbol: underlyingSym,
+              strategyType,
+              executed: false,
+              reason: "skipped:expiry_day",
+              signal: null,
+            }).catch(() => null);
             continue;
           }
         }
@@ -300,6 +461,14 @@ Deno.serve(async (req) => {
           .limit(1);
         if (openTrades?.length > 0) {
           results.push({ strategy_id: sid, result: "skipped:open_position_exists" });
+          await emitConditionEvent(supabase, {
+            strategyId: sid,
+            symbol: underlyingSym,
+            strategyType,
+            executed: false,
+            reason: "skipped:open_position_exists",
+            signal: null,
+          }).catch(() => null);
           continue;
         }
 
@@ -313,19 +482,42 @@ Deno.serve(async (req) => {
         const apiKey = integration?.openalgo_api_key ?? "";
         if (!apiKey && !strategy.is_paper_only) {
           results.push({ strategy_id: sid, result: "skipped:no_api_key" });
+          await emitConditionEvent(supabase, {
+            strategyId: sid,
+            symbol: underlyingSym,
+            strategyType,
+            executed: false,
+            reason: "skipped:no_api_key",
+            signal: null,
+          }).catch(() => null);
           continue;
         }
         if (!apiKey && !OPENALGO_APP_KEY) {
           results.push({ strategy_id: sid, result: "skipped:no_data_api_key" });
+          await emitConditionEvent(supabase, {
+            strategyId: sid,
+            symbol: underlyingSym,
+            strategyType,
+            executed: false,
+            reason: "skipped:no_data_api_key",
+            signal: null,
+          }).catch(() => null);
           continue;
         }
 
         const isPaper = strategy.is_paper_only === true;
-        const strategyType = resolveStrategyType(strategy);
-        const params = buildExecuteParams(strategy, strategyType);
+        const params = buildExecuteParams(strategyForExec, strategyType);
 
         if (!OPTIONS_API_URL || !OPTIONS_API_INTERNAL_KEY) {
           results.push({ strategy_id: sid, result: "error:options_api_not_configured" });
+          await emitConditionEvent(supabase, {
+            strategyId: sid,
+            symbol: underlyingSym,
+            strategyType,
+            executed: false,
+            reason: "error:options_api_not_configured",
+            signal: null,
+          }).catch(() => null);
           continue;
         }
 
@@ -350,12 +542,38 @@ Deno.serve(async (req) => {
         if (!execRes.ok) {
           const detail = String((execData as any)?.detail ?? (execData as any)?.error ?? execRes.status);
           results.push({ strategy_id: sid, result: `error:execute_failed(${detail})` });
+          await emitConditionEvent(supabase, {
+            strategyId: sid,
+            symbol: underlyingSym,
+            strategyType,
+            executed: false,
+            reason: `execute_failed(${detail})`,
+            signal: (execData as any)?.signal ?? null,
+          }).catch((e) => console.error("[options-strategy-entry] emitConditionEvent failed:", e));
           continue;
         }
         if (!execData?.executed) {
-          results.push({ strategy_id: sid, result: `no_signal:${String(execData?.reason ?? "strategy_conditions_not_met")}` });
+          const noSignalReason = String(execData?.reason ?? "strategy_conditions_not_met");
+          results.push({ strategy_id: sid, result: `no_signal:${noSignalReason}` });
+          await emitConditionEvent(supabase, {
+            strategyId: sid,
+            symbol: underlyingSym,
+            strategyType,
+            executed: false,
+            reason: noSignalReason,
+            signal: (execData as any)?.signal ?? null,
+          }).catch((e) => console.error("[options-strategy-entry] emitConditionEvent failed:", e));
           continue;
         }
+
+        await emitConditionEvent(supabase, {
+          strategyId: sid,
+          symbol: underlyingSym,
+          strategyType,
+          executed: true,
+          reason: String(execData?.reason ?? "signal_triggered"),
+          signal: (execData as any)?.signal ?? null,
+        }).catch((e) => console.error("[options-strategy-entry] emitConditionEvent failed:", e));
 
         // ── Update strategy state ───────────────────────────────────────
         const prevReentry = strategyState.last_run_date === todayDateStr
