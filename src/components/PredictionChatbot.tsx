@@ -126,7 +126,7 @@ function isAnalysisQuery(msg: string): boolean {
   return /\b(should i buy|should i sell|buy or sell|good time to|right time to|worth buying|worth investing|analysis|analyse|analyze|recommend|hold or|invest in)\b/i.test(msg);
 }
 
-const WELCOME_TEXT_ANALYSIS = `Hey! 👋 I'm your **TradingSmart Bot** powered by real-time market data, news and sentiment analysis.
+const WELCOME_TEXT_ANALYSIS = `Hey! 👋 I'm your **ChartMate Bot** powered by real-time market data, news and sentiment analysis.
 
 Ask me anything:
 • **Live prices** "What's Tesla trading at?"
@@ -137,7 +137,7 @@ Ask me anything:
 
 I'll give you real answers based on current news, sentiment, and market trends.`;
 
-const WELCOME_TEXT_FREE = `Hey! 👋 I'm your **TradingSmart Bot** powered by real-time market data, news and sentiment analysis.
+const WELCOME_TEXT_FREE = `Hey! 👋 I'm your **ChartMate Bot** powered by real-time market data, news and sentiment analysis.
 
 Ask me anything:
 • **Live prices** "What's Tesla trading at?"
@@ -424,7 +424,7 @@ export function PredictionChatbot({ open, setOpen }: PredictionChatbotProps) {
               <AssistantLogo size={20} />
             </div>
             <div>
-              <p className="font-bold text-sm tracking-tight">TradingSmart Bot</p>
+              <p className="font-bold text-sm tracking-tight">ChartMate Bot</p>
               <div className="flex items-center gap-1.5">
                 <span className="h-1.5 w-1.5 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
                 <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Live prices · News · Analysis</p>

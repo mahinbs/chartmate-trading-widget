@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
-// ─── SVG Logo Component (matches your TradingSmart.ai brain+chart logo) ───
-const TradingSmartLogo = ({ size = 36 }) => (
+// ─── SVG Logo Component (matches your ChartMate.ai brain+chart logo) ───
+const ChartMateLogo = ({ size = 36 }) => (
   <svg width={size} height={size} viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
     <defs>
       <linearGradient id="logoGrad" x1="0" y1="0" x2="100" y2="100">
@@ -385,7 +385,7 @@ const genOrder = () => {
 };
 
 // ─── Main Dashboard Component ───
-export default function TradingSmartDashboard() {
+export default function ChartMateDashboard() {
   const [time, setTime] = useState("");
   const [uptimeSec, setUptimeSec] = useState(72 * 3600 + 14 * 60 + 38);
   const [killActive, setKillActive] = useState(false);
@@ -630,9 +630,9 @@ export default function TradingSmartDashboard() {
         {/* NAV */}
         <nav className="topnav">
           <div className="logo">
-            <div className="logo-icon"><TradingSmartLogo size={32} /></div>
+            <div className="logo-icon"><ChartMateLogo size={32} /></div>
             <div className="logo-text">
-              <span className="logo-text-main">TRADINGSMART.AI</span>
+              <span className="logo-text-main">CHARTMATE.AI</span>
               <span className="logo-text-sub">ALGO TRADING ENGINE</span>
             </div>
           </div>

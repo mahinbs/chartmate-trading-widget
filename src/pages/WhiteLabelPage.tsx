@@ -28,7 +28,7 @@ const WhiteLabelPage = () => {
     return (
         <Layout>
             <Helmet>
-                <title>White-label trading platform | TradingSmart.ai</title>
+                <title>White-label trading platform | ChartMate.ai</title>
                 <meta
                     name="description"
                     content="Resell a full trading stack under your brand: analysis, backtests, strategies, options, paper and live execution—plus engineering-led custom algo integration for your clients."

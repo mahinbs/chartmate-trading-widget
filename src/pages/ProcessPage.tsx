@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-const PROCESS_PAGE_URL = "/tradingsmartalgo/process.html";
+const PROCESS_PAGE_URL = "/chartmatealgo/process.html";
 
 export default function ProcessPage() {
   useEffect(() => {

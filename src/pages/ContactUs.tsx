@@ -147,7 +147,7 @@ const ContactUsPage = ({ mode = "contact" }: ContactUsPageProps) => {
             body: emailBody,
             name: "Tradingsmart.AI",
               subject: `${isDemoMode ? "New Demo Call Request" : "New Enquiry"} from ${data.name} - ${planNames[data.plan] || data.plan}`,
-            to: "partnerships@tradingsmart.ai",
+            to: "partnerships@chartmate.ai",
           }),
         },
       );
@@ -251,7 +251,7 @@ const ContactUsPage = ({ mode = "contact" }: ContactUsPageProps) => {
   return (
     <Layout>
       <Helmet>
-        <title>Contact TradingSmart.ai</title>
+        <title>Contact ChartMate.ai</title>
         <meta
           name="description"
           content="Reach the team for platform questions, custom algo integration, white-label, or partnerships. Technology platform—not investment advice."

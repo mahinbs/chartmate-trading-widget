@@ -5,10 +5,10 @@ export default function RaMarketplacePage() {
   return (
     <div className="min-h-screen bg-background text-foreground px-6 py-16">
       <Helmet>
-        <title>SEBI RA Marketplace | TradingSmart.ai</title>
+        <title>SEBI RA Marketplace | ChartMate.ai</title>
         <meta
           name="description"
-          content="Browse SEBI-registered research analyst profiles and strategies on TradingSmart.ai."
+          content="Browse SEBI-registered research analyst profiles and strategies on ChartMate.ai."
         />
       </Helmet>
 

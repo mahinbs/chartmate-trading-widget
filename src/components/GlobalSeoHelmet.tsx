@@ -1,7 +1,7 @@
 import { Helmet } from "react-helmet-async";
 import { useLocation } from "react-router-dom";
 
-const SITE_ORIGIN = "https://www.tradingsmart.ai";
+const SITE_ORIGIN = "https://www.chartmate.ai";
 
 /**
  * Canonical + default robots on every route (SPA). Matches handoff: www + pathname.

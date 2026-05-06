@@ -458,7 +458,7 @@ export function AlgoOnboardingWizard({
                   </label>
                   <label className="consent-item">
                     <input type="checkbox" checked={form.c4} onChange={(e) => setForm({ ...form, c4: e.target.checked })} />
-                    <span>I authorize TradingSmart to execute automated orders once my broker is connected.</span>
+                    <span>I authorize ChartMate to execute automated orders once my broker is connected.</span>
                   </label>
                 </div>
               </div>

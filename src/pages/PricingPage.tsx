@@ -55,7 +55,7 @@ const PricingPage = () => {
   return (
     <div className="min-h-screen bg-black text-zinc-100 font-sans selection:bg-teal-500/30 selection:text-teal-100 overflow-x-hidden">
       <Helmet>
-        <title>Pricing — TradingSmart.ai</title>
+        <title>Pricing — ChartMate.ai</title>
         <meta
           name="description"
           content="Starter, Growth, and Pro — one-time setup plus monthly plans after 30 days. Full platform access and flexible algo strategy limits."

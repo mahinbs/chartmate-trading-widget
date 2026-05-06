@@ -46,7 +46,7 @@ import {
 } from "../components/ui/select";
 import AiPredictionHeader from "../components/landingpage/mainlandingpage/AiPredictionHeader";
 import AiPredictionFooter from "../components/landingpage/mainlandingpage/AiPredictionFooter";
-import { TradingSmartPricingMatrix } from "../components/landingpage/TradingSmartPricingMatrix";
+import { ChartMatePricingMatrix } from "../components/landingpage/TradingSmartPricingMatrix";
 import { PRICING_PLANS } from "@/constants/pricing";
 
 const fadeUp: Variants = {
@@ -254,7 +254,7 @@ const LandingPageNew = () => {
             body: emailBody,
             name: "Tradingsmart.AI",
             subject: `New Enquiry from ${data.name} - ${planNames[data.plan] || data.plan}`,
-            to: "partnerships@tradingsmart.ai",
+            to: "partnerships@chartmate.ai",
           }),
         },
       );
@@ -304,7 +304,7 @@ const LandingPageNew = () => {
             body: emailBody,
             name: "Tradingsmart.AI",
             subject: `New Enquiry from ${data.name} - ${planNames[data.plan] || data.plan}`,
-            to: "partnerships@tradingsmart.ai",
+            to: "partnerships@chartmate.ai",
           }),
         }
       );
@@ -336,7 +336,7 @@ const LandingPageNew = () => {
       />
       <Helmet>
         <title>
-          Trading platform: analysis, backtests, options, paper &amp; live | TradingSmart.ai
+          Trading platform: analysis, backtests, options, paper &amp; live | ChartMate.ai
         </title>
         <meta
           name="description"
@@ -346,8 +346,8 @@ const LandingPageNew = () => {
           {JSON.stringify({
             "@context": "https://schema.org",
             "@type": "SoftwareApplication",
-            name: "TradingSmart.ai",
-            url: "https://www.tradingsmart.ai",
+            name: "ChartMate.ai",
+            url: "https://www.chartmate.ai",
             applicationCategory: "FinanceApplication",
             operatingSystem: "Web",
             description:
@@ -557,7 +557,7 @@ const LandingPageNew = () => {
                   <motion.img
                     key={dashIndex}
                     src={dashScreenshots[dashIndex]}
-                    alt={`TradingSmart.ai dashboard view ${dashIndex + 1}`}
+                    alt={`ChartMate.ai dashboard view ${dashIndex + 1}`}
                     className="absolute inset-0 w-full h-full object-cover"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -577,7 +577,7 @@ const LandingPageNew = () => {
                 </div>
               </div>
             </div>
-            <p className="text-center text-zinc-600 text-xs mt-4">TradingSmart.ai Dashboard</p>
+            <p className="text-center text-zinc-600 text-xs mt-4">ChartMate.ai Dashboard</p>
           </motion.div>
         </div>
       </motion.section>
@@ -734,7 +734,7 @@ const LandingPageNew = () => {
             {/* Row 1: Steps 1-4 */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               {[
-                { step: 1, text: "Sign up on TradingSmart.ai", icon: UserPlus },
+                { step: 1, text: "Sign up on ChartMate.ai", icon: UserPlus },
                 { step: 2, text: "Connect your broker securely", icon: Link2 },
                 { step: 3, text: "Share your strategy idea", icon: Lightbulb },
                 { step: 4, text: "Our developers build your system", icon: Code2 },
@@ -890,7 +890,7 @@ const LandingPageNew = () => {
             Your edge isn&apos;t a locked feature. It&apos;s the support you get from our team to integrate your strategy into a live, broker-ready stack.
           </motion.p>
           <motion.p variants={fadeUp} className={`${bodyMuted} mt-6 max-w-3xl text-center md:text-left text-base`}>
-            Every subscriber gets the same product surface: AI-assisted analysis, deep backtests, strategy management, options workflows, and paper-to-live trade tracking in one dashboard. What separates TradingSmart is{" "}
+            Every subscriber gets the same product surface: AI-assisted analysis, deep backtests, strategy management, options workflows, and paper-to-live trade tracking in one dashboard. What separates ChartMate is{" "}
             <span className="text-zinc-200 font-medium">done-for-you custom algo integration</span>
             —we encode the logic, wire the broker path, and ship deployable automation—not a menu of paid add-ons.
           </motion.p>
@@ -1000,7 +1000,7 @@ const LandingPageNew = () => {
                 name: "Vikram P.",
                 city: "Ahmedabad",
                 color: "bg-blue-500",
-                quote: "Every platform I tried gave me indicators and paramters to tweak but my actual strategy logic couldnt fit into any of them. Was about to give up on automation completley. TradingSmart just got it.",
+                quote: "Every platform I tried gave me indicators and paramters to tweak but my actual strategy logic couldnt fit into any of them. Was about to give up on automation completley. ChartMate just got it.",
               },
             ].map((t, i) => (
               <motion.div key={i} variants={fadeUp} className={`${card} flex flex-col gap-5`}>
@@ -1032,7 +1032,7 @@ const LandingPageNew = () => {
       >
         <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-teal-500/30 to-transparent" />
         <motion.div variants={fadeUp}>
-          <TradingSmartPricingMatrix />
+          <ChartMatePricingMatrix />
         </motion.div>
         <motion.div variants={fadeUp} className="container mx-auto px-4 max-w-6xl pb-4">
           <Button
@@ -1349,7 +1349,7 @@ const LandingPageNew = () => {
               </Button>
 
               <p className="text-zinc-600 text-xs text-center leading-relaxed pt-2">
-                TradingSmart.ai is a technology platform only — not a SEBI-registered adviser. We do not provide investment advice or execute trades. All decisions remain with the user.
+                ChartMate.ai is a technology platform only — not a SEBI-registered adviser. We do not provide investment advice or execute trades. All decisions remain with the user.
               </p>
             </motion.form>
           )}

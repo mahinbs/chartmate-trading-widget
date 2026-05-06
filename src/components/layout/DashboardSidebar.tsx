@@ -18,7 +18,7 @@ import {
   Target,
   User,
 } from "lucide-react";
-import logo from "@/assets/logo.png";
+import logo from "@/assets/chartmate.png";
 import { useAuth } from "@/hooks/useAuth";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useSubscription } from "@/hooks/useSubscription";
@@ -100,7 +100,7 @@ function useDashboardNavLinks(): DashboardNavLink[] {
     if (hasAlgoAccess) {
       if (canUseAlgoTools) {
         next.push({
-          to: "https://algo.tradingsmart.in/dashboard",
+          to: "https://algo.chartmate.in/dashboard",
           label: "Algo Trading Engine",
           icon: Bot,
           iconColor: "text-primary opacity-80",
@@ -213,7 +213,7 @@ export function DashboardSidebar({
       return false;
     }
 
-    const isAlgoEngineHost = targetUrl.hostname === "algo.tradingsmart.in";
+    const isAlgoEngineHost = targetUrl.hostname === "algo.chartmate.in";
     if (!isAlgoEngineHost) {
       return false;
     }

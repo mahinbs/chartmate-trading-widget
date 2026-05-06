@@ -43,7 +43,7 @@ const WhyUs = () => {
                         <h2 className="text-4xl md:text-5xl font-bold mb-6 text-white tracking-tight">
                             Why teams choose{" "}
                             <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-primary">
-                                TradingSmart
+                                ChartMate
                             </span>
                         </h2>
                         <p className="text-xl text-gray-400 leading-relaxed font-light">

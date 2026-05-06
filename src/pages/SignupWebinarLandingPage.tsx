@@ -13,7 +13,7 @@ import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import heroVid from "../assets/landingpage/hero-vid.webm";
-import logoImg from "@/assets/logo.png";
+import logoImg from "@/assets/chartmate.png";
 import {
   AlarmClock,
   ArrowRight,
@@ -353,12 +353,12 @@ export default function SignupWebinarLandingPage() {
       <header className="sticky top-0 z-50 border-b border-zinc-800 bg-black/80 backdrop-blur-lg">
         <div className="mx-auto flex h-14 w-full max-w-[1400px] items-center justify-between px-4">
           <div className="flex items-center gap-2">
-            <img src={logoImg} alt="TradingSmart.ai" className="h-7 w-7 object-contain" />
+            <img src={logoImg} alt="ChartMate.ai" className="h-7 w-7 object-contain" />
             <p
               className="font-semibold tracking-wide text-zinc-100"
               style={{ fontFamily: "'Google Sans', sans-serif" }}
             >
-              TradingSmart<span className="text-teal-400">.ai</span>
+              ChartMate<span className="text-teal-400">.ai</span>
             </p>
           </div>
           <Button

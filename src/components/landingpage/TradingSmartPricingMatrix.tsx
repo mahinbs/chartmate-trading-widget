@@ -139,7 +139,7 @@ function PricingCard({ title, popular, inr, integrationAmount, monthlyAmount, fe
  */
 const PROFESSIONAL_PLAN_ID = "professionalPlan" as const;
 
-export function TradingSmartPricingMatrix() {
+export function ChartMatePricingMatrix() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { subscription, loading: subLoading } = useSubscription();

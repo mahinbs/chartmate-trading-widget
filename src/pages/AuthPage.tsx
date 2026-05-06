@@ -34,6 +34,7 @@ import { useIsMobileApp } from "@/mobile-app/isMobileDevice";
 import { WEBINAR_BATCH_DEFINITIONS } from "@/constants/webinarBatches";
 import { ensureTrialAccessForUser } from "@/lib/ensureTrialAccessForUser";
 import { trackFunnelEvent } from "@/lib/funnelTracking";
+import { setBrandOverrideFromEmail } from "@/lib/brandOverride";
 
 const VALID_PREMIUM_CHECKOUT_PLANS = new Set(PRICING_PLANS.map((p) => p.id));
 
@@ -246,6 +247,7 @@ const AuthPage = () => {
   useEffect(() => {
     const routeAfterLogin = async () => {
       if (roleLoading || !user) return;
+      setBrandOverrideFromEmail(user.email);
       if ((user as any).user_metadata?.need_password_reset) {
         navigate("/auth/change-password", { replace: true });
         return;
@@ -459,6 +461,7 @@ const AuthPage = () => {
           variant: "destructive",
         });
       } else {
+        setBrandOverrideFromEmail(signInData.email);
         toast({
           title: "Welcome back!",
           description: "You have successfully signed in.",
@@ -1115,7 +1118,7 @@ const AuthPage = () => {
       <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted flex items-center justify-center p-4">
         <Card className="w-full max-w-lg">
           <CardHeader>
-            <CardTitle className="text-2xl text-center">Welcome to TradingSmart.ai</CardTitle>
+            <CardTitle className="text-2xl text-center">Welcome to ChartMate.ai</CardTitle>
             <CardDescription className="text-center">
               Your 14-day free trial is active. Pick a live training batch now.
             </CardDescription>

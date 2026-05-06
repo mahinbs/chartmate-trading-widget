@@ -39,13 +39,13 @@ export function ProTrialExpiredGate() {
     >
       <div className="max-w-md rounded-2xl border border-teal-500/30 bg-zinc-950/90 p-8 shadow-[0_0_60px_rgba(20,184,166,0.12)]">
         <p className="font-ibm-mono text-[10px] uppercase tracking-[0.2em] text-teal-400/90">
-          TradingSmart
+          ChartMate
         </p>
         <h1 id="pro-trial-expired-title" className="mt-3 font-bebas text-3xl text-white sm:text-4xl">
           Your 14-day Pro trial has ended
         </h1>
         <p className="mt-4 text-sm leading-relaxed text-zinc-400">
-          To continue using TradingSmart with Pro features, complete checkout for the Pro plan.
+          To continue using ChartMate with Pro features, complete checkout for the Pro plan.
         </p>
         <Button
           type="button"

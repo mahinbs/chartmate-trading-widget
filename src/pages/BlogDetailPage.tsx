@@ -14,6 +14,7 @@ import {
   type FaqItem,
   type SourceItem,
 } from "@/lib/blogSeo";
+import { isChartmateBrandActive } from "@/lib/brandOverride";
 
 interface Blog {
   id: string;
@@ -51,6 +52,7 @@ function sourceLabel(source: SourceItem) {
 }
 
 export default function BlogDetailPage() {
+  const chartmateBrandActive = isChartmateBrandActive();
   const { slug } = useParams<{ slug: string }>();
   const [blog, setBlog] = useState<Blog | null>(null);
   const [loading, setLoading] = useState(true);
@@ -110,7 +112,7 @@ export default function BlogDetailPage() {
     <div className="min-h-screen bg-background text-foreground">
       {blog && (
         <Helmet>
-          <title>{blog.title} | TradingSmart.ai</title>
+          <title>{blog.title} | ChartMate.ai</title>
           <meta name="description" content={blog.meta_description || blog.subtitle || blog.title} />
           {blog.faq_items.filter((item) => item.question && item.answer).length > 0 && (
             <script type="application/ld+json">{JSON.stringify(buildFaqSchema(blog.faq_items))}</script>
@@ -192,7 +194,9 @@ export default function BlogDetailPage() {
                 </div>
               )}
               <div>
-                <p className="text-sm font-semibold leading-tight text-white">{blog.author_name || "Trading Smart Team"}</p>
+                <p className="text-sm font-semibold leading-tight text-white">
+                  {blog.author_name || (chartmateBrandActive ? "ChartMate Team" : "Trading Smart Team")}
+                </p>
                 <p className="text-xs text-muted-foreground mt-1">{formatDate(blog.published_at || blog.created_at)}</p>
               </div>
             </div>

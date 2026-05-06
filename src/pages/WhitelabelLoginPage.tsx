@@ -7,8 +7,10 @@ import { Label } from "@/components/ui/label";
 import { Loader2, AlertTriangle, Lock } from "lucide-react";
 import { useWhitelabelTenant, isTenantExpired, daysRemaining } from "@/hooks/useWhitelabel";
 import { toast } from "sonner";
+import { isChartmateBrandActive } from "@/lib/brandOverride";
 
 export default function WhitelabelLoginPage() {
+  const chartmateBrandActive = isChartmateBrandActive();
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const { tenant, loading: tenantLoading } = useWhitelabelTenant(slug);
@@ -167,7 +169,7 @@ export default function WhitelabelLoginPage() {
           </Button>
         </div>
         <p className="text-center text-[10px] text-muted-foreground">
-          Powered by <span style={{ color }}>Tradingsmart</span> · White-label partner portal
+          Powered by <span style={{ color }}>{chartmateBrandActive ? "Chartmate" : "Tradingsmart"}</span> · White-label partner portal
         </p>
       </form>
     </div>

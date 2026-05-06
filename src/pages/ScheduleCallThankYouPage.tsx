@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 
-const SUPPORT_EMAIL = "support@tradingsmart.ai";
+const SUPPORT_EMAIL = "support@chartmate.ai";
 const WHATSAPP_NUMBER = "919632953355";
 const WHATSAPP_DISPLAY = "+91 96329 53355";
 
@@ -63,7 +63,7 @@ const ScheduleCallThankYouPage = () => {
   return (
     <>
       <Helmet>
-        <title>Thank you | TradingSmart.AI</title>
+        <title>Thank you | ChartMate.AI</title>
         <meta
           name="description"
           content="Your call request is in — our team will be in touch soon."
@@ -126,7 +126,7 @@ const ScheduleCallThankYouPage = () => {
               </a>
 
               <a
-                href={`https://wa.me/${WHATSAPP_NUMBER}?text=Hi%2C%20I%20just%20requested%20a%20call%20on%20TradingSmart.AI`}
+                href={`https://wa.me/${WHATSAPP_NUMBER}?text=Hi%2C%20I%20just%20requested%20a%20call%20on%20ChartMate.AI`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="group flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 transition-colors hover:border-emerald-400/40 hover:bg-emerald-500/10"
@@ -150,7 +150,7 @@ const ScheduleCallThankYouPage = () => {
                 Stay in the loop
               </p>
               <p className="mt-1 text-lg font-semibold text-white">
-                Get TradingSmart updates by email
+                Get ChartMate updates by email
               </p>
               <p className="mt-1 text-sm text-slate-400">
                 Product releases, market notes, and invite-only strategy drops.

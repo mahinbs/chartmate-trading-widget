@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { FaBars, FaTimes } from "react-icons/fa";
 import { Link } from "react-router-dom";
-import logoImg from "@/assets/logo.png";
+import logoImg from "@/assets/chartmate.png";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { motion, AnimatePresence } from "framer-motion";
@@ -78,12 +78,12 @@ const AiPredictionHeader: React.FC = () => {
             <Link to='/'>
               <img
                 src={logoImg}
-                alt="TradingSmart.ai"
+                alt="ChartMate.ai"
                 className="w-[3rem] lg:w-[5rem] object-contain"
               /></Link>
             {/* <div className="flex flex-col leading-tight">
               <span className="text-sm font-semibold text-white tracking-wide">
-                TradingSmart.ai
+                ChartMate.ai
               </span>
               <span className="text-[10px] uppercase tracking-[0.25em] text-gray-400">
                 Market Predictions
@@ -190,7 +190,7 @@ const AiPredictionHeader: React.FC = () => {
             <div className="flex items-center gap-2">
               <img
                 src={logoImg}
-                alt="TradingSmart.ai"
+                alt="ChartMate.ai"
                 className="w-[3rem] object-contain"
               />
             </div>

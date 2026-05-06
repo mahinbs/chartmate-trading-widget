@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import logoImg from "@/assets/logo.png";
+import logoImg from "@/assets/chartmate.png";
 import { supabase } from "@/integrations/supabase/client";
 
 const BASE_NAV_ITEMS = [
@@ -63,11 +63,11 @@ const AiPredictionFooter: React.FC = () => {
         <div className="space-y-3 flex flex-col items-center md:items-start">
           <img
             src={logoImg}
-            alt="TradingSmart.ai"
+            alt="ChartMate.ai"
             className="w-[6rem] md:w-[8rem]"
           />
           <p className="text-sm font-semibold text-white">
-            TradingSmart.ai – AI-Powered Market Predictions
+            ChartMate.ai – AI-Powered Market Predictions
           </p>
           <p className="max-w-xl text-[11px] leading-relaxed text-gray-500 mb-2">
             Data-driven probabilities for Stocks, Forex &amp; Crypto. Not
@@ -78,7 +78,7 @@ const AiPredictionFooter: React.FC = () => {
             We are not registered as an Investment Adviser or Research Analyst under SEBI regulations as we do not provide any advisory or research services. This is a technology platform only.
           </p>
           <p className="text-[11px] text-gray-600 mt-2">
-            © {year} TradingSmart.ai. All rights reserved.
+            © {year} ChartMate.ai. All rights reserved.
           </p>
         </div>
 

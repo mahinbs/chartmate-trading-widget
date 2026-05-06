@@ -47,7 +47,7 @@ const FAQ = () => {
         {
             question: "Do you execute trades or give recommendations?",
             answer:
-                "No. TradingSmart is a technology platform. Users define or approve their own strategy logic; we provide infrastructure, integration, and tooling—not investment advice or trade tips.",
+                "No. ChartMate is a technology platform. Users define or approve their own strategy logic; we provide infrastructure, integration, and tooling—not investment advice or trade tips.",
         },
         {
             question: "What markets and brokers are supported?",

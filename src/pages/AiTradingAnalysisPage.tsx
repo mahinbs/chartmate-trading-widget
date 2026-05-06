@@ -26,7 +26,7 @@ import {
 } from "../components/ui/select";
 import AiPredictionHeader from "../components/landingpage/mainlandingpage/AiPredictionHeader";
 import AiPredictionFooter from "../components/landingpage/mainlandingpage/AiPredictionFooter";
-import { TradingSmartPricingMatrix } from "../components/landingpage/TradingSmartPricingMatrix";
+import { ChartMatePricingMatrix } from "../components/landingpage/TradingSmartPricingMatrix";
 import { useToast } from "@/components/ui/use-toast";
 
 gsap.registerPlugin(ScrollTrigger);
@@ -54,7 +54,7 @@ const staggerContainer = {
 const HowItWorksTimeline = () => {
   const steps = [
     "Subscribe and access your dashboard",
-    "Our TradingSmart team contacts you after payment",
+    "Our ChartMate team contacts you after payment",
     "You share your strategy logic or requirements",
     "Our developers manually configure your strategy into the system",
     "Strategy is made available in your dashboard",
@@ -336,7 +336,7 @@ const AiTradingAnalysisPage = () => {
   return (
     <div className="bg-black min-h-screen overflow-x-hidden font-ibm-sans selection:bg-teal-500/30 selection:text-teal-400">
       <Helmet>
-        <title>Platform tour: analysis, backtests, strategies &amp; execution | TradingSmart.ai</title>
+        <title>Platform tour: analysis, backtests, strategies &amp; execution | ChartMate.ai</title>
         <meta
           name="description"
           content="Built as a suite: AI-assisted analysis, backtesting, strategy workspace, and options plus paper/live execution in one stack. Full modules for every subscriber—custom algo integration is how we operationalize your logic."
@@ -697,7 +697,7 @@ const AiTradingAnalysisPage = () => {
       </section>
 
       <section className="pt-16 md:pt-32 bg-black border-b border-zinc-900">
-        <TradingSmartPricingMatrix />
+        <ChartMatePricingMatrix />
       </section>
 
       {/* SECURITY RADIAL */}
@@ -708,7 +708,7 @@ const AiTradingAnalysisPage = () => {
         <div className="container mx-auto px-4 max-w-4xl text-center">
            <div className="font-ibm-mono text-sm text-zinc-500 leading-[2] tracking-wide text-left inline-block bg-[#020202] p-8 border border-zinc-900 shadow-2xl">
              <p className="text-zinc-600 font-bold mb-4">// DISCLAIMER</p>
-             <p>// TradingSmart.ai is a technology platform offering tools for backtesting, execution infrastructure, and data analysis.</p>
+             <p>// ChartMate.ai is a technology platform offering tools for backtesting, execution infrastructure, and data analysis.</p>
              <p>// We do not provide investment advice, stock recommendations, portfolio management, or trading tips.</p>
              <p>// All strategies are defined, provided, or approved by the user.</p>
              <p>// All trading decisions and associated risks are solely the responsibility of the user.</p>

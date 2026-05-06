@@ -96,7 +96,7 @@ export default function AdminAlgoAccessRequestsPage() {
             Algo-only access requests
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Submissions from the TradingSmart request-access wizard (public, no ChartMate account required).
+            Submissions from the ChartMate request-access wizard (public, no ChartMate account required).
           </p>
         </CardHeader>
         <CardContent>

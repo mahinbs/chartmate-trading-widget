@@ -8,10 +8,10 @@ export default function RaProfilePage() {
   return (
     <div className="min-h-screen bg-background text-foreground px-6 py-16">
       <Helmet>
-        <title>{`RA Profile | ${safeSlug} | TradingSmart.ai`}</title>
+        <title>{`RA Profile | ${safeSlug} | ChartMate.ai`}</title>
         <meta
           name="description"
-          content="Research analyst profile page on TradingSmart.ai marketplace."
+          content="Research analyst profile page on ChartMate.ai marketplace."
         />
       </Helmet>
 

@@ -169,7 +169,7 @@ export default function AdminStrategyDevRequestsPage() {
             Strategy development requests
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Submissions from the TradingSmart algo-only dashboard. Each row shows the ChartMate account (
+            Submissions from the ChartMate algo-only dashboard. Each row shows the ChartMate account (
             <span className="text-cyan-300/90">user id + email</span>). Use{" "}
             <strong className="text-white">List of Users</strong> or support workflows to act on their account;
             create or seed strategies for them in ChartMate as you normally would for that user.

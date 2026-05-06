@@ -153,7 +153,7 @@ const AffiliatePartnerPage = () => {
   return (
     <div className="min-h-screen bg-black text-zinc-100 font-sans selection:bg-teal-500/30 selection:text-teal-100 overflow-x-hidden">
       <Helmet>
-        <title>Affiliate partner program | TradingSmart.ai</title>
+        <title>Affiliate partner program | ChartMate.ai</title>
         <meta
           name="description"
           content="Earn commissions promoting a full trading stack: analysis, backtests, strategies, options, paper/live execution, and custom algo integration. Built for retention—not hype."
@@ -232,7 +232,7 @@ const AffiliatePartnerPage = () => {
               without building the tech.
             </p>
             <p>
-              With TradingSmart.ai, you&apos;re not just referring users—you&apos;re monetizing your audience with a{" "}
+              With ChartMate.ai, you&apos;re not just referring users—you&apos;re monetizing your audience with a{" "}
               <strong className="text-zinc-200">high-retention AI product</strong> traders actually use daily.
             </p>
           </motion.div>
@@ -393,7 +393,7 @@ const AffiliatePartnerPage = () => {
         <div className="container mx-auto px-4 max-w-6xl">
           <motion.div variants={fadeUp} className="text-center mb-16">
             <h2 className="text-3xl md:text-5xl font-black mb-4 text-white tracking-tight">
-              Why TradingSmart.ai is easy to sell
+              Why ChartMate.ai is easy to sell
             </h2>
             <p className="text-zinc-400 text-lg max-w-2xl mx-auto">
               Built for retention, clarity, and conversion—so you don&apos;t have to hard-sell.

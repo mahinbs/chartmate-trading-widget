@@ -42,8 +42,9 @@ import {
 } from "../components/ui/select";
 import AiPredictionHeader from "../components/landingpage/mainlandingpage/AiPredictionHeader";
 import AiPredictionFooter from "../components/landingpage/mainlandingpage/AiPredictionFooter";
-import { TradingSmartPricingMatrix } from "../components/landingpage/TradingSmartPricingMatrix";
+import { ChartMatePricingMatrix } from "../components/landingpage/TradingSmartPricingMatrix";
 import { PRICING_PLANS } from "@/constants/pricing";
+import { isChartmateBrandActive } from "@/lib/brandOverride";
 
 const fadeUp: Variants = {
   hidden: { opacity: 0, y: 50, filter: "blur(4px)" },
@@ -59,6 +60,7 @@ const staggerContainer: Variants = {
 };
 
 const MainLandingPage = () => {
+  const chartmateBrandActive = isChartmateBrandActive();
   const { user, loading: authLoading } = useAuth();
   const { role, loading: roleLoading } = useUserRole();
   const { membership, loading: membershipLoading } = useMyTenantMembership(
@@ -220,9 +222,9 @@ const MainLandingPage = () => {
           },
           body: JSON.stringify({
             body: emailBody,
-            name: "Tradingsmart.AI",
+            name: chartmateBrandActive ? "ChartMate.ai" : "Tradingsmart.AI",
             subject: `New Enquiry from ${data.name} - ${planNames[data.plan] || data.plan}`,
-            to: "partnerships@tradingsmart.ai",
+            to: "partnerships@chartmate.ai",
           }),
         },
       );
@@ -255,7 +257,7 @@ const MainLandingPage = () => {
       />
       <Helmet>
         <title>
-          TradingSmart.ai — classic landing | Algo integration &amp; full platform
+          ChartMate.ai — classic landing | Algo integration &amp; full platform
         </title>
         <meta
           name="description"
@@ -487,7 +489,7 @@ const MainLandingPage = () => {
 
             <motion.div variants={staggerContainer} className="space-y-12">
               {[
-                "Sign up on Trading Smart.ai",
+                `Sign up on ${chartmateBrandActive ? "ChartMate.ai" : "Trading Smart.ai"}`,
                 "Connect your broker securely",
                 "Share your strategy idea",
                 "Our developers build your system",
@@ -595,7 +597,7 @@ const MainLandingPage = () => {
       >
         <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-teal-500/30 to-transparent" />
         <motion.div variants={fadeUp}>
-          <TradingSmartPricingMatrix />
+          <ChartMatePricingMatrix />
         </motion.div>
         <motion.div variants={fadeUp} className="container mx-auto px-4 max-w-6xl pb-4">
           <Button

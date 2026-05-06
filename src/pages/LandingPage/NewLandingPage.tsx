@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { TradingSmartPricingMatrix } from "@/components/landingpage/TradingSmartPricingMatrix";
+import { ChartMatePricingMatrix } from "@/components/landingpage/TradingSmartPricingMatrix";
 import { useAuth } from "@/hooks/useAuth";
 import { applyInrToEmbeddedLandingPricing } from "@/lib/applyInrToEmbeddedLandingPricing";
 import { PRICING_PLANS } from "@/constants/pricing";
 import { premiumPlanCheckoutUrls } from "@/lib/premiumCheckoutUrls";
 import { createCheckoutSession } from "@/services/stripeService";
+import { isChartmateBrandActive, replaceTradingSmartBrand } from "@/lib/brandOverride";
 import landingPageRaw from "./landing.html?raw";
 
 const VALID_PREMIUM_PLANS = new Set(PRICING_PLANS.map((p) => p.id));
@@ -37,6 +38,10 @@ const NewLandingPage = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [transitioning, setTransitioning] = useState<null | "dashboard" | "checkout">(null);
+  const chartmateBrandActive = isChartmateBrandActive();
+  const bodyHtml = chartmateBrandActive
+    ? replaceTradingSmartBrand(BODY_HTML).replace(/\/logo\.png/gi, "/chartmate.png")
+    : BODY_HTML;
 
   useEffect(() => {
     const head     = document.head;
@@ -267,16 +272,23 @@ const NewLandingPage = () => {
     <>
       <div
         ref={containerRef}
-        className="tradingsmart-landing"
-        dangerouslySetInnerHTML={{ __html: BODY_HTML }}
+        className={chartmateBrandActive ? "chartmate-landing" : "tradingsmart-landing"}
+        dangerouslySetInnerHTML={{ __html: bodyHtml }}
       />
-      {pricingRoot && createPortal(<TradingSmartPricingMatrix />, pricingRoot)}
-      {transitioning && createPortal(<TransitionLoader variant={transitioning} />, document.body)}
+      {pricingRoot && createPortal(<ChartMatePricingMatrix />, pricingRoot)}
+      {transitioning &&
+        createPortal(<TransitionLoader variant={transitioning} chartmateBrandActive={chartmateBrandActive} />, document.body)}
     </>
   );
 };
 
-function TransitionLoader({ variant }: { variant: "dashboard" | "checkout" }) {
+function TransitionLoader({
+  variant,
+  chartmateBrandActive,
+}: {
+  variant: "dashboard" | "checkout";
+  chartmateBrandActive: boolean;
+}) {
   const label = variant === "dashboard" ? "Loading your dashboard" : "Starting secure checkout";
   return (
     <div
@@ -327,7 +339,7 @@ function TransitionLoader({ variant }: { variant: "dashboard" | "checkout" }) {
           }}
         />
         <img
-          src="/logo.png"
+          src={chartmateBrandActive ? "/chartmate.png" : "/logo.png"}
           alt=""
           style={{
             position: "absolute",

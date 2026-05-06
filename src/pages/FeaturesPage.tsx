@@ -59,7 +59,7 @@ export default function FeaturesPage() {
   return (
     <div className="min-h-screen bg-black text-zinc-100 font-sans selection:bg-teal-500/30 selection:text-teal-100 overflow-x-hidden">
       <Helmet>
-        <title>Full platform modules | TradingSmart.ai</title>
+        <title>Full platform modules | ChartMate.ai</title>
         <meta
           name="description"
           content="Analysis, backtests, strategies, options, paper and live execution—same surface for every subscriber. Custom algo integration is how we ship your logic to production."

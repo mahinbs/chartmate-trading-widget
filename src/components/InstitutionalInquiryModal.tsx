@@ -63,7 +63,7 @@ export function InstitutionalInquiryModal({ open, onOpenChange }: InstitutionalI
             body: bodyText,
             name: "Tradingsmart.AI",
             subject: `Institutional Inquiry from ${name.trim()}`,
-            to: "partnerships@tradingsmart.ai",
+            to: "partnerships@chartmate.ai",
           }),
         },
       );

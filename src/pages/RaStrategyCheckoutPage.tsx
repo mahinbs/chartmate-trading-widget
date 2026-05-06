@@ -9,10 +9,10 @@ export default function RaStrategyCheckoutPage() {
   return (
     <div className="min-h-screen bg-background text-foreground px-6 py-16">
       <Helmet>
-        <title>{`RA Strategy Checkout | TradingSmart.ai`}</title>
+        <title>{`RA Strategy Checkout | ChartMate.ai`}</title>
         <meta
           name="description"
-          content="Strategy checkout page for research analyst marketplace on TradingSmart.ai."
+          content="Strategy checkout page for research analyst marketplace on ChartMate.ai."
         />
       </Helmet>
 

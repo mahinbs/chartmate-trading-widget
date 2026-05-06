@@ -2,7 +2,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { ScrollReveal } from "../ui/ScrollReveal";
 import { Twitter, Linkedin, Github, ArrowRight } from "lucide-react";
-import logoImg from "../../assets/logo.png";
+import logoImg from "../../assets/chartmate.png";
 
 const Footer = () => {
   return (
@@ -42,7 +42,7 @@ const Footer = () => {
             <ScrollReveal>
               <img
                 src={logoImg}
-                alt="TradingSmart.ai"
+                alt="ChartMate.ai"
                 className="w-[6rem] md:w-[8rem]"
               />
               <div className="space-y-6 mb-10 max-w-xl">
