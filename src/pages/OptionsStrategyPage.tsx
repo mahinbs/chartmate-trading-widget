@@ -110,9 +110,10 @@ function resolveStrategyType(s: OptionsStrategy): StrategyType | null {
     explicit === "strangle" ||
     explicit === "bull_put_spread" ||
     explicit === "jade_lizard" ||
-    explicit === "orb_buying"
+    explicit === "orb_buying" ||
+    explicit === "ema_9_20_setup"
   ) {
-    return explicit;
+    return explicit as StrategyType;
   }
   if (s.strategy_style === "iron_condor") return "iron_condor";
   if (s.strategy_style === "strangle") return "strangle";

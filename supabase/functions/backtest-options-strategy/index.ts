@@ -73,7 +73,7 @@ interface TradeResult {
 }
 
 interface BacktestConfig {
-  strategy_type: "orb_buying" | "iron_condor" | "strangle" | "bull_put_spread" | "jade_lizard";
+  strategy_type: "orb_buying" | "iron_condor" | "strangle" | "bull_put_spread" | "jade_lizard" | "ema_9_20_setup";
   underlying: string;
   exchange: string;
   expiry_type: string;
@@ -92,6 +92,9 @@ interface BacktestConfig {
   time_exit_hhmm: string;
   max_reentry_count: number;
   lot_size: number;
+  sl_buffer_points: number;
+  tp_rr: number;
+  tp_partial_rr: number;
   max_premium_per_lot: number;
   days: number;
 }
@@ -362,13 +365,224 @@ function strategyTypeFromRow(
     explicit === "iron_condor" ||
     explicit === "strangle" ||
     explicit === "bull_put_spread" ||
-    explicit === "jade_lizard"
+    explicit === "jade_lizard" ||
+    explicit === "ema_9_20_setup"
   ) {
-    return explicit;
+    return explicit as BacktestConfig["strategy_type"];
   }
   if (strategyStyle === "iron_condor") return "iron_condor";
   if (strategyStyle === "strangle") return "strangle";
   return "orb_buying";
+}
+
+// ── EMA 9-20 intraday backtest simulation ─────────────────────────────────
+
+function simulateEma920Strategy(
+  cfg: BacktestConfig,
+  dayMap: Map<string, Bar[]>,
+  sortedDays: string[],
+  ec: Record<string, unknown>,
+): TradeResult[] {
+  const out: TradeResult[] = [];
+  const slBuf = Number(cfg.sl_buffer_points || ec.sl_buffer_points || ec.slBuffer || 10);
+  const tpRR = Number(cfg.tp_rr || ec.tp_rr || ec.tpRR || 3);
+  const tpPartial = Number(cfg.tp_partial_rr || ec.tp_partial_rr || ec.tpPartialRR || 2);
+  const direction = String(cfg.trade_direction ?? "both").toLowerCase();
+  const isMcx = cfg.exchange.toUpperCase().includes("MCX");
+  const timeExitStr = isMcx ? "23:00" : String(cfg.time_exit_hhmm ?? "15:15");
+
+  function emaAt(closes: number[], period: number): number {
+    if (!closes.length) return closes[0] ?? 0;
+    const k = 2 / (period + 1);
+    let v = closes[0];
+    for (let i = 1; i < closes.length; i++) v = closes[i] * k + v * (1 - k);
+    return v;
+  }
+
+  function hhmm(bar: Bar): string {
+    const d = toIST(bar.timestamp);
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }
+
+  for (const day of sortedDays) {
+    const bars = (dayMap.get(day) ?? []).sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+    );
+    if (bars.length < 25) continue;
+
+    const closes: number[] = [];
+    let inTrade = false;
+    let tradeDir: "CE" | "PE" = "CE";
+    let entryPrice = 0;
+    let slPrice = 0;
+    let tp1Price = 0;
+    let tp2Price = 0;
+    let tp1Hit = false;
+    let entryTime = "";
+    let waitConfirm = false;   // waiting for confirmation bar after signal
+    let signalIdx = -1;
+
+    for (let i = 0; i < bars.length; i++) {
+      const bar = bars[i];
+      closes.push(bar.close);
+      const t = hhmm(bar);
+
+      if (inTrade) {
+        if (t >= timeExitStr) {
+          // Time exit — estimate pnl from underlying position
+          const undMove = tradeDir === "CE"
+            ? bar.close - entryPrice
+            : entryPrice - bar.close;
+          const risk = entryPrice - slPrice > 0 ? entryPrice - slPrice : slBuf;
+          const rr = undMove / risk;
+          let pnl: number;
+          if (tp1Hit) {
+            pnl = rr >= tpRR ? 90 : rr >= 0 ? 15 + rr * 20 : -15;
+          } else {
+            pnl = rr >= tpRR ? 90 : rr >= tpPartial ? 45 : rr >= 0 ? rr * 30 : rr * 30;
+          }
+          out.push({
+            date: day, direction: tradeDir, entry_time: entryTime, exit_time: t,
+            entry_premium_pct: (slBuf / entryPrice) * 100,
+            entry_price: entryPrice, exit_reason: "TIME",
+            pnl_pct: Math.max(-40, Math.min(120, pnl)),
+            orb_high: tp2Price, orb_low: slPrice,
+            range_pct: (slBuf / entryPrice) * 100,
+          });
+          inTrade = false;
+          continue;
+        }
+
+        if (tradeDir === "CE") {
+          if (bar.low <= slPrice) {
+            const pnl = tp1Hit ? -10 : -30;
+            out.push({
+              date: day, direction: "CE", entry_time: entryTime, exit_time: t,
+              entry_premium_pct: (slBuf / entryPrice) * 100,
+              entry_price: entryPrice, exit_reason: "SL",
+              pnl_pct: pnl, orb_high: tp2Price, orb_low: slPrice,
+              range_pct: (slBuf / entryPrice) * 100,
+            });
+            inTrade = false;
+          } else if (!tp1Hit && bar.high >= tp1Price) {
+            tp1Hit = true;
+            slPrice = entryPrice; // trail to breakeven
+          } else if (tp1Hit && bar.high >= tp2Price) {
+            out.push({
+              date: day, direction: "CE", entry_time: entryTime, exit_time: t,
+              entry_premium_pct: (slBuf / entryPrice) * 100,
+              entry_price: entryPrice, exit_reason: "TP",
+              pnl_pct: 90, orb_high: tp2Price, orb_low: slPrice,
+              range_pct: (slBuf / entryPrice) * 100,
+            });
+            inTrade = false;
+          }
+        } else { // PE
+          if (bar.high >= slPrice) {
+            const pnl = tp1Hit ? -10 : -30;
+            out.push({
+              date: day, direction: "PE", entry_time: entryTime, exit_time: t,
+              entry_premium_pct: (slBuf / entryPrice) * 100,
+              entry_price: entryPrice, exit_reason: "SL",
+              pnl_pct: pnl, orb_high: slPrice, orb_low: tp2Price,
+              range_pct: (slBuf / entryPrice) * 100,
+            });
+            inTrade = false;
+          } else if (!tp1Hit && bar.low <= tp1Price) {
+            tp1Hit = true;
+            slPrice = entryPrice;
+          } else if (tp1Hit && bar.low <= tp2Price) {
+            out.push({
+              date: day, direction: "PE", entry_time: entryTime, exit_time: t,
+              entry_premium_pct: (slBuf / entryPrice) * 100,
+              entry_price: entryPrice, exit_reason: "TP",
+              pnl_pct: 90, orb_high: slPrice, orb_low: tp2Price,
+              range_pct: (slBuf / entryPrice) * 100,
+            });
+            inTrade = false;
+          }
+        }
+        continue;
+      }
+
+      // Confirmation bar — enter at next bar's open
+      if (waitConfirm && signalIdx >= 0 && i === signalIdx + 2) {
+        entryPrice = bar.open;
+        if (entryPrice <= 0) { waitConfirm = false; signalIdx = -1; continue; }
+        const signalBar = bars[signalIdx];
+        if (tradeDir === "CE") {
+          slPrice = signalBar.low - slBuf;
+          const risk = entryPrice - slPrice;
+          tp1Price = entryPrice + risk * tpPartial;
+          tp2Price = entryPrice + risk * tpRR;
+        } else {
+          slPrice = signalBar.high + slBuf;
+          const risk = slPrice - entryPrice;
+          tp1Price = entryPrice - risk * tpPartial;
+          tp2Price = entryPrice - risk * tpRR;
+        }
+        inTrade = true;
+        tp1Hit = false;
+        entryTime = t;
+        waitConfirm = false;
+        signalIdx = -1;
+        continue;
+      }
+
+      // Signal detection (need at least 20 candles for EMA20)
+      if (i < 20 || waitConfirm || inTrade) continue;
+
+      const ema9 = emaAt(closes, 9);
+      const ema20v = emaAt(closes, 20);
+      const prevCloses = closes.slice(0, -1);
+      const prevEma9 = prevCloses.length ? emaAt(prevCloses, 9) : ema9;
+      const prevEma20 = prevCloses.length ? emaAt(prevCloses, 20) : ema20v;
+
+      // Bull: EMA9 > EMA20 (ascending), candle low touches EMA20 zone
+      if ((direction === "both" || direction === "bullish") && ema9 > ema20v && ema9 > prevEma9) {
+        const touchZone = Math.abs(bar.low - ema20v) / Math.max(ema20v, 1) < 0.003;
+        const nextBar = bars[i + 1];
+        if (touchZone && nextBar && nextBar.close > bar.high) {
+          tradeDir = "CE";
+          waitConfirm = true;
+          signalIdx = i;
+        }
+      }
+      // Bear: EMA9 < EMA20 (descending), candle high touches EMA20 zone
+      else if ((direction === "both" || direction === "bearish") && ema9 < ema20v && ema9 < prevEma9) {
+        const touchZone = Math.abs(bar.high - ema20v) / Math.max(ema20v, 1) < 0.003;
+        const nextBar = bars[i + 1];
+        if (touchZone && nextBar && nextBar.close < bar.low) {
+          tradeDir = "PE";
+          waitConfirm = true;
+          signalIdx = i;
+        }
+      }
+    }
+
+    // Close any open trade at session end
+    if (inTrade && bars.length > 0) {
+      const lastBar = bars[bars.length - 1];
+      const t = hhmm(lastBar);
+      const undMove = tradeDir === "CE"
+        ? lastBar.close - entryPrice
+        : entryPrice - lastBar.close;
+      const risk = Math.abs(entryPrice - slPrice) || slBuf;
+      const rr = undMove / risk;
+      const pnl = tp1Hit
+        ? (rr >= tpRR ? 90 : rr >= 0 ? 20 : -10)
+        : (rr >= tpRR ? 90 : rr >= tpPartial ? 45 : rr >= 0 ? rr * 30 : Math.max(-30, rr * 30));
+      out.push({
+        date: day, direction: tradeDir, entry_time: entryTime, exit_time: t,
+        entry_premium_pct: (slBuf / entryPrice) * 100,
+        entry_price: entryPrice, exit_reason: "TIME",
+        pnl_pct: Math.max(-40, Math.min(120, pnl)),
+        orb_high: tp2Price, orb_low: slPrice,
+        range_pct: (slBuf / entryPrice) * 100,
+      });
+    }
+  }
+  return out;
 }
 
 function emaSeries(values: number[], period: number): number[] {
@@ -791,6 +1005,9 @@ Deno.serve(async (req) => {
       lot_size: Number(rc.lot_size ?? 1),
       max_premium_per_lot: Number(rc.max_premium_per_lot ?? 500),
       days: Math.min(Number(body.days ?? 90), 365),
+      sl_buffer_points: Number(ec.sl_buffer_points ?? ec.slBuffer ?? (body as any).options_config?.sl_buffer_points ?? 10),
+      tp_rr: Number(ec.tp_rr ?? ec.tpRR ?? (body as any).options_config?.tp_rr ?? 3),
+      tp_partial_rr: Number(ec.tp_partial_rr ?? ec.tpPartialRR ?? (body as any).options_config?.tp_partial_rr ?? 2),
     };
 
     // Get user's OpenAlgo API key
@@ -905,7 +1122,9 @@ Deno.serve(async (req) => {
     const sortedDays = [...dayMap.keys()].sort();
     const vixByDate = await fetchVixDailySeries(cfg.days);
 
-    if (cfg.strategy_type === "orb_buying") {
+    if (cfg.strategy_type === "ema_9_20_setup") {
+      allTrades.push(...simulateEma920Strategy(cfg, dayMap, sortedDays, ec));
+    } else if (cfg.strategy_type === "orb_buying") {
       for (let dayIdx = 0; dayIdx < sortedDays.length; dayIdx++) {
         const day = sortedDays[dayIdx];
         const dayBars = (dayMap.get(day) ?? []).sort((a, b) =>
@@ -914,7 +1133,7 @@ Deno.serve(async (req) => {
         const dayDate = new Date(day + "T00:00:00+05:30");
         const isExpiryDay = cfg.expiry_type === "weekly"
           ? isWeeklyExpiryDay(dayDate, cfg.underlying)
-          : dayDate.getDate() >= 25 && dayDate.getDay() === 4; // monthly: last Thursday near end of month
+          : dayDate.getDate() >= 25 && dayDate.getDay() === 4;
         allTrades.push(...simulateDay(dayBars, cfg, day, isExpiryDay));
       }
     } else {
