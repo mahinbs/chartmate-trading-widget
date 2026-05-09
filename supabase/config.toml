@@ -105,3 +105,6 @@ verify_jwt = false
 
 [functions.admin-provision-algo]
 verify_jwt = false
+
+[functions.env-check]
+verify_jwt = false

@@ -20,7 +20,7 @@ type ScannerSearchResult = {
   type: string;
 };
 
-const SCANNER_QUICK_PICKS = [
+const DEFAULT_SCANNER_PICKS = [
   { symbol: "RELIANCE.NS", label: "Reliance" },
   { symbol: "TCS.NS", label: "TCS" },
   { symbol: "HDFCBANK.NS", label: "HDFC Bank" },
@@ -41,6 +41,32 @@ export function TradingAiAnalysisPanel() {
   const showTrialCreditHint = Boolean(isOnTrial && !hasAlgoAccess);
   const [scannerSymbol, setScannerSymbol] = useState("");
   const [scannerInput, setScannerInput] = useState("");
+  const [myStrategyPicks, setMyStrategyPicks] = useState<{ symbol: string; label: string }[]>([]);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (!data.user) return;
+      (supabase as any)
+        .from("options_strategies")
+        .select("underlying, name, entry_conditions")
+        .eq("user_id", data.user.id)
+        .then(({ data: rows }: { data: any[] | null }) => {
+          if (!rows?.length) return;
+          const seen = new Set<string>();
+          const picks: { symbol: string; label: string }[] = [];
+          for (const r of rows) {
+            const ec = r.entry_conditions ?? {};
+            const isEma920 = String(ec.strategy_type ?? "").toLowerCase() === "ema_9_20_setup";
+            if (!isEma920) continue;
+            const sym = String(r.underlying ?? "").toUpperCase();
+            if (!sym || seen.has(sym)) continue;
+            seen.add(sym);
+            picks.push({ symbol: sym, label: sym });
+          }
+          if (picks.length) setMyStrategyPicks(picks);
+        });
+    });
+  }, []);
   const [scannerResults, setScannerResults] = useState<ScannerSearchResult[]>([]);
   const [scannerSearching, setScannerSearching] = useState(false);
   const [scannerDropdownOpen, setScannerDropdownOpen] = useState(false);
@@ -163,8 +189,29 @@ export function TradingAiAnalysisPanel() {
             )}
           </div>
 
+          {myStrategyPicks.length > 0 && (
+            <div className="w-full space-y-1">
+              <p className="text-[9px] text-teal-500/70 uppercase tracking-wider text-center">Your EMA 9-20 strategies</p>
+              <div className="flex flex-wrap justify-center gap-1.5">
+                {myStrategyPicks.map((qp) => (
+                  <button
+                    key={qp.symbol}
+                    type="button"
+                    onClick={() => handleScannerSelect(qp.symbol)}
+                    className={`text-[10px] px-2.5 py-1 rounded-full border transition-colors ${
+                      scannerSymbol === qp.symbol
+                        ? "bg-teal-500/20 border-teal-500/40 text-teal-300"
+                        : "bg-teal-950/40 border-teal-800/40 text-teal-400 hover:bg-teal-900/40 hover:text-teal-200"
+                    }`}
+                  >
+                    {qp.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="flex flex-wrap justify-center gap-1.5">
-            {SCANNER_QUICK_PICKS.map((qp) => (
+            {DEFAULT_SCANNER_PICKS.map((qp) => (
               <button
                 key={qp.symbol}
                 type="button"

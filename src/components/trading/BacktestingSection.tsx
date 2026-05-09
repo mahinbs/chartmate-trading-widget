@@ -1622,6 +1622,8 @@ export default function BacktestingSection() {
         const er = s.exit_rules ?? {};
         const ec = s.entry_conditions ?? {};
         const rc = s.risk_config ?? {};
+        const stratType = String(ec.strategy_type ?? "").toLowerCase();
+        const isEma920 = stratType === "ema_9_20_setup";
         return {
           id: s.id,
           name: s.name,
@@ -1629,6 +1631,8 @@ export default function BacktestingSection() {
           exchange: s.exchange,
           direction: s.trade_direction ?? "neutral",
           expiry_type: s.expiry_type ?? "weekly",
+          strategy_type: stratType || "orb_buying",
+          is_ema_920: isEma920,
           // exit rules
           stop_loss_pct: er.sl_pct ?? 30,
           take_profit_pct: er.tp_pct ?? 50,
@@ -1644,6 +1648,10 @@ export default function BacktestingSection() {
           momentum_bars: orb.momentum_bars ?? 3,
           // entry conditions
           expiry_day_guard: ec.expiry_day_guard ?? true,
+          // EMA 9-20 specific
+          sl_buffer_points: ec.sl_buffer_points ?? ec.slBuffer ?? 10,
+          tp_rr: ec.tp_rr ?? ec.tpRR ?? 3,
+          tp_partial_rr: ec.tp_partial_rr ?? ec.tpPartialRR ?? 2,
           // risk config
           lot_size: rc.lot_size ?? 1,
         };
@@ -1949,8 +1957,12 @@ export default function BacktestingSection() {
       if (!selectedOptionsStratId) { toast.error("Select an options strategy first"); return; }
       if (!symbol) { toast.error("No underlying symbol — re-select your strategy"); return; }
       if (!(parseInt(orbLots, 10) >= 1)) { toast.error("Enter a valid lot size (≥ 1)"); return; }
-      if (!orbExpiryIso) { toast.error("Select an expiry date"); return; }
-      if (!orbOptionSymbol) { toast.error("Select an options symbol (CE/PE)"); return; }
+      const selStratForValidation = optionsStrategies.find(s => (s as any).id === selectedOptionsStratId);
+      const isEma920Validation = Boolean((selStratForValidation as any)?.is_ema_920);
+      if (!isEma920Validation) {
+        if (!orbExpiryIso) { toast.error("Select an expiry date"); return; }
+        if (!orbOptionSymbol) { toast.error("Select an options symbol (CE/PE)"); return; }
+      }
     }
     const sym = (mode === "options" ? symbol : symbol.trim()).toUpperCase();
     if (!sym) { toast.error("Enter a symbol"); return; }
@@ -1966,32 +1978,55 @@ export default function BacktestingSection() {
       let backtestBody: Record<string, unknown>;
 
       if (mode === "options") {
-        // ── Options ORB backtest ────────────────────────────────────────────
-        backtestBody = {
-          symbol: sym,
-          exchange: exchange || "NSE",
-          strategy: "options_orb",
-          days: Math.min(365, Math.max(10, parseInt(days, 10) || 90)),
-          options_config: {
-            orb_duration_mins: parseInt(orbDurationMins, 10) || 15,
-            min_range_pct: parseFloat(orbMinRangePct) || 0.2,
-            max_range_pct: parseFloat(orbMaxRangePct) || 1.0,
-            momentum_bars: parseInt(orbMomentumBars, 10) || 3,
-            trade_direction: orbDirection,
-            expiry_type: orbExpiry,
-            expiry_day_guard: orbExpiryGuard,
-            sl_pct: parseFloat(orbSlPct) || 30,
-            tp_pct: parseFloat(orbTpPct) || 50,
-            trailing_enabled: orbTrailingEnabled,
-            trail_after_pct: parseFloat(orbTrailAfterPct) || 30,
-            trail_pct: parseFloat(orbTrailPct) || 15,
-            time_exit_hhmm: orbTimeExit || "15:15",
-            max_reentry_count: parseInt(orbMaxReentry, 10) || 1,
-            lot_size: parseInt(orbLots, 10) || 1,
-            options_symbol: orbOptionSymbol,
-            expiry_date: orbExpiryIso,
-          },
-        };
+        const selStratForRun = optionsStrategies.find(s => (s as any).id === selectedOptionsStratId);
+        const isEma920Run = Boolean((selStratForRun as any)?.is_ema_920);
+
+        if (isEma920Run) {
+          // ── EMA 9-20 backtest ─────────────────────────────────────────────
+          backtestBody = {
+            strategy_id: selectedOptionsStratId,
+            symbol: sym,
+            exchange: exchange || "NSE",
+            strategy: "ema_9_20_setup",
+            days: Math.min(365, Math.max(10, parseInt(days, 10) || 90)),
+            options_config: {
+              strategy_type: "ema_9_20_setup",
+              trade_direction: orbDirection,
+              expiry_type: orbExpiry,
+              sl_buffer_points: Number((selStratForRun as any)?.sl_buffer_points ?? 10),
+              tp_rr: Number((selStratForRun as any)?.tp_rr ?? 3),
+              tp_partial_rr: Number((selStratForRun as any)?.tp_partial_rr ?? 2),
+              lot_size: parseInt(orbLots, 10) || 1,
+            },
+          };
+        } else {
+          // ── Options ORB backtest ──────────────────────────────────────────
+          backtestBody = {
+            symbol: sym,
+            exchange: exchange || "NSE",
+            strategy: "options_orb",
+            days: Math.min(365, Math.max(10, parseInt(days, 10) || 90)),
+            options_config: {
+              orb_duration_mins: parseInt(orbDurationMins, 10) || 15,
+              min_range_pct: parseFloat(orbMinRangePct) || 0.2,
+              max_range_pct: parseFloat(orbMaxRangePct) || 1.0,
+              momentum_bars: parseInt(orbMomentumBars, 10) || 3,
+              trade_direction: orbDirection,
+              expiry_type: orbExpiry,
+              expiry_day_guard: orbExpiryGuard,
+              sl_pct: parseFloat(orbSlPct) || 30,
+              tp_pct: parseFloat(orbTpPct) || 50,
+              trailing_enabled: orbTrailingEnabled,
+              trail_after_pct: parseFloat(orbTrailAfterPct) || 30,
+              trail_pct: parseFloat(orbTrailPct) || 15,
+              time_exit_hhmm: orbTimeExit || "15:15",
+              max_reentry_count: parseInt(orbMaxReentry, 10) || 1,
+              lot_size: parseInt(orbLots, 10) || 1,
+              options_symbol: orbOptionSymbol,
+              expiry_date: orbExpiryIso,
+            },
+          };
+        }
       } else {
         // ── Standard equity/algo backtest ───────────────────────────────────
         const customEntryConditions = selectedCustom?.entry_conditions ?? null;
@@ -2483,7 +2518,11 @@ export default function BacktestingSection() {
                       <SelectItem key={String((s as any).id)} value={String((s as any).id)} className="text-sm">
                         <span className="font-medium">{String((s as any).name)}</span>
                         <span className="text-zinc-500 ml-2 text-xs">
-                          {String((s as any).underlying ?? "")} · SL {String((s as any).stop_loss_pct ?? "—")}% · TP {String((s as any).take_profit_pct ?? "—")}%
+                          {String((s as any).underlying ?? "")}
+                          {(s as any).is_ema_920
+                            ? ` · SL ${String((s as any).sl_buffer_points ?? 10)}pts · RR 1:${String((s as any).tp_partial_rr ?? 2)}→1:${String((s as any).tp_rr ?? 3)}`
+                            : ` · SL ${String((s as any).stop_loss_pct ?? "—")}% · TP ${String((s as any).take_profit_pct ?? "—")}%`
+                          }
                         </span>
                       </SelectItem>
                     ))}
@@ -2499,12 +2538,23 @@ export default function BacktestingSection() {
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-[11px]">
                   <div><span className="text-zinc-600">Underlying</span> <span className="text-zinc-200 font-mono ml-1">{symbol || String((selStrat as any).underlying)}</span></div>
                   <div><span className="text-zinc-600">Direction</span> <span className="text-zinc-200 ml-1 capitalize">{String((selStrat as any).direction ?? orbDirection)}</span></div>
-                  <div><span className="text-zinc-600">SL %</span> <span className="text-zinc-200 ml-1">{orbSlPct}%</span></div>
-                  <div><span className="text-zinc-600">TP %</span> <span className="text-zinc-200 ml-1">{orbTpPct}%</span></div>
-                  <div><span className="text-zinc-600">ORB</span> <span className="text-zinc-200 ml-1">{orbDurationMins}min</span></div>
-                  <div><span className="text-zinc-600">Exit</span> <span className="text-zinc-200 ml-1">{orbTimeExit} IST</span></div>
-                  <div><span className="text-zinc-600">Expiry guard</span> <span className="text-zinc-200 ml-1">{orbExpiryGuard ? "On" : "Off"}</span></div>
-                  <div><span className="text-zinc-600">Trailing</span> <span className="text-zinc-200 ml-1">{orbTrailingEnabled ? `On (>${orbTrailAfterPct}%)` : "Off"}</span></div>
+                  {(selStrat as any).is_ema_920 ? (
+                    <>
+                      <div><span className="text-zinc-600">SL Buffer</span> <span className="text-red-400 ml-1">{String((selStrat as any).sl_buffer_points ?? 10)} pts</span></div>
+                      <div><span className="text-zinc-600">RR</span> <span className="text-green-400 ml-1">1:{String((selStrat as any).tp_partial_rr ?? 2)}→1:{String((selStrat as any).tp_rr ?? 3)}</span></div>
+                      <div><span className="text-zinc-600">Strategy</span> <span className="text-violet-300 ml-1">9-20 EMA Setup</span></div>
+                      <div><span className="text-zinc-600">Exit</span> <span className="text-zinc-200 ml-1">{String((selStrat as any).exchange ?? "").toUpperCase().includes("MCX") ? "23:00" : "15:15"} IST</span></div>
+                    </>
+                  ) : (
+                    <>
+                      <div><span className="text-zinc-600">SL %</span> <span className="text-zinc-200 ml-1">{orbSlPct}%</span></div>
+                      <div><span className="text-zinc-600">TP %</span> <span className="text-zinc-200 ml-1">{orbTpPct}%</span></div>
+                      <div><span className="text-zinc-600">ORB</span> <span className="text-zinc-200 ml-1">{orbDurationMins}min</span></div>
+                      <div><span className="text-zinc-600">Exit</span> <span className="text-zinc-200 ml-1">{orbTimeExit} IST</span></div>
+                      <div><span className="text-zinc-600">Expiry guard</span> <span className="text-zinc-200 ml-1">{orbExpiryGuard ? "On" : "Off"}</span></div>
+                      <div><span className="text-zinc-600">Trailing</span> <span className="text-zinc-200 ml-1">{orbTrailingEnabled ? `On (>${orbTrailAfterPct}%)` : "Off"}</span></div>
+                    </>
+                  )}
                 </div>
                 {/* Lot size — required so PnL is in real rupees */}
                 <div className="border-t border-violet-800/20 pt-2 flex items-center gap-3">
