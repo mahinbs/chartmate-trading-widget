@@ -71,8 +71,15 @@ import {
   mergeSnapshotWithBacktestRun,
   type FullCustomStrategy,
 } from "@/lib/backtestVectorbtPayload";
+import {
+  getTradingIntegration,
+  isBrokerSessionLive,
+  BROKER_SESSION_UPDATED_EVENT,
+} from "@/services/openalgoIntegrationService";
 
 const EXCHANGES = ["NSE", "BSE", "GLOBAL", "NFO", "MCX", "CDS"];
+const CONNECT_BROKER_FIRST_MSG =
+  "Connect broker in your Algo account first. Options data will load after broker is connected.";
 
 /** AlgoStrategyBuilder execution_days: 0=Sun … 6=Sat */
 const EXEC_DAY_LABELS: Record<number, string> = {
@@ -1504,6 +1511,8 @@ export default function BacktestingSection() {
   const [orbLoadingExpiries, setOrbLoadingExpiries] = useState(false);
   const [orbLoadingChain, setOrbLoadingChain] = useState(false);
   const [orbPickerError, setOrbPickerError] = useState<string | null>(null);
+  const [orbBrokerConnected, setOrbBrokerConnected] = useState(false);
+  const [orbBrokerStatusLoading, setOrbBrokerStatusLoading] = useState(false);
   const [action, setAction] = useState<"BUY" | "SELL">("BUY");
   const [slPct, setSlPct] = useState("2");
   const [tpPct, setTpPct] = useState("4");
@@ -1566,6 +1575,26 @@ export default function BacktestingSection() {
   useEffect(() => {
     if (hideOptionsOrb && mode === "options") setMode("strategy");
   }, [hideOptionsOrb, mode]);
+
+  const refreshOrbBrokerStatus = useCallback(async () => {
+    setOrbBrokerStatusLoading(true);
+    try {
+      const { data } = await getTradingIntegration();
+      setOrbBrokerConnected(isBrokerSessionLive(data));
+    } finally {
+      setOrbBrokerStatusLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshOrbBrokerStatus();
+  }, [refreshOrbBrokerStatus]);
+
+  useEffect(() => {
+    const onBrokerUpdated = () => void refreshOrbBrokerStatus();
+    window.addEventListener(BROKER_SESSION_UPDATED_EVENT, onBrokerUpdated);
+    return () => window.removeEventListener(BROKER_SESSION_UPDATED_EVENT, onBrokerUpdated);
+  }, [refreshOrbBrokerStatus]);
 
   const modeTabs = useMemo((): [typeof mode, string][] => {
     const all: [typeof mode, string][] = [
@@ -1675,6 +1704,16 @@ export default function BacktestingSection() {
       setOrbPickerError(null);
       return;
     }
+    if (!orbBrokerStatusLoading && !orbBrokerConnected) {
+      setOrbExpiries([]);
+      setOrbExpiryIso("");
+      setOrbOptionRows([]);
+      setOrbOptionSymbol("");
+      setOrbLoadingExpiries(false);
+      setOrbLoadingChain(false);
+      setOrbPickerError(CONNECT_BROKER_FIRST_MSG);
+      return;
+    }
     const selStrat = optionsStrategies.find(s => (s as any).id === selectedOptionsStratId);
     if (!selStrat) return;
     const underlying = String((selStrat as any).underlying ?? symbol);
@@ -1707,13 +1746,20 @@ export default function BacktestingSection() {
     })();
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, selectedOptionsStratId, symbol]);
+  }, [mode, selectedOptionsStratId, symbol, orbBrokerConnected, orbBrokerStatusLoading]);
 
   // ── Load option chain when expiry is chosen ────────────────────────────
   useEffect(() => {
     if (mode !== "options" || !selectedOptionsStratId || !orbExpiryIso || !symbol) {
       setOrbOptionRows([]);
       setOrbOptionSymbol("");
+      return;
+    }
+    if (!orbBrokerStatusLoading && !orbBrokerConnected) {
+      setOrbOptionRows([]);
+      setOrbOptionSymbol("");
+      setOrbLoadingChain(false);
+      setOrbPickerError(CONNECT_BROKER_FIRST_MSG);
       return;
     }
     const selStrat = optionsStrategies.find(s => (s as any).id === selectedOptionsStratId);
@@ -1745,7 +1791,7 @@ export default function BacktestingSection() {
     })();
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, selectedOptionsStratId, orbExpiryIso]);
+  }, [mode, selectedOptionsStratId, orbExpiryIso, symbol, orbBrokerConnected, orbBrokerStatusLoading]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1954,6 +2000,7 @@ export default function BacktestingSection() {
   const runVectorBt = useCallback(async () => {
     // For options mode, validate strategy is selected (symbol comes from strategy)
     if (mode === "options") {
+      if (!orbBrokerConnected) { toast.error(CONNECT_BROKER_FIRST_MSG); return; }
       if (!selectedOptionsStratId) { toast.error("Select an options strategy first"); return; }
       if (!symbol) { toast.error("No underlying symbol — re-select your strategy"); return; }
       if (!(parseInt(orbLots, 10) >= 1)) { toast.error("Enter a valid lot size (≥ 1)"); return; }
@@ -2155,7 +2202,7 @@ export default function BacktestingSection() {
     orbExpiryGuard, orbSlPct, orbTpPct, orbTrailingEnabled, orbTrailAfterPct, orbTrailPct,
     orbTimeExit, orbMaxReentry,
     // Options ORB — must be listed or run handler sees stale "" and wrongly toasts "Select an expiry date"
-    selectedOptionsStratId, orbLots, orbExpiryIso, orbOptionSymbol,
+    selectedOptionsStratId, orbLots, orbExpiryIso, orbOptionSymbol, orbBrokerConnected,
   ]);
 
   const runAiFilteredComparison = useCallback(async () => {

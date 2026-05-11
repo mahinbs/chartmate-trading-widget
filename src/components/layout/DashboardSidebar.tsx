@@ -18,7 +18,7 @@ import {
   Target,
   User,
 } from "lucide-react";
-import logo from "@/assets/chartmate.png";
+import logo from "@/assets/logo.png";
 import { useAuth } from "@/hooks/useAuth";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useSubscription } from "@/hooks/useSubscription";

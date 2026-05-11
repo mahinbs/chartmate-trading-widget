@@ -1,8 +1,15 @@
-const CHARTMATE_OVERRIDE_EMAIL = "sahasraedu77@gmail.com";
 const BRAND_OVERRIDE_STORAGE_KEY = "brand_override_mode";
+const CHARTMATE_OVERRIDE_EMAILS = new Set(
+  String(import.meta.env.VITE_CHARTMATE_OVERRIDE_EMAILS ?? "")
+    .split(",")
+    .map((v) => v.trim().toLowerCase())
+    .filter(Boolean),
+);
 
 export function isChartmateOverrideEmail(email?: string | null): boolean {
-  return (email ?? "").trim().toLowerCase() === CHARTMATE_OVERRIDE_EMAIL;
+  const normalized = (email ?? "").trim().toLowerCase();
+  if (!normalized) return false;
+  return CHARTMATE_OVERRIDE_EMAILS.has(normalized);
 }
 
 export function setBrandOverrideFromEmail(email?: string | null): void {
