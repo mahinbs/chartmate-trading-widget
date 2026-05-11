@@ -100,7 +100,7 @@ function useDashboardNavLinks(): DashboardNavLink[] {
     if (hasAlgoAccess) {
       if (canUseAlgoTools) {
         next.push({
-          to: "https://algo.chartmate.in/dashboard",
+          to: "https://algo.tradingsmart.in/dashboard",
           label: "Algo Trading Engine",
           icon: Bot,
           iconColor: "text-primary opacity-80",
@@ -213,7 +213,7 @@ export function DashboardSidebar({
       return false;
     }
 
-    const isAlgoEngineHost = targetUrl.hostname === "algo.chartmate.in";
+    const isAlgoEngineHost = targetUrl.hostname === "algo.tradingsmart.in";
     if (!isAlgoEngineHost) {
       return false;
     }

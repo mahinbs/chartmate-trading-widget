@@ -10,8 +10,54 @@
 import { supabase } from "@/integrations/supabase/client";
 import { friendlyBrokerMarketDataError } from "@/lib/brokerMarketDataErrors";
 
-const API_BASE = (import.meta.env.VITE_OPTIONS_API_URL as string | undefined)?.replace(/\/$/, "") ?? "";
+const DIRECT_OPTIONS_API_BASE =
+  (import.meta.env.VITE_OPTIONS_API_URL as string | undefined)?.replace(/\/$/, "") ?? "";
+// Optional: route browser calls through the same BFF proxy used by algo-only.
+// Keep VITE_ALGO_ONLY_BFF_URL for backward compatibility with existing env setups.
+const PRIMARY_OPTIONS_PROXY_BASE =
+  ((import.meta.env.VITE_OPTIONS_PROXY_URL as string | undefined) ??
+    (import.meta.env.VITE_ALGO_ONLY_BFF_URL as string | undefined) ??
+    "")
+    .replace(/\/$/, "");
+const SECONDARY_OPTIONS_PROXY_BASE =
+  ((import.meta.env.VITE_OPTIONS_PROXY_URL_SECONDARY as string | undefined) ??
+    (import.meta.env.VITE_ALGO_ONLY_BFF_URL_SECONDARY as string | undefined) ??
+    "")
+    .replace(/\/$/, "");
+const SECONDARY_PROXY_USER_IDS = new Set(
+  String(
+    (import.meta.env.VITE_OPTIONS_PROXY_SECONDARY_USER_IDS as string | undefined) ??
+      (import.meta.env.VITE_ALGO_ONLY_BFF_SECONDARY_USER_IDS as string | undefined) ??
+      "",
+  )
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean),
+);
+const SECONDARY_PROXY_USER_EMAILS = new Set(
+  String(
+    (import.meta.env.VITE_OPTIONS_PROXY_SECONDARY_USER_EMAILS as string | undefined) ??
+      (import.meta.env.VITE_ALGO_ONLY_BFF_SECONDARY_USER_EMAILS as string | undefined) ??
+      "",
+  )
+    .split(",")
+    .map((v) => v.trim().toLowerCase())
+    .filter(Boolean),
+);
+const SECONDARY_PROXY_EMAIL_DOMAINS = new Set(
+  String(
+    (import.meta.env.VITE_OPTIONS_PROXY_SECONDARY_EMAIL_DOMAINS as string | undefined) ??
+      (import.meta.env.VITE_ALGO_ONLY_BFF_SECONDARY_EMAIL_DOMAINS as string | undefined) ??
+      "",
+  )
+    .split(",")
+    .map((v) => v.trim().toLowerCase().replace(/^@/, ""))
+    .filter(Boolean),
+);
+const EXPLICIT_OPTIONS_WS_BASE =
+  (import.meta.env.VITE_OPTIONS_WS_URL as string | undefined)?.replace(/\/$/, "") ?? "";
 const EXPIRY_CACHE_TTL_MS = 90_000;
+const ACTIVE_OPTIONS_PROXY_KEY = "chartmate-active-options-proxy-v1";
 
 type ExpiryResponse = {
   symbol: string;
@@ -22,13 +68,122 @@ type ExpiryResponse = {
 const expiryCache = new Map<string, { expiresAt: number; data: ExpiryResponse }>();
 const expiryInFlight = new Map<string, Promise<ExpiryResponse>>();
 
+type JwtClaims = {
+  sub?: string;
+  email?: string;
+};
+
+function readActiveProxyBase(): string {
+  try {
+    return String(sessionStorage.getItem(ACTIVE_OPTIONS_PROXY_KEY) || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function writeActiveProxyBase(base: string): void {
+  try {
+    if (!base) {
+      sessionStorage.removeItem(ACTIVE_OPTIONS_PROXY_KEY);
+      return;
+    }
+    sessionStorage.setItem(ACTIVE_OPTIONS_PROXY_KEY, base);
+  } catch {
+    // ignore storage write issues
+  }
+}
+
+function parseJwtClaims(accessToken: string | null | undefined): JwtClaims {
+  try {
+    const token = String(accessToken || "");
+    const payload = token.split(".")[1] || "";
+    if (!payload) return {};
+    const b64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
+    const json = atob(padded);
+    const data = JSON.parse(json) as JwtClaims;
+    return data && typeof data === "object" ? data : {};
+  } catch {
+    return {};
+  }
+}
+
+function routeProxyBaseForIdentity(userId?: string, email?: string): string {
+  const uid = String(userId || "").trim();
+  const em = String(email || "").trim().toLowerCase();
+  const domain = em.includes("@") ? em.split("@")[1] : "";
+  if (
+    SECONDARY_OPTIONS_PROXY_BASE &&
+    (SECONDARY_PROXY_USER_IDS.has(uid) ||
+      SECONDARY_PROXY_USER_EMAILS.has(em) ||
+      (domain && SECONDARY_PROXY_EMAIL_DOMAINS.has(domain)))
+  ) {
+    return SECONDARY_OPTIONS_PROXY_BASE;
+  }
+  return PRIMARY_OPTIONS_PROXY_BASE || SECONDARY_OPTIONS_PROXY_BASE;
+}
+
+function resolveProxyBaseFromToken(accessToken?: string | null): string {
+  const claims = parseJwtClaims(accessToken);
+  return routeProxyBaseForIdentity(claims.sub, claims.email);
+}
+
+function getApiBase(): string {
+  if (DIRECT_OPTIONS_API_BASE) return DIRECT_OPTIONS_API_BASE;
+  const active = readActiveProxyBase();
+  if (active) return active.replace(/\/$/, "");
+  return PRIMARY_OPTIONS_PROXY_BASE || SECONDARY_OPTIONS_PROXY_BASE;
+}
+
+function deriveWsBaseFromConfiguredApiBase(base: string): string {
+  const clean = String(base || "").trim().replace(/\/$/, "");
+  if (!clean) return "";
+  if (clean.startsWith("ws://") || clean.startsWith("wss://")) return clean;
+  if (clean.startsWith("https://")) return `wss://${clean.slice(8)}`;
+  if (clean.startsWith("http://")) return `ws://${clean.slice(7)}`;
+  return clean;
+}
+
+function optionsWsBase(): string {
+  if (EXPLICIT_OPTIONS_WS_BASE) {
+    return deriveWsBaseFromConfiguredApiBase(EXPLICIT_OPTIONS_WS_BASE);
+  }
+  // If direct options API URL is set, use that for websocket.
+  if (DIRECT_OPTIONS_API_BASE) {
+    return deriveWsBaseFromConfiguredApiBase(DIRECT_OPTIONS_API_BASE);
+  }
+  // If only a proxy is configured, websocket passthrough typically does not exist.
+  return "";
+}
+
+function optionsWsBaseForToken(token?: string | null): string {
+  if (EXPLICIT_OPTIONS_WS_BASE) {
+    return deriveWsBaseFromConfiguredApiBase(EXPLICIT_OPTIONS_WS_BASE);
+  }
+  if (DIRECT_OPTIONS_API_BASE) {
+    return deriveWsBaseFromConfiguredApiBase(DIRECT_OPTIONS_API_BASE);
+  }
+  const proxyBase = resolveProxyBaseFromToken(token);
+  if (!proxyBase) return "";
+  try {
+    const u = new URL(proxyBase);
+    if (u.hostname.startsWith("algoapi.")) {
+      u.hostname = `options.${u.hostname.slice("algoapi.".length)}`;
+      return deriveWsBaseFromConfiguredApiBase(u.toString().replace(/\/$/, ""));
+    }
+  } catch {
+    return "";
+  }
+  return "";
+}
+
 /** True when the app should call the hosted FastAPI service for options (full E2E). */
 export function isOptionsApiConfigured(): boolean {
-  return API_BASE.length > 0;
+  return getApiBase().length > 0;
 }
 
 export function getOptionsApiBaseUrl(): string {
-  return API_BASE;
+  return getApiBase();
 }
 
 /** Get the current Supabase session JWT for authenticating FastAPI requests. */
@@ -69,9 +224,21 @@ async function apiFetch<T = unknown>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  if (!API_BASE) throw new Error("Options API URL not configured (VITE_OPTIONS_API_URL)");
+  const apiBase = getApiBase();
+  if (!apiBase) {
+    throw new Error(
+      "Options backend URL not configured (set VITE_OPTIONS_API_URL or VITE_OPTIONS_PROXY_URL)",
+    );
+  }
   const token = await getToken();
-  const url = `${API_BASE}${path}`;
+  if (!DIRECT_OPTIONS_API_BASE) {
+    const routedProxyBase = resolveProxyBaseFromToken(token);
+    if (routedProxyBase) {
+      writeActiveProxyBase(routedProxyBase);
+    }
+  }
+  const effectiveApiBase = getApiBase();
+  const url = `${effectiveApiBase}${path}`;
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), 15000);
   const res = await fetch(url, {
@@ -366,7 +533,7 @@ export async function fetchOptionChain(params: {
   const sym = params.underlying;
   const expiryBroker = brokerExpiryParam(params.expiry_date);
 
-  if (API_BASE) {
+  if (isOptionsApiConfigured()) {
     const raw = await apiFetch<Record<string, unknown>>("/api/options/chain", {
       method: "POST",
       body: JSON.stringify({
@@ -423,41 +590,37 @@ export async function fetchExpiryDates(params: {
   }
 
   const resolver = (async (): Promise<ExpiryResponse> => {
-    if (API_BASE) {
-      try {
-        const raw = await apiFetch<Record<string, unknown>>("/api/options/expiry", {
-          method: "POST",
-          body: JSON.stringify({
-            symbol: sym,
-            exchange: ex,
-            instrument,
-          }),
-        });
-        // OpenAlgo may return {status:"error", message:"..."} with HTTP 200
-        if (raw?.status === "error" || raw?.status === "failed") {
-          const hint = toErrString(
-            raw.message ?? raw.error_msg ?? raw.error,
-            "OpenAlgo returned an error — check your broker session and OpenAlgo API key"
-          );
-          throw new Error(friendlyBrokerMarketDataError(hint));
-        }
-        const result = normalizeExpiryPayload(raw, sym, ex);
-        // If OpenAlgo returned no dates, surface it as an explicit error
-        if (result.expiries.length === 0) {
-          throw new Error(
-            friendlyBrokerMarketDataError(
-              "No expiry dates returned from broker. Market may be closed or your OpenAlgo API key / broker session needs refreshing.",
-            ),
-          );
-        }
-        expiryCache.set(cacheKey, {
-          expiresAt: Date.now() + EXPIRY_CACHE_TTL_MS,
-          data: result,
-        });
-        return result;
-      } catch {
-        // FastAPI path failed or timed out — fall back to Supabase Edge route.
+    if (isOptionsApiConfigured()) {
+      const raw = await apiFetch<Record<string, unknown>>("/api/options/expiry", {
+        method: "POST",
+        body: JSON.stringify({
+          symbol: sym,
+          exchange: ex,
+          instrument,
+        }),
+      });
+      // OpenAlgo may return {status:"error", message:"..."} with HTTP 200
+      if (raw?.status === "error" || raw?.status === "failed") {
+        const hint = toErrString(
+          raw.message ?? raw.error_msg ?? raw.error,
+          "OpenAlgo returned an error — check your broker session and OpenAlgo API key"
+        );
+        throw new Error(friendlyBrokerMarketDataError(hint));
       }
+      const result = normalizeExpiryPayload(raw, sym, ex);
+      // If OpenAlgo returned no dates, surface it as an explicit error
+      if (result.expiries.length === 0) {
+        throw new Error(
+          friendlyBrokerMarketDataError(
+            "No expiry dates returned from broker. Market may be closed or your OpenAlgo API key / broker session needs refreshing.",
+          ),
+        );
+      }
+      expiryCache.set(cacheKey, {
+        expiresAt: Date.now() + EXPIRY_CACHE_TTL_MS,
+        data: result,
+      });
+      return result;
     }
 
     const { data, error } = await supabase.functions.invoke<Record<string, unknown>>("fetch-expiry-dates", {
@@ -497,7 +660,7 @@ export async function fetchLtp(
   symbol: string,
   exchange: string
 ): Promise<number | null> {
-  if (!API_BASE) return null;
+  if (!isOptionsApiConfigured()) return null;
   try {
     const raw = await apiFetch<Record<string, unknown>>("/api/options/quotes", {
       method: "POST",
@@ -518,7 +681,7 @@ export async function fetchOptionSymbolLotSize(
   symbol: string,
   exchange: string
 ): Promise<number | null> {
-  if (!API_BASE || !symbol?.trim()) return null;
+  if (!isOptionsApiConfigured() || !symbol?.trim()) return null;
   try {
     const raw = await apiFetch<Record<string, unknown>>("/api/options/symbol-meta", {
       method: "POST",
@@ -587,7 +750,11 @@ export async function generateStrategySignal(
   strategy_type: StrategyType,
   params: Record<string, unknown>
 ) {
-  if (!API_BASE) throw new Error("Options API URL not configured (VITE_OPTIONS_API_URL)");
+  if (!isOptionsApiConfigured()) {
+    throw new Error(
+      "Options backend URL not configured (set VITE_OPTIONS_API_URL or VITE_OPTIONS_PROXY_URL)",
+    );
+  }
   return apiFetch("/api/options/strategies/signal", {
     method: "POST",
     body: JSON.stringify({ strategy_type, params }),
@@ -600,7 +767,11 @@ export async function executeStrategy(
   is_paper = true,
   strategy_id?: string
 ) {
-  if (!API_BASE) throw new Error("Options API URL not configured");
+  if (!isOptionsApiConfigured()) {
+    throw new Error(
+      "Options backend URL not configured (set VITE_OPTIONS_API_URL or VITE_OPTIONS_PROXY_URL)",
+    );
+  }
   const qs = new URLSearchParams({
     is_paper: String(is_paper),
     ...(strategy_id ? { strategy_id } : {}),
@@ -685,9 +856,9 @@ export function createPositionsWebSocket(
   onMessage: (positions: unknown[]) => void,
   onError?: (e: Event) => void
 ): WebSocket | null {
-  if (!API_BASE) return null;
+  const wsBase = optionsWsBaseForToken(token) || optionsWsBase();
+  if (!wsBase) return null;
 
-  const wsBase = API_BASE.replace(/^http/, "ws");
   const ws     = new WebSocket(`${wsBase}/ws/options/positions/${userId}?token=${token}`);
 
   ws.onmessage = (e) => {
@@ -706,8 +877,8 @@ export function createOptionChainWebSocket(
   onMessage: (data: unknown) => void,
   onError?: (e: Event) => void
 ): WebSocket {
-  if (!API_BASE) throw new Error("Options API URL not configured (VITE_OPTIONS_API_URL)");
-  const wsBase = API_BASE.replace(/^http/, "ws");
+  const wsBase = optionsWsBaseForToken(token) || optionsWsBase();
+  if (!wsBase) throw new Error("Options websocket URL not configured (set VITE_OPTIONS_API_URL or VITE_OPTIONS_WS_URL)");
   const q = new URLSearchParams({
     token,
     underlying: params.underlying,
