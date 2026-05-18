@@ -13,7 +13,7 @@ export type PricingPlan = {
 
 /** Shown under pricing cards. */
 export const PRICING_SETUP_AND_MONTHLY_NOTE =
-  "All plans include one-time integration and recurring monthly maintenance (monthly fees begin after the first 30 days of each subscription).";
+  "One Algo Platform plan: live deployment, broker integration, and automation. Integration fee + monthly maintenance (monthly fees begin after the first 30 days).";
 
 /** Inquiry-only top tier; not a Stripe product in this checkout. */
 export const INSTITUTIONAL_PLAN = {
@@ -22,55 +22,26 @@ export const INSTITUTIONAL_PLAN = {
   contactOnly: true,
 } as const;
 
-/** New subscribers: setup fee + monthly after 30-day trial on the subscription. Legacy `plan_id`s stay valid in the database. */
+/**
+ * Public catalog: single Algo Platform SKU (Stripe `plan_id` = professionalPlan).
+ * Legacy `starterPlan` / `growthPlan` rows may still exist in the database until migrated.
+ */
 export const PRICING_PLANS: PricingPlan[] = [
   {
-    id: "starterPlan",
-    name: "Starter",
-    integrationFee: 149,
-    price: 49,
-    period: "month",
-    description:
-      "Full platform access with one custom algo strategy (edit access), backtesting, broker/OpenAlgo integration, and basic support.",
-    features: [
-      "Full platform access",
-      "1 custom algo strategy (edit access)",
-      "Backtesting & analytics",
-      "Broker / OpenAlgo integration",
-      "Basic support",
-    ],
-  },
-  {
-    id: "growthPlan",
-    name: "Growth",
-    integrationFee: 299,
-    price: 99,
-    period: "month",
-    description:
-      "Full platform access with up to three algo strategies, advanced backtesting & analytics, broker/OpenAlgo integration, and priority support.",
-    features: [
-      "Full platform access",
-      "Up to 3 algo strategies",
-      "Advanced backtesting & analytics",
-      "Broker / OpenAlgo integration",
-      "Priority support",
-    ],
-  },
-  {
     id: "professionalPlan",
-    name: "Pro",
+    name: "Algo Platform",
     integrationFee: 599,
     price: 199,
     period: "month",
     description:
-      "Full platform access with up to 10 custom algo strategies, advanced analytics & optimization, multi-broker integration, dedicated support, and fast execution setup.",
+      "Live deployment, broker integration, and automation — one clear plan for executing verified strategies in real markets.",
     features: [
-      "Full platform access",
-      "Up to 10 custom algo strategies",
-      "Advanced analytics & optimization",
-      "Multi-broker integration",
-      "Dedicated support",
-      "Fast execution setup",
+      "Live strategy deployment",
+      "Broker connectivity & encrypted API vault",
+      "Hands-off automation & execution guardrails",
+      "Multi-account monitoring & Telegram alerts",
+      "Platform access for validation workflows",
+      "Engineer-assisted go-live (~72 h typical)",
     ],
     recommended: true,
   },
@@ -78,56 +49,23 @@ export const PRICING_PLANS: PricingPlan[] = [
 
 /**
  * Display amounts for India (INR) — must match your Stripe INR Price products.
- * Adjust when you finalize Stripe INR catalog in the dashboard.
  */
 export const PRICING_PLANS_INR: PricingPlan[] = [
   {
-    id: "starterPlan",
-    name: "Starter",
-    integrationFee: 13000,
-    price: 1999,
-    period: "month",
-    description:
-      "Full platform access with one custom algo strategy (edit access), backtesting, broker/OpenAlgo integration, and basic support.",
-    features: [
-      "Full platform access",
-      "1 custom algo strategy (edit access)",
-      "Backtesting & analytics",
-      "Broker / OpenAlgo integration",
-      "Basic support",
-    ],
-  },
-  {
-    id: "growthPlan",
-    name: "Growth",
-    integrationFee: 29000,
-    price: 4999,
-    period: "month",
-    description:
-      "Full platform access with up to three algo strategies, advanced backtesting & analytics, broker/OpenAlgo integration, and priority support.",
-    features: [
-      "Full platform access",
-      "Up to 3 algo strategies",
-      "Advanced backtesting & analytics",
-      "Broker / OpenAlgo integration",
-      "Priority support",
-    ],
-  },
-  {
     id: "professionalPlan",
-    name: "Pro",
+    name: "Algo Platform",
     integrationFee: 75000,
     price: 12999,
     period: "month",
     description:
-      "Full platform access with up to 10 custom algo strategies, advanced analytics & optimization, multi-broker integration, dedicated support, and fast execution setup.",
+      "Live deployment, broker integration, and automation — one clear plan for executing verified strategies in real markets.",
     features: [
-      "Full platform access",
-      "Up to 10 custom algo strategies",
-      "Advanced analytics & optimization",
-      "Multi-broker integration",
-      "Dedicated support",
-      "Fast execution setup",
+      "Live strategy deployment",
+      "Broker connectivity & encrypted API vault",
+      "Hands-off automation & execution guardrails",
+      "Multi-account monitoring & Telegram alerts",
+      "Platform access for validation workflows",
+      "Engineer-assisted go-live (~72 h typical)",
     ],
     recommended: true,
   },

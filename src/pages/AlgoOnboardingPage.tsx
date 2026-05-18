@@ -35,7 +35,7 @@ export default function AlgoOnboardingPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState("");
   const [defaultName, setDefaultName] = useState("");
-  const [planId, setPlanId] = useState<string>("starterPlan");
+  const [planId, setPlanId] = useState<string>("professionalPlan");
   const [alreadySubmitted, setAlreadySubmitted] = useState(false);
   const [existingStatus, setExistingStatus] = useState<string | null>(null);
   const [existingBroker, setExistingBroker] = useState<string | null>(null);

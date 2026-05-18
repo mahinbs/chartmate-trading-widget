@@ -12,31 +12,13 @@ import { toast } from "sonner";
 import { InstitutionalInquiryModal } from "@/components/InstitutionalInquiryModal";
 import { useUserCurrency } from "@/hooks/useUserCurrency";
 
-const STARTER_FEATURES = [
-  "1 live strategy",
-  "1 broker integration",
-  "Live & paper execution 24/7",
-  "Basic P&L analytics",
-  "Standard backtester",
-  "Email support · 24h SLA",
-];
-
-const GROWTH_FEATURES = [
-  "3 live strategies",
-  "3 broker integrations",
-  "Advanced backtester",
-  "Multi-currency dashboards",
-  "Custom alerts & kill-switch",
-  "Priority email · 8h SLA",
-];
-
-const PRO_FEATURES = [
-  "10 live strategies",
-  "Unlimited broker integrations",
-  "Monte Carlo + walk-forward",
-  "Full marketplace access",
-  "Custom strategy builder",
-  "Priority chat · 4h SLA",
+const ALGO_PLATFORM_FEATURES = [
+  "Live strategy deployment",
+  "Broker connectivity & encrypted API vault",
+  "Hands-off automation & execution guardrails",
+  "Multi-account monitoring & Telegram alerts",
+  "Platform access for validation workflows",
+  "Engineer-assisted go-live (~72 h typical)",
 ];
 
 const INSTITUTIONAL_FEATURES = [
@@ -72,7 +54,7 @@ function PricingCard({ title, popular, inr, integrationAmount, monthlyAmount, fe
       {popular && (
         <div className="mb-3 text-center">
           <span className="font-ibm-mono text-[10px] font-bold uppercase tracking-widest text-teal-400">
-            Most popular
+            Live execution
           </span>
         </div>
       )}
@@ -134,9 +116,6 @@ function PricingCard({ title, popular, inr, integrationAmount, monthlyAmount, fe
   );
 }
 
-/**
- * Card-based pricing (Starter / Growth / Pro / Institutional) for marketing pages.
- */
 const PROFESSIONAL_PLAN_ID = "professionalPlan" as const;
 
 export function ChartMatePricingMatrix() {
@@ -153,10 +132,7 @@ export function ChartMatePricingMatrix() {
     subscription?.plan_id === PROFESSIONAL_PLAN_ID &&
     (subscription?.status === "active" || subscription?.status === "trialing");
   const plans = inr ? PRICING_PLANS_INR : PRICING_PLANS;
-  const byId = Object.fromEntries(plans.map((p) => [p.id, p]));
-  const starter = byId.starterPlan;
-  const growth = byId.growthPlan;
-  const pro = byId.professionalPlan;
+  const algo = plans.find((p) => p.id === PROFESSIONAL_PLAN_ID) ?? plans[0];
 
   const subscribe = async (planId: string) => {
     const {
@@ -200,17 +176,8 @@ export function ChartMatePricingMatrix() {
         toast.error(r.error);
         return;
       }
-      toast.success("Your 14-day Pro trial has started.");
+      toast.success("Your 14-day trial has started.");
       window.location.assign("/home");
-    } finally {
-      setProCtaLoading(false);
-    }
-  };
-
-  const onChooseProAndPay = async () => {
-    setProCtaLoading(true);
-    try {
-      await subscribe(PROFESSIONAL_PLAN_ID);
     } finally {
       setProCtaLoading(false);
     }
@@ -222,71 +189,49 @@ export function ChartMatePricingMatrix() {
         Pricing
       </h2>
 
+      <div className="mb-8 rounded-2xl border border-purple-500/25 bg-purple-500/[0.07] px-6 py-4 text-center">
+        <p className="font-bebas text-xl md:text-3xl tracking-tight text-white">
+          Pro + Algo = <span className="text-teal-400">Complete Trading System</span>
+        </p>
+        <p className="mt-2 text-sm text-zinc-400 font-ibm-sans">
+          Validate and stress-test on TradingSmart.ai (analysis &amp; simulation), then deploy the same playbook live with
+          Algo automation and broker integrations.
+        </p>
+      </div>
+
       <div className="mb-10 rounded-2xl bg-teal-500/[0.06] border border-teal-500/20 px-6 py-5 flex flex-col md:flex-row gap-3 md:items-center md:gap-6">
-        <div className="shrink-0 text-teal-400 font-black font-ibm-mono text-sm uppercase tracking-widest">vs. freelancer</div>
+        <div className="shrink-0 text-teal-400 font-black font-ibm-mono text-sm uppercase tracking-widest">
+          Why one plan
+        </div>
         <p className="text-zinc-300 text-sm font-light leading-relaxed">
           {inr ? (
             <>
-              A freelance developer often charges{" "}
-              <span className="text-white font-bold">₹40,000–₹1,50,000+</span> for a single algo — with no platform, no
-              backtesting, and no ongoing support. Our Starter plan gets your strategy coded, tested, and live for{" "}
-              <span className="text-teal-400 font-bold">₹13,000 one-time</span>.
+              Freelancers often charge{" "}
+              <span className="text-white font-bold">₹40,000–₹1,50,000+</span> per algo—with no maintained platform.
+              One Algo Platform price covers{" "}
+              <span className="text-teal-400 font-bold">live deployment, broker wiring, and automation</span>
+              {""} plus ongoing reliability.
             </>
           ) : (
             <>
-              A freelance developer often charges{" "}
-              <span className="text-white font-bold">$500–$2,000+</span> for a single algo — with no platform, no
-              backtesting, and no ongoing support. Our Starter plan gets your strategy coded, tested, and live for{" "}
-              <span className="text-teal-400 font-bold">$149 one-time</span>.
+              Freelancers often charge{" "}
+              <span className="text-white font-bold">$500–$2,000+</span> per one-off bots—with no platform or support SLA.
+              Our single Algo plan bundles{" "}
+              <span className="text-teal-400 font-bold">deployment, broker integration, and automation</span>
+              {""} without tier confusion.
             </>
           )}
         </p>
       </div>
 
-      <p className="md:hidden text-center text-[11px] text-zinc-500 font-ibm-mono mb-4 animate-pulse">
-        ← scroll to see all plans →
-      </p>
-      <div className="flex flex-wrap justify-center gap-6 pb-2">
+      <div className="flex flex-wrap justify-center gap-6 pb-2 max-w-5xl mx-auto">
         <PricingCard
-          title="Starter"
-          inr={inr}
-          integrationAmount={starter?.integrationFee ?? 149}
-          monthlyAmount={starter?.price ?? 49}
-          features={STARTER_FEATURES}
-          cta={
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full font-ibm-mono text-xs uppercase tracking-wider border-teal-500/40 text-teal-400 hover:bg-teal-500/10"
-              onClick={() => void subscribe("starterPlan")}
-            >
-              Choose Starter
-            </Button>
-          }
-        />
-        <PricingCard
-          title="Growth"
-          inr={inr}
-          integrationAmount={growth?.integrationFee ?? 299}
-          monthlyAmount={growth?.price ?? 99}
-          features={GROWTH_FEATURES}
-          cta={
-            <Button
-              type="button"
-              className="w-full font-ibm-mono text-xs uppercase tracking-wider bg-amber-400 text-black hover:bg-amber-300"
-              onClick={() => void subscribe("growthPlan")}
-            >
-              Choose Growth
-            </Button>
-          }
-        />
-        <PricingCard
-          title="Pro"
+          title="Algo Platform"
           popular
           inr={inr}
-          integrationAmount={pro?.integrationFee ?? 599}
-          monthlyAmount={pro?.price ?? 199}
-          features={PRO_FEATURES}
+          integrationAmount={algo.integrationFee}
+          monthlyAmount={algo.price}
+          features={ALGO_PLATFORM_FEATURES}
           cta={
             isProPaidStripe ? (
               <Button
@@ -294,7 +239,7 @@ export function ChartMatePricingMatrix() {
                 asChild
                 className="w-full font-ibm-mono text-xs uppercase tracking-wider bg-zinc-800 text-teal-300 border border-teal-500/40 hover:bg-zinc-700"
               >
-                <Link to="/subscription">Manage Pro subscription</Link>
+                <Link to="/subscription">Manage subscription</Link>
               </Button>
             ) : user ? (
               <Button
@@ -303,7 +248,7 @@ export function ChartMatePricingMatrix() {
                 className="w-full font-ibm-mono text-xs uppercase tracking-wider bg-teal-500 text-black hover:bg-teal-400"
                 onClick={() => void subscribe(PROFESSIONAL_PLAN_ID)}
               >
-                {proCtaLoading ? "Redirecting…" : "Choose Pro"}
+                {proCtaLoading ? "Redirecting…" : "Get Algo Platform"}
               </Button>
             ) : (
               <Button
@@ -336,18 +281,10 @@ export function ChartMatePricingMatrix() {
         />
       </div>
 
-      <InstitutionalInquiryModal open={instOpen} onOpenChange={setInstOpen} />
-
-      <p className="mt-6 text-center text-[11px] text-zinc-500 font-ibm-mono max-w-2xl mx-auto leading-relaxed">
+      <p className="mt-8 text-center max-w-3xl mx-auto text-[11px] text-zinc-500 font-ibm-sans">
         {PRICING_SETUP_AND_MONTHLY_NOTE}
       </p>
-      <p className="mt-2 text-center text-xs text-zinc-500 font-ibm-mono">
-        {!user
-          ? "Sign in or sign up to continue with plan selection."
-          : isProPaidStripe
-            ? "You have an active Pro subscription — use Subscription in the app to manage billing."
-            : "Signed in — select any plan to open secure Stripe checkout."}
-      </p>
+      <InstitutionalInquiryModal open={instOpen} onOpenChange={setInstOpen} />
     </div>
   );
 }

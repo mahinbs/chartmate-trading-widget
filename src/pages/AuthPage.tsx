@@ -260,6 +260,8 @@ const AuthPage = () => {
       const hasCheckoutIntent =
         (proTrialIntent && plan === "professionalPlan") ||
         (Boolean(plan) && VALID_PREMIUM_CHECKOUT_PLANS.has(plan));
+      // Session can flip before React applies `signup-success`/`tabs` phase — avoid routing away from onboarding.
+      if (authPhase === "signup-otp" && user) return;
       if (authPhase === "signup-success" && !hasCheckoutIntent) return;
       if (proTrialIntent && plan === "professionalPlan" && role === "user") {
         if (postAuthCheckoutStartedRef.current) return;
@@ -328,7 +330,11 @@ const AuthPage = () => {
       else if (role === "user") {
         if (!trialBootstrapDoneRef.current) {
           trialBootstrapDoneRef.current = true;
-          await ensureTrialAccessForUser(user.id);
+          try {
+            await ensureTrialAccessForUser(user.id);
+          } catch (e) {
+            console.warn("ensureTrialAccessForUser:", e);
+          }
         }
 
         try {
@@ -670,6 +676,50 @@ const AuthPage = () => {
         setAuthPhase(hasCheckoutIntent ? "tabs" : "signup-success");
         setSignUpOtp("");
         setPendingSignupContext(null);
+      } else if (pendingSignupContext) {
+        const { error: pwErr } = await supabase.auth.signInWithPassword({
+          email: pendingSignupContext.email,
+          password: pendingSignupContext.password,
+        });
+        if (pwErr) {
+          toast({
+            title: "Verification incomplete",
+            description:
+              pwErr.message ||
+              "Could not establish a session. Try signing in with your email and password.",
+            variant: "destructive",
+          });
+          setAuthPhase("tabs");
+          setSignUpOtp("");
+          setPendingSignupContext(null);
+          return;
+        }
+        toast({ title: "Email verified", description: "You're signed in." });
+        const plan = searchParams.get("subscribe_plan")?.trim() ?? "";
+        const proTrialIntent = searchParams.get("pro_trial") === "1";
+        const hasCheckoutIntent =
+          (proTrialIntent && plan === "professionalPlan") ||
+          VALID_PREMIUM_CHECKOUT_PLANS.has(plan);
+        try {
+          localStorage.setItem("pending_signup_complete", "1");
+          const sourcePage = new URLSearchParams(window.location.search).get("entry");
+          if (sourcePage) localStorage.setItem("signup_source_page", sourcePage);
+          localStorage.removeItem("signup_prefill_full_name");
+          localStorage.removeItem("signup_prefill_email");
+          localStorage.removeItem("signup_prefill_phone_iso");
+          localStorage.removeItem("signup_prefill_phone_national");
+        } catch {
+          // Ignore storage failures.
+        }
+        setAuthPhase(hasCheckoutIntent ? "tabs" : "signup-success");
+        setSignUpOtp("");
+        setPendingSignupContext(null);
+      } else {
+        toast({
+          title: "Verification incomplete",
+          description: "No active session yet. Close this screen and sign in with your email and password.",
+          variant: "destructive",
+        });
       }
     } finally {
       setIsLoading(false);

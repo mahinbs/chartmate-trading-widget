@@ -26,8 +26,13 @@ export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
     }
     let cancelled = false;
     void (async () => {
-      await ensureTrialAccessForUser(user.id);
-      if (!cancelled) setTrialBootstrapDone(true);
+      try {
+        await ensureTrialAccessForUser(user.id);
+      } catch (e) {
+        console.warn('[ProtectedRoute] ensureTrialAccessForUser:', e);
+      } finally {
+        if (!cancelled) setTrialBootstrapDone(true);
+      }
     })();
     return () => {
       cancelled = true;

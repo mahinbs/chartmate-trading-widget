@@ -58,7 +58,7 @@ const PricingPage = () => {
         <title>Pricing — ChartMate.ai</title>
         <meta
           name="description"
-          content="Starter, Growth, and Pro — one-time setup plus monthly plans after 30 days. Full platform access and flexible algo strategy limits."
+          content="Algo Platform pricing: one clear plan—live deployment, broker integration, and automation. Combine with TradingSmart.ai for a complete validation-to-live workflow."
         />
       </Helmet>
       <NewLandingPage />

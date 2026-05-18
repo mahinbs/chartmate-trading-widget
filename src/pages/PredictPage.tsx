@@ -2989,17 +2989,15 @@ const PredictPage = () => {
             <DialogDescription className="text-center text-zinc-400 text-base md:text-lg mt-2 max-w-2xl mx-auto">
               {midTierProOnlyUpgrade ? (
                 <>
-                  You already have an active plan. Upgrade to{" "}
-                  <strong className="text-zinc-200">Pro</strong> in the billing portal for unlimited
-                  strategies and premium support — Stripe prorates when enabled.
+                  You already have an active plan. Manage your upgrade to{" "}
+                  <strong className="text-zinc-200">Algo Platform</strong> in the billing portal — Stripe prorates when
+                  enabled.
                 </>
               ) : (
                 <>
-                  Live OpenAlgo is included on{" "}
-                  <strong className="text-zinc-200">Starter</strong> ($149 setup + $49/mo after 30 days),{" "}
-                  <strong className="text-zinc-200">Growth</strong> ($249 + $79/mo), and{" "}
-                  <strong className="text-zinc-200">Pro</strong> ($399 + $129/mo). Legacy Probability-only
-                  plans do not include live broker execution.
+                  Live OpenAlgo automation is bundled on the single{" "}
+                  <strong className="text-zinc-200">Algo Platform</strong> tier (see pricing for setup + monthly after the
+                  first 30 days). Legacy Probability-only plans do not include live broker execution.
                 </>
               )}
             </DialogDescription>
@@ -3094,7 +3092,7 @@ const PredictPage = () => {
                   {midTierProOnlyUpgrade && plan.id === "professionalPlan"
                     ? "Upgrade in billing portal"
                     : plan.recommended
-                      ? "Get Growth Plan"
+                      ? "Get Algo Platform"
                       : "Get Started"}
                 </Button>
               </div>

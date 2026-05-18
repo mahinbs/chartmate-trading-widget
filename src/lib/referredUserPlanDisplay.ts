@@ -4,6 +4,8 @@ import { hasActiveSubscription, type UserSubscription } from "@/services/stripeS
 const PLAN_NAMES: Record<string, string> = Object.fromEntries(PRICING_PLANS.map((p) => [p.id, p.name]));
 
 const LEGACY_PLAN_LABELS: Record<string, string> = {
+  starterPlan: "Starter (legacy)",
+  growthPlan: "Growth (legacy)",
   botIntegration: "AI Auto Trading Bot (legacy)",
   probIntelligence: "Probability Intelligence (legacy)",
   proPlan: "Pro Plan (legacy)",

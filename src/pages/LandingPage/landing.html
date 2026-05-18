@@ -4,9 +4,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>TradingSmart.AI — Done-for-You Algo Setup with Full Trading Platform</title>
+  <title>TradingSmart Algo — Deploy Your Verified Strategy Live</title>
   <meta name="description"
-    content="Get done-for-you algo setup with AI trading analysis, backtesting, paper trading, and live broker execution across 179+ global brokers from one dashboard.">
+    content="TradingSmart Algo: one plan for live deployment, broker integration, and automation — after validating on TradingSmart.ai. Strategy → simulation → optimization → live.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
@@ -523,7 +523,7 @@
 
 .hero-sub { font-size: 18px; color: var(--fg-1); max-width: 540px; margin-bottom: 36px; opacity: 0; animation: fadeUp 0.8s ease 1s both; }
 .hero-ctas { display: flex; gap: 14px; flex-wrap: wrap; opacity: 0; animation: fadeUp 0.8s ease 1.2s both; margin-bottom: 14px; }
-.hero-talk-link { display: inline-block; font-size: 13px; color: var(--fg-2); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgba(20,184,166,0.45); margin-bottom: 36px; opacity: 0; animation: fadeUp 0.8s ease 1.4s both; transition: color 0.2s; }
+.hero-talk-link { display: inline-block; font-size: 13px; color: var(--fg-2); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgba(20,184,166,0.45); margin-bottom: 36px; opacity: 0; animation: fadeUp 0.8s ease 1.62s both; transition: color 0.2s; }
 .hero-talk-link:hover { color: var(--cy); text-decoration-color: var(--cy); }
 
     .hero-trust {
@@ -1409,6 +1409,10 @@
       transition-delay: 0.75s
     }
 
+    .reveal-stagger.in>*:nth-child(9) {
+      transition-delay: 0.85s
+    }
+
     /* ═══ FEATURES ═══ */
     .features-grid {
       display: grid;
@@ -1514,6 +1518,328 @@
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 1.5px
+    }
+
+    /* ═══ JOURNEY + LIVE CTAs (algo positioning) ═══ */
+    .section-cta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+      align-items: center;
+      margin-top: 40px;
+      padding-top: 8px;
+    }
+
+    .section-cta-row .btn {
+      position: relative;
+      overflow: hidden;
+      min-height: 48px;
+    }
+
+    .hero-cta-watch {
+      display: block;
+      margin-top: 14px;
+      font-size: 13px;
+      color: var(--fg-2);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      text-decoration-color: rgba(20, 184, 166, 0.45);
+      opacity: 0;
+      animation: fadeUp 0.8s ease 1.45s both;
+      transition: color 0.2s;
+      width: fit-content;
+    }
+
+    .hero-cta-watch:hover {
+      color: var(--cy);
+      text-decoration-color: var(--cy);
+    }
+
+    .journey-shell {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .journey-note {
+      text-align: center;
+      font-size: 15px;
+      color: var(--fg-2);
+      max-width: 640px;
+      margin: -28px auto 36px;
+      line-height: 1.55;
+    }
+
+    .journey-track {
+      display: flex;
+      align-items: stretch;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    .journey-step-card {
+      flex: 1 1 0;
+      min-width: 0;
+      text-align: center;
+      padding: 22px 12px;
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(17, 27, 48, 0.72), rgba(10, 15, 28, 0.72));
+      border: 1px solid var(--border);
+      box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
+    }
+
+    .journey-step-k {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 10px;
+      letter-spacing: 1.8px;
+      text-transform: uppercase;
+      color: var(--cy);
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .journey-step-card strong {
+      display: block;
+      font-size: 15px;
+      font-weight: 800;
+      color: var(--fg-0);
+      line-height: 1.3;
+      letter-spacing: -0.3px;
+    }
+
+    .journey-arrow {
+      flex-shrink: 0;
+      width: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--cy);
+      font-size: 18px;
+      font-weight: 700;
+      opacity: 0.55;
+      user-select: none;
+    }
+
+    .conversion-pair .btn-primary {
+      min-width: 168px
+    }
+
+    .flow-pipeline {
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      max-width: 1040px;
+      margin: 0 auto 8px;
+    }
+
+    .flow-pipeline .pipeline-step {
+      flex: 1 1 140px;
+      min-width: 132px;
+      max-width: 230px;
+      text-align: center;
+      padding: 22px 14px;
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(17, 27, 48, 0.72), rgba(10, 15, 28, 0.72));
+      border: 1px solid var(--border);
+      box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
+    }
+
+    .flow-pipeline .pipeline-k {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 10px;
+      letter-spacing: 1.8px;
+      text-transform: uppercase;
+      color: var(--cy);
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .flow-pipeline .pipeline-step strong {
+      display: block;
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--fg-0);
+      margin-bottom: 8px;
+      letter-spacing: -0.3px;
+      line-height: 1.25;
+    }
+
+    .flow-pipeline .pipeline-step p {
+      font-size: 12px;
+      color: var(--fg-2);
+      line-height: 1.45;
+      margin: 0;
+    }
+
+    .flow-pipeline .pipeline-arrow {
+      flex-shrink: 0;
+      width: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--cy);
+      font-weight: 800;
+      font-size: 16px;
+      opacity: .5;
+      user-select: none;
+      align-self: center;
+    }
+
+    @media (max-width: 720px) {
+      .flow-pipeline .pipeline-arrow {
+        display: none;
+      }
+
+      .flow-pipeline .pipeline-step {
+        flex: 1 1 42%;
+      }
+    }
+
+    .broker-logo-strip {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 14px 16px;
+      margin: 6px auto 24px;
+      max-width: 980px;
+    }
+
+    .broker-logo-tile {
+      min-width: 108px;
+      padding: 16px 20px;
+      border-radius: 16px;
+      border: 1px solid var(--border-hi);
+      background: linear-gradient(145deg, rgba(17, 27, 48, 0.95), rgba(8, 12, 22, 0.88));
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+      text-align: center;
+    }
+
+    .broker-logo-tile .broker-abbr {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: .5px;
+      color: var(--fg-0);
+    }
+
+    .broker-logo-tile .broker-full {
+      margin-top: 5px;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: var(--fg-2);
+      font-weight: 700;
+    }
+
+    .bundle-strip {
+      text-align: center;
+      padding: 22px 20px;
+      margin: 0 auto 26px;
+      max-width: 880px;
+      border-radius: 20px;
+      border: 1px solid rgba(99, 102, 241, 0.28);
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(20, 184, 166, 0.08));
+    }
+
+    .bundle-strip strong {
+      display: block;
+      font-family: 'Orbitron', sans-serif;
+      font-size: clamp(17px, 2.8vw, 23px);
+      letter-spacing: 1px;
+      color: var(--fg-0);
+      line-height: 1.3;
+    }
+
+    .bundle-strip .accent-bundle-a {
+      color: #c4b5fd;
+    }
+
+    .bundle-strip .accent-bundle-b {
+      color: var(--cy);
+    }
+
+    .bundle-strip .bundle-sub {
+      margin-top: 10px;
+      font-size: 14px;
+      color: var(--fg-2);
+      line-height: 1.55;
+    }
+
+    .marquee-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+      margin-top: 22px;
+      padding: 0 16px;
+    }
+
+    .broker-intro {
+      text-align: center;
+      max-width: 720px;
+      margin: -12px auto 28px;
+      font-size: 16px;
+      color: var(--fg-1);
+      line-height: 1.6;
+    }
+
+    .broker-pill-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+      max-width: 920px;
+      margin: 0 auto 36px;
+    }
+
+    .broker-pill {
+      padding: 10px 18px;
+      border-radius: 999px;
+      border: 1px solid var(--border-hi);
+      background: rgba(17, 27, 48, 0.6);
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--fg-0);
+    }
+
+    .broker-highlights {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .broker-highlight {
+      text-align: center;
+      padding: 18px 16px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: rgba(10, 15, 28, 0.55);
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--fg-1);
+    }
+
+    .algo-simple-features .feature {
+      padding: 28px 22px;
+      text-align: left;
+    }
+
+    .algo-simple-features .feature h3 {
+      font-size: 18px;
+      font-weight: 800;
+      margin-bottom: 8px;
+      color: var(--fg-0)
+    }
+
+    .algo-simple-features .feature p {
+      font-size: 14px;
+      color: var(--fg-1);
+      line-height: 1.55;
+      margin: 0;
     }
 
     /* Platform section custom symmetry layout */
@@ -2379,10 +2705,32 @@
     /* ═══ PRICING ═══ */
     .pricing {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 18px;
-      max-width: 1280px;
+      grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.92fr);
+      gap: 22px;
+      max-width: 960px;
       margin: 0 auto
+    }
+
+    /* Single Algo Platform card prominence */
+    .price-card.primary-only {
+      border-color: var(--cy);
+      box-shadow: 0 0 48px rgba(20, 184, 166, 0.16);
+    }
+
+    .price-card.primary-only::before {
+      content: 'ALGO PLATFORM';
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 4px 14px;
+      background: linear-gradient(135deg, var(--cy), var(--pu));
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      border-radius: 100px;
+      white-space: nowrap
     }
 
     .price-card {
@@ -2851,6 +3199,16 @@
         grid-template-columns: repeat(2, 1fr)
       }
 
+      .journey-note {
+        margin: -16px auto 28px;
+        padding: 0 8px;
+      }
+
+      .journey-arrow {
+        width: 20px;
+        font-size: 15px;
+      }
+
       .steps {
         grid-template-columns: repeat(2, 1fr);
         gap: 40px 20px
@@ -3169,6 +3527,26 @@
         border-radius: 18px
       }
 
+      .journey-track {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .journey-arrow {
+        transform: rotate(90deg);
+        width: auto;
+        height: 24px;
+        padding: 2px 0;
+      }
+
+      .journey-step-card {
+        flex: none;
+      }
+
+      .broker-highlights {
+        grid-template-columns: 1fr
+      }
+
       .human-proof-figure {
         order: -1;
         min-height: 220px;
@@ -3332,7 +3710,8 @@
       .reveal-stagger.in > *:nth-child(5),
       .reveal-stagger.in > *:nth-child(6),
       .reveal-stagger.in > *:nth-child(7),
-      .reveal-stagger.in > *:nth-child(8) {
+      .reveal-stagger.in > *:nth-child(8),
+      .reveal-stagger.in > *:nth-child(9) {
         transition-delay: 0s;
       }
 
@@ -3702,6 +4081,8 @@
         TRADINGSMART.AI
       </a>
       <div class="nav-links">
+        <a href="#journey" class="nav-link">Your journey</a>
+        <a href="#live-features" class="nav-link">Live toolkit</a>
         <a href="#features" class="nav-link">Features</a>
         <a href="#how" class="nav-link">How it works</a>
         <a href="#pricing" class="nav-link">Pricing</a>
@@ -3721,23 +4102,21 @@
   <div class="container">
     <div class="hero-grid">
       <div class="hero-left">
-        <div class="badge"><span class="badge-dot"></span> Done-For-You · No Coding · Engineers Build It</div>
+        <div class="badge"><span class="badge-dot"></span> Continues after TradingSmart.ai simulation</div>
         <h1>
-          <span class="word" style="animation-delay:0.3s">We</span>
-          <span class="word" style="animation-delay:0.4s">turn</span>
-          <span class="word" style="animation-delay:0.5s">your</span>
-          <span class="word" style="animation-delay:0.6s">trading</span>
-          <span class="word gradient" style="animation-delay:0.7s">strategy</span>
-          <span class="word" style="animation-delay:0.8s">into</span>
-          <span class="word" style="animation-delay:0.9s">an</span>
-          <span class="word gradient" style="animation-delay:1s">automated</span>
-          <span class="word" style="animation-delay:1.1s">system.</span>
+          <span class="word" style="animation-delay:0.3s">Deploy</span>
+          <span class="word" style="animation-delay:0.37s">Your</span>
+          <span class="word gradient" style="animation-delay:0.46s">Verified</span>
+          <span class="word" style="animation-delay:0.55s">Trading</span>
+          <span class="word gradient" style="animation-delay:0.64s">Strategy</span>
+          <span class="word gradient" style="animation-delay:0.74s">Live</span>
         </h1>
         <p class="hero-sub">
-          Tell us your strategy in plain English. Our engineers code the algorithm, connect it to your broker, and deliver a deployed automated system within 72 hours. Features like AI trading analysis, backtesting, and paper trading included.
+          After testing your strategy on TradingSmart.ai, connect your broker and execute trades automatically in real markets.
         </p>
         <div class="hero-ctas">
-          <a href="/auth?tab=signup&entry=landing" class="btn btn-primary btn-lg" target="_top">Automate My Strategy →</a>
+          <a href="https://tradingsmart.ai/" class="btn btn-ghost btn-lg" target="_top" rel="noopener noreferrer">Start Testing</a>
+          <a href="/auth?tab=signup&entry=landing" class="btn btn-primary btn-lg" target="_top">Deploy Live →</a>
           <a href="#preview" class="btn btn-ghost btn-lg">Watch Demo</a>
         </div>
         <a href="/schedule-call" class="hero-talk-link" target="_top">Prefer to talk first? Schedule a call.</a>
@@ -3913,6 +4292,169 @@
     <div class="marquee">
       <div class="marquee-track marquee-track-rev" id="marqueeTrack2"></div>
     </div>
+    <div class="container">
+      <div class="marquee-actions reveal conversion-pair">
+        <a href="https://tradingsmart.ai/" class="btn btn-ghost btn-lg" target="_top" rel="noopener noreferrer">Start Testing</a>
+        <a href="/auth?tab=signup&entry=landing" class="btn btn-primary btn-lg" target="_top">Deploy Live →</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ FLOW: SIMULATION → LIVE ═══ -->
+  <section class="section" id="journey">
+    <div class="container">
+      <div class="section-head reveal">
+        <div class="section-label">Full path</div>
+        <h2 class="section-title">From Strategy Testing to <span class="accent">Live Execution</span></h2>
+        <p class="section-desc">TradingSmart Algo is built as the natural next chapter after TradingSmart.ai: test and validate in simulation first, then turn the same playbook on with automation and broker guardrails.</p>
+      </div>
+      <p class="journey-note reveal">One clear progression: validate the idea → stress-test → tune → flip the same rules live—with monitoring and kills.</p>
+      <div class="journey-shell">
+        <div class="flow-pipeline reveal-stagger">
+          <div class="pipeline-step">
+            <div class="pipeline-k">1 · Define</div>
+            <strong>Strategy</strong>
+            <p>Lock rules, sizing, and risk before capital touches the market.</p>
+          </div>
+          <span class="pipeline-arrow" aria-hidden="true">→</span>
+          <div class="pipeline-step">
+            <div class="pipeline-k">2 · Prove</div>
+            <strong>Simulation</strong>
+            <p>Paper &amp; history so behavior matches expectation under volatility.</p>
+          </div>
+          <span class="pipeline-arrow" aria-hidden="true">→</span>
+          <div class="pipeline-step">
+            <div class="pipeline-k">3 · Refine</div>
+            <strong>Optimization</strong>
+            <p>Walk-forward and controls so the edge survives new regimes.</p>
+          </div>
+          <span class="pipeline-arrow" aria-hidden="true">→</span>
+          <div class="pipeline-step">
+            <div class="pipeline-k">4 · Scale</div>
+            <strong>Live</strong>
+            <p>Automate against your broker with vault keys and guardrails.</p>
+          </div>
+        </div>
+      </div>
+      <div class="section-cta-row reveal conversion-pair">
+        <a href="https://tradingsmart.ai/" class="btn btn-ghost btn-lg" target="_top" rel="noopener noreferrer">Start Testing</a>
+        <a href="/auth?tab=signup&entry=landing" class="btn btn-primary btn-lg" target="_top">Deploy Live →</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ BROKER INTEGRATIONS ═══ -->
+  <section class="section" id="brokers">
+    <div class="container">
+      <div class="section-head reveal">
+        <div class="section-label">Connectivity</div>
+        <h2 class="section-title">Supports <span class="accent">150+ Broker</span> Integrations</h2>
+        <p class="section-desc">Use the brokers you already trust—wired in through secure API links so fills and positions stay in sync.</p>
+      </div>
+      <div class="broker-logo-strip reveal">
+        <div class="broker-logo-tile"><div class="broker-abbr">Z</div><div class="broker-full">Zerodha</div></div>
+        <div class="broker-logo-tile"><div class="broker-abbr">AO</div><div class="broker-full">Angel One</div></div>
+        <div class="broker-logo-tile"><div class="broker-abbr">UP</div><div class="broker-full">Upstox</div></div>
+        <div class="broker-logo-tile"><div class="broker-abbr">FY</div><div class="broker-full">Fyers</div></div>
+        <div class="broker-logo-tile"><div class="broker-abbr">DH</div><div class="broker-full">Dhan</div></div>
+        <div class="broker-logo-tile"><div class="broker-abbr">◈</div><div class="broker-full">Binance</div></div>
+        <div class="broker-logo-tile"><div class="broker-abbr">IB</div><div class="broker-full">Interactive</div></div>
+        <div class="broker-logo-tile"><div class="broker-abbr">MT</div><div class="broker-full">MetaTrader</div></div>
+      </div>
+      <div class="broker-pill-grid reveal">
+        <div class="broker-pill">Zerodha</div>
+        <div class="broker-pill">Angel One</div>
+        <div class="broker-pill">Upstox</div>
+        <div class="broker-pill">Fyers</div>
+        <div class="broker-pill">Dhan</div>
+        <div class="broker-pill">Binance</div>
+        <div class="broker-pill">MetaTrader</div>
+        <div class="broker-pill">Interactive Brokers</div>
+      </div>
+      <div class="broker-highlights reveal">
+        <div class="broker-highlight">API-based connection</div>
+        <div class="broker-highlight">Secure authentication</div>
+        <div class="broker-highlight">Real-time execution</div>
+      </div>
+      <div class="section-cta-row reveal conversion-pair">
+        <a href="https://tradingsmart.ai/" class="btn btn-ghost btn-lg" target="_top" rel="noopener noreferrer">Start Testing</a>
+        <a href="/auth?tab=signup&entry=landing" class="btn btn-primary btn-lg" target="_top">Deploy Live →</a>
+      </div>
+  <section class="section algo-simple-features" id="live-features">
+    <div class="container">
+      <div class="section-head reveal">
+        <div class="section-label">What you get</div>
+        <h2 class="section-title">Live deployment, <span class="accent">kept simple</span></h2>
+        <p class="section-desc">Everything you expect when a tested strategy switches from simulation to funded trading—explained plainly, without noise.</p>
+      </div>
+      <div class="features-grid reveal-stagger">
+        <div class="feature">
+          <div class="feature-icon orbit-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+            </svg>
+          </div>
+          <h3>Real-time order execution</h3>
+          <p>Signals turn into routed orders immediately so outcomes match what your strategy intends.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon orbit-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+          </div>
+          <h3>Stop loss &amp; target automation</h3>
+          <p>Protect downside and capture targets automatically—fewer spur-of-the-moment decisions.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon orbit-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <path d="M4 11h16M8 17h12M12 7h8" />
+            </svg>
+          </div>
+          <h3>Multi-strategy deployment</h3>
+          <p>Run more than one approach at once across accounts you're comfortable allocating.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon orbit-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 018.55-11.06h.43a8.48 8.48 0 017.93 11.56z" />
+            </svg>
+          </div>
+          <h3>Telegram alerts</h3>
+          <p>Get timely nudges on fills, disconnects, and risk events—even when you're away from the desk.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon orbit-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <path d="M22 11.08V12a10 10 0 11-5.93-9.14M22 4L12 14.01l-3-3" />
+            </svg>
+          </div>
+          <h3>Live P&amp;L tracking</h3>
+          <p>See how each deployment is earning or drawing down with clean, consolidated views.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon orbit-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 6v12M8 14l4 4 4-4" />
+            </svg>
+          </div>
+          <h3>Risk management tools</h3>
+          <p>Global guardrails keep position sizes capped and workflows killable if conditions change quickly.</p>
+        </div>
+      </div>
+      <div class="section-cta-row reveal conversion-pair">
+        <a href="https://tradingsmart.ai/" class="btn btn-ghost btn-lg" target="_top" rel="noopener noreferrer">Start Testing</a>
+        <a href="/auth?tab=signup&entry=landing" class="btn btn-primary btn-lg" target="_top">Deploy Live →</a>
+      </div>
+    </div>
   </section>
 
   <!-- ═══ HOW IT WORKS ═══ -->
@@ -3950,6 +4492,10 @@
             winning strategies with a slider.</p>
         </div>
       </div>
+      <div class="section-cta-row reveal conversion-pair">
+        <a href="https://tradingsmart.ai/" class="btn btn-ghost btn-lg" target="_top" rel="noopener noreferrer">Start Testing</a>
+        <a href="/auth?tab=signup&entry=landing" class="btn btn-primary btn-lg" target="_top">Deploy Live →</a>
+      </div>
     </div>
   </section>
 
@@ -3975,6 +4521,10 @@
             <div class="human-proof-chip">Auto-trading running on market hours</div>
           </div>
         </div>
+      </div>
+      <div class="section-cta-row reveal conversion-pair">
+        <a href="https://tradingsmart.ai/" class="btn btn-ghost btn-lg" target="_top" rel="noopener noreferrer">Start Testing</a>
+        <a href="/auth?tab=signup&entry=landing" class="btn btn-primary btn-lg" target="_top">Deploy Live →</a>
       </div>
     </div>
   </section>
@@ -4043,6 +4593,10 @@
             traders use daily before and after going live.</p>
         </div>
       </div>
+      <div class="section-cta-row reveal conversion-pair">
+        <a href="https://tradingsmart.ai/" class="btn btn-ghost btn-lg" target="_top" rel="noopener noreferrer">Start Testing</a>
+        <a href="/auth?tab=signup&entry=landing" class="btn btn-primary btn-lg" target="_top">Deploy Live →</a>
+      </div>
     </div>
   </section>
 
@@ -4064,6 +4618,10 @@
         </div>
         <div class="trust-chip"><span class="trust-chip-dot"></span>You keep broker control while we handle
           implementation and updates</div>
+      </div>
+      <div class="section-cta-row reveal conversion-pair">
+        <a href="https://tradingsmart.ai/" class="btn btn-ghost btn-lg" target="_top" rel="noopener noreferrer">Start Testing</a>
+        <a href="/auth?tab=signup&entry=landing" class="btn btn-primary btn-lg" target="_top">Deploy Live →</a>
       </div>
     </div>
   </section>
@@ -4194,6 +4752,12 @@
         </div>
       </div>
     </div>
+    <div class="container">
+      <div class="section-cta-row reveal conversion-pair" style="margin-top:44px;">
+        <a href="https://tradingsmart.ai/" class="btn btn-ghost btn-lg" target="_top" rel="noopener noreferrer">Start Testing</a>
+        <a href="/auth?tab=signup&entry=landing" class="btn btn-primary btn-lg" target="_top">Deploy Live →</a>
+      </div>
+    </div>
   </section>
 
   <!-- ═══ DASHBOARD PREVIEW ═══ -->
@@ -4220,6 +4784,10 @@
             </video>
           </div>
         </div>
+      </div>
+      <div class="section-cta-row reveal conversion-pair">
+        <a href="https://tradingsmart.ai/" class="btn btn-ghost btn-lg" target="_top" rel="noopener noreferrer">Start Testing</a>
+        <a href="/auth?tab=signup&entry=landing" class="btn btn-primary btn-lg" target="_top">Deploy Live →</a>
       </div>
     </div>
   </section>
@@ -4327,76 +4895,47 @@
           </div>
         </div>
       </div>
+      </div>
+      <div class="section-cta-row reveal conversion-pair">
+        <a href="https://tradingsmart.ai/" class="btn btn-ghost btn-lg" target="_top" rel="noopener noreferrer">Start Testing</a>
+        <a href="/auth?tab=signup&entry=landing" class="btn btn-primary btn-lg" target="_top">Deploy Live →</a>
+      </div>
     </div>
-  </div>
-</section>
+  </section>
 
   <!-- ═══ PRICING ═══ -->
   <section class="section" id="pricing">
     <div class="container">
+      <div class="bundle-strip reveal">
+        <strong><span class="accent-bundle-a">Pro</span> + <span class="accent-bundle-b">Algo</span> = Complete Trading System</strong>
+        <p class="bundle-sub">Stress-test and validate on TradingSmart.ai — then one Algo Platform plan for <strong>live deployment + broker integration + automation</strong>.</p>
+      </div>
       <div class="section-head reveal">
         <div class="section-label">Pricing</div>
-        <h2 class="section-title">Simple, <span class="accent">transparent</span> pricing</h2>
-        <p class="section-desc">One-time integration fee + monthly maintenance. Plans start at <strong>$149 setup +
-            $49/mo</strong> with platform access for AI analysis, backtesting, and paper workflows.</p>
+        <h2 class="section-title">One Algo plan — <span class="accent">clear value</span></h2>
+        <p class="section-desc">Single public tier: <strong>$599</strong> one-time integration + <strong>$199/mo</strong>
+          maintenance (billing begins after the first 30 days). No tier confusion — the same live stack for every serious
+          trader.</p>
       </div>
       <div class="pricing reveal-stagger">
-        <div class="price-card">
-          <div class="price-name">Starter</div>
-          <div class="price-tag">One-time integration</div>
-          <div class="price-amount"><span class="cur">$</span>149</div>
-          <div class="price-divider">+</div>
-          <div class="price-tag">Monthly maintenance</div>
-          <div class="price-amount sub"><span class="cur">$</span>49<span class="per">/mo</span></div>
-          <div class="price-desc">Launch your first live algo.</div>
-          <ul class="price-list">
-            <li><strong>1</strong> live strategy</li>
-            <li><strong>1</strong> broker integration</li>
-            <li>Live &amp; paper execution, 24/7</li>
-            <li>Basic P&amp;L analytics</li>
-            <li>Standard backtester</li>
-            <li>Email support · 24h SLA</li>
-          </ul>
-          <a href="/auth?subscribe_plan=starterPlan" class="btn btn-ghost" style="width:100%"
-            target="_top">Choose Starter</a>
-        </div>
-        <div class="price-card">
-          <div class="price-name">Growth</div>
-          <div class="price-tag">One-time integration</div>
-          <div class="price-amount"><span class="cur">$</span>299</div>
-          <div class="price-divider">+</div>
-          <div class="price-tag">Monthly maintenance</div>
-          <div class="price-amount sub"><span class="cur">$</span>99<span class="per">/mo</span></div>
-          <div class="price-desc">For multi-strategy retail traders.</div>
-          <ul class="price-list">
-            <li><strong>3</strong> live strategies</li>
-            <li><strong>3</strong> broker integrations</li>
-            <li>Advanced backtester</li>
-            <li>Multi-currency dashboards</li>
-            <li>Custom alerts &amp; kill-switch</li>
-            <li>Priority email · 8h SLA</li>
-          </ul>
-          <a href="/auth?subscribe_plan=growthPlan" class="btn btn-ghost" style="width:100%"
-            target="_top">Choose Growth</a>
-        </div>
-        <div class="price-card popular">
-          <div class="price-name">Pro</div>
+        <div class="price-card primary-only">
+          <div class="price-name">Algo Platform</div>
           <div class="price-tag">One-time integration</div>
           <div class="price-amount"><span class="cur">$</span>599</div>
           <div class="price-divider">+</div>
           <div class="price-tag">Monthly maintenance</div>
           <div class="price-amount sub"><span class="cur">$</span>199<span class="per">/mo</span></div>
-          <div class="price-desc">For serious and prop traders.</div>
+          <div class="price-desc">Live deployment, broker integration, and automation — with engineer-assisted go-live.</div>
           <ul class="price-list">
-            <li><strong>10</strong> live strategies</li>
-            <li><strong>Unlimited</strong> broker integrations</li>
-            <li>Monte Carlo + walk-forward</li>
-            <li>Full marketplace access</li>
-            <li>Custom strategy builder</li>
-            <li>Priority chat · 4h SLA</li>
+            <li>Live strategy deployment &amp; monitoring</li>
+            <li>Secure broker API connectivity</li>
+            <li>Hands-off order automation &amp; risk guardrails</li>
+            <li>Multi-account dashboards &amp; Telegram alerts</li>
+            <li>Platform access for validation workflows</li>
+            <li>Typical go-live in ~72 hours</li>
           </ul>
           <a href="/auth?subscribe_plan=professionalPlan" class="btn btn-primary" style="width:100%"
-            target="_top">Choose Pro</a>
+            target="_top">Get Algo Platform</a>
         </div>
         <div class="price-card">
           <div class="price-name">Institutional</div>
@@ -4405,7 +4944,7 @@
           <div class="price-divider">+</div>
           <div class="price-tag">Monthly maintenance</div>
           <div class="price-amount sub">Custom</div>
-          <div class="price-desc">Funds, family offices, RIA firms.</div>
+          <div class="price-desc">Funds, family offices, and regulated desks.</div>
           <ul class="price-list">
             <li><strong>Unlimited</strong> strategies &amp; brokers</li>
             <li>Dedicated infrastructure</li>
@@ -4418,9 +4957,13 @@
         </div>
       </div>
       <div class="pricing-note reveal" style="text-align:center;margin-top:28px;font-size:13px;color:var(--fg-2)">
-        Integration fee covers broker API setup, strategy deployment, and go-live validation. Monthly maintenance covers
-        hosting, monitoring, and support. All plans include compliance-first execution controls, encrypted API vault,
-        and a 14-day money-back guarantee. Annual billing saves 20%.
+        Integration covers broker API setup, strategy deployment, and go-live validation. Monthly covers hosting,
+        monitoring, and dedicated support. Compliance-first execution controls and encrypted API vault included.
+        Enterprise sizing available on request.
+      </div>
+      <div class="section-cta-row reveal conversion-pair">
+        <a href="https://tradingsmart.ai/" class="btn btn-ghost btn-lg" target="_top" rel="noopener noreferrer">Start Testing</a>
+        <a href="/auth?tab=signup&entry=landing" class="btn btn-primary btn-lg" target="_top">Deploy Live →</a>
       </div>
     </div>
   </section>
@@ -4483,6 +5026,10 @@
             <div class="faq-a-inner">You get the full platform stack: AI trade analysis, historical backtesting, paper trading workflows, and live execution controls. The engine is one part of the platform, not the entire value.</div>
           </div>
         </div>
+        <div class="section-cta-row reveal conversion-pair" style="margin-top:36px;margin-bottom:8px;">
+          <a href="https://tradingsmart.ai/" class="btn btn-ghost btn-lg" target="_top" rel="noopener noreferrer">Start Testing</a>
+          <a href="/auth?tab=signup&entry=landing" class="btn btn-primary btn-lg" target="_top">Deploy Live →</a>
+        </div>
         <a href="/schedule-call" class="hero-talk-link" style="display:block;margin-top:20px;text-align:center">Prefer to talk first? Schedule a call.</a>
       </div>
     </div>
@@ -4495,11 +5042,14 @@
         <div class="cta-mesh"></div>
         <div class="cta-content">
           <div class="section-label">Get started today</div>
-          <h2>Stop babysitting trades.<br><span style="background:linear-gradient(135deg,var(--cy),var(--pu));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">Start tradingsmart.</span></h2>
-          <p>Join 28,400+ traders running their entire portfolio on TradingSmart.AI. 14-day free trial. No credit card required.</p>
-          <div class="cta-ctas flex-col w-fit mx-auto">
-            <a href="/auth?tab=signup&entry=landing" class="btn btn-primary btn-lg" target="_top">Create free account →</a>
-            <a href="/schedule-call" class="hero-talk-link" target="_top">Prefer to talk first? Schedule a call.</a>
+          <h2>You validated the playbook.<br><span style="background:linear-gradient(135deg,var(--cy),var(--pu));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">Now wire it live.</span></h2>
+          <p>Open your onboarding flow to connect brokers, finalize deployment settings, and start automated execution—all from one signup.</p>
+          <div class="cta-ctas flex-col w-fit mx-auto" style="align-items:center;gap:12px;width:100%;max-width:420px">
+            <div class="section-cta-row conversion-pair reveal" style="margin-top:0;width:100%;justify-content:center;flex-wrap:wrap">
+              <a href="https://tradingsmart.ai/" class="btn btn-ghost btn-lg" target="_top" rel="noopener noreferrer">Start Testing</a>
+              <a href="/auth?tab=signup&entry=landing" class="btn btn-primary btn-lg" target="_top">Deploy Live →</a>
+            </div>
+            <a href="/schedule-call" class="hero-talk-link" style="margin-bottom:0" target="_top">Prefer to talk first? Schedule a call.</a>
           </div>
         </div>
       </div>

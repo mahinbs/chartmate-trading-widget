@@ -215,9 +215,9 @@ const LandingPageNew = () => {
 
     try {
       const planNames: Record<string, string> = {
-        starterPlan: "Starter Plan - $49/mo",
-        growthPlan: "Growth Plan - $79/mo",
-        professionalPlan: "Pro Plan - $129/mo",
+        starterPlan: "Starter (legacy)",
+        growthPlan: "Growth (legacy)",
+        professionalPlan: "Algo Platform - $599 setup + $199/mo",
         // custom: "Custom solutions available.",
       };
 
@@ -277,9 +277,9 @@ const LandingPageNew = () => {
     setIsInlineSubmitting(true);
     try {
       const planNames: Record<string, string> = {
-        starterPlan: "Starter Plan - $49/mo",
-        growthPlan: "Growth Plan - $79/mo",
-        professionalPlan: "Pro Plan - $129/mo",
+        starterPlan: "Starter (legacy)",
+        growthPlan: "Growth (legacy)",
+        professionalPlan: "Algo Platform - $599 setup + $199/mo",
       };
       const emailBody = `Name : ${data.name}\nEmail : ${data.email}\nPhone : ${data.phone}\nInterested Plan : ${planNames[data.plan] || data.plan}\nMessage : \n ${data.message || ""}`;
       const { affiliateId } = getSessionAffiliateAttribution();
