@@ -12,6 +12,19 @@ export function isManualFullAccessEmail(email: string | null | undefined): boole
 }
 
 /**
+ * Full paid plan access but with AI Trading Analysis hidden/disabled.
+ * Gets professionalPlan subscription appearance, algo + all features EXCEPT analysis pages.
+ */
+const MANUAL_NO_ANALYSIS_EMAILS = new Set(
+  ["bilaljaleel1997@gmail.com"].map((e) => e.toLowerCase()),
+);
+
+export function isManualNoAnalysisEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  return MANUAL_NO_ANALYSIS_EMAILS.has(email.trim().toLowerCase());
+}
+
+/**
  * Emails that get access to New Analysis (/predict) and Past Analyses (/predictions).
  * These pages are not yet rolled out to all users — only exception accounts can see them.
  */

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { isManualFullAccessEmail } from "@/lib/manualSubscriptionBypass";
+import { isManualFullAccessEmail, isManualNoAnalysisEmail } from "@/lib/manualSubscriptionBypass";
 import {
   getSubscription,
   hasActiveSubscription,
@@ -18,6 +18,7 @@ export function useSubscription() {
   const [fetchLoading, setFetchLoading] = useState(false);
 
   const manualFullAccessBypass = isManualFullAccessEmail(user?.email);
+  const manualNoAnalysis = isManualNoAnalysisEmail(user?.email);
 
   useEffect(() => {
     if (!user?.id) {
@@ -37,7 +38,7 @@ export function useSubscription() {
 
   const subscriptionForUi = useMemo((): UserSubscription | null => {
     if (subscription) return subscription;
-    if (manualFullAccessBypass && user?.id) {
+    if ((manualFullAccessBypass || manualNoAnalysis) && user?.id) {
       return {
         id: "client-manual-bypass",
         user_id: user.id,
@@ -48,14 +49,14 @@ export function useSubscription() {
       };
     }
     return null;
-  }, [subscription, manualFullAccessBypass, user?.id]);
+  }, [subscription, manualFullAccessBypass, manualNoAnalysis, user?.id]);
 
   const isPremium =
-    manualFullAccessBypass || hasActiveSubscription(subscriptionForUi);
+    manualFullAccessBypass || manualNoAnalysis || hasActiveSubscription(subscriptionForUi);
   const hasAlgoAccess =
-    manualFullAccessBypass || subscriptionAllowsAlgo(subscriptionForUi);
+    manualFullAccessBypass || manualNoAnalysis || subscriptionAllowsAlgo(subscriptionForUi);
   const hasAnalysisAccess =
-    manualFullAccessBypass || subscriptionAllowsAnalysis(subscriptionForUi);
+    !manualNoAnalysis && (manualFullAccessBypass || subscriptionAllowsAnalysis(subscriptionForUi));
   const nowMs = Date.now();
   const periodEndMs = subscriptionForUi?.current_period_end
     ? new Date(subscriptionForUi.current_period_end).getTime()
@@ -85,6 +86,7 @@ export function useSubscription() {
     subscription: subscriptionForUi,
     loading,
     manualFullAccessBypass,
+    manualNoAnalysis,
     isPremium,
     hasAlgoAccess,
     hasAnalysisAccess,

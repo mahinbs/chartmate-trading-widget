@@ -22,7 +22,7 @@ import logo from "@/assets/logo.png";
 import { useAuth } from "@/hooks/useAuth";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useSubscription } from "@/hooks/useSubscription";
-import { isAnalysisExceptionEmail } from "@/lib/manualSubscriptionBypass";
+import { isAnalysisExceptionEmail, isManualNoAnalysisEmail } from "@/lib/manualSubscriptionBypass";
 import { supabase } from "@/integrations/supabase/client";
 import type { DashboardNavLink } from "./dashboard-nav-types";
 import { isDashboardNavActive } from "./dashboard-nav-types";
@@ -46,6 +46,7 @@ function useDashboardNavLinks(): DashboardNavLink[] {
   const { user } = useAuth();
   /** New Analysis + Past Analyses — exception list only (not all Pro / Probability users). */
   const canSeePredictPastTabs = isAnalysisExceptionEmail(user?.email);
+  const hideAiAnalysis = isManualNoAnalysisEmail(user?.email);
   const [algoStatus, setAlgoStatus] = useState<string | null>(null);
 
   useEffect(() => {
@@ -132,12 +133,14 @@ function useDashboardNavLinks(): DashboardNavLink[] {
       }
     }
 
-    next.push({
-      to: "/ai-trading-analysis",
-      label: "AI Trading Analysis",
-      icon: Target,
-      iconColor: "text-primary opacity-80",
-    });
+    if (!hideAiAnalysis) {
+      next.push({
+        to: "/ai-trading-analysis",
+        label: "AI Trading Analysis",
+        icon: Target,
+        iconColor: "text-primary opacity-80",
+      });
+    }
     next.push({
       to: "/backtest",
       label: "Backtesting",
@@ -162,7 +165,7 @@ function useDashboardNavLinks(): DashboardNavLink[] {
     }
 
     return next;
-  }, [isAdmin, hasAlgoAccess, canUseAlgoTools, canSeePredictPastTabs, isAffiliate, isOnTrial]);
+  }, [isAdmin, hasAlgoAccess, canUseAlgoTools, canSeePredictPastTabs, isAffiliate, isOnTrial, hideAiAnalysis]);
 }
 
 export function DashboardSidebar({
