@@ -48,6 +48,16 @@ const SETUP_PRICE_IDS_INR: Record<string, string> = {
   growthPlan: Deno.env.get("STRIPE_PRICE_GROWTH_SETUP_INR") ?? "",
   professionalPlan: Deno.env.get("STRIPE_PRICE_PROFESSIONAL_SETUP_INR") ?? "",
 };
+/**
+ * Stripe Tax Rate ID for 18% IGST applied on top of Indian (INR) line items.
+ * Create the Tax Rate object in Stripe Dashboard (Settings → Tax → Tax Rates):
+ *   - Display name: IGST 18%
+ *   - Percentage: 18, Inclusive: No (exclusive — added on top)
+ *   - Region/jurisdiction: India
+ * Then set Supabase secret: STRIPE_TAX_RATE_INR_IGST=txr_xxx
+ * Empty value = GST skipped (graceful degrade — checkout works without tax line).
+ */
+const TAX_RATE_INR_IGST = (Deno.env.get("STRIPE_TAX_RATE_INR_IGST") ?? "").trim();
 const PREMIUM_PLAN_IDS = new Set([
   "starterPlan",
   "growthPlan",
@@ -213,15 +223,22 @@ Deno.serve(async (req)=>{
       formBody.append("payment_method_types[]", "card");
       const setupPriceId =
         type === "premium" && PREMIUM_PLAN_IDS.has(planId) ? (setupMap[planId] ?? "").trim() : "";
+      // Apply 18% IGST as an extra tax line for INR premium subscriptions.
+      // Falls through silently if TAX_RATE_INR_IGST is unset (e.g. during rollout).
+      const applyInrGst =
+        currency === "inr" && type === "premium" && !!TAX_RATE_INR_IGST;
       if (setupPriceId) {
         formBody.append("line_items[0][price]", priceId);
         formBody.append("line_items[0][quantity]", "1");
+        if (applyInrGst) formBody.append("line_items[0][tax_rates][0]", TAX_RATE_INR_IGST);
         formBody.append("line_items[1][price]", setupPriceId);
         formBody.append("line_items[1][quantity]", "1");
+        if (applyInrGst) formBody.append("line_items[1][tax_rates][0]", TAX_RATE_INR_IGST);
         formBody.append("subscription_data[trial_period_days]", "30");
       } else {
         formBody.append("line_items[0][price]", priceId);
         formBody.append("line_items[0][quantity]", "1");
+        if (applyInrGst) formBody.append("line_items[0][tax_rates][0]", TAX_RATE_INR_IGST);
       }
       formBody.append("subscription_data[metadata][user_id]", user.id);
       formBody.append("subscription_data[metadata][plan_id]", planId);

@@ -22,7 +22,7 @@ export async function applyInrToEmbeddedLandingPricing(root: HTMLElement | null)
 
   const desc = section.querySelector<HTMLElement>(".section-head .section-desc");
   if (desc) {
-    desc.innerHTML = `One Algo Platform plan: <strong>₹${fmtInr(PRO_PLAN.integrationFee)}</strong> one-time integration + <strong>₹${fmtInr(PRO_PLAN.price)}/mo</strong> maintenance (billing begins after the first 30 days).`;
+    desc.innerHTML = `One Algo Platform plan — <strong>one strategy per account</strong>: <strong>₹${fmtInr(PRO_PLAN.integrationFee)}</strong> one-time integration + <strong>₹${fmtInr(PRO_PLAN.price)}/mo</strong> maintenance <em>(+ 18% GST)</em>. Billing begins after the first 30 days. Need more than one strategy or custom requirements? Talk to sales.`;
   }
 
   const cards = section.querySelectorAll<HTMLElement>(".pricing .price-card");
@@ -37,17 +37,17 @@ export async function applyInrToEmbeddedLandingPricing(root: HTMLElement | null)
     const integ = card.querySelector<HTMLElement>(".price-amount:not(.sub)");
     const month = card.querySelector<HTMLElement>(".price-amount.sub");
     if (integ) {
-      integ.innerHTML = `<span class="cur">₹</span>${fmtInr(t.integrationFee)}`;
+      integ.innerHTML = `<span class="cur">₹</span>${fmtInr(t.integrationFee)}<span class="per" style="font-size:0.45em;opacity:0.7"> + 18% GST</span>`;
     }
     if (month) {
-      month.innerHTML = `<span class="cur">₹</span>${fmtInr(t.price)}<span class="per">/month</span>`;
+      month.innerHTML = `<span class="cur">₹</span>${fmtInr(t.price)}<span class="per">/month + 18% GST</span>`;
     }
   }
 
   const note = section.querySelector<HTMLElement>(".pricing-note");
   if (note) {
     note.textContent =
-      "Integration covers broker API setup, strategy deployment, and go-live validation. Monthly covers hosting, monitoring, and support. Indian customers are billed in INR where applicable.";
+      "Integration covers broker API setup, strategy deployment, and go-live validation. Monthly covers hosting, monitoring, and support. Indian customers are billed in INR with 18% IGST added at checkout.";
   }
 
   section.querySelectorAll<HTMLAnchorElement>('a[href^="/auth?subscribe_plan="]').forEach((a) => {
