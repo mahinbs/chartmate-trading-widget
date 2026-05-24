@@ -496,12 +496,15 @@ export default function SubscriptionSettingsPage() {
                   <div className="rounded-2xl border border-primary/25 bg-primary/5 px-5 py-4 text-sm leading-relaxed text-muted-foreground">
                     <span className="inline-flex items-center gap-1.5 font-semibold text-foreground">
                       <Zap className="h-4 w-4 text-primary" />
-                      Upgrade to Pro ($399 setup + $129/mo after 30 days)
+                      Switch to Algo Platform ($75 setup + $14.99/mo after 30 days)
                     </span>
                     <p className="mt-2">
-                      You&apos;re on Starter or Growth (or a legacy mid-tier). In the billing portal,
-                      switch to Pro for unlimited strategies. Stripe applies proration
-                      or schedules the change for the next period depending on your{" "}
+                      You&apos;re on a legacy tier. In the billing portal, switch to the
+                      current Algo Platform plan — one strategy per account.
+                      Need more than one strategy or custom requirements?{" "}
+                      <a href="/contact-us" className="font-semibold text-foreground underline">Talk to sales</a>.
+                      Stripe applies proration or schedules the change for the next period
+                      depending on your{" "}
                       <strong className="text-foreground">Stripe Customer Portal</strong> and product
                       settings.
                     </p>

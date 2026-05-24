@@ -88,7 +88,7 @@ const ContactUsPage = ({ mode = "contact" }: ContactUsPageProps) => {
       const planNames: Record<string, string> = {
         starterPlan: "Starter (legacy)",
         growthPlan: "Growth (legacy)",
-        professionalPlan: "Algo Platform - $599 setup + $199/mo",
+        professionalPlan: "Algo Platform - $75 setup + $14.99/mo",
         [INSTITUTIONAL_PLAN.id]: "Institutional - Custom",
       };
 

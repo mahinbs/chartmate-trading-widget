@@ -53,7 +53,7 @@ export function ProTrialExpiredGate() {
           onClick={() => void onGetPro()}
           className="mt-8 w-full h-12 bg-teal-500 text-black font-bold font-ibm-mono text-sm uppercase tracking-wider hover:bg-teal-400"
         >
-          {loading ? "Redirecting…" : "Get Pro — $599 + $199/mo"}
+          {loading ? "Redirecting…" : "Get Algo Platform — $75 + $14.99/mo"}
         </Button>
       </div>
     </div>

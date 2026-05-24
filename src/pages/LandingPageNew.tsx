@@ -217,7 +217,7 @@ const LandingPageNew = () => {
       const planNames: Record<string, string> = {
         starterPlan: "Starter (legacy)",
         growthPlan: "Growth (legacy)",
-        professionalPlan: "Algo Platform - $599 setup + $199/mo",
+        professionalPlan: "Algo Platform - $75 setup + $14.99/mo",
         // custom: "Custom solutions available.",
       };
 
@@ -279,7 +279,7 @@ const LandingPageNew = () => {
       const planNames: Record<string, string> = {
         starterPlan: "Starter (legacy)",
         growthPlan: "Growth (legacy)",
-        professionalPlan: "Algo Platform - $599 setup + $199/mo",
+        professionalPlan: "Algo Platform - $75 setup + $14.99/mo",
       };
       const emailBody = `Name : ${data.name}\nEmail : ${data.email}\nPhone : ${data.phone}\nInterested Plan : ${planNames[data.plan] || data.plan}\nMessage : \n ${data.message || ""}`;
       const { affiliateId } = getSessionAffiliateAttribution();

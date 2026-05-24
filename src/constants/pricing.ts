@@ -13,7 +13,7 @@ export type PricingPlan = {
 
 /** Shown under pricing cards. */
 export const PRICING_SETUP_AND_MONTHLY_NOTE =
-  "One Algo Platform plan: live deployment, broker integration, and automation. Integration fee + monthly maintenance (monthly fees begin after the first 30 days).";
+  "One Algo Platform plan — one strategy per account. Integration fee + monthly maintenance (monthly fees begin after the first 30 days). Need more than one strategy or custom requirements? Talk to sales.";
 
 /** Inquiry-only top tier; not a Stripe product in this checkout. */
 export const INSTITUTIONAL_PLAN = {
@@ -30,13 +30,13 @@ export const PRICING_PLANS: PricingPlan[] = [
   {
     id: "professionalPlan",
     name: "Algo Platform",
-    integrationFee: 599,
-    price: 199,
+    integrationFee: 75,
+    price: 14.99,
     period: "month",
     description:
-      "Live deployment, broker integration, and automation — one clear plan for executing verified strategies in real markets.",
+      "Live deployment, broker integration, and automation for one strategy — executed in real markets, hands-off.",
     features: [
-      "Live strategy deployment",
+      "One live strategy per account",
       "Broker connectivity & encrypted API vault",
       "Hands-off automation & execution guardrails",
       "Multi-account monitoring & Telegram alerts",
@@ -54,13 +54,13 @@ export const PRICING_PLANS_INR: PricingPlan[] = [
   {
     id: "professionalPlan",
     name: "Algo Platform",
-    integrationFee: 75000,
-    price: 12999,
+    integrationFee: 7500,
+    price: 1399,
     period: "month",
     description:
-      "Live deployment, broker integration, and automation — one clear plan for executing verified strategies in real markets.",
+      "Live deployment, broker integration, and automation for one strategy — executed in real markets, hands-off.",
     features: [
-      "Live strategy deployment",
+      "One live strategy per account",
       "Broker connectivity & encrypted API vault",
       "Hands-off automation & execution guardrails",
       "Multi-account monitoring & Telegram alerts",
