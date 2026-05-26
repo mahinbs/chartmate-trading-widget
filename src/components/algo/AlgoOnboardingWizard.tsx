@@ -171,6 +171,17 @@ export function AlgoOnboardingWizard({
       setErr("Please accept all disclosures and confirm your details.");
       return;
     }
+    // Pre-flight: confirm we actually have a signed-in user before
+    // hitting the DB. Without user_id, RLS rejects the insert with a
+    // generic "permission denied" that's hard to debug. Catching this
+    // here gives a clear, actionable message.
+    if (!userId) {
+      const msg =
+        "You're not signed in. Please sign in or create an account, then resubmit.";
+      setErr(msg);
+      toast.error(msg);
+      return;
+    }
     setBusy(true);
     setErr(null);
     try {
@@ -224,9 +235,58 @@ export function AlgoOnboardingWizard({
       const { error } = await query;
       if (error) throw error;
       onSuccess();
-    } catch (e) {
-      console.error(e);
-      toast.error(e instanceof Error ? e.message : "Submit failed");
+    } catch (e: unknown) {
+      // Defensive error reporting: prior version showed only e.message
+      // via toast (often a cryptic Supabase string), no console detail.
+      // When a user reports "submit failed" we had nothing to go on.
+      // Now: dump the full error object to console (code, hint, details,
+      // message) AND show a user-visible message that's specific enough
+      // to triage — auth issues, RLS, missing column, network — each
+      // gets distinct copy. Also call setErr so the on-form red banner
+      // shows the reason in case the toast was missed.
+      const err = e as {
+        message?: string;
+        code?: string;
+        details?: string;
+        hint?: string;
+        name?: string;
+      };
+      console.error("[AlgoOnboarding submit] full error:", {
+        name: err?.name,
+        code: err?.code,
+        message: err?.message,
+        details: err?.details,
+        hint: err?.hint,
+        raw: e,
+      });
+
+      let userMsg = "Submit failed. Please try again or contact support.";
+      const code = err?.code || "";
+      const msg = err?.message || "";
+
+      if (code === "42501" || /permission denied|RLS|policy/i.test(msg)) {
+        userMsg =
+          "Your session has expired. Please sign out and back in, then resubmit.";
+      } else if (code === "23505" || /duplicate/i.test(msg)) {
+        userMsg =
+          "It looks like you already submitted this application. Refresh the page to see your current status.";
+      } else if (code === "23502" || /null value.*not-null/i.test(msg)) {
+        userMsg =
+          "A required field is missing on our side. We're being notified; please contact support if this persists.";
+      } else if (code === "42P01" || /relation .* does not exist/i.test(msg)) {
+        userMsg =
+          "Application service is temporarily misconfigured. We're being notified; please try again in a few minutes.";
+      } else if (/fetch|network|failed to/i.test(msg)) {
+        userMsg =
+          "Network error reaching our server. Check your connection and retry.";
+      } else if (msg) {
+        // Last resort: show the raw message but prefix it so support
+        // can quickly identify the source class.
+        userMsg = `Submit failed: ${msg}`;
+      }
+
+      setErr(userMsg);
+      toast.error(userMsg);
     } finally {
       setBusy(false);
     }
