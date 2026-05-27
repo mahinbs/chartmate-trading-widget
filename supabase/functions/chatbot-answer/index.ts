@@ -14,7 +14,12 @@ const JSON_HEADERS = {
 };
 // ── API Keys ─────────────────────────────────────────────────────────────────
 const EODHD_KEY = Deno.env.get("EODHD_API") ?? "69bbe13da57f58.53248031";
-const MARKETAUX_KEY = Deno.env.get("MARKET_AUX_API") ?? "TDwhJV5DIa1kdWadU0mPHBEVaE2yWJeeZpAWYl1b";
+// Read from MARKETAUX_API_KEY (canonical name used by analyze-news-google
+// and fetch-news). Falls back to the legacy MARKET_AUX_API name so an
+// in-flight rollout doesn't break — once the Supabase secret rename is
+// confirmed (single `MARKETAUX_API_KEY` only), the fallback can be removed
+// in a follow-up. See repo cleanup note for duplicate-secret consolidation.
+const MARKETAUX_KEY = Deno.env.get("MARKETAUX_API_KEY") ?? Deno.env.get("MARKET_AUX_API") ?? "";
 const GEMINI_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 const ALPHA_VANTAGE = Deno.env.get("ALPHA_VANTAGE_API_KEY") ?? "";
 const FINNHUB_KEY = Deno.env.get("FINNHUB_API_KEY") ?? "";
