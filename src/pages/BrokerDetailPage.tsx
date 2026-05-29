@@ -140,7 +140,7 @@ export default function BrokerDetailPage() {
             <p className="relative mt-6 text-zinc-300 text-sm md:text-base leading-relaxed max-w-3xl">{detail.intro}</p>
             <div className="relative flex flex-col sm:flex-row gap-3 mt-7">
               <Link
-                to="/contact-us"
+                to="/home"
                 className="inline-flex items-center justify-center px-7 py-3 bg-teal-500 text-black font-bold rounded-full hover:bg-teal-400 transition-colors text-sm font-syne"
               >
                 Connect {detail.name}
