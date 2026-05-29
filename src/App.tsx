@@ -11,7 +11,7 @@ import {
   useLocation,
 } from "react-router-dom";
 import { useState, useEffect } from "react";
-import HomePage from "./pages/HomePage";
+import AlgoEngineRedirect from "./pages/AlgoEngineRedirect";
 import PredictPage from "./pages/PredictPage";
 import PredictionsPage from "./pages/PredictionsPage";
 import SavedAnalysisRedirect from "./pages/SavedAnalysisRedirect";
@@ -446,7 +446,7 @@ const App = () => (
                   path="/home"
                   element={
                     <ProtectedRoute>
-                      <HomePage />
+                      <AlgoEngineRedirect />
                     </ProtectedRoute>
                   }
                 />

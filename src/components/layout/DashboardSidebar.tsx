@@ -2,27 +2,20 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import gsap from "gsap";
 import {
-  Activity,
-  BarChart3,
   Bot,
   CreditCard,
   HelpCircle,
   LayoutDashboard,
-  LineChart,
-  ListTree,
   Lock,
   LogOut,
   Menu,
-  Newspaper,
   ShieldCheck,
-  Target,
   User,
 } from "lucide-react";
 import logo from "@/assets/logo.png";
 import { useAuth } from "@/hooks/useAuth";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useSubscription } from "@/hooks/useSubscription";
-import { isAnalysisExceptionEmail, isManualNoAnalysisEmail } from "@/lib/manualSubscriptionBypass";
 import { supabase } from "@/integrations/supabase/client";
 import type { DashboardNavLink } from "./dashboard-nav-types";
 import { isDashboardNavActive } from "./dashboard-nav-types";
@@ -30,7 +23,6 @@ import { DashboardMobileDrawer } from "./DashboardMobileDrawer";
 import { cn } from "@/lib/utils";
 import { useSignupProfile } from "@/hooks/useSignupProfile";
 import { useUserRole } from "@/hooks/useUserRole";
-import { useTrialAccess } from "@/hooks/useTrialAccess";
 import { EngineBootSequence } from "@/components/trading/AlgoRobotExperienceLayer";
 
 export interface DashboardSidebarProps {
@@ -42,11 +34,7 @@ function useDashboardNavLinks(): DashboardNavLink[] {
   const { isAdmin } = useAdmin();
   const { isAffiliate } = useUserRole();
   const { hasAlgoAccess } = useSubscription();
-  const { isOnTrial } = useTrialAccess();
   const { user } = useAuth();
-  /** New Analysis + Past Analyses — exception list only (not all Pro / Probability users). */
-  const canSeePredictPastTabs = isAnalysisExceptionEmail(user?.email);
-  const hideAiAnalysis = isManualNoAnalysisEmail(user?.email);
   const [algoStatus, setAlgoStatus] = useState<string | null>(null);
 
   useEffect(() => {
@@ -69,84 +57,29 @@ function useDashboardNavLinks(): DashboardNavLink[] {
     hasAlgoAccess && (algoStatus === "provisioned" || algoStatus === "active");
 
   return useMemo(() => {
-    const next: DashboardNavLink[] = [
-      { to: "/home", label: "Dashboard", icon: LayoutDashboard },
-      ...(canSeePredictPastTabs
-        ? [
-            {
-              to: "/predict",
-              label: "New Analysis",
-              icon: LineChart,
-            } as DashboardNavLink,
-            {
-              to: "/predictions",
-              label: "Past Analyses",
-              icon: Activity,
-            } as DashboardNavLink,
-          ]
-        : []),
-      {
-        to: "/active-trades?tab=performance",
-        label: "Paper Trade Performance",
-        icon: BarChart3,
-      },
-      { to: "/news", label: "News Feed", icon: Newspaper },
-    ];
-
     // Affiliates are restricted to /affiliate/dashboard only (ProtectedRoute); keep a single nav item if they ever hit a shelled layout.
     if (isAffiliate) {
       return [{ to: "/affiliate/dashboard", label: "Affiliate Dashboard", icon: LayoutDashboard }];
     }
 
+    const next: DashboardNavLink[] = [];
+
     if (hasAlgoAccess) {
-      if (canUseAlgoTools) {
-        next.push({
-          to: "https://algo.tradingsmart.in/dashboard",
-          label: "Algo Trading Engine",
-          icon: Bot,
-          iconColor: "text-primary opacity-80",
-        });
-      } else {
-        next.push({
-          to: "/algo-setup",
-          label: "Algo Trading Engine",
-          icon: Bot,
-          iconColor: "text-primary opacity-80",
-        });
-      }
-    } else {
       next.push({
-        to: "/pricing?feature=algo",
+        to: canUseAlgoTools ? "https://algo.tradingsmart.in/dashboard" : "/algo-setup",
         label: "Algo Trading Engine",
         icon: Bot,
         iconColor: "text-primary opacity-80",
-        locked: true,
-        matchActive: false,
       });
-      if (isOnTrial) {
-        next.push({
-          to: "/strategies",
-          label: "My Strategies",
-          icon: ListTree,
-          iconColor: "text-primary opacity-80",
-        });
-      }
-    }
-
-    if (!hideAiAnalysis) {
+    } else {
+      // Free users: /home is the in-dashboard broker picker + plan flow.
       next.push({
-        to: "/ai-trading-analysis",
-        label: "AI Trading Analysis",
-        icon: Target,
+        to: "/home",
+        label: "Algo Trading Engine",
+        icon: Bot,
         iconColor: "text-primary opacity-80",
       });
     }
-    next.push({
-      to: "/backtest",
-      label: "Backtesting",
-      icon: LineChart,
-      iconColor: "text-primary opacity-80",
-    });
 
     next.push({
       to: "/subscription",
@@ -165,7 +98,7 @@ function useDashboardNavLinks(): DashboardNavLink[] {
     }
 
     return next;
-  }, [isAdmin, hasAlgoAccess, canUseAlgoTools, canSeePredictPastTabs, isAffiliate, isOnTrial, hideAiAnalysis]);
+  }, [isAdmin, hasAlgoAccess, canUseAlgoTools, isAffiliate]);
 }
 
 export function DashboardSidebar({

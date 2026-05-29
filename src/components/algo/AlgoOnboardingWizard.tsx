@@ -37,6 +37,19 @@ type WizardForm = {
   finalConfirm: boolean;
 };
 
+const SELECTED_BROKER_KEY = "algo_selected_broker";
+const DEFAULT_BROKER_OPTIONS = ["Zerodha", "Fyers", "Upstox", "Angel One"];
+
+/** Broker the user picked on the free dashboard before paying (if any). */
+function readPresetBroker(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return localStorage.getItem(SELECTED_BROKER_KEY)?.trim() || "";
+  } catch {
+    return "";
+  }
+}
+
 const initialForm = (name: string, email: string): WizardForm => ({
   fullName: name,
   email,
@@ -52,7 +65,7 @@ const initialForm = (name: string, email: string): WizardForm => ({
   risk: "",
   experience: "",
   markets: [],
-  broker: "",
+  broker: readPresetBroker(),
   clientId: "",
   c1: false,
   c2: false,
@@ -485,6 +498,11 @@ export function AlgoOnboardingWizard({
                     <label className="form-label">Preferred broker</label>
                     <select className="form-select" value={form.broker} onChange={(e) => setForm({ ...form, broker: e.target.value })}>
                       <option value="">Select</option>
+                      {form.broker &&
+                        !DEFAULT_BROKER_OPTIONS.includes(form.broker) &&
+                        form.broker !== "Other" && (
+                          <option value={form.broker}>{form.broker}</option>
+                        )}
                       <option>Zerodha</option>
                       <option>Fyers</option>
                       <option>Upstox</option>
