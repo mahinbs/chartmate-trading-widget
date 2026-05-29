@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import logoImg from "@/assets/chartmate.png";
 import { supabase } from "@/integrations/supabase/client";
+import { isChartmateBrandActive } from "@/lib/brandOverride";
 
 const BASE_NAV_ITEMS = [
   // { id: "market-picks", label: "Daily Analysis", isRoute: true },
@@ -29,6 +29,9 @@ const scrollToSection = (id: string) => {
 
 const AiPredictionFooter: React.FC = () => {
   const year = new Date().getFullYear();
+  const chartmateBrandActive = isChartmateBrandActive();
+  const logoImg = chartmateBrandActive ? "/chartmate.png" : "/logo.png";
+  const logoAlt = chartmateBrandActive ? "ChartMate.ai" : "TradingSmart logo";
   const [hasBlogs, setHasBlogs] = useState(false);
   // const [hasDashboard, setHasDashboard] = useState(false);
 
@@ -64,7 +67,7 @@ const AiPredictionFooter: React.FC = () => {
         <div className="space-y-3 flex flex-col items-center md:items-start">
           <img
             src={logoImg}
-            alt="ChartMate.ai"
+            alt={logoAlt}
             className="w-[6rem] md:w-[8rem]"
           />
           <p className="text-sm font-semibold text-white">

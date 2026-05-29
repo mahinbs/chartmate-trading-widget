@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { FaBars, FaTimes } from "react-icons/fa";
 import { Link } from "react-router-dom";
-import logoImg from "@/assets/chartmate.png";
 import { supabase } from "@/integrations/supabase/client";
+import { isChartmateBrandActive } from "@/lib/brandOverride";
 import { useAuth } from "@/hooks/useAuth";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown } from "lucide-react";
@@ -41,6 +41,9 @@ const AiPredictionHeader: React.FC = () => {
   const [isPlatformOpen, setIsPlatformOpen] = useState(false);
   const [isMobilePlatformOpen, setIsMobilePlatformOpen] = useState(false);
   const { user } = useAuth();
+  const chartmateBrandActive = isChartmateBrandActive();
+  const logoImg = chartmateBrandActive ? "/chartmate.png" : "/logo.png";
+  const logoAlt = chartmateBrandActive ? "ChartMate.ai" : "TradingSmart logo";
 
   useEffect(() => {
     const loadFlags = async () => {
@@ -79,7 +82,7 @@ const AiPredictionHeader: React.FC = () => {
             <Link to='/'>
               <img
                 src={logoImg}
-                alt="ChartMate.ai"
+                alt={logoAlt}
                 className="w-[3rem] lg:w-[5rem] object-contain"
               /></Link>
             {/* <div className="flex flex-col leading-tight">
@@ -191,7 +194,7 @@ const AiPredictionHeader: React.FC = () => {
             <div className="flex items-center gap-2">
               <img
                 src={logoImg}
-                alt="ChartMate.ai"
+                alt={logoAlt}
                 className="w-[3rem] object-contain"
               />
             </div>
