@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 const BASE_NAV_ITEMS = [
   // { id: "market-picks", label: "Daily Analysis", isRoute: true },
   { id: "ai-trading-analysis-and-back-testing", label: "Analysis & backtesting", isRoute: true },
+  { id: "supported-brokers", label: "Supported Brokers", isRoute: true },
   { id: "pricing", label: "Software Pricing", isRoute: true },
   { id: "white-label", label: "White Label", isRoute: true },
   { id: "terms", label: "Terms & Conditions", isRoute: true },

@@ -16,6 +16,7 @@ const BASE_NAV_ITEMS = [
 const PLATFORM_ITEMS = [
   { id: "ai-trading-analysis-and-back-testing", label: "Analysis & backtesting", isRoute: true },
   { id: "features", label: "All modules", isRoute: true },
+  { id: "supported-brokers", label: "Supported brokers", isRoute: true },
   { id: "pricing", label: "Pricing", isRoute: true },
   { id: "white-label", label: "White label", isRoute: true },
 ];

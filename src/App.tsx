@@ -81,6 +81,7 @@ import { ProTrialExpiredGate } from "./components/ProTrialExpiredGate";
 import { AlgoToolsDashboardLayout } from "./components/layout/AlgoToolsDashboardLayout";
 import LandingPageNew from "./pages/LandingPageNew";
 import FeaturesPage from "./pages/FeaturesPage";
+import SupportedBrokersPage from "./pages/SupportedBrokersPage";
 import { MobileSplashScreens } from "./mobile-app/MobileSplashScreens";
 import { MobileAppOverlay } from "./mobile-app/MobileAppOverlay";
 import { useIsMobileApp } from "./mobile-app/isMobileDevice";
@@ -112,6 +113,7 @@ function isPublicMarketingPath(pathname: string): boolean {
     "/privacy-policy",
     "/ai-trading-analysis-and-back-testing",
     "/features",
+    "/supported-brokers",
     "/affiliate-partner",
     "/dashboard",
     "/market-picks",
@@ -331,6 +333,7 @@ const App = () => (
                   element={<AiTradingAnalysisPage />}
                 />
                 <Route path="/features" element={<FeaturesPage />} />
+                <Route path="/supported-brokers" element={<SupportedBrokersPage />} />
                 <Route path="/pricing" element={<PricingPage />} />
                 <Route
                   path="/ai-probability-engine"
