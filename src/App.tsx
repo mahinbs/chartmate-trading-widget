@@ -82,6 +82,7 @@ import { AlgoToolsDashboardLayout } from "./components/layout/AlgoToolsDashboard
 import LandingPageNew from "./pages/LandingPageNew";
 import FeaturesPage from "./pages/FeaturesPage";
 import SupportedBrokersPage from "./pages/SupportedBrokersPage";
+import BrokerDetailPage from "./pages/BrokerDetailPage";
 import { MobileSplashScreens } from "./mobile-app/MobileSplashScreens";
 import { MobileAppOverlay } from "./mobile-app/MobileAppOverlay";
 import { useIsMobileApp } from "./mobile-app/isMobileDevice";
@@ -121,6 +122,7 @@ function isPublicMarketingPath(pathname: string): boolean {
     "/sebi-ra-marketplace",
   ]);
   if (exact.has(pathname)) return true;
+  if (/^\/supported-brokers\/[^/]+$/.test(pathname)) return true;
   if (pathname === "/blogs" || pathname.startsWith("/blogs/")) return true;
   if (/^\/ra\/[^/]+$/.test(pathname)) return true;
   if (/^\/ra\/[^/]+\/strategy\/[^/]+$/.test(pathname)) return true;
@@ -334,6 +336,7 @@ const App = () => (
                 />
                 <Route path="/features" element={<FeaturesPage />} />
                 <Route path="/supported-brokers" element={<SupportedBrokersPage />} />
+                <Route path="/supported-brokers/:slug" element={<BrokerDetailPage />} />
                 <Route path="/pricing" element={<PricingPage />} />
                 <Route
                   path="/ai-probability-engine"

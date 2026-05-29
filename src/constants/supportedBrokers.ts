@@ -23,6 +23,8 @@ export interface SupportedBroker {
   description: string;
   color: string;
   integrated?: boolean;
+  /** When set, the broker card links to /supported-brokers/<detailSlug>. */
+  detailSlug?: string;
 }
 
 export const BROKER_CATEGORIES: BrokerCategory[] = [
@@ -169,14 +171,14 @@ export const SUPPORTED_BROKERS: SupportedBroker[] = [
   { name: "Plus500", domain: "plus500.com", category: "Forex & CFD", color: "#ed1c24", description: "CFD specialist covering forex, indices, shares and commodities." },
   { name: "AvaTrade", domain: "avatrade.com", category: "Forex & CFD", color: "#00a4e4", description: "Multi-regulated forex/CFD broker with MT4, MT5 and AvaTradeGO." },
   { name: "FxPro", domain: "fxpro.com", category: "Forex & CFD", color: "#c8102e", description: "Forex and CFD broker offering MT4, MT5 and cTrader platforms." },
-  { name: "Exness", domain: "exness.com", category: "Forex & CFD", color: "#ffe600", description: "High-volume forex broker with instant withdrawals and MT4/MT5." },
+  { name: "Exness", domain: "exness.com", category: "Forex & CFD", color: "#ffe600", description: "High-volume forex broker with instant withdrawals and MT4/MT5.", detailSlug: "exness" },
   { name: "FBS", domain: "fbs.com", category: "Forex & CFD", color: "#0046be", description: "Global forex broker with low-cost accounts and MT4/MT5 support." },
   { name: "OctaFX", domain: "octafx.com", category: "Forex & CFD", color: "#e21e26", description: "Forex/CFD broker with copy-trading and MetaTrader platforms." },
   { name: "HFM", domain: "hfm.com", category: "Forex & CFD", color: "#d4001a", description: "HF Markets — multi-asset forex/CFD broker with MT4 and MT5." },
   { name: "Tickmill", domain: "tickmill.com", category: "Forex & CFD", color: "#f47920", description: "Low-cost ECN forex broker with raw spreads and fast execution." },
   { name: "Admirals", domain: "admiralmarkets.com", category: "Forex & CFD", color: "#009fe3", description: "Multi-regulated forex/CFD broker (Admiral Markets) with MT4/MT5." },
   { name: "ThinkMarkets", domain: "thinkmarkets.com", category: "Forex & CFD", color: "#00b1eb", description: "Forex/CFD broker with ThinkTrader, MT4 and MT5 platforms." },
-  { name: "Vantage", domain: "vantagemarkets.com", category: "Forex & CFD", color: "#009b3a", description: "Multi-asset forex/CFD broker with raw ECN pricing and MT4/MT5." },
+  { name: "Vantage", domain: "vantagemarkets.com", category: "Forex & CFD", color: "#009b3a", description: "Multi-asset forex/CFD broker with raw ECN pricing and MT4/MT5.", detailSlug: "vantage" },
   { name: "FP Markets", domain: "fpmarkets.com", category: "Forex & CFD", color: "#003a5d", description: "Australian ECN forex/CFD broker with MT4, MT5 and cTrader." },
   { name: "Swissquote", domain: "swissquote.com", category: "Forex & CFD", color: "#e30613", description: "Swiss bank and broker for forex, CFDs and global securities." },
   { name: "Dukascopy", domain: "dukascopy.com", category: "Forex & CFD", color: "#003366", description: "Swiss forex bank with JForex API and ECN liquidity." },
