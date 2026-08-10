@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { Navigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useSubscription } from "@/hooks/useSubscription";
 import { supabase } from "@/integrations/supabase/client";
 import FreeUserDashboard from "@/pages/FreeUserDashboard";
+import PendingSetupDashboard from "@/pages/PendingSetupDashboard";
 
 const ALGO_ENGINE_URL = "https://algo.tradingsmart.in/dashboard";
 
@@ -75,9 +75,11 @@ export default function AlgoEngineRedirect() {
     );
   }
 
-  // Paid users who haven't finished onboarding go to the KYC form.
+  // Paid users who haven't finished onboarding see a preview of the
+  // dashboard they'll unlock (with a CTA back into the KYC form), instead
+  // of an infinite bounce to /algo-setup.
   if (hasAlgoAccess) {
-    return <Navigate to="/algo-setup" replace />;
+    return <PendingSetupDashboard algoStatus={algoStatus} />;
   }
 
   // Free users get the in-dashboard broker picker + plan.
