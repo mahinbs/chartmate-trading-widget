@@ -3,6 +3,7 @@ import { DashboardShellLayout } from "@/components/layout/DashboardShellLayout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import TradingAccountsSection from "@/components/algo/TradingAccountsSection";
 import {
   Lock,
   Rocket,
@@ -112,6 +113,9 @@ export default function PendingSetupDashboard({
             </div>
           </div>
         </Card>
+
+        {/* Connected trading accounts (UI only) */}
+        <TradingAccountsSection />
 
         {/* Locked preview cards */}
         <div>
