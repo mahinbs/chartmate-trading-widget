@@ -12,6 +12,7 @@ import {
 } from "react-router-dom";
 import { useState, useEffect } from "react";
 import AlgoEngineRedirect from "./pages/AlgoEngineRedirect";
+import LogoutPage from "./pages/LogoutPage";
 import PredictPage from "./pages/PredictPage";
 import PredictionsPage from "./pages/PredictionsPage";
 import SavedAnalysisRedirect from "./pages/SavedAnalysisRedirect";
@@ -418,6 +419,7 @@ const App = () => (
                 <Route path="/dashboard" element={<PublicDashboardPage />} />
                 <Route path="/register" element={<RegisterPage />} />
                 <Route path="/auth" element={<AuthPage />} />
+                <Route path="/logout" element={<LogoutPage />} />
                 <Route
                   path="/auth/change-password"
                   element={
