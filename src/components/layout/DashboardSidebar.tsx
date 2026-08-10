@@ -66,7 +66,7 @@ function useDashboardNavLinks(): DashboardNavLink[] {
 
     if (hasAlgoAccess) {
       next.push({
-        to: canUseAlgoTools ? "https://algo.tradingsmart.in/dashboard" : "/algo-setup",
+        to: canUseAlgoTools ? "/trading-dashboard" : "/algo-setup",
         label: "Algo Trading Engine",
         icon: Bot,
         iconColor: "text-primary opacity-80",

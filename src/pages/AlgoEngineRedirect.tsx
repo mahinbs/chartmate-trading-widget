@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Navigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useSubscription } from "@/hooks/useSubscription";
@@ -6,13 +7,10 @@ import { supabase } from "@/integrations/supabase/client";
 import FreeUserDashboard from "@/pages/FreeUserDashboard";
 import PendingSetupDashboard from "@/pages/PendingSetupDashboard";
 
-const ALGO_ENGINE_URL = "https://algo.tradingsmart.in/dashboard";
-
 /**
- * /home is now the Algo Trading Engine entry point — all analysis lives on
- * tradingsmart.ai, so there is no longer a generic dashboard here.
- *  - Provisioned/active users go straight to the live engine.
- *  - Paid users who haven't finished setup land on the /algo-setup KYC form.
+ * /home is the Algo Trading Engine entry point.
+ *  - Provisioned/active users go to the in-app live trading dashboard.
+ *  - Paid users who haven't finished setup see a preview dashboard.
  *  - Free users see the in-dashboard broker picker + plan, which checks out
  *    and returns them to /algo-setup after payment.
  */
@@ -52,12 +50,6 @@ export default function AlgoEngineRedirect() {
   const canUseAlgoTools =
     hasAlgoAccess && (algoStatus === "provisioned" || algoStatus === "active");
 
-  useEffect(() => {
-    if (ready && canUseAlgoTools) {
-      window.location.assign(ALGO_ENGINE_URL);
-    }
-  }, [ready, canUseAlgoTools]);
-
   if (!ready) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background text-muted-foreground">
@@ -66,13 +58,11 @@ export default function AlgoEngineRedirect() {
     );
   }
 
-  // Provisioned/active: external redirect is firing in the effect above.
+  // Provisioned/active: go to the in-app live trading dashboard (stays on
+  // tradingsmart.ai — the old external algo.tradingsmart.in handoff had no
+  // shared session and hung on "Loading…").
   if (canUseAlgoTools) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background text-muted-foreground">
-        <Loader2 className="h-6 w-6 animate-spin" />
-      </div>
-    );
+    return <Navigate to="/trading-dashboard" replace />;
   }
 
   // Paid users who haven't finished onboarding see a preview of the
