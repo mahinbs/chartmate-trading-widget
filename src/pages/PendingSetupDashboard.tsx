@@ -1,17 +1,12 @@
 import { useNavigate } from "react-router-dom";
-import { toast } from "sonner";
 import { DashboardShellLayout } from "@/components/layout/DashboardShellLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import TradingAccountsSection from "@/components/algo/TradingAccountsSection";
+import LiveAlgoTradingSection from "@/components/algo/LiveAlgoTradingSection";
 import {
-  Lock,
   Rocket,
   Clock,
-  TrendingUp,
-  Wallet,
-  Activity,
-  LineChart,
   ArrowRight,
   ShieldCheck,
   Bot,
@@ -35,13 +30,6 @@ export default function PendingSetupDashboard({
     algoStatus === "pending" ||
     algoStatus === "submitted" ||
     algoStatus === "in_review";
-
-  const previewCards = [
-    { icon: Wallet, label: "Live P&L", value: "₹ ——", hint: "Realised + unrealised" },
-    { icon: Activity, label: "Active Strategies", value: "—", hint: "Running on your broker" },
-    { icon: TrendingUp, label: "Today's Trades", value: "—", hint: "Auto-executed" },
-    { icon: LineChart, label: "Win Rate", value: "——%", hint: "Last 30 days" },
-  ];
 
   return (
     <DashboardShellLayout>
@@ -136,38 +124,11 @@ export default function PendingSetupDashboard({
             </div>
           </div>
 
+          {/* Live algo trading — bots actively trading (UI only) */}
+          <LiveAlgoTradingSection />
+
           {/* Connected trading accounts (UI only) */}
           <TradingAccountsSection />
-
-          {/* Locked preview cards */}
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.15em] text-zinc-500 mb-3">
-              Unlocks after setup
-            </p>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              {previewCards.map((c) => (
-                <button
-                  key={c.label}
-                  onClick={() =>
-                    toast("Unlocks once your account is provisioned.", {
-                      description: "Finish setup to activate live metrics.",
-                    })
-                  }
-                  className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-left hover:border-teal-500/30 transition-colors"
-                >
-                  <div className="absolute right-3 top-3 text-zinc-600">
-                    <Lock className="h-4 w-4" />
-                  </div>
-                  <c.icon className="h-5 w-5 text-zinc-500" />
-                  <div className="mt-3 text-2xl font-bold text-zinc-300 blur-[1.5px] select-none font-mono">
-                    {c.value}
-                  </div>
-                  <div className="mt-1 text-sm font-medium text-zinc-400">{c.label}</div>
-                  <div className="text-xs text-zinc-600">{c.hint}</div>
-                </button>
-              ))}
-            </div>
-          </div>
 
           {/* Reassurance */}
           <div className="flex items-center gap-2 text-sm text-zinc-500">
