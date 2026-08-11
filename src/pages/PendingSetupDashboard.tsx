@@ -33,8 +33,9 @@ export default function PendingSetupDashboard({
 
   return (
     <DashboardShellLayout>
-      <div className="relative min-h-full overflow-hidden">
-        {/* ── futuristic backdrop ─────────────────────────── */}
+      <div className="relative">
+        {/* ── futuristic backdrop (contained so it never blocks page scroll) ── */}
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div
           className="pointer-events-none absolute inset-0 opacity-[0.35]"
           style={{
@@ -46,6 +47,7 @@ export default function PendingSetupDashboard({
         />
         <div className="pointer-events-none absolute -top-40 left-1/4 h-96 w-96 rounded-full bg-teal-500/10 blur-[120px]" />
         <div className="pointer-events-none absolute top-20 right-0 h-96 w-96 rounded-full bg-violet-600/10 blur-[120px]" />
+        </div>
 
         <div className="relative mx-auto w-full max-w-6xl px-4 py-8 space-y-8">
           {/* Header */}
