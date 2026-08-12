@@ -9,26 +9,20 @@ declare global {
   }
 }
 
+/**
+ * True only inside the real native app (Capacitor). This gates native-only
+ * UI — the intro splash carousel, the bottom nav bar, and mobile post-login
+ * routing — so none of it leaks onto the mobile *web* browser.
+ *
+ * NOTE: intentionally NOT viewport-width based. A narrow browser window is
+ * still the web, not the app; keying off innerWidth made the app-only splash
+ * appear for every phone-sized web visitor.
+ */
 export function useIsMobileApp() {
   const [isMobile, setIsMobile] = useState<boolean>(false);
 
   useEffect(() => {
-    const checkMobile = () => {
-      // Check for native app via Capacitor
-      if (window.Capacitor?.isNativePlatform?.()) {
-        return true;
-      }
-      
-      // Fallback for testing on standard web browsers
-      return window.innerWidth <= 768;
-    };
-
-    setIsMobile(checkMobile());
-
-    const handleResize = () => setIsMobile(checkMobile());
-    window.addEventListener('resize', handleResize);
-    
-    return () => window.removeEventListener('resize', handleResize);
+    setIsMobile(!!window.Capacitor?.isNativePlatform?.());
   }, []);
 
   return isMobile;
