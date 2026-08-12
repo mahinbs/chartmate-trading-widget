@@ -63,6 +63,7 @@ import { PlatformChatbot } from "./components/PlatformChatbot";
 import RegisterPage from "./pages/RegisterPage";
 import AffiliatePartnerPage from "./pages/AffiliatePartnerPage";
 import TradingDashboardPage from "./pages/TradingDashboardPage";
+import AccountDashboardPage from "./pages/AccountDashboardPage";
 import TradingAiAnalysisPage from "./pages/TradingAiAnalysisPage";
 import TradingBacktestPage from "./pages/TradingBacktestPage";
 import WlCheckoutPage from "./pages/WlCheckoutPage";
@@ -370,6 +371,14 @@ const App = () => (
                   element={
                     <ProtectedRoute>
                       <TradingDashboardPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/account/:slug"
+                  element={
+                    <ProtectedRoute>
+                      <AccountDashboardPage />
                     </ProtectedRoute>
                   }
                 />
