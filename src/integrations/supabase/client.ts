@@ -6,17 +6,26 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-const SUPABASE_URL =
-  import.meta.env.VITE_SUPABASE_URL ?? "https://ssesqiqtndhurfyntgbm.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+// --- Backend migration 2026-08-28 ---------------------------------------
+// The old project (ssesqiqtndhurfyntgbm) was PAUSED, taking the app down.
+// Defaults below point at the migrated project. Env vars still win for
+// future rotations, but any value still referencing the dead project is
+// ignored so a stale Vercel env var can't take the site down again.
+// NOTE: the publishable key is public by design (it ships in the bundle).
+const DEAD_PROJECT_REF = "ssesqiqtndhurfyntgbm";
+const DEFAULT_SUPABASE_URL = "https://qvrtpagkhibhqyjryfzs.supabase.co";
+const DEFAULT_PUBLISHABLE_KEY = "sb_publishable_zcRLHRmTz5XIiDWkEswH7A_SfALftdY";
 
-if (!SUPABASE_PUBLISHABLE_KEY) {
-  // Fail loudly at boot rather than 401-spamming every request.
-  throw new Error(
-    "VITE_SUPABASE_PUBLISHABLE_KEY is missing. " +
-    "Set it in .env (local) and Vercel project env (prod)."
-  );
-}
+const envUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+const envKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
+
+// If the env URL is absent or points at the dead project, fall back to the
+// migrated project — and in that case the env key belongs to the old project
+// too, so use the matching default key rather than mixing the two.
+const usingEnv = !!envUrl && !envUrl.includes(DEAD_PROJECT_REF);
+
+const SUPABASE_URL = usingEnv ? (envUrl as string) : DEFAULT_SUPABASE_URL;
+const SUPABASE_PUBLISHABLE_KEY = usingEnv && envKey ? envKey : DEFAULT_PUBLISHABLE_KEY;
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
